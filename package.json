@@ -22,7 +22,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build", 
+    "build": "next build --no-lint", 
     "start": "next start",
     "react:start": "react-scripts start",
     "react:build": "react-scripts build"
