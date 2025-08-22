@@ -24,7 +24,7 @@ import {
   IconFileText,
   IconSortAscending,
   IconSortDescending,
-  IconBarChart,
+  IconChartBar,
   IconActivity,
   IconPackage,
   IconPlus,
@@ -635,7 +635,7 @@ export default function Ingredients() {
                       ) : (
                         <div className="flex items-center justify-center h-full">
                           <div className="text-center">
-                            <IconBarChart size={48} className="mx-auto mb-4 text-gray-300" />
+                            <IconChartBar size={48} className="mx-auto mb-4 text-gray-300" />
                             <p className="text-gray-600">Chart library not available</p>
                             <div className="mt-4 space-y-2">
                               {priceHistory.map((item, index) => (

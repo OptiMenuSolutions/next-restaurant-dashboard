@@ -12,7 +12,7 @@ import {
   IconAlertTriangle,
   IconCheck,
   IconFile,
-  IconFileImage,
+  IconPhoto,
   IconRefresh,
 } from '@tabler/icons-react';
 
@@ -87,7 +87,7 @@ export default function PendingInvoices() {
   function getFileIcon(url) {
     const fileType = getFileType(url);
     if (fileType === 'PDF') return IconFile;
-    if (fileType === 'Image') return IconFileImage;
+    if (fileType === 'Image') return IconPhoto;
     return IconFileText;
   }
 
