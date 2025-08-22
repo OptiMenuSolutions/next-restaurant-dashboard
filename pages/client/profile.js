@@ -9,7 +9,7 @@ import {
   IconMapPin,
   IconBuilding,
   IconEdit,
-  IconSave,
+  IconDeviceFloppy,
   IconX,
   IconCamera,
   IconSettings,
@@ -194,7 +194,7 @@ export default function Profile() {
         {success && (
           <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-6 rounded-r-lg">
             <div className="flex items-start">
-              <IconSave size={20} className="text-green-400 mt-0.5" />
+              <IconDeviceFloppy size={20} className="text-green-400 mt-0.5" />
               <div className="ml-3">
                 <p className="text-sm text-green-700">{success}</p>
               </div>
@@ -269,7 +269,7 @@ export default function Profile() {
                       disabled={saving}
                       className="flex items-center gap-1 px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
                     >
-                      <IconSave size={14} />
+                      <IconDeviceFloppy size={14} />
                       {saving ? "Saving..." : "Save"}
                     </button>
                   </div>
