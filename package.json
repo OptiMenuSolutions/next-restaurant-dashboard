@@ -22,10 +22,8 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build --no-lint", 
-    "start": "next start",
-    "react:start": "react-scripts start",
-    "react:build": "react-scripts build"
+    "build": "next build",
+    "start": "next start"
   },
   "eslintConfig": {
     "extends": [
