@@ -96,6 +96,7 @@ export default function ClientDashboard() {
   const [error, setError] = useState("");
   const [restaurantId, setRestaurantId] = useState(null);
   const [marginView, setMarginView] = useState("Highest-Margin"); // "Highest-Margin" or "Lowest-Margin"
+  const [aiLoading, setAiLoading] = useState(false); // New state for AI Loading
   const [dashboardData, setDashboardData] = useState({
     totalInvoices: 0,
     totalIngredients: 0,
@@ -217,39 +218,29 @@ export default function ClientDashboard() {
       // Process data (keep this synchronous)
       const processedData = processDashboardData(invoices, ingredients, menuItems);
       
-      // Fetch AI recommendations separately
-      const aiRecommendations = await fetchAIRecommendations(processedData);
+      // Set dashboard data immediately (without AI recommendations)
+      setDashboardData(processedData);
+      setLoading(false); // Dashboard is now loaded and ready to display
       
-      // Add recommendations to the processed data
-      const finalData = {
-        ...processedData,
-        aiRecommendations
-      };
-      
-      setDashboardData(finalData);
+      // Fetch AI recommendations separately in the background
+      fetchAIRecommendationsAsync(processedData);
 
     } catch (err) {
       setError("Failed to fetch dashboard data: " + err.message);
-    } finally {
       setLoading(false);
     }
   }
 
   // Add this function in your dashboard component
-  async function fetchAIRecommendations(dashboardData) {
+  async function fetchAIRecommendationsAsync(dashboardData) {
     try {
-      console.log('=== Starting fetchAIRecommendations ===');
-      console.log('restaurantId:', restaurantId);
-      console.log('userName:', userName);
-      console.log('dashboardData keys:', dashboardData ? Object.keys(dashboardData) : 'undefined');
+      setAiLoading(true);
       
       const requestBody = {
         dashboardData,
         restaurantId,
         restaurantName: userName
       };
-      
-      console.log('Making request to /api/ai-recommendations');
       
       const response = await fetch('/api/ai-recommendations', {
         method: 'POST',
@@ -258,55 +249,51 @@ export default function ClientDashboard() {
         },
         body: JSON.stringify(requestBody),
       });
-
-      console.log('Response received:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('=== API ERROR ===');
-        console.error('Status:', response.status);
-        console.error('Response:', errorText);
-        throw new Error(`API returned ${response.status}: ${errorText}`);
+        throw new Error(`API returned ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('=== SUCCESS ===');
-      console.log('Received data:', data);
-      return data.recommendations;
+      
+      // Update only the AI recommendations in the existing dashboard data
+      setDashboardData(prevData => ({
+        ...prevData,
+        aiRecommendations: data.recommendations
+      }));
       
     } catch (error) {
-      console.error('=== FETCH ERROR ===');
-      console.error('Error type:', error.constructor.name);
-      console.error('Error message:', error.message);
-      console.error('Full error:', error);
+      console.error('AI recommendations error:', error);
       
-      // Return fallback recommendations
-      return [
-        {
-          title: "Check High Margins",
-          description: "Review top performing items",
-          type: "promote",
-          color: "green"
-        },
-        {
-          title: "Monitor Costs", 
-          description: "Track ingredient pricing",
-          type: "alert",
-          color: "orange"
-        },
-        {
-          title: "Optimize Menu",
-          description: "Update low margin items", 
-          type: "optimize",
-          color: "red"
-        }
-      ];
+      // Set fallback recommendations on error
+      setDashboardData(prevData => ({
+        ...prevData,
+        aiRecommendations: [
+          {
+            title: "Check High Margins",
+            description: "Review top performing items",
+            type: "promote",
+            color: "green"
+          },
+          {
+            title: "Monitor Costs", 
+            description: "Track ingredient pricing",
+            type: "alert",
+            color: "orange"
+          },
+          {
+            title: "Optimize Menu",
+            description: "Update low margin items", 
+            type: "optimize",
+            color: "red"
+          }
+        ]
+      }));
+    } finally {
+      setAiLoading(false);
     }
   }
+
 
   function processDashboardData(invoices, ingredients, menuItems) {
     const totalInvoices = invoices.length;
@@ -833,10 +820,39 @@ export default function ClientDashboard() {
                   <IconSparkles size={14} className="text-blue-600" />
                 </div>
                 <h3 className="text-xs font-semibold text-gray-900">AI Daily Dish Recommendations</h3>
+                {aiLoading && (
+                  <div className="w-3 h-3 border border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                )}
               </div>
               
               <div className="flex flex-col flex-1 min-h-0 gap-2" style={{ height: 'calc(100% - 40px)' }}>
-                {dashboardData.aiRecommendations && dashboardData.aiRecommendations.length > 0 ? (
+                {aiLoading ? (
+                  // Loading state
+                  <>
+                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500 animate-pulse" style={{ height: 'calc(33.33% - 4px)' }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <div className="h-4 bg-blue-200 rounded w-3/4"></div>
+                      </div>
+                      <div className="h-3 bg-blue-200 rounded w-full"></div>
+                    </div>
+                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500 animate-pulse" style={{ height: 'calc(33.33% - 4px)' }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <div className="h-4 bg-blue-200 rounded w-2/3"></div>
+                      </div>
+                      <div className="h-3 bg-blue-200 rounded w-full"></div>
+                    </div>
+                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500 animate-pulse" style={{ height: 'calc(33.33% - 4px)' }}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                        <div className="h-4 bg-blue-200 rounded w-4/5"></div>
+                      </div>
+                      <div className="h-3 bg-blue-200 rounded w-full"></div>
+                    </div>
+                  </>
+                ) : dashboardData.aiRecommendations && dashboardData.aiRecommendations.length > 0 ? (
+                  // Loaded recommendations
                   dashboardData.aiRecommendations.map((rec, index) => (
                     <div 
                       key={index}
@@ -851,30 +867,11 @@ export default function ClientDashboard() {
                     </div>
                   ))
                 ) : (
-                  // Fallback content while loading
-                  <>
-                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500" style={{ height: 'calc(33.33% - 4px)' }}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                        <span className="font-semibold text-gray-900 text-sm">Loading...</span>
-                      </div>
-                      <p className="text-xs text-gray-600">Analyzing your data</p>
-                    </div>
-                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500" style={{ height: 'calc(33.33% - 4px)' }}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                        <span className="font-semibold text-gray-900 text-sm">Loading...</span>
-                      </div>
-                      <p className="text-xs text-gray-600">Generating insights</p>
-                    </div>
-                    <div className="bg-blue-50 rounded-md p-3 border-l-4 border-blue-500" style={{ height: 'calc(33.33% - 4px)' }}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
-                        <span className="font-semibold text-gray-900 text-sm">Loading...</span>
-                      </div>
-                      <p className="text-xs text-gray-600">Preparing recommendations</p>
-                    </div>
-                  </>
+                  // Empty state (no recommendations loaded yet)
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
+                    <IconSparkles size={24} className="mb-2 text-gray-400" />
+                    <p className="text-xs">Preparing recommendations...</p>
+                  </div>
                 )}
               </div>
             </div>
