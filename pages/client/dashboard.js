@@ -34,6 +34,8 @@ import {
   IconTrendingDown,
 } from '@tabler/icons-react';
 import ClientLayout from '../../components/ClientLayout';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 // Add this style component
 const GeometricBackground = ({ children }) => (
@@ -1146,6 +1148,8 @@ export default function ClientDashboard() {
           </div>
         </div>
       </ClientLayout>
+      <Analytics />
+      <SpeedInsights />
     </GeometricBackground>
   );
 }

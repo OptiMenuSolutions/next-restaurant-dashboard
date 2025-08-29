@@ -1,6 +1,8 @@
 // pages/index.js
 import Head from 'next/head'
 import Link from 'next/link'
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 export default function Home() {
   return (
@@ -1592,6 +1594,9 @@ export default function Home() {
             border: 2px solid #2563eb !important;
           }
       `}</style>
+
+      <Analytics />
+      <SpeedInsights />
     </>
   )
 }
