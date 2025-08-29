@@ -2,8 +2,5 @@
   "/_app": "pages/_app.js",
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
-  "/": "pages/index.js",
-  "/client/login": "pages/client/login.js",
-  "/client/dashboard": "pages/client/dashboard.js",
-  "/api/ai-recommendations": "pages/api/ai-recommendations.js"
+  "/": "pages/index.js"
 }
