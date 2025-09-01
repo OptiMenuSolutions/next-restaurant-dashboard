@@ -314,27 +314,53 @@ export default function AdminLayout({ children, pageTitle, pageDescription, page
           className="flex-1" 
           style={{ paddingLeft: 'clamp(60px, 8vh, 100px)' }}
         >
-          {/* Page Header - Only show if pageTitle is provided */}
-          {pageTitle && (
-            <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 shadow-sm sticky top-0 z-10">
-              <div 
-                className="flex items-center gap-4"
-                style={{ 
-                  padding: 'clamp(16px, 2vh, 24px) clamp(16px, 2vh, 32px)' 
-                }}
-              >
+          {/* Page Header - Always show with search bar */}
+          <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 shadow-sm sticky top-0 z-10">
+            <div 
+              className="flex flex-col xl:flex-row xl:items-center justify-between gap-3"
+              style={{ 
+                padding: 'clamp(16px, 2vh, 24px) clamp(16px, 2vh, 32px)' 
+              }}
+            >
+              {/* Left side - Page title */}
+              <div className="flex items-center gap-4">
                 {PageIcon && (
                   <div className="flex items-center justify-center w-10 h-10 bg-blue-100/80 rounded-lg">
                     <PageIcon size={20} className="text-blue-600" />
                   </div>
                 )}
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
-                  {pageDescription && <p className="text-gray-600 mt-1">{pageDescription}</p>}
+                  {pageTitle ? (
+                    <>
+                      <h1 className="text-2xl font-bold text-gray-900">{pageTitle}</h1>
+                      {pageDescription && <p className="text-gray-600 mt-1">{pageDescription}</p>}
+                    </>
+                  ) : (
+                    <h1 className="text-xl font-bold text-gray-900">Admin Dashboard</h1>
+                  )}
                 </div>
               </div>
-            </header>
-          )}
+
+              {/* Right side - Search bar and profile */}
+              <div className="flex items-center gap-3">
+                <div className="w-full xl:w-80">
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <IconSearch size={16} className="text-gray-400" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search clients, invoices, analytics..."
+                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/90 backdrop-blur-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-full font-semibold text-xs cursor-pointer hover:bg-blue-700 transition-colors flex-shrink-0">
+                  {getUserInitials()}
+                </div>
+              </div>
+            </div>
+          </header>
 
           {/* Page Content */}
           <main 
