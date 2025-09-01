@@ -373,7 +373,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex-1">
                   <div className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toLocaleString()}</div>
-                  <div className="text-sm font-medium text-gray-900 mb-1">Total Revenue</div>
+                  <div className="text-sm font-medium text-gray-900 mb-1">Total Analyzed</div>
                   <div className="text-xs text-gray-600">Invoice value processed</div>
                 </div>
                 <div className="bg-[#ADD8E6] text-gray-900 text-xs font-semibold px-2 py-1 rounded">
