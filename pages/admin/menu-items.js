@@ -1,4 +1,4 @@
-// pages/admin/menu-items.js (Combined version with AdminLayout)
+// pages/admin/menu-items.js (Complete version with dynamic categories)
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/AdminLayout';
@@ -35,11 +35,22 @@ export default function MenuItemsManagement() {
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [categories, setCategories] = useState([]);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  
+  // Restaurant selection state
+  const [restaurantSearchTerm, setRestaurantSearchTerm] = useState('');
+  const [filteredRestaurants, setFilteredRestaurants] = useState([]);
+  const [highlightedRestaurantIndex, setHighlightedRestaurantIndex] = useState(-1);
+  const [selectedRestaurantForConfirm, setSelectedRestaurantForConfirm] = useState(null);
+  const [confirmationText, setConfirmationText] = useState('');
   
   // Form state
   const [formData, setFormData] = useState({
     name: '',
-    price: ''
+    price: '',
+    category_id: null,
+    categorySearchTerm: ''
   });
   const [menuItemComponents, setMenuItemComponents] = useState([]);
   const [filteredIngredients, setFilteredIngredients] = useState([]);
@@ -50,43 +61,29 @@ export default function MenuItemsManagement() {
   const [activeUnitIngredientIndex, setActiveUnitIngredientIndex] = useState(null);
   const [highlightedUnitIndex, setHighlightedUnitIndex] = useState(-1);
   const [saving, setSaving] = useState(false);
+  
+  // Category autocomplete state
+  const [filteredCategories, setFilteredCategories] = useState([]);
+  const [highlightedCategoryIndex, setHighlightedCategoryIndex] = useState(-1);
 
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-        return;
-      }
-      
-      fetchRestaurants();
-    };
-    checkUser();
-  }, [router]);
-
-  useEffect(() => {
-    if (selectedRestaurant) {
-      fetchMenuItems();
-      fetchIngredients();
-    }
-  }, [selectedRestaurant]);
-
-  async function fetchRestaurants() {
+  const fetchCategories = useCallback(async () => {
+    if (!selectedRestaurant) return;
+    
     try {
       const { data, error } = await supabase
-        .from('restaurants')
+        .from('menu_categories')
         .select('*')
+        .eq('restaurant_id', selectedRestaurant.id)
         .order('name');
 
       if (error) throw error;
-      setRestaurants(data || []);
+      setCategories(data || []);
     } catch (error) {
-      console.error('Error fetching restaurants:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error fetching categories:', error);
     }
-  }
+  }, [selectedRestaurant?.id]);
 
+  // Define callback functions first
   const fetchMenuItems = useCallback(async () => {
     try {
       const { data, error } = await supabase
@@ -97,6 +94,10 @@ export default function MenuItemsManagement() {
             id,
             name,
             cost
+          ),
+          menu_categories (
+            id,
+            name
           )
         `)
         .eq('restaurant_id', selectedRestaurant.id)
@@ -124,10 +125,111 @@ export default function MenuItemsManagement() {
     }
   }, [selectedRestaurant?.id]);
 
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/admin/login');
+        return;
+      }
+      
+      fetchRestaurants();
+    };
+    checkUser();
+  }, [router]);
+
+  useEffect(() => {
+    if (selectedRestaurant) {
+      fetchMenuItems();
+      fetchIngredients();
+      fetchCategories();
+    }
+  }, [selectedRestaurant, fetchMenuItems, fetchIngredients, fetchCategories]);
+
+  async function fetchRestaurants() {
+    try {
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setRestaurants(data || []);
+    } catch (error) {
+      console.error('Error fetching restaurants:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleRestaurantSelect(restaurant) {
     setSelectedRestaurant(restaurant);
     setShowAddForm(false);
     setEditingItem(null);
+  }
+
+  // Restaurant search functions
+  function handleRestaurantSearch(searchTerm) {
+    setRestaurantSearchTerm(searchTerm);
+    setSelectedRestaurantForConfirm(null);
+    setConfirmationText('');
+    
+    if (searchTerm.length > 0) {
+      const filtered = restaurants.filter(restaurant =>
+        restaurant.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredRestaurants(filtered);
+      setHighlightedRestaurantIndex(filtered.length > 0 ? 0 : -1);
+    } else {
+      setFilteredRestaurants([]);
+      setHighlightedRestaurantIndex(-1);
+    }
+  }
+
+  function selectRestaurantForConfirm(restaurant) {
+    setSelectedRestaurantForConfirm(restaurant);
+    setRestaurantSearchTerm(restaurant.name);
+    setFilteredRestaurants([]);
+    setHighlightedRestaurantIndex(-1);
+    setConfirmationText('');
+  }
+
+  function handleRestaurantKeyDown(e) {
+    if (filteredRestaurants.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedRestaurantIndex(prev => 
+        prev < filteredRestaurants.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedRestaurantIndex(prev => 
+        prev > 0 ? prev - 1 : filteredRestaurants.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedRestaurantIndex >= 0 && highlightedRestaurantIndex < filteredRestaurants.length) {
+        selectRestaurantForConfirm(filteredRestaurants[highlightedRestaurantIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setFilteredRestaurants([]);
+      setHighlightedRestaurantIndex(-1);
+    }
+  }
+
+  function handleConfirmRestaurant() {
+    if (!selectedRestaurantForConfirm) {
+      alert('Please select a restaurant first');
+      return;
+    }
+    
+    if (confirmationText.trim() !== selectedRestaurantForConfirm.name) {
+      alert(`Please type the restaurant name exactly: "${selectedRestaurantForConfirm.name}"`);
+      return;
+    }
+    
+    handleRestaurantSelect(selectedRestaurantForConfirm);
   }
 
   function handleFormChange(e) {
@@ -136,6 +238,112 @@ export default function MenuItemsManagement() {
       ...prev,
       [name]: value
     }));
+  }
+
+  // Category autocomplete functions
+  function handleCategorySearch(searchTerm) {
+    setFormData(prev => ({
+      ...prev,
+      categorySearchTerm: searchTerm,
+      category_id: null // Clear selected category when typing
+    }));
+    
+    if (searchTerm.length > 0) {
+      const filtered = categories.filter(category =>
+        category.name.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredCategories(filtered);
+      setHighlightedCategoryIndex(filtered.length > 0 ? 0 : -1);
+    } else {
+      setFilteredCategories([]);
+      setHighlightedCategoryIndex(-1);
+    }
+  }
+
+  function selectCategory(category) {
+    setFormData(prev => ({
+      ...prev,
+      category_id: category.id,
+      categorySearchTerm: category.name
+    }));
+    setFilteredCategories([]);
+    setHighlightedCategoryIndex(-1);
+  }
+
+  async function handleCategoryKeyDown(e) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedCategoryIndex(prev => 
+        prev < filteredCategories.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedCategoryIndex(prev => 
+        prev > 0 ? prev - 1 : filteredCategories.length - 1
+      );
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      
+      const searchTerm = formData.categorySearchTerm?.trim();
+      if (!searchTerm) return;
+
+      // Check if we have a highlighted category in the dropdown
+      if (highlightedCategoryIndex >= 0 && highlightedCategoryIndex < filteredCategories.length) {
+        selectCategory(filteredCategories[highlightedCategoryIndex]);
+        return;
+      }
+
+      // Check if category already exists (case-insensitive)
+      const existingCategory = categories.find(cat => 
+        cat.name.toLowerCase() === searchTerm.toLowerCase()
+      );
+
+      if (existingCategory) {
+        selectCategory(existingCategory);
+        return;
+      }
+
+      // Create new category
+      try {
+        setCreatingCategory(true);
+        
+        const { data: newCategory, error } = await supabase
+          .from('menu_categories')
+          .insert({
+            restaurant_id: selectedRestaurant.id,
+            name: searchTerm
+          })
+          .select()
+          .single();
+
+        if (error) {
+          if (error.code === '23505') {
+            alert('A category with this name already exists');
+            return;
+          }
+          throw error;
+        }
+
+        // Add to local state and select it
+        setCategories(prev => [...prev, newCategory].sort((a, b) => a.name.localeCompare(b.name)));
+        setFormData(prev => ({
+          ...prev,
+          category_id: newCategory.id,
+          categorySearchTerm: newCategory.name
+        }));
+        setFilteredCategories([]);
+        setHighlightedCategoryIndex(-1);
+        
+      } catch (error) {
+        console.error('Error creating category:', error);
+        alert('Failed to create category: ' + error.message);
+      } finally {
+        setCreatingCategory(false);
+      }
+    } else if (e.key === 'Escape') {
+      setFilteredCategories([]);
+      setHighlightedCategoryIndex(-1);
+    }
   }
 
   // Component management functions
@@ -293,16 +501,23 @@ export default function MenuItemsManagement() {
   }
 
   function startAddItem() {
-    setFormData({ name: '', price: '' });
+    setFormData({ name: '', price: '', category_id: null, categorySearchTerm: '' });
     setMenuItemComponents([]);
     setShowAddForm(true);
     setEditingItem(null);
+    setFilteredCategories([]);
+    setHighlightedCategoryIndex(-1);
   }
 
   async function startEditItem(item) {
+    // Find the category name for the selected category_id
+    const selectedCategory = categories.find(cat => cat.id === item.category_id);
+    
     setFormData({
       name: item.name,
-      price: item.price.toString()
+      price: item.price.toString(),
+      category_id: item.category_id || null,
+      categorySearchTerm: selectedCategory?.name || ''
     });
 
     // Fetch existing components and their ingredients for this menu item
@@ -351,7 +566,7 @@ export default function MenuItemsManagement() {
   function cancelForm() {
     setShowAddForm(false);
     setEditingItem(null);
-    setFormData({ name: '', price: '' });
+    setFormData({ name: '', price: '', category_id: null, categorySearchTerm: '' });
     setMenuItemComponents([]);
     setFilteredIngredients([]);
     setActiveSearchComponentIndex(null);
@@ -360,6 +575,8 @@ export default function MenuItemsManagement() {
     setActiveUnitComponentIndex(null);
     setActiveUnitIngredientIndex(null);
     setHighlightedUnitIndex(-1);
+    setFilteredCategories([]);
+    setHighlightedCategoryIndex(-1);
   }
 
   async function handleSubmit() {
@@ -493,7 +710,8 @@ export default function MenuItemsManagement() {
           .from('menu_items')
           .update({
             name: formData.name,
-            price: parseFloat(formData.price)
+            price: parseFloat(formData.price),
+            category_id: formData.category_id || null
           })
           .eq('id', editingItem.id);
 
@@ -518,6 +736,7 @@ export default function MenuItemsManagement() {
             restaurant_id: selectedRestaurant.id,
             name: formData.name,
             price: parseFloat(formData.price),
+            category_id: formData.category_id || null,
             cost: 0 // Will be calculated
           })
           .select()
@@ -757,7 +976,7 @@ export default function MenuItemsManagement() {
       <div className="p-6">
         {!selectedRestaurant ? (
           /* Restaurant Selection */
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-2xl mx-auto">
             <div className="text-center mb-8">
               <h2 className="text-3xl font-bold text-gray-900 mb-4">Select a Restaurant</h2>
               <p className="text-lg text-gray-600">Choose a restaurant to manage its menu items</p>
@@ -779,27 +998,102 @@ export default function MenuItemsManagement() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {restaurants.map(restaurant => (
-                  <button
-                    key={restaurant.id}
-                    className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-lg hover:-translate-y-1 transition-all duration-200 text-left group"
-                    onClick={() => handleRestaurantSelect(restaurant)}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center justify-center w-12 h-12 bg-[#ADD8E6] rounded-lg group-hover:bg-[#9CC5D4] transition-colors">
-                        <IconBuilding size={24} className="text-gray-900" />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-1">{restaurant.name}</h3>
-                        <p className="text-sm text-gray-500">Manage menu items</p>
-                      </div>
-                      <div className="text-gray-400 group-hover:text-gray-600 transition-colors">
-                        <IconChevronLeft size={20} className="rotate-180" />
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+                <div className="space-y-4">
+                  {/* Restaurant Search */}
+                  <div>
+                    <label htmlFor="restaurant_search" className="block text-sm font-medium text-gray-700 mb-2">
+                      Search Restaurant
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="restaurant_search"
+                        type="text"
+                        value={restaurantSearchTerm}
+                        onChange={(e) => handleRestaurantSearch(e.target.value)}
+                        onKeyDown={handleRestaurantKeyDown}
+                        placeholder="Type to search restaurants..."
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                      />
+                      {filteredRestaurants.length > 0 && (
+                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                          {filteredRestaurants.map((restaurant, index) => (
+                            <div
+                              key={restaurant.id}
+                              className={`px-3 py-3 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 ${
+                                index === highlightedRestaurantIndex ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
+                              }`}
+                              onClick={() => selectRestaurantForConfirm(restaurant)}
+                              onMouseEnter={() => setHighlightedRestaurantIndex(index)}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${
+                                  index === highlightedRestaurantIndex ? 'bg-blue-600' : 'bg-[#ADD8E6]'
+                                }`}>
+                                  <IconBuilding size={16} className={index === highlightedRestaurantIndex ? 'text-white' : 'text-gray-900'} />
+                                </div>
+                                <div>
+                                  <div className="font-medium">{restaurant.name}</div>
+                                  <div className={`text-xs ${index === highlightedRestaurantIndex ? 'text-blue-100' : 'text-gray-500'}`}>
+                                    Click to select
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Selected Restaurant Display */}
+                  {selectedRestaurantForConfirm && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
+                          <IconBuilding size={20} className="text-blue-700" />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-gray-900">{selectedRestaurantForConfirm.name}</h4>
+                          <p className="text-sm text-gray-600">Selected restaurant</p>
+                        </div>
                       </div>
                     </div>
-                  </button>
-                ))}
+                  )}
+
+                  {/* Confirmation Input */}
+                  {selectedRestaurantForConfirm && (
+                    <div>
+                      <label htmlFor="confirmation" className="block text-sm font-medium text-gray-700 mb-2">
+                        Type the restaurant name to confirm
+                      </label>
+                      <div className="space-y-3">
+                        <input
+                          id="confirmation"
+                          type="text"
+                          value={confirmationText}
+                          onChange={(e) => setConfirmationText(e.target.value)}
+                          placeholder={`Type "${selectedRestaurantForConfirm.name}" to confirm`}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        />
+                        <button
+                          onClick={handleConfirmRestaurant}
+                          disabled={confirmationText.trim() !== selectedRestaurantForConfirm.name}
+                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                        >
+                          <IconCheck size={16} />
+                          Confirm & Manage Menu Items
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!selectedRestaurantForConfirm && restaurantSearchTerm && filteredRestaurants.length === 0 && (
+                    <div className="text-center py-4 text-gray-500 text-sm">
+                      No restaurants found matching "{restaurantSearchTerm}"
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -863,7 +1157,7 @@ export default function MenuItemsManagement() {
                 <div className="p-6 space-y-6">
                   {/* Basic Info Section */}
                   <div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
                         <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">Menu Item Name</label>
                         <input
@@ -888,6 +1182,50 @@ export default function MenuItemsManagement() {
                           placeholder="0.00"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                         />
+                      </div>
+                      <div>
+                        <label htmlFor="category_search" className="block text-sm font-medium text-gray-700 mb-2">
+                          Category
+                        </label>
+                        <div className="relative">
+                          <input
+                            id="category_search"
+                            type="text"
+                            value={formData.categorySearchTerm || ''}
+                            onChange={(e) => handleCategorySearch(e.target.value)}
+                            onKeyDown={handleCategoryKeyDown}
+                            placeholder="Type to search or create category..."
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          />
+                          {filteredCategories.length > 0 && (
+                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-y-auto">
+                              {filteredCategories.map((category, index) => (
+                                <div
+                                  key={category.id}
+                                  className={`px-3 py-2 cursor-pointer text-sm ${
+                                    index === highlightedCategoryIndex ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
+                                  }`}
+                                  onClick={() => selectCategory(category)}
+                                  onMouseEnter={() => setHighlightedCategoryIndex(index)}
+                                >
+                                  {category.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {formData.categorySearchTerm && 
+                           formData.categorySearchTerm.trim() && 
+                           !categories.find(cat => cat.name.toLowerCase() === formData.categorySearchTerm.toLowerCase().trim()) && (
+                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg">
+                              <div className="px-3 py-2 text-sm text-gray-600 border-b">
+                                <div className="flex items-center gap-2">
+                                  <IconPlus size={14} />
+                                  Press Enter to create "{formData.categorySearchTerm.trim()}"
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1132,6 +1470,7 @@ export default function MenuItemsManagement() {
                       <thead className="bg-gray-50 border-b border-gray-200">
                         <tr>
                           <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Name</th>
+                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Category</th>
                           <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Components</th>
                           <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Price</th>
                           <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Cost</th>
@@ -1155,6 +1494,11 @@ export default function MenuItemsManagement() {
                                   <div className="font-medium text-gray-900">{item.name}</div>
                                   <div className="text-sm text-gray-500">Click for cost breakdown →</div>
                                 </div>
+                              </td>
+                              <td className="py-4 px-6">
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                  {item.menu_categories?.name || 'Uncategorized'}
+                                </span>
                               </td>
                               <td className="py-4 px-6">
                                 <div className="flex items-center gap-2">
@@ -1251,6 +1595,12 @@ export default function MenuItemsManagement() {
                           </div>
                           
                           <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div>
+                              <div className="text-sm text-gray-500 mb-1">Category</div>
+                              <div className="text-sm font-medium text-gray-900">
+                                {item.menu_categories?.name || 'Uncategorized'}
+                              </div>
+                            </div>
                             <div>
                               <div className="text-sm text-gray-500 mb-1">Components</div>
                               <div className="text-sm font-medium text-gray-900">

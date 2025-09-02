@@ -3,6 +3,5 @@
   "/_error": "pages/_error.js",
   "/_document": "pages/_document.js",
   "/admin": "pages/admin.js",
-  "/admin/clients": "pages/admin/clients.js",
   "/admin/menu-items": "pages/admin/menu-items.js"
 }
