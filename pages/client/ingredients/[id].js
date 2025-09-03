@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import ClientLayout from "../../../components/ClientLayout";
 import supabase from "../../../lib/supabaseClient";
+import { calculateStandardizedCost } from "../../../lib/standardizedUnits";
 import {
   IconArrowLeft,
   IconCurrencyDollar,
@@ -13,6 +14,7 @@ import {
   IconChefHat,
   IconClipboardList,
   IconTrendingUp,
+  IconInfoCircle,
 } from "@tabler/icons-react";
 import {
   LineChart,
@@ -155,7 +157,7 @@ export default function IngredientDetail() {
       style: 'currency',
       currency: 'USD',
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 4
     });
   }
 
@@ -172,18 +174,62 @@ export default function IngredientDetail() {
     }
   }
 
-  function getChartData() {
-    if (!purchaseHistory || purchaseHistory.length === 0) return [];
+  function getStandardizedChartData() {
+    if (!purchaseHistory || purchaseHistory.length === 0 || !ingredient) {
+      return { chartData: [], displayUnit: 'lb', hasMultipleUnits: false, standardizedCount: 0, totalCount: 0 };
+    }
     
-    return purchaseHistory
-      .filter(item => item.invoices?.date && item.unit_cost > 0)
-      .map(item => ({
-        date: item.invoices.date,
-        cost: parseFloat(item.unit_cost),
-        dateLabel: formatDate(item.invoices.date),
-        supplier: item.invoices.supplier || "Unknown"
-      }))
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    const validHistory = purchaseHistory.filter(item => item.invoices?.date && item.unit_cost > 0);
+    
+    if (validHistory.length === 0) {
+      return { chartData: [], displayUnit: ingredient.display_unit || 'lb', hasMultipleUnits: false, standardizedCount: 0, totalCount: 0 };
+    }
+    
+    // Use admin-selected display unit, fallback to ingredient unit, then to 'lb'
+    const displayUnit = ingredient.display_unit || ingredient.unit || 'lb';
+    
+    // Check if there are multiple different units in the source data
+    const uniqueUnits = [...new Set(validHistory.map(item => item.unit?.toLowerCase()))];
+    const hasMultipleUnits = uniqueUnits.length > 1 || (displayUnit !== ingredient.unit);
+    
+    const standardizedData = [];
+    
+    for (const item of validHistory) {
+      try {
+        // Calculate standardized cost per display unit
+        const standardizedCost = calculateStandardizedCost(
+          parseFloat(item.unit_cost),
+          item.unit || 'lb',
+          displayUnit
+        );
+        
+        if (standardizedCost !== null && standardizedCost > 0) {
+          standardizedData.push({
+            date: item.invoices.date,
+            cost: standardizedCost,
+            originalCost: parseFloat(item.unit_cost),
+            originalUnit: item.unit,
+            displayUnit: displayUnit,
+            dateLabel: formatDate(item.invoices.date),
+            supplier: item.invoices.supplier || "Unknown",
+            invoiceNumber: item.invoices.number || "N/A"
+          });
+        }
+      } catch (error) {
+        console.warn(`Failed to standardize cost for invoice item ${item.id} to ${displayUnit}:`, error.message);
+      }
+    }
+    
+    // Sort by date for proper trend line
+    const sortedData = standardizedData.sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    return {
+      chartData: sortedData,
+      displayUnit,
+      hasMultipleUnits,
+      standardizedCount: sortedData.length,
+      totalCount: validHistory.length
+    };
   }
 
   function calculateItemCost(menuItem, quantity) {
@@ -192,13 +238,11 @@ export default function IngredientDetail() {
     return unitCost * itemQuantity;
   }
 
-  function getPriceStats() {
-    const prices = purchaseHistory
-      .filter(item => item.unit_cost > 0)
-      .map(item => parseFloat(item.unit_cost));
-    
-    if (prices.length === 0) return null;
+  function getPriceStats(chartData) {
+    if (chartData.length === 0) return null;
 
+    const prices = chartData.map(item => item.cost);
+    
     const min = Math.min(...prices);
     const max = Math.max(...prices);
     const avg = prices.reduce((sum, price) => sum + price, 0) / prices.length;
@@ -206,8 +250,25 @@ export default function IngredientDetail() {
     return { min, max, avg, count: prices.length };
   }
 
-  const chartData = getChartData();
-  const priceStats = getPriceStats();
+  function getCurrentDisplayPrice() {
+    if (!ingredient.last_price || !ingredient.unit) return null;
+    
+    const displayUnit = ingredient.display_unit || ingredient.unit;
+    
+    if (ingredient.unit === displayUnit) {
+      return ingredient.last_price;
+    }
+    
+    try {
+      return calculateStandardizedCost(ingredient.last_price, ingredient.unit, displayUnit);
+    } catch (error) {
+      console.warn('Failed to convert current price to display unit:', error);
+      return ingredient.last_price;
+    }
+  }
+
+  const { chartData, displayUnit, hasMultipleUnits, standardizedCount, totalCount } = getStandardizedChartData();
+  const priceStats = getPriceStats(chartData);
 
   if (loading) {
     return (
@@ -305,9 +366,14 @@ export default function IngredientDetail() {
               <h1 className="text-2xl font-bold text-gray-900">{ingredient.name}</h1>
               <div className="flex items-center gap-2 mt-1">
                 <span className="text-lg font-semibold text-green-600">
-                  {ingredient.last_price ? formatCurrency(ingredient.last_price) : "No price data"}
+                  {getCurrentDisplayPrice() ? formatCurrency(getCurrentDisplayPrice()) : "No price data"}
                 </span>
-                <span className="text-sm text-gray-500">per {ingredient.unit || "unit"}</span>
+                <span className="text-sm text-gray-500">
+                  per {ingredient.display_unit || ingredient.unit || "unit"}
+                  {ingredient.display_unit && ingredient.display_unit !== ingredient.unit && (
+                    <span className="text-xs text-blue-600 ml-1">(admin selected)</span>
+                  )}
+                </span>
               </div>
             </div>
           </div>
@@ -326,7 +392,7 @@ export default function IngredientDetail() {
               <div>
                 <p className="text-sm text-gray-500 mb-1">Current Price</p>
                 <p className="text-xl font-bold text-gray-900">
-                  {ingredient.last_price ? formatCurrency(ingredient.last_price) : "No data"}
+                  {getCurrentDisplayPrice() ? formatCurrency(getCurrentDisplayPrice()) : "No data"}
                 </p>
               </div>
             </div>
@@ -340,7 +406,7 @@ export default function IngredientDetail() {
               <div>
                 <p className="text-sm text-gray-500 mb-1">Unit</p>
                 <p className="text-xl font-bold text-gray-900">
-                  {ingredient.unit || "N/A"}
+                  {ingredient.display_unit || ingredient.unit || "N/A"}
                 </p>
               </div>
             </div>
@@ -382,6 +448,10 @@ export default function IngredientDetail() {
               <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                 <IconTrendingUp size={20} />
                 Price Statistics
+                <span className="text-sm text-gray-500 font-normal">({displayUnit})</span>
+                {ingredient.display_unit && ingredient.display_unit !== ingredient.unit && (
+                  <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">Admin selected</span>
+                )}
               </h2>
             </div>
             <div className="p-6">
@@ -411,11 +481,38 @@ export default function IngredientDetail() {
         {chartData.length > 0 && (
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
             <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                <IconChartLine size={20} />
-                Price Trend
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                  <IconChartLine size={20} />
+                  Price Trend
+                  <span className="text-sm text-gray-500 font-normal">(per {displayUnit})</span>
+                </h2>
+                {ingredient.display_unit && ingredient.display_unit !== ingredient.unit && (
+                  <div className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                    Admin selected: {displayUnit}
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* Unit standardization notice */}
+            {hasMultipleUnits && (
+              <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+                <div className="flex items-center gap-2">
+                  <IconInfoCircle size={16} className="text-blue-600 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <span className="font-medium">Units standardized:</span> 
+                    {ingredient.display_unit && ingredient.display_unit !== ingredient.unit ? (
+                      <>Admin selected {displayUnit} as the display unit. </>
+                    ) : (
+                      <>Automatically standardized to {displayUnit}. </>
+                    )}
+                    Showing {standardizedCount} of {totalCount} records with accurate unit conversion.
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="p-6">
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -429,11 +526,34 @@ export default function IngredientDetail() {
                     <YAxis 
                       stroke="#6b7280"
                       fontSize={12}
-                      tickFormatter={(value) => `$${value.toFixed(2)}`}
+                      tickFormatter={(value) => `$${value.toFixed(3)}`}
+                      label={{ value: `Cost per ${displayUnit}`, angle: -90, position: 'insideLeft' }}
                     />
                     <Tooltip 
-                      formatter={(value, name) => [`$${value.toFixed(2)}`, 'Price']}
+                      formatter={(value, name) => [`$${value.toFixed(4)}`, `Cost per ${displayUnit}`]}
                       labelFormatter={(label) => `Date: ${label}`}
+                      content={({ active, payload, label }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-sm">
+                              <p className="text-sm font-medium text-gray-900">{label}</p>
+                              <p className="text-sm text-blue-600">
+                                ${data.cost.toFixed(4)} per {data.displayUnit}
+                              </p>
+                              {data.originalUnit !== data.displayUnit && (
+                                <p className="text-xs text-gray-500">
+                                  (Originally ${data.originalCost.toFixed(4)} per {data.originalUnit})
+                                </p>
+                              )}
+                              <p className="text-xs text-gray-500">
+                                {data.invoiceNumber} • {data.supplier}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
                       contentStyle={{
                         backgroundColor: 'white',
                         border: '1px solid #e5e7eb',
@@ -490,7 +610,7 @@ export default function IngredientDetail() {
                           </span>
                         </td>
                         <td className="py-4 px-6 text-gray-900">
-                          {item.quantity} {ingredient.unit}
+                          {item.quantity} {ingredient.display_unit || ingredient.unit}
                         </td>
                         <td className="py-4 px-6">
                           <span className="font-medium text-green-600">
