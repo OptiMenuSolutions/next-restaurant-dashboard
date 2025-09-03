@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import AdminLayout from "../../components/AdminLayout";
 import supabase from "../../lib/supabaseClient";
+import { calculateStandardizedCost } from "../../lib/standardizedUnits";
 import {
   IconSearch,
   IconX,
@@ -181,6 +182,28 @@ export default function Ingredients() {
 
   function clearSearch() {
     setSearchTerm("");
+  }
+
+  async function handleDisplayUnitChange(ingredientId, newDisplayUnit) {
+    try {
+      const { error } = await supabase
+        .from('ingredients')
+        .update({ display_unit: newDisplayUnit })
+        .eq('id', ingredientId);
+
+      if (error) throw error;
+
+      // Update the local state to reflect the change
+      setIngredients(prev => prev.map(ingredient => 
+        ingredient.id === ingredientId 
+          ? { ...ingredient, display_unit: newDisplayUnit }
+          : ingredient
+      ));
+
+    } catch (error) {
+      console.error('Error updating display unit:', error);
+      alert('Failed to update display unit: ' + error.message);
+    }
   }
 
   const filteredIngredients = getFilteredAndSortedIngredients();
@@ -451,6 +474,9 @@ export default function Ingredients() {
                           )}
                         </div>
                       </th>
+                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">
+                        Display Unit
+                      </th>
                       <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Actions</th>
                     </tr>
                   </thead>
@@ -514,6 +540,35 @@ export default function Ingredients() {
                               </span>
                             </div>
                           </td>
+
+                          <td className="py-4 px-6">
+                            <select
+                              value={ingredient.display_unit || ingredient.unit || 'lb'}
+                              onChange={(e) => handleDisplayUnitChange(ingredient.id, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-sm border border-gray-300 rounded px-2 py-1 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              <optgroup label="Weight">
+                                <option value="lb">Pounds (lb)</option>
+                                <option value="oz">Ounces (oz)</option>
+                                <option value="kg">Kilograms (kg)</option>
+                                <option value="g">Grams (g)</option>
+                              </optgroup>
+                              <optgroup label="Volume">
+                                <option value="gal">Gallons (gal)</option>
+                                <option value="qt">Quarts (qt)</option>
+                                <option value="cup">Cups</option>
+                                <option value="fl oz">Fl Ounces (fl oz)</option>
+                                <option value="ml">Milliliters (ml)</option>
+                                <option value="liter">Liters</option>
+                              </optgroup>
+                              <optgroup label="Count">
+                                <option value="each">Each</option>
+                                <option value="dozen">Dozen</option>
+                                <option value="case">Case</option>
+                              </optgroup>
+                            </select>
+                          </td>
                           
                           <td className="py-4 px-6">
                             <button
@@ -558,7 +613,7 @@ export default function Ingredients() {
                               {ingredient.name || "Unnamed ingredient"}
                             </h3>
                             <div className="text-sm text-gray-500">
-                              Unit: {ingredient.unit || "N/A"}
+                              Storage Unit: {ingredient.unit || "N/A"}
                             </div>
                           </div>
                         </div>
@@ -583,6 +638,36 @@ export default function Ingredients() {
                             {formatDate(ingredient.last_ordered_at)}
                           </div>
                         </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <div className="text-sm text-gray-500 mb-1">Client Display Unit</div>
+                        <select
+                          value={ingredient.display_unit || ingredient.unit || 'lb'}
+                          onChange={(e) => handleDisplayUnitChange(ingredient.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-sm border border-gray-300 rounded px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <optgroup label="Weight">
+                            <option value="lb">Pounds (lb)</option>
+                            <option value="oz">Ounces (oz)</option>
+                            <option value="kg">Kilograms (kg)</option>
+                            <option value="g">Grams (g)</option>
+                          </optgroup>
+                          <optgroup label="Volume">
+                            <option value="gal">Gallons (gal)</option>
+                            <option value="qt">Quarts (qt)</option>
+                            <option value="cup">Cups</option>
+                            <option value="fl oz">Fl Ounces (fl oz)</option>
+                            <option value="ml">Milliliters (ml)</option>
+                            <option value="liter">Liters</option>
+                          </optgroup>
+                          <optgroup label="Count">
+                            <option value="each">Each</option>
+                            <option value="dozen">Dozen</option>
+                            <option value="case">Case</option>
+                          </optgroup>
+                        </select>
                       </div>
                       
                       <button

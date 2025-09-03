@@ -20,6 +20,11 @@ globalThis.__BUILD_MANIFEST = {
       "static/chunks/main.js",
       "static/chunks/pages/_error.js"
     ],
+    "/admin/ingredients": [
+      "static/chunks/webpack.js",
+      "static/chunks/main.js",
+      "static/chunks/pages/admin/ingredients.js"
+    ],
     "/admin/menu-items": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
