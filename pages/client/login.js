@@ -1,5 +1,5 @@
 // pages/client/login.js
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -38,14 +38,12 @@ export default function ClientLogin() {
         return;
       }
 
-      // Check if profile exists
       const { data: existingProfile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
         .single();
 
-      // If no profile exists, create one (database trigger will create restaurant automatically)
       if (profileError || !existingProfile) {
         const { error: insertError } = await supabase.from('profiles').insert([
           {
@@ -53,210 +51,541 @@ export default function ClientLogin() {
             email: user.email,
             full_name: user.user_metadata?.full_name || '',
             restaurant_name: user.user_metadata?.restaurant_name || '',
-            restaurant_id: null, // Will be set by database trigger
+            restaurant_id: null,
           },
         ]);
-
         if (insertError) {
           console.error('Failed to create profile after login:', insertError.message);
         }
       }
 
-      // Use replace instead of push for better UX
       router.replace('/client/dashboard');
-    } catch (error) {
+    } catch (err) {
       setError('An unexpected error occurred. Please try again.');
-      console.error('Login error:', error);
+      console.error('Login error:', err);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Left Side - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 relative overflow-hidden">
-        {/* Background Pattern */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute inset-0" style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.4'%3E%3Ccircle cx='30' cy='30' r='4'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
-          }} />
-        </div>
-        
-        {/* Content */}
-        <div className="relative z-10 flex flex-col justify-center px-12 py-12 text-white">
-          <div className="max-w-md">
-            <h1 className="text-4xl font-bold mb-6 leading-tight">
-              Streamline Your Restaurant Operations
-            </h1>
-            <p className="text-xl text-blue-100 mb-8 leading-relaxed">
-              Take control of your costs, optimize your menu, and boost profitability with intelligent insights.
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=DM+Sans:wght@300;400;500&display=swap');
+
+        .om-login-root {
+          min-height: 100vh;
+          display: flex;
+          background: #0f0e0c;
+          font-family: 'DM Sans', sans-serif;
+          color: #e8e2d8;
+        }
+
+        /* ── Left panel ── */
+        .om-left {
+          width: 44%;
+          background: #0f0e0c;
+          padding: 48px 40px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          position: relative;
+          border-right: 1px solid #2a2620;
+          overflow: hidden;
+        }
+
+        .om-left::before {
+          content: '';
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: radial-gradient(ellipse at 20% 60%, rgba(2,164,186,0.09) 0%, transparent 65%);
+          pointer-events: none;
+        }
+
+        .om-wordmark {
+          font-family: 'Playfair Display', serif;
+          font-size: 26px;
+          font-weight: 500;
+          letter-spacing: -0.5px;
+          color: #e8e2d8;
+          line-height: 1;
+        }
+
+        .om-wordmark-accent { color: #02a4ba; }
+
+        .om-tagline {
+          font-size: 11px;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          color: #6b6358;
+          font-weight: 400;
+          margin-top: 6px;
+        }
+
+        .om-hero {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 40px 0;
+        }
+
+        .om-headline {
+          font-family: 'Playfair Display', serif;
+          font-size: 34px;
+          font-weight: 400;
+          line-height: 1.25;
+          color: #e8e2d8;
+          margin-bottom: 20px;
+          letter-spacing: -0.3px;
+        }
+
+        .om-headline-em {
+          font-style: italic;
+          color: #02a4ba;
+        }
+
+        .om-descriptor {
+          font-size: 14px;
+          color: #7a7268;
+          line-height: 1.7;
+          font-weight: 300;
+          max-width: 280px;
+          margin-bottom: 36px;
+        }
+
+        .om-features { display: flex; flex-direction: column; gap: 14px; }
+        .om-feature { display: flex; align-items: center; gap: 12px; }
+
+        .om-feature-dot {
+          width: 6px; height: 6px;
+          background: #02a4ba;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .om-feature-text {
+          font-size: 13px;
+          color: #9a9086;
+          font-weight: 300;
+          letter-spacing: 0.2px;
+        }
+
+        .om-divider-line {
+          width: 32px; height: 1px;
+          background: #2a2620;
+          margin-bottom: 16px;
+        }
+
+        .om-stat-row { display: flex; gap: 28px; }
+
+        .om-stat-num {
+          font-family: 'Playfair Display', serif;
+          font-size: 22px;
+          color: #02a4ba;
+          font-weight: 400;
+          line-height: 1;
+        }
+
+        .om-stat-label {
+          font-size: 10px;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          color: #4a453e;
+          margin-top: 4px;
+          font-weight: 400;
+        }
+
+        /* ── Right panel ── */
+        .om-right {
+          flex: 1;
+          background: #13120f;
+          padding: 48px 44px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+        }
+
+        .om-form-eyebrow {
+          font-size: 10px;
+          letter-spacing: 2.5px;
+          text-transform: uppercase;
+          color: #02a4ba;
+          font-weight: 500;
+          margin-bottom: 10px;
+        }
+
+        .om-form-title {
+          font-family: 'Playfair Display', serif;
+          font-size: 28px;
+          font-weight: 400;
+          color: #e8e2d8;
+          line-height: 1.2;
+        }
+
+        .om-form-subtitle {
+          font-size: 13px;
+          color: #5a5449;
+          font-weight: 300;
+          margin-top: 6px;
+          margin-bottom: 32px;
+        }
+
+        /* ── Error ── */
+        .om-error {
+          background: rgba(163,45,45,0.12);
+          border: 1px solid rgba(163,45,45,0.3);
+          border-radius: 6px;
+          padding: 10px 14px;
+          font-size: 12px;
+          color: #e07070;
+          margin-bottom: 20px;
+          font-weight: 300;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        /* ── Fields ── */
+        .om-field { margin-bottom: 20px; }
+
+        .om-label {
+          font-size: 11px;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          color: #6b6358;
+          font-weight: 500;
+          display: block;
+          margin-bottom: 8px;
+        }
+
+        .om-input-wrap { position: relative; }
+
+        .om-input {
+          width: 100%;
+          background: #1a1915;
+          border: 1px solid #2a2620;
+          border-radius: 8px;
+          padding: 13px 16px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 14px;
+          color: #e8e2d8;
+          font-weight: 300;
+          box-sizing: border-box;
+          outline: none;
+          transition: border-color 0.2s;
+        }
+
+        .om-input::placeholder { color: #3a3630; }
+        .om-input:focus { border-color: #02a4ba; }
+        .om-input-has-icon { padding-right: 44px; }
+
+        .om-eye-btn {
+          position: absolute;
+          right: 14px; top: 50%;
+          transform: translateY(-50%);
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+          opacity: 0.35;
+          transition: opacity 0.2s;
+          display: flex;
+          align-items: center;
+        }
+        .om-eye-btn:hover { opacity: 0.7; }
+
+        /* ── Remember / Forgot row ── */
+        .om-options-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 28px;
+        }
+
+        .om-remember {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+        }
+
+        .om-remember input[type="checkbox"] {
+          width: 14px; height: 14px;
+          border: 1px solid #3a3630;
+          border-radius: 3px;
+          background: #1a1915;
+          accent-color: #02a4ba;
+          cursor: pointer;
+        }
+
+        .om-remember-label {
+          font-size: 12px;
+          color: #5a5449;
+          font-weight: 300;
+        }
+
+        .om-forgot {
+          font-size: 12px;
+          color: #02a4ba;
+          font-weight: 400;
+          opacity: 0.8;
+          transition: opacity 0.2s;
+          text-decoration: none;
+        }
+        .om-forgot:hover { opacity: 1; }
+
+        /* ── Buttons ── */
+        .om-btn-primary {
+          width: 100%;
+          background: #02a4ba;
+          border: none;
+          border-radius: 8px;
+          padding: 14px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+          font-weight: 500;
+          color: #0f0e0c;
+          cursor: pointer;
+          transition: background 0.2s, transform 0.1s;
+          margin-bottom: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
+        .om-btn-primary:hover:not(:disabled) { background: #01bcd4; }
+        .om-btn-primary:active:not(:disabled) { transform: scale(0.99); }
+        .om-btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+        .om-divider {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        .om-divider-bar { flex: 1; height: 1px; background: #1f1e1b; }
+        .om-divider-label {
+          font-size: 11px;
+          color: #3a3630;
+          letter-spacing: 1px;
+          text-transform: uppercase;
+        }
+
+        .om-btn-secondary {
+          width: 100%;
+          background: transparent;
+          border: 1px solid #2a2620;
+          border-radius: 8px;
+          padding: 13px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          color: #7a7268;
+          cursor: pointer;
+          transition: border-color 0.2s, color 0.2s;
+          letter-spacing: 0.3px;
+          font-weight: 300;
+          text-decoration: none;
+          display: block;
+          text-align: center;
+        }
+        .om-btn-secondary:hover { border-color: #3a3630; color: #9a9086; }
+
+        /* ── Spinner ── */
+        @keyframes om-spin {
+          to { transform: rotate(360deg); }
+        }
+        .om-spinner {
+          width: 16px; height: 16px;
+          border: 2px solid rgba(15,14,12,0.3);
+          border-top-color: #0f0e0c;
+          border-radius: 50%;
+          animation: om-spin 0.7s linear infinite;
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+          .om-left { display: none; }
+        }
+
+        @media (max-width: 640px) {
+          .om-right { padding: 36px 24px; }
+        }
+      `}</style>
+
+      <div className="om-login-root">
+
+        {/* ── Left branding panel ── */}
+        <div className="om-left">
+          <div>
+            <div className="om-wordmark">
+              Opti<span className="om-wordmark-accent">Menu</span>
+            </div>
+            <div className="om-tagline">Restaurant Intelligence</div>
+          </div>
+
+          <div className="om-hero">
+            <div className="om-headline">
+              Your kitchen&apos;s<br />
+              <em className="om-headline-em">smartest</em><br />
+              back office.
+            </div>
+            <p className="om-descriptor">
+              Take control of food costs, optimize your menu, and protect
+              your margins — all in one place built for independent operators.
             </p>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-white rounded-full"></div>
-                <span className="text-blue-100">Real-time cost tracking</span>
+            <div className="om-features">
+              {[
+                'Real-time ingredient cost tracking',
+                'AI-powered menu optimization',
+                'Profit margin alerts & insights',
+                'Invoice & supplier management',
+              ].map((f) => (
+                <div className="om-feature" key={f}>
+                  <div className="om-feature-dot" />
+                  <span className="om-feature-text">{f}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="om-divider-line" />
+            <div className="om-stat-row">
+              <div>
+                <div className="om-stat-num">$59</div>
+                <div className="om-stat-label">Founding rate / mo</div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-white rounded-full"></div>
-                <span className="text-blue-100">Smart menu optimization</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-white rounded-full"></div>
-                <span className="text-blue-100">Profit margin analysis</span>
+              <div>
+                <div className="om-stat-num">150K+</div>
+                <div className="om-stat-label">Addressable operators</div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Right Side - Login Form */}
-      <div className="flex-1 flex flex-col justify-center px-6 py-12 lg:px-20 xl:px-24">
-        <div className="mx-auto w-full max-w-sm lg:w-96">
-          {/* Logo and Header */}
-          <div className="text-center mb-10">
-            <div className="flex justify-center mb-6">
+        {/* ── Right login form ── */}
+        <div className="om-right">
+          <div style={{ maxWidth: 360, width: '100%', margin: '0 auto' }}>
+
+            {/* Mobile logo — visible only when left panel is hidden */}
+            <div style={{ marginBottom: 32 }}>
               <Image
                 src="/optimenu-logo.png"
-                alt="OptMenu"
-                width={600}
-                height={180}
-                className="h-30 w-auto"
+                alt="OptiMenu"
+                width={160}
+                height={48}
+                style={{ objectFit: 'contain', display: 'block' }}
                 priority
-                quality={100}
-                unoptimized={true}
               />
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">Welcome back</h2>
-            <p className="text-gray-600">Please sign in to your account</p>
-          </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border-l-4 border-red-400 rounded-r-lg">
-              <div className="flex items-center">
-                <svg className="w-5 h-5 text-red-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <div className="om-form-eyebrow">Member access</div>
+            <div className="om-form-title">Welcome back</div>
+            <div className="om-form-subtitle">Sign in to your operator account</div>
+
+            {error && (
+              <div className="om-error">
+                <svg width="14" height="14" viewBox="0 0 20 20" fill="#e07070">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                 </svg>
-                <span className="text-red-800 text-sm">{error}</span>
+                {error}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Login Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="you@example.com"
-                value={formData.email}
-                onChange={handleChange}
-                required
-                autoComplete="email"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-gray-400 text-gray-900"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
+            <form onSubmit={handleSubmit}>
+              <div className="om-field">
+                <label className="om-label" htmlFor="email">Email address</label>
                 <input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  value={formData.password}
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="you@restaurant.com"
+                  value={formData.email}
                   onChange={handleChange}
                   required
-                  autoComplete="current-password"
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors placeholder-gray-400 text-gray-900"
+                  autoComplete="email"
+                  className="om-input"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                >
-                  {showPassword ? (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <input
-                  id="remember-me"
-                  name="remember-me"
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-700">
-                  Remember me
-                </label>
-              </div>
-              <Link 
-                href="/client/forgot-password" 
-                className="text-sm font-medium text-blue-600 hover:text-blue-500 transition-colors"
-              >
-                Forgot password?
-              </Link>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {loading ? (
-                <div className="flex items-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Signing in...
+              <div className="om-field">
+                <label className="om-label" htmlFor="password">Password</label>
+                <div className="om-input-wrap">
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••••"
+                    value={formData.password}
+                    onChange={handleChange}
+                    required
+                    autoComplete="current-password"
+                    className="om-input om-input-has-icon"
+                  />
+                  <button
+                    type="button"
+                    className="om-eye-btn"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e8e2d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
+                        <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </svg>
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#e8e2d8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
-              ) : (
-                'Sign in'
-              )}
-            </button>
-          </form>
+              </div>
 
-          {/* Sign Up Link */}
-          <div className="mt-8">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300" />
+              <div className="om-options-row">
+                <label className="om-remember">
+                  <input type="checkbox" name="remember-me" />
+                  <span className="om-remember-label">Remember me</span>
+                </label>
+                <Link href="/client/forgot-password" className="om-forgot">
+                  Forgot password?
+                </Link>
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-50 text-gray-500">New to OptMenu?</span>
-              </div>
-            </div>
-            <div className="mt-6">
-              <Link
-                href="/client/signup"
-                className="w-full flex justify-center py-3 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="om-btn-primary"
               >
-                Create your account
-              </Link>
+                {loading ? (
+                  <>
+                    <div className="om-spinner" />
+                    Signing in...
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </button>
+            </form>
+
+            <div className="om-divider">
+              <div className="om-divider-bar" />
+              <span className="om-divider-label">New to OptiMenu?</span>
+              <div className="om-divider-bar" />
             </div>
+
+            <Link href="/client/signup" className="om-btn-secondary">
+              Create your account
+            </Link>
           </div>
         </div>
+
       </div>
-    </div>
+    </>
   );
 }
