@@ -221,7 +221,8 @@ export default function ClientDashboard() {
       return { month: name, total, monthNumber: m + 1 };
     });
 
-    const maxSpend = Math.max(...monthlySpending.map(m => m.total), 1);
+    const spendValues = (dashboardData.monthlySpending || []).map(m => m.total);
+    const maxSpend = spendValues.length > 0 ? Math.max(...spendValues, 1) : 1;
 
     const aiProfitScore = calculateAIProfitScore({ itemsWithMargins, averageMargin, unpricedIngredients, totalIngredients: ingredients.length, totalMenuItems: menuItems.length, processedInvoices, totalInvoices: invoices.length });
 
