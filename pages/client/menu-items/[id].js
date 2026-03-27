@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import ClientLayout from "../../../components/ClientLayout";
 import supabase from "../../../lib/supabaseClient";
-import { calculateStandardizedCost } from "../../lib/standardizedUnits";
+import { calculateStandardizedCost } from "../../../lib/standardizedUnits";
 import {
   IconArrowLeft,
   IconCurrencyDollar,
