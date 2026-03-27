@@ -429,7 +429,7 @@ export default function ClientDashboard() {
                 </div>
               )}
             </div>
-            {dashboardData.aiRecommendations.length > 0 ? dashboardData.aiRecommendations.slice(0, 3).map((rec, i) => (
+            {(dashboardData.aiRecommendations || []).length > 0 ? (dashboardData.aiRecommendations || []).slice(0, 3).map((rec, i) => (
               <div key={i} style={s.aiItem}>
                 <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#02a4ba', marginTop: 3, flexShrink: 0 }} />
                 <div>
