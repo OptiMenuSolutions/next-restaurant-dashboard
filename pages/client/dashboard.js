@@ -59,101 +59,321 @@ const GLOBAL_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400&family=Inter:wght@400;500;600&display=swap');
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; background: #0a0908; }
+
+  /* Force full height through Next.js wrappers */
+  html, body { height: 100%; background: #0a0908; overflow: hidden; }
+  #__next { height: 100%; }
 
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-  :root {
-    --nav-h: clamp(36px, 3.5vh, 54px);
-    --wbar-h: clamp(30px, 3vh, 48px);
-    --pad: clamp(6px, 0.55vw, 14px);
-    --gap: clamp(6px, 0.5vw, 12px);
-    --r: clamp(5px, 0.35vw, 8px);
+  input::placeholder { color: #3a3630 !important; }
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: #0f0e0c; }
+  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
 
-    --fs-logo: clamp(13px, 1.05vw, 19px);
-    --fs-tab: clamp(10px, 0.72vw, 13px);
-    --fs-search-w: clamp(110px, 11vw, 220px);
-    --fs-wl: clamp(11px, 0.82vw, 16px);
-    --fs-ws: clamp(9px, 0.62vw, 12px);
-    --fs-wv: clamp(12px, 1vw, 19px);
-    --fs-wlb: clamp(8px, 0.58vw, 11px);
-
-    --fs-card-title: clamp(10px, 0.72vw, 13px);
-    --fs-body: clamp(10px, 0.68vw, 13px);
-    --fs-sub: clamp(8px, 0.58vw, 11px);
-    --fs-val: clamp(13px, 1.05vw, 18px);
-    --fs-pill-l: clamp(9px, 0.62vw, 12px);
-    --fs-pill-v: clamp(13px, 1.05vw, 17px);
-    --fs-score: clamp(16px, 1.5vw, 25px);
-    --fs-score-lbl: clamp(8px, 0.58vw, 11px);
-    --fs-rname: clamp(10px, 0.78vw, 14px);
-    --fs-rsub: clamp(8px, 0.6vw, 11px);
-
-    --ring-sz: clamp(54px, 5.2vw, 90px);
-    --icon-sz: clamp(24px, 2.1vw, 42px);
-    --avatar-sz: clamp(20px, 1.7vw, 32px);
-    --dot-sz: clamp(4px, 0.32vw, 6px);
-    --aid-sz: clamp(4px, 0.32vw, 6px);
-    --bar-h: clamp(3px, 0.28vh, 6px);
-    --bar-gap: clamp(3px, 0.28vw, 6px);
-    --legend-dot: clamp(5px, 0.42vw, 8px);
-
-    --panel-w: clamp(158px, 12.5vw, 235px);
-    --row1-h: clamp(235px, 27vh, 345px);
-    --row2-h: clamp(205px, 24vh, 305px);
-
-    --ai-pad-v: clamp(6px, 0.55vh, 11px);
-    --ai-pad-h: clamp(8px, 0.65vw, 13px);
-    --row-pad-v: clamp(5px, 0.48vh, 10px);
-    --row-pad-h: clamp(7px, 0.58vw, 12px);
-    --pill-pad-v: clamp(5px, 0.48vh, 10px);
-    --pill-pad-h: clamp(7px, 0.58vw, 13px);
+  .db-root {
+    font-family: 'Inter', sans-serif;
+    background: #0a0908;
+    color: #e8e2d8;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
-  /* Breakpoints */
+  /* ── NAV ── */
+  .db-nav {
+    background: #0f0e0c;
+    border-bottom: 1px solid #2a2620;
+    height: clamp(36px, 4vh, 52px);
+    padding: 0 clamp(10px, 1vw, 20px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .db-logo {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(13px, 1.1vw, 19px);
+    color: #e8e2d8;
+    letter-spacing: -.3px;
+  }
+  .db-logo span { color: #02a4ba; }
+
+  .db-tab {
+    padding: clamp(2px, 0.3vh, 4px) clamp(6px, 0.6vw, 11px);
+    border-radius: clamp(3px, 0.3vw, 6px);
+    font-size: clamp(10px, 0.75vw, 13px);
+    color: #4a453e;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    line-height: 1.5;
+    transition: all 0.15s;
+  }
+  .db-tab.active { color: #e8e2d8; background: #1a1915; }
+
+  .db-search {
+    background: #1a1915;
+    border: 1px solid #2a2620;
+    border-radius: clamp(3px, 0.3vw, 6px);
+    padding: clamp(3px, 0.3vh, 6px) clamp(8px, 0.7vw, 13px);
+    font-size: clamp(10px, 0.75vw, 13px);
+    color: #e8e2d8;
+    width: clamp(120px, 12vw, 220px);
+    outline: none;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .db-avatar {
+    width: clamp(22px, 1.8vw, 32px);
+    height: clamp(22px, 1.8vw, 32px);
+    border-radius: 50%;
+    background: #02a4ba;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(8px, 0.65vw, 11px);
+    font-weight: 700;
+    color: #0a0908;
+    flex-shrink: 0;
+  }
+
+  /* ── WELCOME BAR ── */
+  .db-wbar {
+    background: #13120f;
+    border-bottom: 1px solid #2a2620;
+    height: clamp(30px, 3.5vh, 46px);
+    padding: 0 clamp(10px, 1vw, 20px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .db-wname { font-size: clamp(11px, 0.85vw, 16px); font-weight: 600; color: #e8e2d8; }
+  .db-wsub { font-size: clamp(9px, 0.65vw, 12px); color: #4a453e; margin-left: 6px; }
+  .db-wstat-v { font-family: 'Playfair Display', serif; font-size: clamp(12px, 1.05vw, 19px); line-height: 1; }
+  .db-wstat-l { font-size: clamp(8px, 0.6vw, 11px); color: #4a453e; margin-top: 1px; }
+
+  /* ── GRID WRAPPER ── */
+  .db-grid-wrap {
+    flex: 1;
+    min-height: 0;
+    padding: clamp(6px, 0.6vw, 12px);
+    gap: clamp(6px, 0.6vw, 12px);
+    display: grid;
+    grid-template-columns: clamp(155px, 13vw, 230px) 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  /* ── PANEL ── */
+  .db-panel {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    background: #13120f;
+    border: 1px solid #2a2620;
+    border-radius: clamp(5px, 0.4vw, 9px);
+    padding: clamp(10px, 0.9vw, 18px);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 0.8vh, 16px);
+    overflow: hidden;
+  }
+
+  .db-panel-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: clamp(3px, 0.35vh, 6px);
+    padding-bottom: clamp(8px, 0.8vh, 14px);
+    border-bottom: 1px solid #2a2620;
+    flex-shrink: 0;
+  }
+
+  .db-rest-icon {
+    width: clamp(26px, 2.4vw, 42px);
+    height: clamp(26px, 2.4vw, 42px);
+    border-radius: 50%;
+    background: rgba(2,164,186,.1);
+    border: 1px solid rgba(2,164,186,.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  .db-rest-name { font-size: clamp(10px, 0.85vw, 15px); font-weight: 600; color: #e8e2d8; }
+  .db-rest-sub { font-size: clamp(8px, 0.62vw, 11px); color: #4a453e; }
+
+  /* Score ring */
+  .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(4px, 0.4vh, 7px); flex-shrink: 0; }
+  .db-score-lbl { font-size: clamp(8px, 0.62vw, 11px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
+  .db-ring { position: relative; width: clamp(56px, 5.5vw, 90px); height: clamp(56px, 5.5vw, 90px); }
+  .db-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .db-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(16px, 1.6vw, 26px); color: #e8e2d8; line-height: 1; }
+  .db-ring-sub { font-size: clamp(7px, 0.58vw, 10px); color: #4a453e; }
+  .db-score-tag { font-size: clamp(9px, 0.65vw, 12px); font-weight: 600; padding: clamp(2px,0.2vh,3px) clamp(7px,0.55vw,11px); border-radius: 10px; }
+
+  /* Stat pills */
+  .db-pills { display: flex; flex-direction: column; gap: clamp(5px, 0.5vh, 9px); flex: 1; overflow: hidden; }
+  .db-pill {
+    background: #0f0e0c;
+    border-radius: clamp(4px, 0.35vw, 7px);
+    padding: clamp(5px, 0.55vh, 10px) clamp(8px, 0.7vw, 14px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid #1a1915;
+    flex-shrink: 0;
+  }
+  .db-pill-l { font-size: clamp(9px, 0.68vw, 13px); color: #6b6358; }
+  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(13px, 1.1vw, 18px); }
+
+  /* ── CARD ── */
+  .db-card {
+    background: #13120f;
+    border: 1px solid #2a2620;
+    border-radius: clamp(5px, 0.4vw, 9px);
+    padding: clamp(10px, 0.9vw, 18px) clamp(10px, 1vw, 20px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .db-card-hd {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: clamp(7px, 0.75vh, 14px);
+    flex-shrink: 0;
+  }
+
+  .db-card-title {
+    font-size: clamp(10px, 0.78vw, 14px);
+    font-weight: 600;
+    color: #e8e2d8;
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 0.35vw, 7px);
+  }
+  .db-card-title svg { width: clamp(10px, 0.85vw, 15px); height: clamp(10px, 0.85vw, 15px); stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  .db-card-act {
+    font-size: clamp(9px, 0.65vw, 12px);
+    color: #02a4ba;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+
+  /* ── AI ITEMS ── */
+  .db-ai-item {
+    display: flex;
+    gap: clamp(6px, 0.5vw, 10px);
+    padding: clamp(7px, 0.65vh, 12px) clamp(9px, 0.8vw, 15px);
+    background: #0f0e0c;
+    border-radius: clamp(4px, 0.35vw, 7px);
+    border-left: 2px solid #02a4ba;
+    margin-bottom: clamp(6px, 0.6vh, 11px);
+    flex-shrink: 0;
+  }
+  .db-ai-item:last-child { margin-bottom: 0; }
+  .db-ai-dot { width: clamp(5px, 0.4vw, 7px); height: clamp(5px, 0.4vw, 7px); border-radius: 50%; background: #02a4ba; margin-top: clamp(3px, 0.35vh, 6px); flex-shrink: 0; }
+  .db-ai-title { font-size: clamp(10px, 0.78vw, 14px); font-weight: 600; color: #e8e2d8; margin-bottom: 2px; }
+  .db-ai-desc { font-size: clamp(9px, 0.65vw, 12px); color: #6b6358; line-height: 1.45; }
+
+  /* ── MARGIN BARS ── */
+  .db-margin-row {
+    display: flex;
+    align-items: center;
+    gap: clamp(6px, 0.5vw, 10px);
+    margin-bottom: clamp(6px, 0.65vh, 12px);
+  }
+  .db-margin-row:last-child { margin-bottom: 0; }
+  .db-margin-name { font-size: clamp(10px, 0.75vw, 13px); color: #9a9086; width: clamp(75px, 8vw, 130px); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-margin-track { flex: 1; background: #1a1915; border-radius: 3px; height: clamp(3px, 0.3vh, 6px); }
+  .db-margin-fill { height: 100%; border-radius: 3px; }
+  .db-margin-pct { font-size: clamp(10px, 0.75vw, 13px); font-weight: 600; width: clamp(34px, 3vw, 48px); text-align: right; flex-shrink: 0; }
+
+  /* ── INVOICE / INGREDIENT ROWS ── */
+  .db-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: clamp(6px, 0.6vh, 11px) clamp(8px, 0.75vw, 14px);
+    background: #0f0e0c;
+    border-radius: clamp(4px, 0.35vw, 7px);
+    margin-bottom: clamp(5px, 0.5vh, 9px);
+    flex-shrink: 0;
+  }
+  .db-row:last-child { margin-bottom: 0; }
+  .db-row-name { font-size: clamp(10px, 0.78vw, 14px); font-weight: 500; color: #e8e2d8; }
+  .db-row-sub { font-size: clamp(8px, 0.62vw, 11px); color: #4a453e; margin-top: 1px; }
+  .db-row-val { font-size: clamp(10px, 0.78vw, 14px); font-weight: 600; color: #e8e2d8; text-align: right; }
+  .db-row-date { font-size: clamp(8px, 0.62vw, 11px); color: #4a453e; text-align: right; margin-top: 1px; }
+  .db-ing-val { font-size: clamp(10px, 0.78vw, 14px); font-weight: 600; color: #02a4ba; }
+
+  /* ── TOGGLE ── */
+  .db-toggle { display: flex; background: #0f0e0c; border-radius: clamp(3px, 0.28vw, 5px); padding: 2px; }
+  .db-toggle-btn {
+    padding: clamp(2px, 0.22vh, 4px) clamp(7px, 0.6vw, 12px);
+    border-radius: clamp(2px, 0.22vw, 4px);
+    font-size: clamp(9px, 0.65vw, 12px);
+    cursor: pointer; border: none;
+    font-family: 'Inter', sans-serif;
+    color: #4a453e; background: transparent; line-height: 1.5;
+    transition: all 0.15s;
+  }
+  .db-toggle-btn.active { background: #1a1915; color: #e8e2d8; }
+
+  /* ── CHART ── */
+  .db-chart-outer { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .db-chart { display: flex; align-items: flex-end; gap: clamp(3px, 0.3vw, 7px); flex: 1; min-height: 0; }
+  .db-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: clamp(2px, 0.22vh, 4px); height: 100%; }
+  .db-bar-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+  .db-bar { width: 100%; border-radius: clamp(2px, 0.22vw, 4px) clamp(2px, 0.22vw, 4px) 0 0; }
+  .db-bar-lbl { font-size: clamp(8px, 0.65vw, 12px); color: #3a3630; }
+  .db-legend { display: flex; gap: clamp(8px, 0.9vw, 18px); margin-top: clamp(5px, 0.55vh, 10px); flex-shrink: 0; flex-wrap: wrap; }
+  .db-legend-item { display: flex; align-items: center; gap: clamp(3px, 0.28vw, 5px); font-size: clamp(8px, 0.65vw, 12px); color: #4a453e; }
+  .db-legend-dot { width: clamp(5px, 0.48vw, 9px); height: clamp(5px, 0.48vw, 9px); border-radius: 50%; flex-shrink: 0; }
+
+  /* ── SPINNER ── */
+  .db-spinner { width: clamp(7px, 0.65vw, 11px); height: clamp(7px, 0.65vw, 11px); border: 1.5px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+
+  /* ── EMPTY STATE ── */
+  .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.78vw, 14px); color: #4a453e; }
+
+  /* ── RESPONSIVE ── */
   @media (max-width: 1280px) {
-    :root {
-      --panel-w: clamp(148px, 13vw, 180px);
-      --row1-h: clamp(210px, 26vh, 290px);
-      --row2-h: clamp(185px, 23vh, 260px);
+    .db-grid-wrap {
+      grid-template-columns: clamp(148px, 12.5vw, 185px) 1fr 1fr 1fr;
     }
   }
 
   @media (max-width: 1024px) {
-    .db-grid {
-      grid-template-columns: 1fr 1fr !important;
-      grid-template-rows: auto auto auto !important;
+    .db-grid-wrap {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: auto auto auto;
+      overflow-y: auto;
     }
-    .db-panel {
-      grid-column: 1 / 3 !important;
-      grid-row: 1 !important;
-      flex-direction: row !important;
-      gap: clamp(10px, 2vw, 24px) !important;
-      align-items: center !important;
-    }
-    .db-panel-top {
-      border-bottom: none !important;
-      border-right: 1px solid #2a2620 !important;
-      padding-bottom: 0 !important;
-      padding-right: clamp(10px, 2vw, 20px) !important;
-    }
-    .db-pills {
-      flex-direction: row !important;
-      flex-wrap: wrap !important;
-    }
-    .db-pill { min-width: 100px !important; }
-    .db-card-ai { grid-column: 1 !important; grid-row: 2 !important; }
-    .db-card-menu { grid-column: 2 !important; grid-row: 2 !important; }
-    .db-card-inv { grid-column: 1 !important; grid-row: 3 !important; }
-    .db-card-chart { grid-column: 2 !important; grid-row: 3 !important; }
-    .db-card-ing { grid-column: 1 / 3 !important; grid-row: 4 !important; }
+    .db-panel { grid-column: 1 / 3; grid-row: 1; flex-direction: row; align-items: center; gap: clamp(12px, 2vw, 24px); }
+    .db-panel-top { border-bottom: none; border-right: 1px solid #2a2620; padding-bottom: 0; padding-right: clamp(12px, 2vw, 22px); }
+    .db-pills { flex-direction: row; flex-wrap: wrap; }
+    .db-pill { min-width: 110px; flex: 1; }
   }
-
-  input::placeholder { color: #3a3630; }
-  ::-webkit-scrollbar { width: 3px; }
-  ::-webkit-scrollbar-track { background: #0f0e0c; }
-  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
 `;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -163,32 +383,20 @@ function ScoreRing({ score }) {
   const circumference = 2 * Math.PI * 40;
   const dash = (score / 100) * circumference;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(3px,0.3vh,6px)', flexShrink: 0 }}>
-      <div style={{ fontSize: 'var(--fs-score-lbl)', color: '#6b6358', textTransform: 'uppercase', letterSpacing: '.5px' }}>AI Profit Score</div>
-      <div style={{ position: 'relative', width: 'var(--ring-sz)', height: 'var(--ring-sz)' }}>
-        <svg width="100%" height="100%" viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)' }}>
+    <div className="db-score-wrap">
+      <div className="db-score-lbl">AI Profit Score</div>
+      <div className="db-ring">
+        <svg viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="40" stroke="#1a1915" strokeWidth="9" fill="none" />
           <circle cx="50" cy="50" r="40" stroke={color} strokeWidth="9" fill="none"
             strokeDasharray={`${dash} ${circumference}`} strokeLinecap="round" />
         </svg>
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'var(--fs-score)', color: '#e8e2d8', lineHeight: 1 }}>{score}</div>
-          <div style={{ fontSize: 'clamp(7px,0.55vw,10px)', color: '#4a453e' }}>/ 100</div>
+        <div className="db-ring-inner">
+          <div className="db-ring-num">{score}</div>
+          <div className="db-ring-sub">/ 100</div>
         </div>
       </div>
-      <div style={{ fontSize: 'clamp(9px,0.62vw,12px)', fontWeight: 600, padding: 'clamp(2px,0.2vh,3px) clamp(6px,0.5vw,10px)', borderRadius: 10, background: `${color}18`, color }}>{label}</div>
-    </div>
-  );
-}
-
-function MarginBar({ name, pct, color }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(5px,0.4vw,8px)', marginBottom: 'clamp(5px,0.55vh,9px)' }}>
-      <div style={{ fontSize: 'var(--fs-body)', color: '#9a9086', width: 'clamp(70px,7.5vw,120px)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
-      <div style={{ flex: 1, background: '#1a1915', borderRadius: 3, height: 'var(--bar-h)' }}>
-        <div style={{ height: '100%', borderRadius: 3, background: color, width: `${Math.max(0, Math.min(100, pct))}%` }} />
-      </div>
-      <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, width: 'clamp(30px,2.8vw,44px)', textAlign: 'right', flexShrink: 0, color }}>{pct.toFixed(1)}%</div>
+      <div className="db-score-tag" style={{ background: `${color}18`, color }}>{label}</div>
     </div>
   );
 }
@@ -207,19 +415,10 @@ export default function ClientDashboard() {
   const [activeTab, setActiveTab] = useState("Dashboard");
 
   const [data, setData] = useState({
-    totalInvoices: 0,
-    totalIngredients: 0,
-    totalMenuItems: 0,
-    recentInvoices: [],
-    ingredientTrends: [],
-    menuItemAnalysis: [],
-    monthlySpending: [],
-    unpricedIngredients: 0,
-    averageMargin: 0,
-    totalSpending: 0,
-    aiProfitScore: { score: 0 },
-    aiRecommendations: [],
-    lowMarginCount: 0,
+    totalInvoices: 0, totalIngredients: 0, totalMenuItems: 0,
+    recentInvoices: [], ingredientTrends: [], menuItemAnalysis: [],
+    monthlySpending: [], unpricedIngredients: 0, averageMargin: 0,
+    totalSpending: 0, aiProfitScore: { score: 0 }, aiRecommendations: [], lowMarginCount: 0,
   });
 
   const LOW_MARGIN_THRESHOLD = 40;
@@ -286,7 +485,6 @@ export default function ClientDashboard() {
     const totalSpending = processedInvoices.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
     const unpricedIngredients = ingredients.filter(i => !i.last_price || parseFloat(i.last_price) === 0).length;
     const recentInvoices = processedInvoices.slice(0, 4).map(i => ({ id: i.id, number: i.number, supplier: i.supplier, amount: i.amount, date: i.date }));
-
     const menuItemAnalysis = menuItems.map(item => {
       const cost = (item.menu_item_components || []).reduce((t, c) => t + parseFloat(c.cost || 0), 0);
       const price = parseFloat(item.price || 0);
@@ -298,38 +496,18 @@ export default function ClientDashboard() {
         );
       return { id: item.id, name: item.name, price, cost, margin, hasCompleteData: hasData };
     });
-
     const itemsWithMargins = menuItemAnalysis.filter(i => i.hasCompleteData && i.price > 0);
-    const averageMargin = itemsWithMargins.length > 0
-      ? itemsWithMargins.reduce((s, i) => s + i.margin, 0) / itemsWithMargins.length : 0;
+    const averageMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + i.margin, 0) / itemsWithMargins.length : 0;
     const lowMarginCount = itemsWithMargins.filter(i => i.margin < LOW_MARGIN_THRESHOLD).length;
-
-    const ingredientTrends = ingredients
-      .filter(i => i.last_price > 0)
-      .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
-      .slice(0, 5)
-      .map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
-
+    const ingredientTrends = ingredients.filter(i => i.last_price > 0).sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price)).slice(0, 5).map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
     const currentYear = new Date().getFullYear();
     const monthlySpending = Array.from({ length: 12 }, (_, m) => {
       const name = new Date(currentYear, m).toLocaleDateString('en-US', { month: 'short' });
-      const total = processedInvoices
-        .filter(i => i.date && new Date(i.date).getFullYear() === currentYear && new Date(i.date).getMonth() === m)
-        .reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-      return { month: name, total, monthNumber: m + 1 };
+      const total = processedInvoices.filter(i => i.date && new Date(i.date).getFullYear() === currentYear && new Date(i.date).getMonth() === m).reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+      return { month: name, total };
     });
-
     const aiProfitScore = calculateAIProfitScore({ itemsWithMargins, averageMargin, unpricedIngredients, totalIngredients: ingredients.length, totalMenuItems: menuItems.length, processedInvoices, totalInvoices: invoices.length });
-
-    return {
-      totalInvoices: invoices.length,
-      totalIngredients: ingredients.length,
-      totalMenuItems: menuItems.length,
-      recentInvoices, ingredientTrends, menuItemAnalysis, monthlySpending,
-      unpricedIngredients, averageMargin, totalSpending, aiProfitScore,
-      lowMarginCount,
-      processingStats: { processed: processedInvoices.length, pending: invoices.length - processedInvoices.length },
-    };
+    return { totalInvoices: invoices.length, totalIngredients: ingredients.length, totalMenuItems: menuItems.length, recentInvoices, ingredientTrends, menuItemAnalysis, monthlySpending, unpricedIngredients, averageMargin, totalSpending, aiProfitScore, lowMarginCount };
   }
 
   function calculateAIProfitScore({ itemsWithMargins, averageMargin, unpricedIngredients, totalIngredients, totalMenuItems, processedInvoices, totalInvoices }) {
@@ -364,7 +542,7 @@ export default function ClientDashboard() {
     <>
       <style>{GLOBAL_CSS}</style>
       <div style={{ background: '#0a0908', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <div style={{ width: 'clamp(24px,2vw,36px)', height: 'clamp(24px,2vw,36px)', border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+        <div style={{ width: 32, height: 32, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
         <div style={{ fontSize: 'clamp(12px,1vw,16px)', color: '#e8e2d8' }}>Loading Dashboard</div>
         <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e' }}>Analyzing your restaurant data...</div>
       </div>
@@ -377,7 +555,7 @@ export default function ClientDashboard() {
       <div style={{ background: '#0a0908', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
         <div style={{ fontSize: 'clamp(12px,1vw,16px)', color: '#e8e2d8' }}>Unable to Load Dashboard</div>
         <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e', marginBottom: 8 }}>{error}</div>
-        <button onClick={() => window.location.reload()} style={{ background: '#02a4ba', border: 'none', borderRadius: 6, padding: 'clamp(6px,0.5vh,10px) clamp(12px,1vw,20px)', color: '#0a0908', fontSize: 'clamp(11px,0.85vw,14px)', fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Try Again</button>
+        <button onClick={() => window.location.reload()} style={{ background: '#02a4ba', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#0a0908', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Try Again</button>
       </div>
     </>
   );
@@ -386,40 +564,36 @@ export default function ClientDashboard() {
     <>
       <style>{GLOBAL_CSS}</style>
 
-      <div style={{ fontFamily: "'Inter', sans-serif", background: '#0a0908', color: '#e8e2d8', width: '100%', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div className="db-root">
 
-        {/* ── NAV ── */}
-        <div style={{ background: '#0f0e0c', borderBottom: '1px solid #2a2620', height: 'var(--nav-h)', padding: '0 var(--pad)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        {/* NAV */}
+        <div className="db-nav">
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
-            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'var(--fs-logo)', color: '#e8e2d8', letterSpacing: '-.3px' }}>
-              Opti<span style={{ color: '#02a4ba' }}>Menu</span>
-            </div>
+            <div className="db-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', gap: 2 }}>
               {tabs.map(t => (
-                <button key={t}
-                  style={{ padding: 'clamp(2px,0.2vh,4px) clamp(5px,0.55vw,10px)', borderRadius: 'var(--r)', fontSize: 'var(--fs-tab)', color: activeTab === t ? '#e8e2d8' : '#4a453e', border: 'none', background: activeTab === t ? '#1a1915' : 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif", lineHeight: 1.5 }}
-                  onClick={() => { setActiveTab(t); if (t !== 'Dashboard') router.push(`/client/${t.toLowerCase().replace(' ', '-')}`); }}
-                >{t}</button>
+                <button key={t} className={`db-tab${activeTab === t ? ' active' : ''}`}
+                  onClick={() => { setActiveTab(t); if (t !== 'Dashboard') router.push(`/client/${t.toLowerCase().replace(' ', '-')}`); }}>
+                  {t}
+                </button>
               ))}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,0.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(3px,0.25vw,5px)', fontSize: 'var(--fs-sub)', color: '#02a4ba' }}>
-              <div style={{ width: 'var(--dot-sz)', height: 'var(--dot-sz)', background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.65vw,12px)', color: '#02a4ba' }}>
+              <div style={{ width: 'clamp(4px,0.35vw,6px)', height: 'clamp(4px,0.35vw,6px)', background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
-            <input style={{ background: '#1a1915', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(3px,0.28vh,6px) clamp(7px,0.6vw,12px)', fontSize: 'var(--fs-tab)', color: '#e8e2d8', width: 'var(--fs-search-w)', outline: 'none', fontFamily: "'Inter', sans-serif" }} placeholder="Search..." />
-            <div style={{ width: 'var(--avatar-sz)', height: 'var(--avatar-sz)', borderRadius: '50%', background: '#02a4ba', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'clamp(8px,0.62vw,11px)', fontWeight: 700, color: '#0a0908', flexShrink: 0 }}>
-              {getUserInitials(userName)}
-            </div>
+            <input className="db-search" placeholder="Search..." />
+            <div className="db-avatar">{getUserInitials(userName)}</div>
           </div>
         </div>
 
-        {/* ── WELCOME BAR ── */}
-        <div style={{ background: '#13120f', borderBottom: '1px solid #2a2620', height: 'var(--wbar-h)', padding: '0 var(--pad)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        {/* WELCOME BAR */}
+        <div className="db-wbar">
           <div style={{ display: 'flex', alignItems: 'baseline' }}>
-            <span style={{ fontSize: 'var(--fs-wl)', fontWeight: 600, color: '#e8e2d8' }}>Welcome back, {userName}</span>
-            <span style={{ fontSize: 'var(--fs-ws)', color: '#4a453e', marginLeft: 6 }}>· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
+            <span className="db-wname">Welcome back, {userName}</span>
+            <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
           </div>
           <div style={{ display: 'flex', gap: 'clamp(14px,1.8vw,32px)' }}>
             {[
@@ -430,33 +604,27 @@ export default function ClientDashboard() {
               { v: formatCurrency(data.totalSpending), l: 'YTD Spend', c: '#d4a020' },
             ].map(({ v, l, c }) => (
               <div key={l}>
-                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'var(--fs-wv)', color: c, lineHeight: 1 }}>{v}</div>
-                <div style={{ fontSize: 'var(--fs-wlb)', color: '#4a453e', marginTop: 1 }}>{l}</div>
+                <div className="db-wstat-v" style={{ color: c }}>{v}</div>
+                <div className="db-wstat-l">{l}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── MAIN GRID ── */}
-        <div className="db-grid" style={{ display: 'grid', gridTemplateColumns: 'var(--panel-w) 1fr 1fr 1fr', gridTemplateRows: 'var(--row1-h) var(--row2-h)', gap: 'var(--gap)', padding: 'var(--pad)', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+        {/* GRID */}
+        <div className="db-grid-wrap">
 
           {/* LEFT PANEL */}
-          <div className="db-panel" style={{ gridColumn: 1, gridRow: '1/3', background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px)', display: 'flex', flexDirection: 'column', gap: 'clamp(8px,0.7vh,14px)', overflow: 'hidden' }}>
-
-            <div className="db-panel-top" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 'clamp(3px,0.3vh,5px)', paddingBottom: 'clamp(8px,0.7vh,12px)', borderBottom: '1px solid #2a2620', flexShrink: 0 }}>
-              <div style={{ width: 'var(--icon-sz)', height: 'var(--icon-sz)', borderRadius: '50%', background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg style={{ width: '55%', height: '55%' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/>
-                  <line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/>
-                </svg>
+          <div className="db-panel">
+            <div className="db-panel-top">
+              <div className="db-rest-icon">
+                <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
               </div>
-              <div style={{ fontSize: 'var(--fs-rname)', fontWeight: 600, color: '#e8e2d8' }}>{restaurantName}</div>
-              <div style={{ fontSize: 'var(--fs-rsub)', color: '#4a453e' }}>Management Dashboard</div>
+              <div className="db-rest-name">{restaurantName}</div>
+              <div className="db-rest-sub">Management Dashboard</div>
             </div>
-
             <ScoreRing score={data.aiProfitScore.score} />
-
-            <div className="db-pills" style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(4px,0.4vh,8px)', flex: 1, overflow: 'hidden' }}>
+            <div className="db-pills">
               {[
                 { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba' },
                 { l: 'Unpriced', v: data.unpricedIngredients, c: '#d4a020' },
@@ -464,122 +632,120 @@ export default function ClientDashboard() {
                 { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a' },
                 { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020' },
               ].map(({ l, v, c }) => (
-                <div key={l} className="db-pill" style={{ background: '#0f0e0c', borderRadius: 'clamp(4px,0.3vw,6px)', padding: 'var(--pill-pad-v) var(--pill-pad-h)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', border: '1px solid #1a1915', flexShrink: 0 }}>
-                  <div style={{ fontSize: 'var(--fs-pill-l)', color: '#6b6358' }}>{l}</div>
-                  <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'var(--fs-pill-v)', color: c }}>{v}</div>
+                <div key={l} className="db-pill">
+                  <div className="db-pill-l">{l}</div>
+                  <div className="db-pill-v" style={{ color: c }}>{v}</div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* AI RECOMMENDATIONS */}
-          <div className="db-card-ai" style={{ gridColumn: 2, gridRow: 1, background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px) clamp(10px,0.9vw,18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(7px,0.7vh,12px)', flexShrink: 0 }}>
-              <div style={{ fontSize: 'var(--fs-card-title)', fontWeight: 600, color: '#e8e2d8', display: 'flex', alignItems: 'center', gap: 'clamp(4px,0.3vw,6px)' }}>
-                <svg style={{ width: 'clamp(10px,0.8vw,14px)', height: 'clamp(10px,0.8vw,14px)' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
-                </svg>
+          <div className="db-card" style={{ gridColumn: 2, gridRow: 1 }}>
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                 AI Recommendations
               </div>
               {aiLoading && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--fs-sub)', color: '#4a453e' }}>
-                  <div style={{ width: 'clamp(7px,0.6vw,10px)', height: 'clamp(7px,0.6vw,10px)', border: '1.5px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                  Analyzing
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(8px,0.62vw,11px)', color: '#4a453e' }}>
+                  <div className="db-spinner" /> Analyzing
                 </div>
               )}
             </div>
             {(data.aiRecommendations || []).length > 0
               ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
-                <div key={i} style={{ display: 'flex', gap: 'clamp(5px,0.4vw,8px)', padding: 'var(--ai-pad-v) var(--ai-pad-h)', background: '#0f0e0c', borderRadius: 'clamp(4px,0.3vw,6px)', borderLeft: '2px solid #02a4ba', marginBottom: 'clamp(5px,0.5vh,8px)', flexShrink: 0 }}>
-                  <div style={{ width: 'var(--aid-sz)', height: 'var(--aid-sz)', borderRadius: '50%', background: '#02a4ba', marginTop: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }} />
+                <div key={i} className="db-ai-item">
+                  <div className="db-ai-dot" />
                   <div>
-                    <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: '#e8e2d8', marginBottom: 2 }}>{rec.title}</div>
-                    <div style={{ fontSize: 'var(--fs-sub)', color: '#6b6358', lineHeight: 1.45 }}>{rec.description}</div>
+                    <div className="db-ai-title">{rec.title}</div>
+                    <div className="db-ai-desc">{rec.description}</div>
                   </div>
                 </div>
               ))
-              : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-body)', color: '#4a453e' }}>Preparing recommendations...</div>
+              : <div className="db-empty">Preparing recommendations...</div>
             }
           </div>
 
           {/* MENU ANALYSIS */}
-          <div className="db-card-menu" style={{ gridColumn: 3, gridRow: 1, background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px) clamp(10px,0.9vw,18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(7px,0.7vh,12px)', flexShrink: 0 }}>
-              <div style={{ fontSize: 'var(--fs-card-title)', fontWeight: 600, color: '#e8e2d8', display: 'flex', alignItems: 'center', gap: 'clamp(4px,0.3vw,6px)' }}>
-                <svg style={{ width: 'clamp(10px,0.8vw,14px)', height: 'clamp(10px,0.8vw,14px)' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
-                </svg>
+          <div className="db-card" style={{ gridColumn: 3, gridRow: 1 }}>
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
                 Menu Analysis
               </div>
-              <div style={{ display: 'flex', background: '#0f0e0c', borderRadius: 'clamp(3px,0.25vw,5px)', padding: 2 }}>
+              <div className="db-toggle">
                 {['high', 'low'].map(v => (
-                  <button key={v} onClick={() => setMarginView(v)}
-                    style={{ padding: 'clamp(2px,0.2vh,4px) clamp(6px,0.5vw,10px)', borderRadius: 'clamp(2px,0.2vw,4px)', fontSize: 'var(--fs-sub)', cursor: 'pointer', border: 'none', fontFamily: "'Inter', sans-serif", color: marginView === v ? '#e8e2d8' : '#4a453e', background: marginView === v ? '#1a1915' : 'transparent', lineHeight: 1.5, textTransform: 'capitalize' }}>
+                  <button key={v} className={`db-toggle-btn${marginView === v ? ' active' : ''}`} onClick={() => setMarginView(v)}>
                     {v.charAt(0).toUpperCase() + v.slice(1)}
                   </button>
                 ))}
               </div>
             </div>
             {marginItems.length > 0
-              ? marginItems.map(item => <MarginBar key={item.id} name={item.name} pct={item.margin} color={getMarginColor(item.margin)} />)
-              : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-body)', color: '#4a453e' }}>No menu data yet</div>
+              ? marginItems.map(item => (
+                <div key={item.id} className="db-margin-row">
+                  <div className="db-margin-name">{item.name}</div>
+                  <div className="db-margin-track">
+                    <div className="db-margin-fill" style={{ width: `${Math.max(0, Math.min(100, item.margin))}%`, background: getMarginColor(item.margin) }} />
+                  </div>
+                  <div className="db-margin-pct" style={{ color: getMarginColor(item.margin) }}>{item.margin.toFixed(1)}%</div>
+                </div>
+              ))
+              : <div className="db-empty">No menu data yet</div>
             }
           </div>
 
           {/* RECENT INVOICES */}
-          <div className="db-card-inv" style={{ gridColumn: 4, gridRow: 1, background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px) clamp(10px,0.9vw,18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(7px,0.7vh,12px)', flexShrink: 0 }}>
-              <div style={{ fontSize: 'var(--fs-card-title)', fontWeight: 600, color: '#e8e2d8', display: 'flex', alignItems: 'center', gap: 'clamp(4px,0.3vw,6px)' }}>
-                <svg style={{ width: 'clamp(10px,0.8vw,14px)', height: 'clamp(10px,0.8vw,14px)' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                </svg>
+          <div className="db-card" style={{ gridColumn: 4, gridRow: 1 }}>
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 Recent Invoices
               </div>
-              <button onClick={() => router.push('/client/invoices')} style={{ fontSize: 'var(--fs-sub)', color: '#02a4ba', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>View all →</button>
+              <button className="db-card-act" onClick={() => router.push('/client/invoices')}>View all →</button>
             </div>
             {data.recentInvoices.length > 0
               ? data.recentInvoices.map(inv => (
-                <div key={inv.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--row-pad-v) var(--row-pad-h)', background: '#0f0e0c', borderRadius: 'clamp(4px,0.3vw,6px)', marginBottom: 'clamp(4px,0.4vh,7px)', flexShrink: 0 }}>
+                <div key={inv.id} className="db-row">
                   <div>
-                    <div style={{ fontSize: 'var(--fs-body)', fontWeight: 500, color: '#e8e2d8' }}>{inv.number}</div>
-                    <div style={{ fontSize: 'var(--fs-sub)', color: '#4a453e', marginTop: 1 }}>{inv.supplier}</div>
+                    <div className="db-row-name">{inv.number}</div>
+                    <div className="db-row-sub">{inv.supplier}</div>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: '#e8e2d8' }}>{formatCurrency(inv.amount)}</div>
-                    <div style={{ fontSize: 'var(--fs-sub)', color: '#4a453e', marginTop: 1 }}>{formatDate(inv.date)}</div>
+                  <div>
+                    <div className="db-row-val">{formatCurrency(inv.amount)}</div>
+                    <div className="db-row-date">{formatDate(inv.date)}</div>
                   </div>
                 </div>
               ))
-              : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-body)', color: '#4a453e' }}>No invoices yet</div>
+              : <div className="db-empty">No invoices yet</div>
             }
           </div>
 
-          {/* MONTHLY SPENDING CHART */}
-          <div className="db-card-chart" style={{ gridColumn: '2/4', gridRow: 2, background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px) clamp(10px,0.9vw,18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(7px,0.7vh,12px)', flexShrink: 0 }}>
-              <div style={{ fontSize: 'var(--fs-card-title)', fontWeight: 600, color: '#e8e2d8', display: 'flex', alignItems: 'center', gap: 'clamp(4px,0.3vw,6px)' }}>
-                <svg style={{ width: 'clamp(10px,0.8vw,14px)', height: 'clamp(10px,0.8vw,14px)' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                </svg>
+          {/* MONTHLY SPENDING */}
+          <div className="db-card" style={{ gridColumn: '2/4', gridRow: 2 }}>
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                 Monthly Spending
               </div>
-              <button onClick={() => router.push('/client/invoices')} style={{ fontSize: 'var(--fs-sub)', color: '#02a4ba', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>View all →</button>
+              <button className="db-card-act" onClick={() => router.push('/client/invoices')}>View all →</button>
             </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--bar-gap)', flex: 1, minHeight: 0 }}>
+            <div className="db-chart-outer">
+              <div className="db-chart">
                 {(data.monthlySpending || []).map(({ month, total }) => (
-                  <div key={month} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px,0.2vh,4px)', height: '100%' }}>
-                    <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
-                      <div style={{ width: '100%', borderRadius: 'clamp(2px,0.2vw,4px) clamp(2px,0.2vw,4px) 0 0', background: getBarColor(total), height: `${Math.max(2, (total / maxSpend) * 90)}%` }} />
+                  <div key={month} className="db-bar-col">
+                    <div className="db-bar-track">
+                      <div className="db-bar" style={{ height: `${Math.max(2, (total / maxSpend) * 92)}%`, background: getBarColor(total) }} />
                     </div>
-                    <div style={{ fontSize: 'clamp(8px,0.6vw,11px)', color: '#3a3630' }}>{month.slice(0, 3)}</div>
+                    <div className="db-bar-lbl">{month.slice(0, 3)}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', gap: 'clamp(8px,0.8vw,16px)', marginTop: 'clamp(5px,0.5vh,9px)', flexShrink: 0, flexWrap: 'wrap' }}>
+              <div className="db-legend">
                 {[{ c: '#c04040', l: 'High (>$5k)' }, { c: '#d4a020', l: 'Moderate' }, { c: '#02a4ba', l: 'Normal' }, { c: '#1e1c18', l: 'No spend', b: '1px solid #2a2620' }].map(({ c, l, b }) => (
-                  <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 'clamp(3px,0.25vw,5px)', fontSize: 'clamp(8px,0.6vw,11px)', color: '#4a453e' }}>
-                    <div style={{ width: 'var(--legend-dot)', height: 'var(--legend-dot)', borderRadius: '50%', background: c, border: b, flexShrink: 0 }} />
+                  <div key={l} className="db-legend-item">
+                    <div className="db-legend-dot" style={{ background: c, border: b }} />
                     {l}
                   </div>
                 ))}
@@ -588,26 +754,24 @@ export default function ClientDashboard() {
           </div>
 
           {/* TOP INGREDIENT COSTS */}
-          <div className="db-card-ing" style={{ gridColumn: 4, gridRow: 2, background: '#13120f', border: '1px solid #2a2620', borderRadius: 'var(--r)', padding: 'clamp(10px,0.8vw,16px) clamp(10px,0.9vw,18px)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(7px,0.7vh,12px)', flexShrink: 0 }}>
-              <div style={{ fontSize: 'var(--fs-card-title)', fontWeight: 600, color: '#e8e2d8', display: 'flex', alignItems: 'center', gap: 'clamp(4px,0.3vw,6px)' }}>
-                <svg style={{ width: 'clamp(10px,0.8vw,14px)', height: 'clamp(10px,0.8vw,14px)' }} viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-                </svg>
+          <div className="db-card" style={{ gridColumn: 4, gridRow: 2 }}>
+            <div className="db-card-hd">
+              <div className="db-card-title">
+                <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
                 Top Ingredient Costs
               </div>
             </div>
             {data.ingredientTrends.length > 0
               ? data.ingredientTrends.map(ing => (
-                <div key={ing.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--row-pad-v) var(--row-pad-h)', background: '#0f0e0c', borderRadius: 'clamp(4px,0.3vw,6px)', marginBottom: 'clamp(4px,0.4vh,7px)', flexShrink: 0 }}>
+                <div key={ing.name} className="db-row">
                   <div>
-                    <div style={{ fontSize: 'var(--fs-body)', color: '#9a9086' }}>{ing.name}</div>
-                    <div style={{ fontSize: 'var(--fs-sub)', color: '#4a453e', marginTop: 1 }}>per {ing.unit}</div>
+                    <div className="db-row-name" style={{ color: '#9a9086' }}>{ing.name}</div>
+                    <div className="db-row-sub">per {ing.unit}</div>
                   </div>
-                  <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: '#02a4ba' }}>{formatCurrencyDetailed(ing.price)}</div>
+                  <div className="db-ing-val">{formatCurrencyDetailed(ing.price)}</div>
                 </div>
               ))
-              : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'var(--fs-body)', color: '#4a453e' }}>No ingredient data yet</div>
+              : <div className="db-empty">No ingredient data yet</div>
             }
           </div>
 
