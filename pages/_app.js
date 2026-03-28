@@ -1,11 +1,12 @@
-import '../styles/globals.css'
+// pages/_app.js
+import '../styles/globals.css';
+import { useEffect } from 'react';
+import { registerServiceWorker } from '../lib/registerSW';
 
 export default function App({ Component, pageProps }) {
-  return <Component {...pageProps} />
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+
+  return <Component {...pageProps} />;
 }
-
-import { registerServiceWorker } from '../lib/registerSW';
-import { useEffect } from 'react';
-
-// Inside your App component:
-useEffect(() => { registerServiceWorker(); }, []);
