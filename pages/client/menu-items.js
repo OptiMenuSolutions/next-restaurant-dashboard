@@ -268,6 +268,12 @@ export default function ClientMenuItems() {
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId) fetchMenuItems(); }, [restaurantId]);
   useEffect(() => { if (selectedItem && restaurantId) fetchItemDetail(selectedItem); }, [selectedItem, restaurantId]);
+  useEffect(() => {
+    router.prefetch('/client/dashboard');
+    router.prefetch('/client/invoices');
+    router.prefetch('/client/ingredients');
+    router.prefetch('/client/menu-items');
+  }, []);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -385,15 +391,7 @@ export default function ClientMenuItems() {
     setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
 
-  if (loading) return (
-    <>
-      <style>{CSS}</style>
-      <div style={{ background: '#0a0908', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <div style={{ width: 28, height: 28, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-        <div style={{ fontSize: 'clamp(11px,0.9vw,15px)', color: '#e8e2d8' }}>Loading Menu Items</div>
-      </div>
-    </>
-  );
+
 
   return (
     <>
@@ -466,6 +464,12 @@ export default function ClientMenuItems() {
         </div>
 
         {/* BODY */}
+        {loading ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+            <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e' }}>Loading menu items...</div>
+          </div>
+        ) : (
         <div className="mi-body">
 
           {/* CARD GRID */}
@@ -799,6 +803,7 @@ export default function ClientMenuItems() {
             )}
           </div>
         </div>
+        )}
       </div>
     </>
   );
