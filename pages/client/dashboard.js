@@ -508,6 +508,7 @@ export default function ClientDashboard() {
     try {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) { setError("Authentication required"); setLoading(false); return; }
+      setUserEmail(user.email || '');
       const { data: profile, error: profileError } = await supabase.from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
       if (profileError || !profile?.restaurant_id) { setError("Could not determine restaurant access"); setLoading(false); return; }
       setRestaurantId(profile.restaurant_id);

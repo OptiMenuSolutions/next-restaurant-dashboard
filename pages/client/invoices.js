@@ -361,6 +361,7 @@ export default function ClientInvoices() {
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push('/client/login'); return; }
+    setUserEmail(user.email || '');
     const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
     if (!profile?.restaurant_id) return;
     setRestaurantId(profile.restaurant_id);
