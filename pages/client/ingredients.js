@@ -343,46 +343,218 @@ export default function ClientIngredients() {
 
 
 
-if (isMobile) {
-  return (
-    <>
-      <style>{CSS}</style>
-      <div className="mob-root" style={{ position: 'relative' }}>
+// ── PASTE THIS BLOCK INTO ingredients.js IMMEDIATELY BEFORE the desktop return ──
+// Find: return ( <> <style>{CSS}</style> <div className="ing-root">
+// Paste this entire block above it.
 
-        {/* Header */}
-        <div className="mob-header">
-          <div className="mob-logo">Opti<span>Menu</span></div>
-          <div className="mob-avatar">{getUserInitials(userName)}</div>
-        </div>
+  if (isMobile) {
+    const navItems = [
+      { label: 'Dashboard', path: '/client/dashboard', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+      { label: 'Invoices', path: '/client/invoices', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { label: 'Ingredients', path: '/client/ingredients', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
+      { label: 'Menu', path: '/client/menu-items', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+    ];
 
-        {/* Title + stats */}
-        <div className="mob-titlebar">...</div>
-        <div className="mob-stats">...</div>
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="mob-root" style={{ position: 'relative' }}>
 
-        {/* Full-width scrollable list */}
-        <div className="mob-list-body">
-          {filtered.map(item => (
-            <div className="mob-list-row" onClick={() => selectItem(item)}>...</div>
-          ))}
-        </div>
-
-        {/* Slide-in detail overlay when item selected */}
-        {selectedItem && (
-          <div className="mob-detail-overlay">
-            <div className="mob-detail-hd">
-              <button className="mob-back-btn" onClick={() => setSelectedItem(null)}>← Back</button>
-              <div className="mob-detail-title">{selectedItem.name}</div>
-            </div>
-            <div className="mob-detail-body">...</div>
+          {/* Header */}
+          <div className="mob-header">
+            <div className="mob-logo">Opti<span>Menu</span></div>
+            <div className="mob-avatar">{getUserInitials(userName)}</div>
           </div>
-        )}
 
-        {/* Bottom nav */}
-        <div className="mob-bottom-nav">...</div>
-      </div>
-    </>
-  );
-}
+          {/* Title bar */}
+          <div className="mob-titlebar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div className="mob-page-title">Ingredients</div>
+              <div className="mob-page-sub">Monitor costs and price trends</div>
+            </div>
+            <button className="mob-add-btn">+ Add</button>
+          </div>
+
+          {/* Stats */}
+          <div className="mob-stats">
+            {[
+              { v: ingredients.length, l: 'Total', c: '#02a4ba' },
+              { v: unpriced.length, l: 'Unpriced', c: '#c04040' },
+              { v: priced.length, l: 'Priced', c: '#2a8a5a' },
+              { v: highest > 0 ? formatCurrencyShort(highest) : '—', l: 'Highest', c: '#d4a020' },
+              { v: avgPrice > 0 ? formatCurrencyShort(avgPrice) : '—', l: 'Avg Price', c: '#e8e2d8' },
+            ].map(({ v, l, c }) => (
+              <div key={l} className="mob-stat">
+                <div className="mob-stat-v" style={{ color: c }}>{v}</div>
+                <div className="mob-stat-l">{l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="mob-search-bar">
+            <input className="mob-search-input" placeholder="Search by name or unit..."
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+
+          {/* List header */}
+          <div className="mob-list-head" style={{ gridTemplateColumns: '2fr 1.2fr .8fr 1.2fr' }}>
+            <div className="mob-list-th">Name</div>
+            <div className="mob-list-th">Price</div>
+            <div className="mob-list-th">Unit</div>
+            <div className="mob-list-th">Last Order</div>
+          </div>
+
+          {/* List */}
+          {loading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading ingredients...</div>
+            </div>
+          ) : (
+            <div className="mob-list-body">
+              {filtered.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 }}>
+                  <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No ingredients yet'}</div>
+                </div>
+              ) : filtered.map(ing => {
+                const hasPrice = ing.last_price && parseFloat(ing.last_price) > 0;
+                const recent = isRecent(ing.last_ordered_at);
+                return (
+                  <div key={ing.id}
+                    className={`mob-list-row${selectedIngredient?.id === ing.id ? ' selected' : ''}`}
+                    style={{ gridTemplateColumns: '2fr 1.2fr .8fr 1.2fr' }}
+                    onClick={() => selectIngredient(ing)}>
+                    <div>
+                      <div className="mob-td primary">{ing.name || 'Unnamed'}</div>
+                      {recent && <span style={{ fontSize: 9, background: 'rgba(42,138,90,.1)', color: '#2a8a5a', padding: '1px 5px', borderRadius: 5, marginTop: 2, display: 'inline-block' }}>Recent</span>}
+                    </div>
+                    <div className={`mob-td${hasPrice ? ' amount' : ''}`} style={!hasPrice ? { color: '#4a453e', fontStyle: 'italic' } : {}}>
+                      {hasPrice ? formatCurrency(ing.last_price) : 'No price'}
+                    </div>
+                    <div className="mob-td">{ing.unit || '—'}</div>
+                    <div className="mob-td">{ing.last_ordered_at ? formatDateShort(ing.last_ordered_at) : <span style={{ color: '#4a453e' }}>Never</span>}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Detail overlay */}
+          {selectedIngredient && (
+            <div className="mob-detail-overlay">
+              <div className="mob-detail-hd">
+                <button className="mob-back-btn" onClick={() => { setSelectedIngredient(null); setPriceHistory([]); setPurchaseHistory([]); router.replace('/client/ingredients', undefined, { shallow: true }); }}>← Back</button>
+                <div className="mob-detail-title">{selectedIngredient.name}</div>
+                <div style={{ fontSize: 11, color: '#4a453e' }}>{selectedIngredient.unit || 'no unit'}</div>
+              </div>
+              <div className="mob-detail-body">
+
+                {/* Info */}
+                <div className="mob-dfield-grid">
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Name</div><div className="mob-dfield-val">{selectedIngredient.name}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Current Price</div><div className="mob-dfield-val accent">{selectedIngredient.last_price ? formatCurrency(selectedIngredient.last_price) : '—'}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Unit</div><div className="mob-dfield-val">{selectedIngredient.unit || '—'}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Last Ordered</div><div className="mob-dfield-val">{formatDate(selectedIngredient.last_ordered_at)}</div></div>
+                </div>
+
+                {/* Stats */}
+                {loadingDetail ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 12 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    Loading history...
+                  </div>
+                ) : (
+                  <>
+                    <div className="mob-dfield-grid">
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Avg Price</div><div className="mob-dfield-val">{avgIng > 0 ? formatCurrency(avgIng) : '—'}</div></div>
+                      <div className="mob-dfield">
+                        <div className="mob-dfield-lbl">Price Change</div>
+                        <div className="mob-dfield-val" style={{ color: priceChangePct > 0 ? '#c04040' : priceChangePct < 0 ? '#2a8a5a' : '#9a9086' }}>
+                          {prices.length > 1 ? `${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(1)}%` : '—'}
+                        </div>
+                      </div>
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Total Orders</div><div className="mob-dfield-val">{purchaseHistory.length}</div></div>
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">First Seen</div><div className="mob-dfield-val">{priceHistory.length > 0 ? formatDate(priceHistory[0].date) : '—'}</div></div>
+                    </div>
+
+                    {/* Sparkline */}
+                    {priceHistory.length > 1 && (
+                      <div style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 10 }}>Price History</div>
+                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 60 }}>
+                          {priceHistory.map((p, i) => {
+                            const prev = i > 0 ? priceHistory[i - 1].price : null;
+                            const maxP = Math.max(...priceHistory.map(x => x.price), 1);
+                            const minP = Math.min(...priceHistory.map(x => x.price));
+                            const range = maxP - minP || 1;
+                            const h = Math.max(5, ((p.price - minP) / range) * 85 + 5);
+                            const color = !prev ? '#02a4ba' : p.price > prev ? '#c04040' : p.price < prev ? '#2a8a5a' : '#02a4ba';
+                            return (
+                              <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, height: '100%' }}>
+                                <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
+                                  <div style={{ width: '100%', height: `${h}%`, background: color, opacity: .75, borderRadius: '2px 2px 0 0' }} />
+                                </div>
+                                <div style={{ fontSize: 8, color: '#3a3630' }}>{new Date(p.date).toLocaleDateString('en-US', { month: 'short' })}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                          <div style={{ fontSize: 10, color: '#4a453e' }}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
+                          <div style={{ fontSize: 10, color: '#02a4ba', fontWeight: 600 }}>{formatDate(priceHistory[priceHistory.length - 1].date)} — {formatCurrency(priceHistory[priceHistory.length - 1].price)}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Purchase history */}
+                    {purchaseHistory.length > 0 && (
+                      <div style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px', marginBottom: 10 }}>Purchase History ({purchaseHistory.length})</div>
+                        {purchaseHistory.slice(0, 6).map((p, i) => {
+                          const price = parseFloat(p.unit_cost);
+                          const prev = purchaseHistory[i + 1] ? parseFloat(purchaseHistory[i + 1].unit_cost) : null;
+                          const dotColor = prev === null ? '#02a4ba' : price > prev ? '#c04040' : price < prev ? '#2a8a5a' : '#6b6358';
+                          return (
+                            <div key={p.id || i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderBottom: '1px solid #1a1915' }}>
+                              <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
+                              <div style={{ flex: 1, fontSize: 12, color: '#9a9086', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                <span style={{ color: '#e8e2d8', fontWeight: 500 }}>{p.invoices?.number || 'Invoice'}</span>
+                                {p.invoices?.supplier ? ` · ${p.invoices.supplier}` : ''}
+                              </div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: dotColor, flexShrink: 0 }}>{formatCurrency(p.unit_cost)}</div>
+                              <div style={{ fontSize: 11, color: '#4a453e', flexShrink: 0 }}>{p.invoices?.date ? formatDateShort(p.invoices.date) : '—'}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom nav */}
+          <div className="mob-bottom-nav">
+            {navItems.map(({ label, path, icon }) => {
+              const active = path === '/client/ingredients';
+              return (
+                <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
+                  <div className={`mob-nav-icon${active ? ' active' : ''}`}>{icon}</div>
+                  <div className={`mob-nav-label${active ? ' active' : ''}`}>{label}</div>
+                  {active && <div className="mob-nav-dot" />}
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      </>
+    );
+  }
+
+  // ── END MOBILE — desktop return follows ──
 
   return (
     <>
