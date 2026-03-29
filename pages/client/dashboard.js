@@ -635,7 +635,7 @@ export default function ClientDashboard() {
                 <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
                 Active
               </div>
-              <div className="mob-avatar">{getUserInitials(userName)}</div>
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
             </div>
           </div>
 
