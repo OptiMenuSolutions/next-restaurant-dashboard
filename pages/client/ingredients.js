@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
+import ProfileDropdown from '../../components/ProfileDropdown';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
