@@ -211,6 +211,7 @@ export default function ClientIngredients() {
   const [loading, setLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState("");
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState('asc');
