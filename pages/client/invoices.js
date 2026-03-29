@@ -264,7 +264,7 @@ const CSS = `
   .mob-linked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(42,138,90,.12); color: #2a8a5a; }
   .mob-unlinked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(212,160,32,.1); color: #d4a020; }
   .mob-total-bar { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
-  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-shrink: 0; }
+  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: max(20px, calc(8px + env(safe-area-inset-bottom))); display: flex; flex-shrink: 0; }
   .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
   .mob-nav-icon svg { width: 20px; height: 20px; stroke: #4a453e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .mob-nav-icon.active svg { stroke: #02a4ba; }
