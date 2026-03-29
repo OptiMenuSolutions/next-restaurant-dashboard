@@ -366,7 +366,7 @@ export default function ClientIngredients() {
           {/* Header */}
           <div className="mob-header">
             <div className="mob-logo">Opti<span>Menu</span></div>
-            <div className="mob-avatar">{getUserInitials(userName)}</div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
 
           {/* Title bar */}
@@ -584,7 +584,7 @@ export default function ClientIngredients() {
               Active
             </div>
             <input className="ing-search-sm" placeholder="Search..." />
-            <div className="ing-avatar">{getUserInitials(userName)}</div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
