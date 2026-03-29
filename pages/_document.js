@@ -25,6 +25,7 @@ export default function Document() {
         <link rel="shortcut icon" href="/icons/icon-192x192.png" />
 
         {/* ── Mobile meta ── */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="format-detection" content="telephone=no" />
         <meta name="msapplication-TileColor" content="#0a0908" />
