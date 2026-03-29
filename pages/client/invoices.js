@@ -337,6 +337,7 @@ export default function ClientInvoices() {
   const [loading, setLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState("");
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [invoiceItems, setInvoiceItems] = useState([]);
