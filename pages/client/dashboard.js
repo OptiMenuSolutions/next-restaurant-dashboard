@@ -481,6 +481,7 @@ export default function ClientDashboard() {
   const [error, setError] = useState("");
   const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
   const [restaurantName, setRestaurantName] = useState("Your Restaurant");
   const [marginView, setMarginView] = useState("high");
   const [aiLoading, setAiLoading] = useState(false);
