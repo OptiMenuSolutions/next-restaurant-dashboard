@@ -433,7 +433,7 @@ const GLOBAL_CSS = `
   .mob-ing-name { font-size: 13px; color: #9a9086; }
   .mob-ing-unit { font-size: 11px; color: #4a453e; margin-top: 2px; }
   .mob-ing-price { font-size: 13px; font-weight: 600; color: #02a4ba; }
-  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: max(20px, calc(8px + env(safe-area-inset-bottom))); display: flex; flex-shrink: 0; }
+  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-shrink: 0; }
   .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
   .mob-nav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
   .mob-nav-icon svg { width: 20px; height: 20px; stroke: #4a453e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
