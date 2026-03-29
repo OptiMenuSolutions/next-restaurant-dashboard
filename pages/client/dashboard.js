@@ -5,6 +5,7 @@ import supabase from "../../lib/supabaseClient";
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { useWindowSize } from "../../lib/useWindowSize";
+import ProfileDropdown from '../../components/ProfileDropdown';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
