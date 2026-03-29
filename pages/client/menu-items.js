@@ -418,7 +418,7 @@ export default function ClientMenuItems() {
             <div className="mob-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button className="mob-add-btn">+ Add Item</button>
-              <div className="mob-avatar">{getUserInitials(userName)}</div>
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
             </div>
           </div>
 
@@ -705,7 +705,7 @@ export default function ClientMenuItems() {
               Active
             </div>
             <input className="mi-search-sm" placeholder="Search..." />
-            <div className="mi-avatar">{getUserInitials(userName)}</div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
