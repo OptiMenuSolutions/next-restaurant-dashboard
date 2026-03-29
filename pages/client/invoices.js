@@ -403,6 +403,47 @@ export default function ClientInvoices() {
   const pendingDash = (pending.length / Math.max(invoices.length, 1)) * donutCirc;
 
 
+  if (isMobile) {
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="mob-root" style={{ position: 'relative' }}>
+
+          {/* Header */}
+          <div className="mob-header">
+            <div className="mob-logo">Opti<span>Menu</span></div>
+            <div className="mob-avatar">{getUserInitials(userName)}</div>
+          </div>
+
+          {/* Title + stats */}
+          <div className="mob-titlebar">...</div>
+          <div className="mob-stats">...</div>
+
+          {/* Full-width scrollable list */}
+          <div className="mob-list-body">
+            {filtered.map(item => (
+              <div className="mob-list-row" onClick={() => selectItem(item)}>...</div>
+            ))}
+          </div>
+
+          {/* Slide-in detail overlay when item selected */}
+          {selectedItem && (
+            <div className="mob-detail-overlay">
+              <div className="mob-detail-hd">
+                <button className="mob-back-btn" onClick={() => setSelectedItem(null)}>← Back</button>
+                <div className="mob-detail-title">{selectedItem.name}</div>
+              </div>
+              <div className="mob-detail-body">...</div>
+            </div>
+          )}
+
+          {/* Bottom nav */}
+          <div className="mob-bottom-nav">...</div>
+        </div>
+      </>
+    );
+  }
+
 
   return (
     <>
