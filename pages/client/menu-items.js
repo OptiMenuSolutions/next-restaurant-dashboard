@@ -393,46 +393,290 @@ export default function ClientMenuItems() {
 
 
 
-if (isMobile) {
-  return (
-    <>
-      <style>{CSS}</style>
-      <div className="mob-root" style={{ position: 'relative' }}>
+// ── PASTE THIS BLOCK INTO menu-items.js IMMEDIATELY BEFORE the desktop return ──
+// Find: return ( <> <style>{CSS}</style> <div className="mi-root">
+// Paste this entire block above it.
 
-        {/* Header */}
-        <div className="mob-header">
-          <div className="mob-logo">Opti<span>Menu</span></div>
-          <div className="mob-avatar">{getUserInitials(userName)}</div>
-        </div>
+  if (isMobile) {
+    const navItems = [
+      { label: 'Dashboard', path: '/client/dashboard', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+      { label: 'Invoices', path: '/client/invoices', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { label: 'Ingredients', path: '/client/ingredients', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
+      { label: 'Menu', path: '/client/menu-items', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+    ];
 
-        {/* Title + stats */}
-        <div className="mob-titlebar">...</div>
-        <div className="mob-stats">...</div>
+    return (
+      <>
+        <style>{CSS}</style>
+        <div className="mob-root" style={{ position: 'relative' }}>
 
-        {/* Full-width scrollable list */}
-        <div className="mob-list-body">
-          {filtered.map(item => (
-            <div className="mob-list-row" onClick={() => selectItem(item)}>...</div>
-          ))}
-        </div>
-
-        {/* Slide-in detail overlay when item selected */}
-        {selectedItem && (
-          <div className="mob-detail-overlay">
-            <div className="mob-detail-hd">
-              <button className="mob-back-btn" onClick={() => setSelectedItem(null)}>← Back</button>
-              <div className="mob-detail-title">{selectedItem.name}</div>
+          {/* Header */}
+          <div className="mob-header">
+            <div className="mob-logo">Opti<span>Menu</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button className="mob-add-btn">+ Add Item</button>
+              <div className="mob-avatar">{getUserInitials(userName)}</div>
             </div>
-            <div className="mob-detail-body">...</div>
           </div>
-        )}
 
-        {/* Bottom nav */}
-        <div className="mob-bottom-nav">...</div>
-      </div>
-    </>
-  );
-}
+          {/* Title bar */}
+          <div className="mob-titlebar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div className="mob-page-title">Menu Engineering</div>
+              <div className="mob-page-sub">Optimize pricing and profitability</div>
+            </div>
+            <select
+              style={{ background: '#1a1915', border: '1px solid #2a2620', borderRadius: 6, padding: '6px 10px', fontSize: 12, color: '#9a9086', fontFamily: "'Inter', sans-serif", outline: 'none' }}
+              value={`${sortBy}-${sortOrder}`}
+              onChange={e => { const [f, d] = e.target.value.split('-'); setSortBy(f); setSortOrder(d); }}>
+              <option value="name-asc">Name A–Z</option>
+              <option value="margin-desc">Margin ↓</option>
+              <option value="price-desc">Price ↓</option>
+              <option value="cost-desc">Cost ↓</option>
+            </select>
+          </div>
+
+          {/* Stats */}
+          <div className="mob-stats">
+            {[
+              { v: menuItems.length, l: 'Items', c: '#02a4ba' },
+              { v: `${avgMargin.toFixed(1)}%`, l: 'Avg Margin', c: avgMargin >= 60 ? '#2a8a5a' : avgMargin >= 40 ? '#02a4ba' : '#d4a020' },
+              { v: belowTarget, l: 'Below Target', c: '#c04040' },
+              { v: incomplete, l: 'Incomplete', c: '#d4a020' },
+              { v: avgPrice > 0 ? formatCurrency(avgPrice) : '—', l: 'Avg Price', c: '#e8e2d8' },
+            ].map(({ v, l, c }) => (
+              <div key={l} className="mob-stat">
+                <div className="mob-stat-v" style={{ color: c }}>{v}</div>
+                <div className="mob-stat-l">{l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="mob-search-bar">
+            <input className="mob-search-input" placeholder="Search menu items..."
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+
+          {/* Card grid */}
+          {loading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading menu items...</div>
+            </div>
+          ) : (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start', WebkitOverflowScrolling: 'touch' }}>
+              {filtered.length === 0 ? (
+                <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 40, gap: 8 }}>
+                  <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
+                </div>
+              ) : filtered.map(item => {
+                const margin = getMarginNum(item.price, item.cost);
+                const mc = getMarginColor(margin);
+                const { label, cls } = getStatus(item);
+                const ingCount = getIngredientCount(item);
+                return (
+                  <div key={item.id}
+                    style={{ background: '#13120f', border: `1px solid ${selectedItem === item.id ? '#02a4ba' : '#2a2620'}`, borderRadius: 10, padding: 12, cursor: 'pointer', position: 'relative', borderLeft: selectedItem === item.id ? '3px solid #02a4ba' : '1px solid #2a2620' }}
+                    onClick={() => selectItem(item.id)}>
+                    <span style={{ position: 'absolute', top: 8, right: 8, fontSize: 9, fontWeight: 600, padding: '2px 5px', borderRadius: 7,
+                      background: cls === 'cs-complete' ? 'rgba(42,138,90,.1)' : cls === 'cs-incomplete' ? 'rgba(192,64,64,.1)' : 'rgba(212,160,32,.1)',
+                      color: cls === 'cs-complete' ? '#2a8a5a' : cls === 'cs-incomplete' ? '#c04040' : '#d4a020' }}>
+                      {label}
+                    </span>
+                    <div style={{ width: 28, height: 28, borderRadius: 7, background: 'rgba(2,164,186,.08)', border: '1px solid rgba(2,164,186,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#02a4ba" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/>
+                      </svg>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#e8e2d8', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 32 }}>{item.name}</div>
+                    <div style={{ fontSize: 10, color: '#4a453e', marginBottom: 8 }}>{ingCount} ingredient{ingCount !== 1 ? 's' : ''}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div><div style={{ fontSize: 9, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.4px' }}>Price</div><div style={{ fontSize: 12, fontWeight: 600, color: '#e8e2d8' }}>{item.price ? formatCurrency(item.price) : '—'}</div></div>
+                      <div style={{ textAlign: 'right' }}><div style={{ fontSize: 9, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.4px' }}>Cost</div><div style={{ fontSize: 12, fontWeight: 600, color: '#e8e2d8' }}>{item.cost ? formatCurrency(item.cost) : '—'}</div></div>
+                    </div>
+                    <div style={{ borderTop: '1px solid #2a2620', paddingTop: 6 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <div style={{ fontSize: 9, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.4px' }}>Margin</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</div>
+                      </div>
+                      <div style={{ background: '#1a1915', borderRadius: 3, height: 4 }}>
+                        <div style={{ height: 4, borderRadius: 3, background: mc, width: `${Math.max(0, Math.min(100, margin || 0))}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Detail overlay */}
+          {selectedItem && selectedItemData && (
+            <div className="mob-detail-overlay">
+              <div className="mob-detail-hd">
+                <button className="mob-back-btn" onClick={() => { setSelectedItem(null); setSelectedItemData(null); setViewMode('overview'); }}>← Back</button>
+                <div className="mob-detail-title">{selectedItemData.item?.name}</div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {['details', 'optimize'].map(v => (
+                    <button key={v} onClick={() => setViewMode(v)}
+                      style={{ background: viewMode === v ? '#1a1915' : 'none', border: '1px solid #2a2620', borderRadius: 5, padding: '4px 8px', fontSize: 11, color: viewMode === v ? '#e8e2d8' : '#4a453e', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                      {v.charAt(0).toUpperCase() + v.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="mob-detail-body">
+                {detailLoading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 12 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    Loading details...
+                  </div>
+                ) : viewMode === 'details' ? (
+                  <>
+                    {/* Metrics */}
+                    <div className="mob-dfield-grid">
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Menu Price</div><div className="mob-dfield-val accent">{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div></div>
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Total Cost</div><div className="mob-dfield-val">{formatCurrency(totalCost)}</div></div>
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Profit Margin</div><div className="mob-dfield-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div></div>
+                      <div className="mob-dfield"><div className="mob-dfield-lbl">Ingredients</div><div className="mob-dfield-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div></div>
+                    </div>
+
+                    {/* Components */}
+                    {selectedItemData.components.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Component Breakdown</div>
+                        {selectedItemData.components.map(c => (
+                          <div key={c.id} style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, overflow: 'hidden' }}>
+                            <div style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                              onClick={() => toggleComp(c.id)}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#e8e2d8' }}>{c.name}</div>
+                                <div style={{ fontSize: 10, color: '#4a453e', marginTop: 2 }}>{c.ingredientCount} ingredients</div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: '#02a4ba' }}>{formatCurrency(c.calculatedCost)}</div>
+                                <div style={{ fontSize: 10, color: '#4a453e', marginTop: 2 }}>{totalCost > 0 ? ((c.calculatedCost / totalCost) * 100).toFixed(0) : 0}% of total</div>
+                              </div>
+                            </div>
+                            {expandedComponents.has(c.id) && (
+                              <div style={{ borderTop: '1px solid #2a2620', padding: '8px 12px', background: '#0f0e0c' }}>
+                                {c.ingredients.map(ing => (
+                                  <div key={ing.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #1a1915' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: ing.hasPrice ? '#2a8a5a' : '#c04040', flexShrink: 0 }} />
+                                      <div>
+                                        <div style={{ fontSize: 12, color: '#e8e2d8' }}>{ing.name}</div>
+                                        <div style={{ fontSize: 10, color: '#4a453e' }}>{ing.quantity} {ing.unit}</div>
+                                      </div>
+                                    </div>
+                                    <div style={{ fontSize: 12, fontWeight: 600, color: '#9a9086' }}>{formatCurrency(ing.totalCost)}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="mob-total-bar">
+                          <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>Total Food Cost</div>
+                          <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#02a4ba' }}>{formatCurrency(totalCost)}</div>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Pricing recs */}
+                    {totalCost > 0 && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Pricing Recommendations</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                          {[
+                            { l: 'Break-even\n30% cost', v: formatCurrency(totalCost / 0.30), c: '#e8e2d8' },
+                            { l: 'Recommended\n25% cost', v: formatCurrency(totalCost / 0.25), c: '#2a8a5a' },
+                            { l: 'Premium\n20% cost', v: formatCurrency(totalCost / 0.20), c: '#e8e2d8' },
+                          ].map(({ l, v, c }) => (
+                            <div key={l} style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, padding: 10, textAlign: 'center' }}>
+                              <div style={{ fontSize: 9, color: '#4a453e', marginBottom: 6, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{l}</div>
+                              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 14, color: c }}>{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  /* Optimize view */
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <div style={{ background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>Original</div>
+                        {[['Cost', formatCurrency(totalCost)], ['Price', formatCurrency(selectedItemData.item?.price)], ['Margin', profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—']].map(([l, v]) => (
+                          <div key={l} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
+                            <span style={{ color: '#6b6358' }}>{l}</span>
+                            <span style={{ color: '#e8e2d8', fontWeight: 500 }}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ background: 'rgba(42,138,90,.05)', border: '1px solid rgba(42,138,90,.2)', borderRadius: 8, padding: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.6px', marginBottom: 10 }}>Optimized</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}><span style={{ color: '#6b6358' }}>Cost</span><span style={{ color: '#e8e2d8', fontWeight: 500 }}>{formatCurrency(optimizedCost)}</span></div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12, alignItems: 'center' }}>
+                          <span style={{ color: '#6b6358' }}>Price</span>
+                          <input type="number" step="0.01" min="0" value={optimizedPrice ?? selectedItemData.item?.price ?? ''} onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)}
+                            style={{ background: '#1a1915', border: '1px solid #2a2620', borderRadius: 4, padding: '2px 6px', fontSize: 12, color: '#e8e2d8', width: 70, textAlign: 'right', outline: 'none', fontFamily: "'Inter', sans-serif" }} />
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, paddingTop: 6, borderTop: '1px solid #2a2620' }}><span style={{ color: '#6b6358' }}>Margin</span><span style={{ color: getMarginColor(optimizedMargin), fontWeight: 600 }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Adjust Portions</div>
+                    {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
+                      const m = getMultiplier(c.id);
+                      return (
+                        <div key={c.id} style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, padding: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                            <div><div style={{ fontSize: 13, fontWeight: 600, color: '#e8e2d8' }}>{c.name}</div><div style={{ fontSize: 10, color: '#4a453e' }}>{c.ingredientCount} ingredients</div></div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: '#02a4ba' }}>{formatCurrency(c.calculatedCost * m)}</div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 11, color: '#6b6358', flexShrink: 0 }}>Portion</span>
+                            <input type="range" min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))}
+                              style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }} />
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#02a4ba', width: 40, textAlign: 'right', flexShrink: 0 }}>{Math.round(m * 100)}%</span>
+                          </div>
+                        </div>
+                      );
+                    }) : (
+                      <div style={{ fontSize: 12, color: '#4a453e', textAlign: 'center', padding: '16px 0' }}>No components to adjust</div>
+                    )}
+                    <button onClick={() => { setMultipliers({}); setOptimizedPrice(null); }}
+                      style={{ background: 'none', border: '1px solid #2a2620', borderRadius: 7, padding: '8px 16px', fontSize: 12, color: '#4a453e', cursor: 'pointer', fontFamily: "'Inter', sans-serif", alignSelf: 'flex-start' }}>
+                      Reset
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom nav */}
+          <div className="mob-bottom-nav">
+            {navItems.map(({ label, path, icon }) => {
+              const active = path === '/client/menu-items';
+              return (
+                <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
+                  <div className={`mob-nav-icon${active ? ' active' : ''}`}>{icon}</div>
+                  <div className={`mob-nav-label${active ? ' active' : ''}`}>{label}</div>
+                  {active && <div className="mob-nav-dot" />}
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+      </>
+    );
+  }
+
+  // ── END MOBILE — desktop return follows ──
 
   return (
     <>
