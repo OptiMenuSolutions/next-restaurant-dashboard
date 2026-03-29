@@ -458,7 +458,7 @@ export default function ClientInvoices() {
             <div className="mob-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button className="mob-add-btn" onClick={() => setShowModal(true)}>+ Upload</button>
-              <div className="mob-avatar">{getUserInitials(userName)}</div>
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
             </div>
           </div>
 
@@ -652,7 +652,7 @@ export default function ClientInvoices() {
               Active
             </div>
             <input className="inv-search-sm" placeholder="Search..." />
-            <div className="inv-avatar">{getUserInitials(userName)}</div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
