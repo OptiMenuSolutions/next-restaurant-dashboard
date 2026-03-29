@@ -887,7 +887,7 @@ export default function ClientDashboard() {
               Active
             </div>
             <input className="db-search" placeholder="Search..." />
-            <div className="db-avatar">{getUserInitials(userName)}</div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
