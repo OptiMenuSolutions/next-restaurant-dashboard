@@ -403,7 +403,18 @@ export default function ClientInvoices() {
   const pendingDash = (pending.length / Math.max(invoices.length, 1)) * donutCirc;
 
 
+  // ── PASTE THIS BLOCK INTO invoices.js IMMEDIATELY BEFORE the desktop return ──
+// Find: return ( <> <style>{CSS}</style> <div className="inv-root">
+// Paste this entire block above it.
+
   if (isMobile) {
+    const navItems = [
+      { label: 'Dashboard', path: '/client/dashboard', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+      { label: 'Invoices', path: '/client/invoices', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { label: 'Ingredients', path: '/client/ingredients', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
+      { label: 'Menu', path: '/client/menu-items', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+    ];
+
     return (
       <>
         <style>{CSS}</style>
@@ -412,38 +423,198 @@ export default function ClientInvoices() {
           {/* Header */}
           <div className="mob-header">
             <div className="mob-logo">Opti<span>Menu</span></div>
-            <div className="mob-avatar">{getUserInitials(userName)}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button className="mob-add-btn" onClick={() => setShowModal(true)}>+ Upload</button>
+              <div className="mob-avatar">{getUserInitials(userName)}</div>
+            </div>
           </div>
 
-          {/* Title + stats */}
-          <div className="mob-titlebar">...</div>
-          <div className="mob-stats">...</div>
+          {/* Title bar */}
+          <div className="mob-titlebar">
+            <div className="mob-page-title">Invoice Center</div>
+            <div className="mob-page-sub">Track expenses and supplier payments</div>
+          </div>
 
-          {/* Full-width scrollable list */}
-          <div className="mob-list-body">
-            {filtered.map(item => (
-              <div className="mob-list-row" onClick={() => selectItem(item)}>...</div>
+          {/* Stats */}
+          <div className="mob-stats">
+            {[
+              { v: invoices.length, l: 'Total', c: '#02a4ba' },
+              { v: processed.length, l: 'Processed', c: '#2a8a5a' },
+              { v: pending.length, l: 'Pending', c: '#d4a020' },
+              { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
+              { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+            ].map(({ v, l, c }) => (
+              <div key={l} className="mob-stat">
+                <div className="mob-stat-v" style={{ color: c }}>{v}</div>
+                <div className="mob-stat-l">{l}</div>
+              </div>
             ))}
           </div>
 
-          {/* Slide-in detail overlay when item selected */}
-          {selectedItem && (
+          {/* Search */}
+          <div className="mob-search-bar">
+            <input className="mob-search-input" placeholder="Search by supplier or invoice number..."
+              value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+
+          {/* List header */}
+          <div className="mob-list-head">
+            <div className="mob-list-th">Supplier</div>
+            <div className="mob-list-th">Invoice No.</div>
+            <div className="mob-list-th">Amount</div>
+            <div className="mob-list-th">Status</div>
+          </div>
+
+          {/* List */}
+          {loading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading invoices...</div>
+            </div>
+          ) : (
+            <div className="mob-list-body">
+              {filtered.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 }}>
+                  <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No invoices yet'}</div>
+                  {!searchTerm && <button className="mob-add-btn" onClick={() => setShowModal(true)}>Upload First Invoice</button>}
+                </div>
+              ) : filtered.map(invoice => {
+                const { label, ok } = getStatus(invoice);
+                return (
+                  <div key={invoice.id}
+                    className={`mob-list-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`}
+                    onClick={() => selectInvoice(invoice)}>
+                    <div className="mob-td primary">{invoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Unknown</span>}</div>
+                    <div className="mob-td">{invoice.number || <span style={{ color: '#4a453e' }}>—</span>}</div>
+                    <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                    <div><span className={`mob-pill ${ok ? 'ok' : 'pend'}`}>{label}</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Detail overlay */}
+          {selectedInvoice && (
             <div className="mob-detail-overlay">
               <div className="mob-detail-hd">
-                <button className="mob-back-btn" onClick={() => setSelectedItem(null)}>← Back</button>
-                <div className="mob-detail-title">{selectedItem.name}</div>
+                <button className="mob-back-btn" onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); router.replace('/client/invoices', undefined, { shallow: true }); }}>← Back</button>
+                <div className="mob-detail-title">{selectedInvoice.supplier || 'Invoice'}</div>
+                <span className={`mob-pill ${getStatus(selectedInvoice).ok ? 'ok' : 'pend'}`}>{getStatus(selectedInvoice).label}</span>
               </div>
-              <div className="mob-detail-body">...</div>
+              <div className="mob-detail-body">
+
+                {/* Info fields */}
+                <div className="mob-dfield-grid">
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Invoice No.</div><div className="mob-dfield-val">{selectedInvoice.number || '—'}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Date</div><div className="mob-dfield-val">{selectedInvoice.date ? formatDateShort(selectedInvoice.date) : '—'}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Supplier</div><div className="mob-dfield-val">{selectedInvoice.supplier || '—'}</div></div>
+                  <div className="mob-dfield"><div className="mob-dfield-lbl">Upload Date</div><div className="mob-dfield-val">{formatDateShort(selectedInvoice.created_at)}</div></div>
+                </div>
+                <div className="mob-dfield">
+                  <div className="mob-dfield-lbl">Total Amount</div>
+                  <div className="mob-dfield-val accent">{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : '—'}</div>
+                </div>
+                {selectedInvoice.file_url && (
+                  <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
+                    style={{ display: 'block', textAlign: 'center', padding: '10px', background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, fontSize: 13, color: '#02a4ba', textDecoration: 'none' }}>
+                    View Invoice File ↗
+                  </a>
+                )}
+
+                {/* Items */}
+                {loadingDetail ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 12 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    Loading items...
+                  </div>
+                ) : invoiceItems.length > 0 ? (
+                  <>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>
+                      Invoice Items ({invoiceItems.length})
+                    </div>
+                    <div className="mob-items-head">
+                      <div className="mob-ith">Item</div>
+                      <div className="mob-ith">Qty</div>
+                      <div className="mob-ith">Cost</div>
+                      <div className="mob-ith">Status</div>
+                    </div>
+                    {invoiceItems.map(item => (
+                      <div key={item.id} className="mob-item-row">
+                        <div className="mob-itd name">{item.item_name || '—'}</div>
+                        <div className="mob-itd">{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}</div>
+                        <div className="mob-itd val">{formatCurrency(calculateItemTotal(item))}</div>
+                        <div>{item.ingredients ? <span className="mob-linked">Linked</span> : <span className="mob-unlinked">Unlinked</span>}</div>
+                      </div>
+                    ))}
+                    <div className="mob-total-bar">
+                      <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>Calculated Total</div>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#02a4ba' }}>{formatCurrency(totalCalculated)}</div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 13, color: '#4a453e', textAlign: 'center', padding: '16px 0' }}>
+                    {getStatus(selectedInvoice).ok ? 'No line items recorded' : 'Pending processing — items will appear once reviewed'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Upload modal */}
+          {showModal && (
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}
+              onClick={() => { if (!uploading) setShowModal(false); }}>
+              <div style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: '16px 16px 0 0', width: '100%', padding: '20px 16px', paddingBottom: 'calc(20px + env(safe-area-inset-bottom, 0px))' }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600, color: '#e8e2d8' }}>Upload Invoices</div>
+                  <button onClick={() => { if (!uploading) setShowModal(false); }} style={{ background: 'none', border: 'none', color: '#4a453e', fontSize: 18, cursor: 'pointer' }}>✕</button>
+                </div>
+                <div style={{ border: '2px dashed #2a2620', borderRadius: 10, padding: 24, textAlign: 'center', marginBottom: 12 }}
+                  onClick={() => document.getElementById('mob-file-input').click()}>
+                  <input id="mob-file-input" type="file" multiple accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
+                  <div style={{ fontSize: 13, color: '#e8e2d8', fontWeight: 500, marginBottom: 4 }}>Tap to browse files</div>
+                  <div style={{ fontSize: 11, color: '#4a453e' }}>PDF, JPG, PNG — up to 10MB</div>
+                </div>
+                {selectedFiles.length > 0 && (
+                  <>
+                    {selectedFiles.map((f, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 7, padding: '9px 12px', marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, color: '#e8e2d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{f.name}</div>
+                        <button onClick={() => setSelectedFiles(prev => prev.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', color: '#4a453e', cursor: 'pointer', marginLeft: 8 }}>✕</button>
+                      </div>
+                    ))}
+                    <button onClick={handleUpload} disabled={uploading}
+                      style={{ width: '100%', background: '#02a4ba', border: 'none', borderRadius: 8, padding: 14, fontSize: 14, fontWeight: 600, color: '#0a0908', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 8, opacity: uploading ? .5 : 1 }}>
+                      {uploading ? 'Uploading...' : `Upload ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}`}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
           {/* Bottom nav */}
-          <div className="mob-bottom-nav">...</div>
+          <div className="mob-bottom-nav">
+            {navItems.map(({ label, path, icon }) => {
+              const active = path === '/client/invoices';
+              return (
+                <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
+                  <div className={`mob-nav-icon${active ? ' active' : ''}`}>{icon}</div>
+                  <div className={`mob-nav-label${active ? ' active' : ''}`}>{label}</div>
+                  {active && <div className="mob-nav-dot" />}
+                </div>
+              );
+            })}
+          </div>
+
         </div>
       </>
     );
   }
 
+  // ── END MOBILE — desktop return follows ──
 
   return (
     <>
