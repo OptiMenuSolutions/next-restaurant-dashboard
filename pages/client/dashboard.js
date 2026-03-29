@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import { useWindowSize } from "../../lib/useWindowSize";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -374,6 +375,75 @@ const GLOBAL_CSS = `
     .db-pills { flex-direction: row; flex-wrap: wrap; }
     .db-pill { min-width: 110px; flex: 1; }
   }
+
+  /* ── MOBILE ── */
+  .mob-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .mob-header { background: #0f0e0c; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
+  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; }
+  .mob-logo span { color: #02a4ba; }
+  .mob-avatar { width: 30px; height: 30px; border-radius: 50%; background: #02a4ba; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #0a0908; }
+  .mob-titlebar { background: #13120f; border-bottom: 1px solid #2a2620; padding: 10px 16px; flex-shrink: 0; }
+  .mob-page-title { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; line-height: 1; }
+  .mob-page-sub { font-size: 11px; color: #4a453e; margin-top: 3px; }
+  .mob-stats { background: #13120f; border-bottom: 1px solid #2a2620; padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
+  .mob-stats::-webkit-scrollbar { display: none; }
+  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid #2a2620; }
+  .mob-stat:last-child { border-right: none; }
+  .mob-stat-v { font-family: 'Playfair Display', serif; font-size: 16px; line-height: 1; }
+  .mob-stat-l { font-size: 9px; color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
+  .mob-content { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
+  .mob-content::-webkit-scrollbar { display: none; }
+  .mob-card { background: #13120f; border: 1px solid #2a2620; border-radius: 10px; padding: 14px; flex-shrink: 0; }
+  .mob-card-title { font-size: 11px; font-weight: 600; color: #e8e2d8; text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .mob-card-title svg { width: 12px; height: 12px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mob-pill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mob-pill { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 8px; padding: 10px 12px; }
+  .mob-pill-l { font-size: 10px; color: #6b6358; margin-bottom: 4px; }
+  .mob-pill-v { font-family: 'Playfair Display', serif; font-size: 18px; line-height: 1; }
+  .mob-score-row { display: flex; align-items: center; gap: 16px; }
+  .mob-score-ring { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
+  .mob-score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+  .mob-score-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .mob-score-num { font-family: 'Playfair Display', serif; font-size: 18px; color: #e8e2d8; line-height: 1; }
+  .mob-score-sub { font-size: 9px; color: #4a453e; }
+  .mob-score-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 10px; margin-top: 5px; }
+  .mob-ai-item { background: #0f0e0c; border-radius: 7px; border-left: 2px solid #02a4ba; padding: 10px 12px; margin-bottom: 8px; }
+  .mob-ai-item:last-child { margin-bottom: 0; }
+  .mob-ai-title { font-size: 12px; font-weight: 600; color: #e8e2d8; margin-bottom: 3px; }
+  .mob-ai-desc { font-size: 11px; color: #6b6358; line-height: 1.45; }
+  .mob-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mob-bar-row:last-child { margin-bottom: 0; }
+  .mob-bar-name { font-size: 12px; color: #9a9086; width: 110px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mob-bar-track { flex: 1; background: #1a1915; border-radius: 3px; height: 5px; }
+  .mob-bar-fill { height: 5px; border-radius: 3px; }
+  .mob-bar-pct { font-size: 12px; font-weight: 600; width: 44px; text-align: right; flex-shrink: 0; }
+  .mob-inv-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1915; }
+  .mob-inv-row:last-child { border-bottom: none; }
+  .mob-inv-name { font-size: 13px; font-weight: 500; color: #e8e2d8; }
+  .mob-inv-sub { font-size: 11px; color: #4a453e; margin-top: 2px; }
+  .mob-inv-amt { font-size: 13px; font-weight: 600; color: #02a4ba; text-align: right; }
+  .mob-inv-date { font-size: 11px; color: #4a453e; text-align: right; margin-top: 2px; }
+  .mob-chart { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin-top: 6px; }
+  .mob-chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
+  .mob-chart-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
+  .mob-chart-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; }
+  .mob-chart-lbl { font-size: 8px; color: #3a3630; }
+  .mob-ing-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1915; }
+  .mob-ing-row:last-child { border-bottom: none; }
+  .mob-ing-name { font-size: 13px; color: #9a9086; }
+  .mob-ing-unit { font-size: 11px; color: #4a453e; margin-top: 2px; }
+  .mob-ing-price { font-size: 13px; font-weight: 600; color: #02a4ba; }
+  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); display: flex; flex-shrink: 0; }
+  .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
+  .mob-nav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
+  .mob-nav-icon svg { width: 20px; height: 20px; stroke: #4a453e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mob-nav-icon.active svg { stroke: #02a4ba; }
+  .mob-nav-label { font-size: 10px; color: #4a453e; }
+  .mob-nav-label.active { color: #02a4ba; }
+  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: #02a4ba; }
+  .mob-toggle { display: flex; background: #0f0e0c; border-radius: 6px; padding: 2px; gap: 2px; }
+  .mob-toggle-btn { flex: 1; padding: 5px 10px; border-radius: 5px; font-size: 11px; font-weight: 500; cursor: pointer; border: none; font-family: 'Inter', sans-serif; color: #4a453e; background: transparent; text-align: center; transition: all .15s; }
+  .mob-toggle-btn.active { background: #1a1915; color: #e8e2d8; }
 `;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -405,6 +475,7 @@ function ScoreRing({ score }) {
 
 export default function ClientDashboard() {
   const router = useRouter();
+  const { isMobile } = useWindowSize();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [restaurantId, setRestaurantId] = useState(null);
@@ -543,6 +614,239 @@ export default function ClientDashboard() {
   const marginItems = getMarginItems();
   const spendValues = (data.monthlySpending || []).map(m => m.total);
   const maxSpend = spendValues.length > 0 ? Math.max(...spendValues, 1) : 1;
+
+  // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
+  if (isMobile) {
+    const circumference = 2 * Math.PI * 40;
+    const scoreDash = (data.aiProfitScore.score / 100) * circumference;
+    const { color: scoreColor, label: scoreLabel } = getScoreInfo(data.aiProfitScore.score);
+
+    return (
+      <>
+        <style>{GLOBAL_CSS}</style>
+        <div className="mob-root">
+
+          {/* Header */}
+          <div className="mob-header">
+            <div className="mob-logo">Opti<span>Menu</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#02a4ba' }}>
+                <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+                Active
+              </div>
+              <div className="mob-avatar">{getUserInitials(userName)}</div>
+            </div>
+          </div>
+
+          {/* Title bar */}
+          <div className="mob-titlebar">
+            <div className="mob-page-title">Dashboard</div>
+            <div className="mob-page-sub">
+              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}
+            </div>
+          </div>
+
+          {/* Stats strip */}
+          <div className="mob-stats">
+            {[
+              { v: data.totalInvoices, l: 'Invoices', c: '#02a4ba' },
+              { v: data.totalIngredients, l: 'Ingredients', c: '#e8e2d8' },
+              { v: data.totalMenuItems, l: 'Menu', c: '#e8e2d8' },
+              { v: `${data.averageMargin.toFixed(1)}%`, l: 'Margin', c: getMarginColor(data.averageMargin) },
+              { v: formatCurrency(data.totalSpending), l: 'YTD', c: '#d4a020' },
+            ].map(({ v, l, c }) => (
+              <div key={l} className="mob-stat">
+                <div className="mob-stat-v" style={{ color: c }}>{v}</div>
+                <div className="mob-stat-l">{l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Scrollable content */}
+          {loading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ width: 24, height: 24, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading dashboard...</div>
+            </div>
+          ) : (
+            <div className="mob-content">
+
+              {/* AI Score */}
+              <div className="mob-card">
+                <div className="mob-card-title">
+                  <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                  AI Profit Score
+                </div>
+                <div className="mob-score-row">
+                  <div className="mob-score-ring">
+                    <svg viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" stroke="#1a1915" strokeWidth="9" fill="none"/>
+                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="9" fill="none"
+                        strokeDasharray={`${scoreDash} ${circumference}`} strokeLinecap="round"/>
+                    </svg>
+                    <div className="mob-score-inner">
+                      <div className="mob-score-num">{data.aiProfitScore.score}</div>
+                      <div className="mob-score-sub">/100</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: '#4a453e', marginBottom: 6 }}>{restaurantName}</div>
+                    <div className="mob-score-badge" style={{ background: `${scoreColor}18`, color: scoreColor }}>{scoreLabel}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stat pills */}
+              <div className="mob-pill-grid">
+                {[
+                  { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba' },
+                  { l: 'Unpriced', v: data.unpricedIngredients, c: '#d4a020' },
+                  { l: 'Low Margin', v: data.lowMarginCount, c: '#c04040' },
+                  { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a' },
+                ].map(({ l, v, c }) => (
+                  <div key={l} className="mob-pill">
+                    <div className="mob-pill-l">{l}</div>
+                    <div className="mob-pill-v" style={{ color: c }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* AI Recommendations */}
+              <div className="mob-card">
+                <div className="mob-card-title">
+                  <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                  AI Recommendations
+                  {aiLoading && <div style={{ width: 10, height: 10, border: '1.5px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite', marginLeft: 4 }} />}
+                </div>
+                {(data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
+                  <div key={i} className="mob-ai-item">
+                    <div className="mob-ai-title">{rec.title}</div>
+                    <div className="mob-ai-desc">{rec.description}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Menu Analysis */}
+              <div className="mob-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div className="mob-card-title" style={{ marginBottom: 0 }}>
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    Menu Analysis
+                  </div>
+                  <div className="mob-toggle">
+                    {['high', 'low'].map(v => (
+                      <button key={v} className={`mob-toggle-btn${marginView === v ? ' active' : ''}`} onClick={() => setMarginView(v)}>
+                        {v.charAt(0).toUpperCase() + v.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {marginItems.length > 0 ? marginItems.map(item => (
+                  <div key={item.id} className="mob-bar-row">
+                    <div className="mob-bar-name">{item.name}</div>
+                    <div className="mob-bar-track">
+                      <div className="mob-bar-fill" style={{ width: `${Math.max(0, Math.min(100, item.margin))}%`, background: getMarginColor(item.margin) }} />
+                    </div>
+                    <div className="mob-bar-pct" style={{ color: getMarginColor(item.margin) }}>{item.margin.toFixed(1)}%</div>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12, color: '#4a453e', textAlign: 'center', padding: '8px 0' }}>No menu data yet</div>
+                )}
+              </div>
+
+              {/* Monthly Spending */}
+              <div className="mob-card">
+                <div className="mob-card-title">
+                  <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  Monthly Spending
+                </div>
+                <div className="mob-chart">
+                  {(data.monthlySpending || []).map(({ month, total }) => (
+                    <div key={month} className="mob-chart-col">
+                      <div className="mob-chart-track">
+                        <div className="mob-chart-bar" style={{ height: `${Math.max(2, (total / maxSpend) * 92)}%`, background: getBarColor(total) }} />
+                      </div>
+                      <div className="mob-chart-lbl">{month.slice(0, 1)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recent Invoices */}
+              <div className="mob-card">
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div className="mob-card-title" style={{ marginBottom: 0 }}>
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Recent Invoices
+                  </div>
+                  <button onClick={() => router.push('/client/invoices')} style={{ fontSize: 11, color: '#02a4ba', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>View all →</button>
+                </div>
+                {data.recentInvoices.length > 0 ? data.recentInvoices.map(inv => (
+                  <div key={inv.id} className="mob-inv-row">
+                    <div>
+                      <div className="mob-inv-name">{inv.number}</div>
+                      <div className="mob-inv-sub">{inv.supplier}</div>
+                    </div>
+                    <div>
+                      <div className="mob-inv-amt">{formatCurrency(inv.amount)}</div>
+                      <div className="mob-inv-date">{formatDate(inv.date)}</div>
+                    </div>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12, color: '#4a453e', textAlign: 'center', padding: '8px 0' }}>No invoices yet</div>
+                )}
+              </div>
+
+              {/* Top Ingredient Costs */}
+              <div className="mob-card">
+                <div className="mob-card-title">
+                  <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                  Top Ingredient Costs
+                </div>
+                {data.ingredientTrends.length > 0 ? data.ingredientTrends.map(ing => (
+                  <div key={ing.name} className="mob-ing-row">
+                    <div>
+                      <div className="mob-ing-name">{ing.name}</div>
+                      <div className="mob-ing-unit">per {ing.unit}</div>
+                    </div>
+                    <div className="mob-ing-price">{formatCurrencyDetailed(ing.price)}</div>
+                  </div>
+                )) : (
+                  <div style={{ fontSize: 12, color: '#4a453e', textAlign: 'center', padding: '8px 0' }}>No ingredient data yet</div>
+                )}
+              </div>
+
+              <div style={{ height: 8, flexShrink: 0 }} />
+            </div>
+          )}
+
+          {/* Bottom nav */}
+          <div className="mob-bottom-nav">
+            {[
+              { label: 'Dashboard', path: '/client/dashboard', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+              { label: 'Invoices', path: '/client/invoices', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+              { label: 'Ingredients', path: '/client/ingredients', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
+              { label: 'Menu', path: '/client/menu-items', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+            ].map(({ label, path, icon }) => {
+              const active = path === '/client/dashboard';
+              return (
+                <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
+                  <div className={`mob-nav-icon${active ? ' active' : ''}`}>{icon}</div>
+                  <div className={`mob-nav-label${active ? ' active' : ''}`}>{label}</div>
+                  {active && <div className="mob-nav-dot" />}
+                </div>
+              );
+            })}
+          </div>
+
+        </div>
+        <Analytics />
+        <SpeedInsights />
+      </>
+    );
+  }
+
+  // ── DESKTOP LAYOUT ─────────────────────────────────────────────────────────
 
 
 
