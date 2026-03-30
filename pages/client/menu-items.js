@@ -267,7 +267,7 @@ export default function ClientMenuItems() {
   const [multipliers, setMultipliers] = useState({});
   const [optimizedPrice, setOptimizedPrice] = useState(null);
 
-  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items'];
+  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId) fetchMenuItems(); }, [restaurantId]);

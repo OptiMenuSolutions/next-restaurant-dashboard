@@ -613,7 +613,7 @@ export default function ClientDashboard() {
     return marginView === 'high' ? sorted.slice(0, 5) : sorted.slice(-5).reverse();
   }
 
-  const tabs = ["Dashboard", "Invoices", "Ingredients", "Menu Items"];
+  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const marginItems = getMarginItems();
   const spendValues = (data.monthlySpending || []).map(m => m.total);
   const maxSpend = spendValues.length > 0 ? Math.max(...spendValues, 1) : 1;

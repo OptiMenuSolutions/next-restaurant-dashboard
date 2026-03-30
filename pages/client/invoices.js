@@ -348,7 +348,7 @@ export default function ClientInvoices() {
   const [confirmMsg, setConfirmMsg] = useState('');
   const [dragOver, setDragOver] = useState(false);
 
-  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items'];
+  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId) fetchInvoices(); }, [restaurantId]);

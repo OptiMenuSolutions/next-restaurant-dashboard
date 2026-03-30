@@ -220,7 +220,7 @@ export default function ClientIngredients() {
   const [purchaseHistory, setPurchaseHistory] = useState([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items'];
+  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId) fetchIngredients(); }, [restaurantId]);
