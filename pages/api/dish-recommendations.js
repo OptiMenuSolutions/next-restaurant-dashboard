@@ -186,7 +186,7 @@ confidence: 0-100 score reflecting how strongly the data supports this recommend
 talking_point: natural, conversational language a server would actually say — not robotic, no mention of margins or business metrics`;
 
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
+      model: 'claude-sonnet-4-5',
       max_tokens: 800,
       messages: [{ role: 'user', content: prompt }],
     });
