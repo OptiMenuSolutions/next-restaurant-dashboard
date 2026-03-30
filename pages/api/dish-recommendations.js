@@ -152,21 +152,27 @@ Return ONLY valid JSON, no other text:
     {
       "dish": "Exact dish name from the menu",
       "reason": "One clear sentence explaining why to push this today",
+      "talking_point": "A natural, one-sentence script for wait staff to use when recommending this dish to guests",
       "margin": 72.5,
+      "confidence": 85,
       "urgency": "high",
       "type": "inventory"
     },
     {
       "dish": "Exact dish name",
       "reason": "One clear sentence",
+      "talking_point": "A natural one-sentence script for wait staff",
       "margin": 65.0,
+      "confidence": 78,
       "urgency": "medium",
       "type": "margin"
     },
     {
       "dish": "Exact dish name",
       "reason": "One clear sentence",
+      "talking_point": "A natural one-sentence script for wait staff",
       "margin": 58.0,
+      "confidence": 70,
       "urgency": "low",
       "type": "trending"
     }
@@ -175,7 +181,9 @@ Return ONLY valid JSON, no other text:
 
 urgency: "high" = spoilage risk, "medium" = strong margin opportunity, "low" = momentum play
 type: "inventory" = move stock, "margin" = profit optimization, "trending" = capitalize on sales momentum
-margin: actual margin percentage as a number, or null if unknown`;
+margin: actual margin percentage as a number, or null if unknown
+confidence: 0-100 score reflecting how strongly the data supports this recommendation
+talking_point: natural, conversational language a server would actually say — not robotic, no mention of margins or business metrics`;
 
     const message = await anthropic.messages.create({
       model: 'claude-3-5-sonnet-20241022',
