@@ -141,7 +141,7 @@ export default function CheckoutSuccessPage() {
 
   function handleGoToDashboard() {
     setRedirecting(true);
-    router.push('/client/dashboard');
+    router.push('/client/dashboard?tour=true');
   }
 
   if (!verified) return (
