@@ -325,6 +325,22 @@ export default function ProfilePage() {
     }
   }
 
+  async function handleManageBilling() {
+    if (!restaurantId) return;
+    try {
+      const res = await fetch('/api/stripe/customer-portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantId }),
+      });
+      const { url, error } = await res.json();
+      if (error) throw new Error(error);
+      window.location.href = url;
+    } catch {
+      flash('Could not open billing portal — please try again', true);
+    }
+  }
+
   // ── Sign out ─────────────────────────────────────────────────────────────────
 
   async function handleSignOut() {
@@ -552,7 +568,7 @@ export default function ProfilePage() {
                   <div className="pr-field-val">Founding Member</div>
                   <div className="pr-field-hint">Locked-in rate for life. Renews monthly.</div>
                 </div>
-                <div className="pr-link-row" onClick={() => window.open('https://billing.stripe.com/p/login/placeholder', '_blank')}>
+                <div className="pr-link-row" onClick={handleManageBilling}>
                   <div>
                     <div className="pr-link-label">Manage Billing</div>
                     <div className="pr-link-sub">Update payment method, view invoices</div>
