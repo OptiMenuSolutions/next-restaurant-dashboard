@@ -5,6 +5,7 @@ import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
 import { parseCSV, detectPOSSystem, buildColumnMapping, normalizeRows } from '../../lib/parsePOScsv';
 import ProfileDropdown from '../../components/ProfileDropdown';
+import { useTour } from '../../lib/useTour';
 
 function formatCurrency(n) {
   if (!n && n !== 0) return '$0';
@@ -278,6 +279,8 @@ export default function AnalyticsPage() {
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
+
+  useTour('analytics', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

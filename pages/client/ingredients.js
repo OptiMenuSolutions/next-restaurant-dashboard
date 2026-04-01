@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
+import { useTour } from '../../lib/useTour';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -231,6 +232,8 @@ export default function ClientIngredients() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+
+  useTour('ingredients', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

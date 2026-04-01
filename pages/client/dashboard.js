@@ -6,6 +6,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/next';
 import { useWindowSize } from "../../lib/useWindowSize";
 import ProfileDropdown from '../../components/ProfileDropdown';
+import { useTour } from '../../lib/useTour';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -505,6 +506,8 @@ export default function ClientDashboard() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+
+  useTour('dashboard', restaurantId);
 
   async function getRestaurantId() {
     try {
