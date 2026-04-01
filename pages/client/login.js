@@ -38,28 +38,40 @@ export default function ClientLogin() {
         return;
       }
 
-      const { data: existingProfile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+const { data: existingProfile, error: profileError } = await supabase
+  .from('profiles')
+  .select('restaurant_id')
+  .eq('id', user.id)
+  .single();
 
-      if (profileError || !existingProfile) {
-        const { error: insertError } = await supabase.from('profiles').insert([
-          {
-            id: user.id,
-            email: user.email,
-            full_name: user.user_metadata?.full_name || '',
-            restaurant_name: user.user_metadata?.restaurant_name || '',
-            restaurant_id: null,
-          },
-        ]);
-        if (insertError) {
-          console.error('Failed to create profile after login:', insertError.message);
-        }
-      }
+if (profileError || !existingProfile) {
+  await supabase.from('profiles').insert([{
+    id: user.id,
+    email: user.email,
+    full_name: user.user_metadata?.full_name || '',
+    restaurant_id: null,
+  }]);
+  router.replace('/client/onboarding');
+  return;
+}
 
-      router.replace('/client/dashboard');
+if (!existingProfile.restaurant_id) {
+  router.replace('/client/onboarding');
+  return;
+}
+
+const { data: rest } = await supabase
+  .from('restaurants')
+  .select('subscription_status')
+  .eq('id', existingProfile.restaurant_id)
+  .single();
+
+if (!rest || rest.subscription_status !== 'active') {
+  router.replace('/client/onboarding');
+  return;
+}
+
+router.replace('/client/dashboard');
     } catch (err) {
       setError('An unexpected error occurred. Please try again.');
       console.error('Login error:', err);
