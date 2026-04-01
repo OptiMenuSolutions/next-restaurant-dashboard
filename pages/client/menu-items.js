@@ -5,6 +5,8 @@ import supabase from '../../lib/supabaseClient';
 import { calculateStandardizedCost } from '../../lib/standardizedUnits';
 import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
+import MenuImportModal from '../../components/MenuImportModal';
+import { useTour } from '../../lib/useTour';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -255,17 +257,18 @@ export default function ClientMenuItems() {
   const [loading, setLoading] = useState(true);
   const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState('');
-  const [userEmail, setUserEmail] = useState("");
+  const [userEmail, setUserEmail] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState('asc');
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemData, setSelectedItemData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [viewMode, setViewMode] = useState('overview'); // 'overview' | 'details' | 'optimize'
+  const [viewMode, setViewMode] = useState('overview');
   const [expandedComponents, setExpandedComponents] = useState(new Set());
   const [multipliers, setMultipliers] = useState({});
   const [optimizedPrice, setOptimizedPrice] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
@@ -277,8 +280,11 @@ export default function ClientMenuItems() {
     router.prefetch('/client/invoices');
     router.prefetch('/client/ingredients');
     router.prefetch('/client/menu-items');
-    router.prefetch('/client/analytics')
+    router.prefetch('/client/analytics');
   }, []);
+
+  // ── Tour ──
+  useTour('menu-items', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -371,7 +377,6 @@ export default function ClientMenuItems() {
   const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).slice(0, 3);
   const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
 
-  // Margin distribution buckets
   const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
   const maxBucket = Math.max(bucket(0, 40), bucket(40, 60), bucket(60, 75), bucket(75, 100), 1);
 
@@ -397,11 +402,7 @@ export default function ClientMenuItems() {
     setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
 
-
-
-// ── PASTE THIS BLOCK INTO menu-items.js IMMEDIATELY BEFORE the desktop return ──
-// Find: return ( <> <style>{CSS}</style> <div className="mi-root">
-// Paste this entire block above it.
+  // ── MOBILE ───────────────────────────────────────────────────────────────────
 
   if (isMobile) {
     const navItems = [
@@ -417,16 +418,15 @@ export default function ClientMenuItems() {
         <style>{CSS}</style>
         <div className="mob-root" style={{ position: 'relative' }}>
 
-          {/* Header */}
           <div className="mob-header">
             <div className="mob-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button className="mob-add-btn" onClick={() => setShowImportModal(true)}>↑ Import</button>
               <button className="mob-add-btn">+ Add Item</button>
               <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
             </div>
           </div>
 
-          {/* Title bar */}
           <div className="mob-titlebar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <div className="mob-page-title">Menu Engineering</div>
@@ -443,7 +443,6 @@ export default function ClientMenuItems() {
             </select>
           </div>
 
-          {/* Stats */}
           <div className="mob-stats">
             {[
               { v: menuItems.length, l: 'Items', c: '#02a4ba' },
@@ -459,13 +458,11 @@ export default function ClientMenuItems() {
             ))}
           </div>
 
-          {/* Search */}
           <div className="mob-search-bar">
             <input className="mob-search-input" placeholder="Search menu items..."
               value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
           </div>
 
-          {/* Card grid */}
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
               <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
@@ -476,6 +473,12 @@ export default function ClientMenuItems() {
               {filtered.length === 0 ? (
                 <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 40, gap: 8 }}>
                   <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
+                  {!searchTerm && (
+                    <button onClick={() => setShowImportModal(true)}
+                      style={{ marginTop: 8, background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: '#02a4ba', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+                      ↑ Import Your Menu
+                    </button>
+                  )}
                 </div>
               ) : filtered.map(item => {
                 const margin = getMarginNum(item.price, item.cost);
@@ -517,7 +520,6 @@ export default function ClientMenuItems() {
             </div>
           )}
 
-          {/* Detail overlay */}
           {selectedItem && selectedItemData && (
             <div className="mob-detail-overlay">
               <div className="mob-detail-hd">
@@ -540,22 +542,18 @@ export default function ClientMenuItems() {
                   </div>
                 ) : viewMode === 'details' ? (
                   <>
-                    {/* Metrics */}
                     <div className="mob-dfield-grid">
                       <div className="mob-dfield"><div className="mob-dfield-lbl">Menu Price</div><div className="mob-dfield-val accent">{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div></div>
                       <div className="mob-dfield"><div className="mob-dfield-lbl">Total Cost</div><div className="mob-dfield-val">{formatCurrency(totalCost)}</div></div>
                       <div className="mob-dfield"><div className="mob-dfield-lbl">Profit Margin</div><div className="mob-dfield-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div></div>
                       <div className="mob-dfield"><div className="mob-dfield-lbl">Ingredients</div><div className="mob-dfield-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div></div>
                     </div>
-
-                    {/* Components */}
                     {selectedItemData.components.length > 0 && (
                       <>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Component Breakdown</div>
                         {selectedItemData.components.map(c => (
                           <div key={c.id} style={{ background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, overflow: 'hidden' }}>
-                            <div style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                              onClick={() => toggleComp(c.id)}>
+                            <div style={{ padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => toggleComp(c.id)}>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: '#e8e2d8' }}>{c.name}</div>
                                 <div style={{ fontSize: 10, color: '#4a453e', marginTop: 2 }}>{c.ingredientCount} ingredients</div>
@@ -589,8 +587,6 @@ export default function ClientMenuItems() {
                         </div>
                       </>
                     )}
-
-                    {/* Pricing recs */}
                     {totalCost > 0 && (
                       <>
                         <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Pricing Recommendations</div>
@@ -610,7 +606,6 @@ export default function ClientMenuItems() {
                     )}
                   </>
                 ) : (
-                  /* Optimize view */
                   <>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div style={{ background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 8, padding: 12 }}>
@@ -633,7 +628,6 @@ export default function ClientMenuItems() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, paddingTop: 6, borderTop: '1px solid #2a2620' }}><span style={{ color: '#6b6358' }}>Margin</span><span style={{ color: getMarginColor(optimizedMargin), fontWeight: 600 }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
                       </div>
                     </div>
-
                     <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Adjust Portions</div>
                     {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
                       const m = getMultiplier(c.id);
@@ -664,7 +658,6 @@ export default function ClientMenuItems() {
             </div>
           )}
 
-          {/* Bottom nav */}
           <div className="mob-bottom-nav">
             {navItems.map(({ label, path, icon }) => {
               const active = path === '/client/menu-items';
@@ -678,12 +671,20 @@ export default function ClientMenuItems() {
             })}
           </div>
 
+          {showImportModal && (
+            <MenuImportModal
+              restaurantId={restaurantId}
+              onClose={() => setShowImportModal(false)}
+              onImported={() => { setShowImportModal(false); fetchMenuItems(); }}
+            />
+          )}
+
         </div>
       </>
     );
   }
 
-  // ── END MOBILE — desktop return follows ──
+  // ── DESKTOP ──────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -730,6 +731,28 @@ export default function ClientMenuItems() {
               <option value="price-desc">Price (High–Low)</option>
               <option value="cost-desc">Cost (High–Low)</option>
             </select>
+            {/* Import Menu button — id used by Shepherd tour */}
+            <button
+              id="menu-import-btn"
+              onClick={() => setShowImportModal(true)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: 'transparent', border: '1px solid #02a4ba',
+                borderRadius: 5, padding: 'clamp(5px,.5vh,8px) clamp(10px,.9vw,16px)',
+                fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: '#02a4ba',
+                cursor: 'pointer', fontFamily: "'Inter', sans-serif",
+                whiteSpace: 'nowrap', transition: 'all .2s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(2,164,186,.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              Import Menu
+            </button>
             <button className="mi-add-btn">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -762,340 +785,347 @@ export default function ClientMenuItems() {
             <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e' }}>Loading menu items...</div>
           </div>
         ) : (
-        <div className="mi-body">
+          <div className="mi-body">
 
-          {/* CARD GRID */}
-          <div className="mi-grid-wrap">
-            <div className="mi-grid">
-              {filtered.length === 0 ? (
-                <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 40 }}>
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e8e2d8" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .2 }}>
-                    <path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/>
-                    <line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/>
-                  </svg>
-                  <div style={{ fontSize: 'clamp(11px,0.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>
-                    {searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}
+            {/* CARD GRID */}
+            <div className="mi-grid-wrap">
+              <div className="mi-grid">
+                {filtered.length === 0 ? (
+                  <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 }}>
+                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#e8e2d8" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .2 }}>
+                      <path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/>
+                    </svg>
+                    <div style={{ fontSize: 'clamp(11px,0.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>
+                      {searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}
+                    </div>
+                    {!searchTerm && (
+                      <button onClick={() => setShowImportModal(true)}
+                        style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: '#02a4ba', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+                        ↑ Import Your Menu
+                      </button>
+                    )}
                   </div>
-                </div>
-              ) : filtered.map(item => {
-                const margin = getMarginNum(item.price, item.cost);
-                const mc = getMarginColor(margin);
-                const { label, cls } = getStatus(item);
-                const ingCount = getIngredientCount(item);
-                const isSelected = selectedItem === item.id;
-                return (
-                  <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => selectItem(item.id)}>
-                    <span className={`mi-card-status ${cls}`}>{label}</span>
-                    <div className="mi-card-icon">
-                      <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                ) : filtered.map(item => {
+                  const margin = getMarginNum(item.price, item.cost);
+                  const mc = getMarginColor(margin);
+                  const { label, cls } = getStatus(item);
+                  const ingCount = getIngredientCount(item);
+                  const isSelected = selectedItem === item.id;
+                  return (
+                    <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => selectItem(item.id)}>
+                      <span className={`mi-card-status ${cls}`}>{label}</span>
+                      <div className="mi-card-icon">
+                        <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                      </div>
+                      <div className="mi-card-name">{item.name || 'Unnamed'}</div>
+                      <div className="mi-card-sub">{ingCount} ingredient{ingCount !== 1 ? 's' : ''}</div>
+                      <div className="mi-card-metrics">
+                        <div>
+                          <div className="mi-metric-lbl">Price</div>
+                          <div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                        </div>
+                        <div>
+                          <div className="mi-metric-lbl">Cost</div>
+                          <div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                        </div>
+                      </div>
+                      <div className="mi-margin-bar">
+                        <div className="mi-margin-hd">
+                          <span className="mi-margin-lbl">Margin</span>
+                          <span className="mi-margin-val" style={{ color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</span>
+                        </div>
+                        <div className="mi-track">
+                          <div className="mi-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} />
+                        </div>
+                      </div>
                     </div>
-                    <div className="mi-card-name">{item.name || 'Unnamed'}</div>
-                    <div className="mi-card-sub">{ingCount} ingredient{ingCount !== 1 ? 's' : ''}</div>
-                    <div className="mi-card-metrics">
-                      <div>
-                        <div className="mi-metric-lbl">Price</div>
-                        <div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: '#4a453e' }}>—</span>}</div>
-                      </div>
-                      <div>
-                        <div className="mi-metric-lbl">Cost</div>
-                        <div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: '#4a453e' }}>—</span>}</div>
-                      </div>
-                    </div>
-                    <div className="mi-margin-bar">
-                      <div className="mi-margin-hd">
-                        <span className="mi-margin-lbl">Margin</span>
-                        <span className="mi-margin-val" style={{ color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</span>
-                      </div>
-                      <div className="mi-track">
-                        <div className="mi-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* DETAIL PANEL */}
-          <div className="mi-detail">
-            <div className="mi-detail-hd">
-              <div className="mi-detail-hd-top">
-                <div className="mi-detail-title">
-                  {selectedItem && selectedItemData ? selectedItemData.item?.name : 'Menu Overview'}
-                </div>
-                {selectedItem && (
-                  <button className="mi-close-btn" onClick={() => { setSelectedItem(null); setSelectedItemData(null); setViewMode('overview'); }}>✕ Close</button>
-                )}
-              </div>
-              <div className="mi-view-tabs">
-                {selectedItem ? (
-                  <>
-                    <button className={`mi-vtab${viewMode === 'details' ? ' active' : ''}`} onClick={() => setViewMode('details')}>Details</button>
-                    <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => setViewMode('optimize')}>Optimize</button>
-                  </>
-                ) : (
-                  <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
-                )}
+                  );
+                })}
               </div>
             </div>
 
-            {/* OVERVIEW STATE */}
-            {!selectedItem && (
-              <div className="mi-detail-body">
-                <div className="mi-ov-row">
-                  <div className="mi-ov-w">
-                    <div className="mi-ov-lbl">
-                      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                      Top Margin Items
-                    </div>
-                    {topMargin.length > 0 ? topMargin.map(i => {
-                      const m = getMarginNum(i.price, i.cost);
-                      return (
-                        <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                          <span className="mi-ov-name">{i.name}</span>
-                          <span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span>
-                        </div>
-                      );
-                    }) : <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e' }}>No data yet</div>}
+            {/* DETAIL PANEL */}
+            <div className="mi-detail">
+              <div className="mi-detail-hd">
+                <div className="mi-detail-hd-top">
+                  <div className="mi-detail-title">
+                    {selectedItem && selectedItemData ? selectedItemData.item?.name : 'Menu Overview'}
                   </div>
-
-                  <div className="mi-ov-w">
-                    <div className="mi-ov-lbl">
-                      <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      Needs Attention
-                    </div>
-                    {lowMargin.map(i => {
-                      const m = getMarginNum(i.price, i.cost);
-                      return (
-                        <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                          <span className="mi-ov-name">{i.name}</span>
-                          <span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: '#c04040' }}>{m?.toFixed(1)}%</span>
-                        </div>
-                      );
-                    })}
-                    {noData.map(i => (
-                      <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                        <span className="mi-ov-name">{i.name}</span>
-                        <span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: '#d4a020' }}>No cost</span>
-                      </div>
-                    ))}
-                    {lowMargin.length === 0 && noData.length === 0 && (
-                      <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#2a8a5a' }}>All items on target ✓</div>
-                    )}
-                  </div>
+                  {selectedItem && (
+                    <button className="mi-close-btn" onClick={() => { setSelectedItem(null); setSelectedItemData(null); setViewMode('overview'); }}>✕ Close</button>
+                  )}
                 </div>
-
-                {/* Margin distribution */}
-                <div className="mi-ov-wf">
-                  <div className="mi-ov-lbl">
-                    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Margin Distribution
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 'clamp(50px,7vh,80px)' }}>
-                    {[
-                      { lo: 0, hi: 40, label: '<40%', c: '#c04040' },
-                      { lo: 40, hi: 60, label: '40–60%', c: '#d4a020' },
-                      { lo: 60, hi: 75, label: '60–75%', c: '#02a4ba' },
-                      { lo: 75, hi: 101, label: '>75%', c: '#2a8a5a' },
-                    ].map(({ lo, hi, label, c }) => {
-                      const count = bucket(lo, hi);
-                      return (
-                        <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
-                          <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
-                            <div style={{ width: '100%', height: `${Math.max(5, (count / maxBucket) * 100)}%`, background: c, opacity: .7, borderRadius: '2px 2px 0 0' }} />
-                          </div>
-                          <div style={{ fontSize: 'clamp(7px,0.58vw,9px)', color: '#4a453e', textAlign: 'center' }}>{label}</div>
-                          <div style={{ fontSize: 'clamp(8px,0.62vw,10px)', color: c, fontWeight: 600 }}>{count}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div className="mi-view-tabs">
+                  {selectedItem ? (
+                    <>
+                      <button className={`mi-vtab${viewMode === 'details' ? ' active' : ''}`} onClick={() => setViewMode('details')}>Details</button>
+                      <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => setViewMode('optimize')}>Optimize</button>
+                    </>
+                  ) : (
+                    <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
+                  )}
                 </div>
-
-                <div className="mi-hint">Click any menu item card to view details and optimize the recipe →</div>
               </div>
-            )}
 
-            {/* DETAIL / OPTIMIZE STATE */}
-            {selectedItem && (
-              <div className="mi-detail-body">
-                {detailLoading ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 'clamp(10px,0.75vw,12px)' }}>
-                    <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                    Loading details...
-                  </div>
-                ) : selectedItemData && viewMode === 'details' ? (
-                  <>
-                    {/* Metrics */}
-                    <div className="mi-d-metrics">
-                      <div className="mi-d-metric">
-                        <div className="mi-d-metric-lbl">Menu Price</div>
-                        <div className="mi-d-metric-val" style={{ color: '#02a4ba' }}>{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div>
+              {/* OVERVIEW STATE */}
+              {!selectedItem && (
+                <div className="mi-detail-body">
+                  <div className="mi-ov-row">
+                    <div className="mi-ov-w">
+                      <div className="mi-ov-lbl">
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        Top Margin Items
                       </div>
-                      <div className="mi-d-metric">
-                        <div className="mi-d-metric-lbl">Total Cost</div>
-                        <div className="mi-d-metric-val">{formatCurrency(totalCost)}</div>
-                      </div>
-                      <div className="mi-d-metric">
-                        <div className="mi-d-metric-lbl">Profit Margin</div>
-                        <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div>
-                      </div>
-                      <div className="mi-d-metric">
-                        <div className="mi-d-metric-lbl">Ingredients</div>
-                        <div className="mi-d-metric-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div>
-                      </div>
-                    </div>
-
-                    {/* Components */}
-                    {selectedItemData.components.length > 0 && (
-                      <div>
-                        <div className="mi-sect-title">Component Breakdown</div>
-                        {selectedItemData.components.map(c => (
-                          <div key={c.id} className="mi-comp">
-                            <div className="mi-comp-hd" onClick={() => toggleComp(c.id)}>
-                              <div>
-                                <div className="mi-comp-name">{c.name}</div>
-                                <div className="mi-comp-sub">{c.ingredientCount} ingredient{c.ingredientCount !== 1 ? 's' : ''}</div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <div className="mi-comp-cost">{formatCurrency(c.calculatedCost)}</div>
-                                <div className="mi-comp-pct">{totalCost > 0 ? ((c.calculatedCost / totalCost) * 100).toFixed(0) : 0}% of total</div>
-                              </div>
-                            </div>
-                            {expandedComponents.has(c.id) && (
-                              <div className="mi-comp-ings">
-                                {c.ingredients.map(ing => (
-                                  <div key={ing.id} className="mi-comp-ing-row">
-                                    <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? '#2a8a5a' : '#c04040' }} />
-                                    <div className="mi-comp-ing-name">{ing.name}</div>
-                                    <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
-                                    <div className="mi-comp-ing-cost">{formatCurrency(ing.totalCost)}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        <div className="mi-total-bar">
-                          <div className="mi-total-lbl">Total Food Cost</div>
-                          <div className="mi-total-val">{formatCurrency(totalCost)}</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Pricing recs */}
-                    {totalCost > 0 && (
-                      <div>
-                        <div className="mi-sect-title">Pricing Recommendations</div>
-                        <div className="mi-price-recs">
-                          <div className="mi-price-rec">
-                            <div className="mi-price-rec-lbl">Break-even<br />30% cost</div>
-                            <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.30)}</div>
-                          </div>
-                          <div className="mi-price-rec">
-                            <div className="mi-price-rec-lbl">Recommended<br />25% cost</div>
-                            <div className="mi-price-rec-val highlight">{formatCurrency(totalCost / 0.25)}</div>
-                          </div>
-                          <div className="mi-price-rec">
-                            <div className="mi-price-rec-lbl">Premium<br />20% cost</div>
-                            <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.20)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Cost history */}
-                    {selectedItemData.costHistory.length > 0 && (
-                      <div>
-                        <div className="mi-sect-title">Cost Change History</div>
-                        {selectedItemData.costHistory.slice(0, 5).map(r => {
-                          const change = parseFloat(r.new_cost || 0) - parseFloat(r.old_cost || 0);
-                          return (
-                            <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, padding: 'clamp(5px,0.5vh,8px) 0', borderBottom: '1px solid #1a1915' }}>
-                              <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#4a453e' }}>{formatDate(r.created_at)}</div>
-                              <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#9a9086' }}>{formatCurrency(r.old_cost)}</div>
-                              <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#e8e2d8' }}>{formatCurrency(r.new_cost)}</div>
-                              <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', fontWeight: 600, color: change > 0 ? '#c04040' : '#2a8a5a' }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                ) : selectedItemData && viewMode === 'optimize' ? (
-                  <>
-                    {/* Compare cards */}
-                    <div className="mi-opt-compare">
-                      <div className="mi-opt-card mi-opt-orig">
-                        <div className="mi-opt-card-title">Original</div>
-                        <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(totalCost)}</span></div>
-                        <div className="mi-opt-row"><span className="mi-opt-label">Price</span><span className="mi-opt-val">{formatCurrency(selectedItemData.item?.price)}</span></div>
-                        <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</span></div>
-                      </div>
-                      <div className="mi-opt-card mi-opt-new">
-                        <div className="mi-opt-card-title">Optimized</div>
-                        <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(optimizedCost)}</span></div>
-                        <div className="mi-opt-row">
-                          <span className="mi-opt-label">Price</span>
-                          <input className="mi-opt-price-input" type="number" step="0.01" min="0"
-                            value={optimizedPrice ?? selectedItemData.item?.price ?? ''}
-                            onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} />
-                        </div>
-                        <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
-                      </div>
-                    </div>
-
-                    {/* Sliders */}
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(6px,0.6vh,9px)' }}>
-                        <div className="mi-sect-title" style={{ marginBottom: 0, flex: 1 }}>Adjust Component Portions</div>
-                        <button className="mi-opt-reset" onClick={() => { setMultipliers({}); setOptimizedPrice(null); }}>Reset</button>
-                      </div>
-
-                      {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
-                        const m = getMultiplier(c.id);
-                        const newCost = c.calculatedCost * m;
+                      {topMargin.length > 0 ? topMargin.map(i => {
+                        const m = getMarginNum(i.price, i.cost);
                         return (
-                          <div key={c.id} className="mi-opt-comp">
-                            <div className="mi-opt-comp-hd">
-                              <div>
-                                <div className="mi-opt-comp-name">{c.name}</div>
-                                <div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>{c.ingredientCount} ingredients</div>
-                              </div>
-                              <div className="mi-opt-cost">{formatCurrency(newCost)}</div>
-                            </div>
-                            <div className="mi-opt-slider-wrap">
-                              <div className="mi-opt-slider-lbl">Portion Size</div>
-                              <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }}
-                                min="0" max="2" step="0.01" value={m}
-                                onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
-                              <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
-                            </div>
+                          <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
+                            <span className="mi-ov-name">{i.name}</span>
+                            <span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span>
                           </div>
                         );
-                      }) : (
-                        <div className="mi-opt-comp">
-                          <div className="mi-opt-comp-hd">
-                            <div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>{selectedItemData.ingredients.length} ingredients</div></div>
-                            <div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div>
+                      }) : <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e' }}>No data yet</div>}
+                    </div>
+                    <div className="mi-ov-w">
+                      <div className="mi-ov-lbl">
+                        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        Needs Attention
+                      </div>
+                      {lowMargin.map(i => {
+                        const m = getMarginNum(i.price, i.cost);
+                        return (
+                          <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
+                            <span className="mi-ov-name">{i.name}</span>
+                            <span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: '#c04040' }}>{m?.toFixed(1)}%</span>
                           </div>
-                          <div className="mi-opt-slider-wrap">
-                            <div className="mi-opt-slider-lbl">Portion Size</div>
-                            <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }}
-                              min="0" max="2" step="0.01" value={getMultiplier('all')}
-                              onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
-                            <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
+                        );
+                      })}
+                      {noData.map(i => (
+                        <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
+                          <span className="mi-ov-name">{i.name}</span>
+                          <span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: '#d4a020' }}>No cost</span>
+                        </div>
+                      ))}
+                      {lowMargin.length === 0 && noData.length === 0 && (
+                        <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#2a8a5a' }}>All items on target ✓</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Margin distribution */}
+                  <div className="mi-ov-wf">
+                    <div className="mi-ov-lbl">
+                      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                      Margin Distribution
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 'clamp(50px,7vh,80px)' }}>
+                      {[
+                        { lo: 0, hi: 40, label: '<40%', c: '#c04040' },
+                        { lo: 40, hi: 60, label: '40–60%', c: '#d4a020' },
+                        { lo: 60, hi: 75, label: '60–75%', c: '#02a4ba' },
+                        { lo: 75, hi: 101, label: '>75%', c: '#2a8a5a' },
+                      ].map(({ lo, hi, label, c }) => {
+                        const count = bucket(lo, hi);
+                        return (
+                          <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
+                            <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
+                              <div style={{ width: '100%', height: `${Math.max(5, (count / maxBucket) * 100)}%`, background: c, opacity: .7, borderRadius: '2px 2px 0 0' }} />
+                            </div>
+                            <div style={{ fontSize: 'clamp(7px,0.58vw,9px)', color: '#4a453e', textAlign: 'center' }}>{label}</div>
+                            <div style={{ fontSize: 'clamp(8px,0.62vw,10px)', color: c, fontWeight: 600 }}>{count}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mi-hint">Click any menu item card to view details and optimize the recipe →</div>
+                </div>
+              )}
+
+              {/* DETAIL / OPTIMIZE STATE */}
+              {selectedItem && (
+                <div className="mi-detail-body">
+                  {detailLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 'clamp(10px,0.75vw,12px)' }}>
+                      <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                      Loading details...
+                    </div>
+                  ) : selectedItemData && viewMode === 'details' ? (
+                    <>
+                      <div className="mi-d-metrics">
+                        <div className="mi-d-metric">
+                          <div className="mi-d-metric-lbl">Menu Price</div>
+                          <div className="mi-d-metric-val" style={{ color: '#02a4ba' }}>{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div>
+                        </div>
+                        <div className="mi-d-metric">
+                          <div className="mi-d-metric-lbl">Total Cost</div>
+                          <div className="mi-d-metric-val">{formatCurrency(totalCost)}</div>
+                        </div>
+                        <div className="mi-d-metric">
+                          <div className="mi-d-metric-lbl">Profit Margin</div>
+                          <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div>
+                        </div>
+                        <div className="mi-d-metric">
+                          <div className="mi-d-metric-lbl">Ingredients</div>
+                          <div className="mi-d-metric-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div>
+                        </div>
+                      </div>
+
+                      {selectedItemData.components.length > 0 && (
+                        <div>
+                          <div className="mi-sect-title">Component Breakdown</div>
+                          {selectedItemData.components.map(c => (
+                            <div key={c.id} className="mi-comp">
+                              <div className="mi-comp-hd" onClick={() => toggleComp(c.id)}>
+                                <div>
+                                  <div className="mi-comp-name">{c.name}</div>
+                                  <div className="mi-comp-sub">{c.ingredientCount} ingredient{c.ingredientCount !== 1 ? 's' : ''}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div className="mi-comp-cost">{formatCurrency(c.calculatedCost)}</div>
+                                  <div className="mi-comp-pct">{totalCost > 0 ? ((c.calculatedCost / totalCost) * 100).toFixed(0) : 0}% of total</div>
+                                </div>
+                              </div>
+                              {expandedComponents.has(c.id) && (
+                                <div className="mi-comp-ings">
+                                  {c.ingredients.map(ing => (
+                                    <div key={ing.id} className="mi-comp-ing-row">
+                                      <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? '#2a8a5a' : '#c04040' }} />
+                                      <div className="mi-comp-ing-name">{ing.name}</div>
+                                      <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
+                                      <div className="mi-comp-ing-cost">{formatCurrency(ing.totalCost)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          <div className="mi-total-bar">
+                            <div className="mi-total-lbl">Total Food Cost</div>
+                            <div className="mi-total-val">{formatCurrency(totalCost)}</div>
                           </div>
                         </div>
                       )}
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            )}
+
+                      {totalCost > 0 && (
+                        <div>
+                          <div className="mi-sect-title">Pricing Recommendations</div>
+                          <div className="mi-price-recs">
+                            <div className="mi-price-rec">
+                              <div className="mi-price-rec-lbl">Break-even<br />30% cost</div>
+                              <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.30)}</div>
+                            </div>
+                            <div className="mi-price-rec">
+                              <div className="mi-price-rec-lbl">Recommended<br />25% cost</div>
+                              <div className="mi-price-rec-val highlight">{formatCurrency(totalCost / 0.25)}</div>
+                            </div>
+                            <div className="mi-price-rec">
+                              <div className="mi-price-rec-lbl">Premium<br />20% cost</div>
+                              <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.20)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedItemData.costHistory.length > 0 && (
+                        <div>
+                          <div className="mi-sect-title">Cost Change History</div>
+                          {selectedItemData.costHistory.slice(0, 5).map(r => {
+                            const change = parseFloat(r.new_cost || 0) - parseFloat(r.old_cost || 0);
+                            return (
+                              <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, padding: 'clamp(5px,0.5vh,8px) 0', borderBottom: '1px solid #1a1915' }}>
+                                <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#4a453e' }}>{formatDate(r.created_at)}</div>
+                                <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#9a9086' }}>{formatCurrency(r.old_cost)}</div>
+                                <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#e8e2d8' }}>{formatCurrency(r.new_cost)}</div>
+                                <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', fontWeight: 600, color: change > 0 ? '#c04040' : '#2a8a5a' }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  ) : selectedItemData && viewMode === 'optimize' ? (
+                    <>
+                      <div className="mi-opt-compare">
+                        <div className="mi-opt-card mi-opt-orig">
+                          <div className="mi-opt-card-title">Original</div>
+                          <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(totalCost)}</span></div>
+                          <div className="mi-opt-row"><span className="mi-opt-label">Price</span><span className="mi-opt-val">{formatCurrency(selectedItemData.item?.price)}</span></div>
+                          <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</span></div>
+                        </div>
+                        <div className="mi-opt-card mi-opt-new">
+                          <div className="mi-opt-card-title">Optimized</div>
+                          <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(optimizedCost)}</span></div>
+                          <div className="mi-opt-row">
+                            <span className="mi-opt-label">Price</span>
+                            <input className="mi-opt-price-input" type="number" step="0.01" min="0"
+                              value={optimizedPrice ?? selectedItemData.item?.price ?? ''}
+                              onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} />
+                          </div>
+                          <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(6px,0.6vh,9px)' }}>
+                          <div className="mi-sect-title" style={{ marginBottom: 0, flex: 1 }}>Adjust Component Portions</div>
+                          <button className="mi-opt-reset" onClick={() => { setMultipliers({}); setOptimizedPrice(null); }}>Reset</button>
+                        </div>
+                        {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
+                          const m = getMultiplier(c.id);
+                          const newCost = c.calculatedCost * m;
+                          return (
+                            <div key={c.id} className="mi-opt-comp">
+                              <div className="mi-opt-comp-hd">
+                                <div>
+                                  <div className="mi-opt-comp-name">{c.name}</div>
+                                  <div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>{c.ingredientCount} ingredients</div>
+                                </div>
+                                <div className="mi-opt-cost">{formatCurrency(newCost)}</div>
+                              </div>
+                              <div className="mi-opt-slider-wrap">
+                                <div className="mi-opt-slider-lbl">Portion Size</div>
+                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }}
+                                  min="0" max="2" step="0.01" value={m}
+                                  onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
+                                <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
+                              </div>
+                            </div>
+                          );
+                        }) : (
+                          <div className="mi-opt-comp">
+                            <div className="mi-opt-comp-hd">
+                              <div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>{selectedItemData.ingredients.length} ingredients</div></div>
+                              <div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div>
+                            </div>
+                            <div className="mi-opt-slider-wrap">
+                              <div className="mi-opt-slider-lbl">Portion Size</div>
+                              <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }}
+                                min="0" max="2" step="0.01" value={getMultiplier('all')}
+                                onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
+                              <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
         )}
+
+        {/* IMPORT MODAL */}
+        {showImportModal && (
+          <MenuImportModal
+            restaurantId={restaurantId}
+            onClose={() => setShowImportModal(false)}
+            onImported={() => { setShowImportModal(false); fetchMenuItems(); }}
+          />
+        )}
+
       </div>
     </>
   );
