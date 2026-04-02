@@ -273,7 +273,7 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   useEffect(() => {
     if (page === 'dashboard' && !isFinal && restaurantId) {
       seedSampleData(restaurantId).then(() => {
-        window.dispatchEvent(new Event('optimenu-refresh'));
+        window.dispatchEvent(new Event('optimenu-data-refresh'));
       });
     }
   }, [page, isFinal, restaurantId]);
