@@ -498,7 +498,13 @@ export default function ClientDashboard() {
   const LOW_MARGIN_THRESHOLD = 40;
 
   useEffect(() => { getRestaurantId(); }, []);
-  useEffect(() => { if (restaurantId) fetchDashboardData(); }, [restaurantId]);
+  useEffect(() => {
+    if (!restaurantId) return;
+    // Small delay during tour to allow sample data to seed first
+    const delay = router.query.tour === 'true' ? 2000 : 0;
+    const t = setTimeout(() => fetchDashboardData(), delay);
+    return () => clearTimeout(t);
+  }, [restaurantId, router.query.tour]);
   useEffect(() => {
     router.prefetch('/client/dashboard');
     router.prefetch('/client/invoices');
@@ -506,21 +512,6 @@ export default function ClientDashboard() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
-  // DASHBOARD PATCH — add this useEffect after your existing useEffects
-// It watches for the tour seed signal and refetches data
-
-  useEffect(() => {
-    function checkAndRefetch() {
-      if (window.__optimenuTourSeeded && restaurantId) {
-        window.__optimenuTourSeeded = false;
-        fetchDashboardData();
-      }
-    }
-    // Poll briefly after tour starts to catch the seed completion
-    const interval = setInterval(checkAndRefetch, 500);
-    const timeout = setTimeout(() => clearInterval(interval), 10000);
-    return () => { clearInterval(interval); clearTimeout(timeout); };
-  }, [restaurantId]);
 
   const { TourComponent } = useTour('dashboard', restaurantId);
 

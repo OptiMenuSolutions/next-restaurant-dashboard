@@ -231,23 +231,14 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const step = steps[stepIdx];
   const isLast = stepIdx === steps.length - 1;
 
-  // ── Seed sample data once ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!restaurantId || seeded) return;
-    if (page === 'dashboard' || page === 'final') return; // final clears, not seeds
-    setSeeded(true);
-    seedSampleData(restaurantId);
-  }, [restaurantId, page, seeded]);
+const seededRef = useRef(false);
 
-  // Also seed on dashboard page
   useEffect(() => {
-    if (page !== 'dashboard' || !restaurantId || seeded) return;
-    setSeeded(true);
-    seedSampleData(restaurantId).then(() => {
-      // Trigger dashboard to refetch by temporarily changing a flag
-      window.__optimenuTourSeeded = true;
-    });
-  }, [page, restaurantId, seeded]);
+    if (!restaurantId || seededRef.current) return;
+    if (page === 'final') return;
+    seededRef.current = true;
+    seedSampleData(restaurantId);
+  }, [restaurantId, page]);
 
   // ── Measure spotlight ─────────────────────────────────────────────────────
   const measure = useCallback(() => {
