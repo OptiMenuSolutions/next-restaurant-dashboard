@@ -276,7 +276,12 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     if (page === 'dashboard' && !isFinal && restaurantId && !seededRef.current) {
         seededRef.current = true;
         seedSampleData(restaurantId).then(() => {
-        window.dispatchEvent(new Event('optimenu-data-refresh'));
+        // Hard reload the page once after seeding — no event loop possible
+        const url = new URL(window.location.href);
+        if (!url.searchParams.has('seeded')) {
+            url.searchParams.set('seeded', '1');
+            window.location.replace(url.toString());
+        }
         });
     }
     }, [page, isFinal, restaurantId]);
