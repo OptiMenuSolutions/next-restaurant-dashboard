@@ -270,13 +270,16 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   // ── Seed on first dashboard view ─────────────────────────────────────────
 
-  useEffect(() => {
-    if (page === 'dashboard' && !isFinal && restaurantId) {
-      seedSampleData(restaurantId).then(() => {
+    const seededRef = useRef(false);
+
+    useEffect(() => {
+    if (page === 'dashboard' && !isFinal && restaurantId && !seededRef.current) {
+        seededRef.current = true;
+        seedSampleData(restaurantId).then(() => {
         window.dispatchEvent(new Event('optimenu-data-refresh'));
-      });
+        });
     }
-  }, [page, isFinal, restaurantId]);
+    }, [page, isFinal, restaurantId]);
 
   // ── Measure ───────────────────────────────────────────────────────────────
 
