@@ -6,184 +6,45 @@ import { seedSampleData, clearSampleData } from '../lib/seedSampleData';
 
 const MenuImportModal = dynamic(() => import('./MenuImportModal'), { ssr: false });
 
-// ─── Step definitions ─────────────────────────────────────────────────────────
-// Each step: selector, title, text, placement, type ('info'|'click'|'modal'), padding
-
 const PAGE_STEPS = {
   dashboard: [
-    {
-      type: 'info',
-      selector: null,
-      placement: 'center',
-      title: 'Welcome to OptiMenu 👋',
-      text: "We've loaded sample Chick-fil-A data so you can see what a fully populated account looks like. Let's take a 2-minute tour.",
-    },
-    {
-      type: 'info',
-      selector: '.db-wbar',
-      placement: 'bottom',
-      padding: 10,
-      title: 'Your Key Metrics',
-      text: 'These five numbers give you a real-time pulse — invoices, ingredients, menu items, average margin, and year-to-date spend. All update automatically as you add data.',
-    },
-    {
-      type: 'info',
-      selector: '.db-panel',
-      placement: 'right',
-      padding: 8,
-      title: 'AI Profit Score',
-      text: 'This score reflects your overall financial health based on margin quality, invoice coverage, and ingredient pricing completeness.',
-    },
-    {
-      type: 'nav',
-      selector: '.db-tab',
-      selectorFilter: 'Invoices',
-      placement: 'bottom',
-      padding: 6,
-      title: 'Head to Invoices →',
-      text: 'Click the Invoices tab to continue the tour.',
-      nextPage: '/client/invoices',
-      nextStepKey: 'invoices',
-    },
+    { type:'info', selector:null, placement:'center', title:'Welcome to OptiMenu 👋', text:"We've loaded sample Chick-fil-A data so you can see what a fully populated account looks like. Let's take a 2-minute tour." },
+    { type:'info', selector:'.db-wbar', placement:'bottom', padding:10, title:'Your Key Metrics', text:'These five numbers give you a real-time pulse — invoices, ingredients, menu items, average margin, and year-to-date spend. All update automatically as you add data.' },
+    { type:'info', selector:'.db-panel', placement:'right', padding:8, title:'AI Profit Score', text:'This score reflects your overall financial health based on margin quality, invoice coverage, and ingredient pricing completeness.' },
+    { type:'nav', selector:'.db-tab', selectorFilter:'Invoices', placement:'bottom', padding:6, title:'Next: Invoices', text:'Click "Take me there" to see how invoice tracking works with sample supplier data loaded in.', nextPage:'/client/invoices', nextStepKey:'invoices' },
   ],
   invoices: [
-    {
-      type: 'info',
-      selector: '.mi-ph',
-      placement: 'bottom',
-      padding: 10,
-      title: 'Invoice Tracking',
-      text: "These are sample invoices from Chick-fil-A's real supplier network — Tyson Foods, Golden State Foods, and more. Upload your own and OptiMenu reads every line item automatically.",
-    },
-    {
-      type: 'info',
-      selector: '.mi-add-btn',
-      placement: 'bottom',
-      padding: 8,
-      title: 'Add an Invoice',
-      text: 'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.',
-    },
-    {
-      type: 'nav',
-      selector: '.mi-tab',
-      selectorFilter: 'Ingredients',
-      placement: 'bottom',
-      padding: 6,
-      title: 'Head to Ingredients →',
-      text: 'Click the Ingredients tab to continue.',
-      nextPage: '/client/ingredients',
-      nextStepKey: 'ingredients',
-    },
+    { type:'info', selector:'.mi-ph', placement:'bottom', padding:10, title:'Invoice Tracking', text:"These are sample invoices from Chick-fil-A's real supplier network — Tyson Foods, Golden State Foods, and more. Upload your own and OptiMenu reads every line item automatically." },
+    { type:'info', selector:'.mi-add-btn', placement:'bottom', padding:8, title:'Add an Invoice', text:'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.' },
+    { type:'nav', selector:'.mi-tab', selectorFilter:'Ingredients', placement:'bottom', padding:6, title:'Next: Ingredients', text:'Click "Take me there" to see how invoice data flows into your ingredient costs.', nextPage:'/client/ingredients', nextStepKey:'ingredients' },
   ],
   ingredients: [
-    {
-      type: 'info',
-      selector: '.mi-ph',
-      placement: 'bottom',
-      padding: 10,
-      title: 'Ingredient Cost Tracking',
-      text: 'These are 24 core Chick-fil-A ingredients with real market costs. When you upload invoices, this list populates automatically.',
-    },
-    {
-      type: 'info',
-      selector: '.mi-grid-wrap',
-      placement: 'top',
-      padding: 8,
-      title: 'Live Cost Updates',
-      text: 'Every ingredient links to your menu items. When a supplier raises prices, your menu margins recalculate instantly.',
-    },
-    {
-      type: 'nav',
-      selector: '.mi-tab',
-      selectorFilter: 'Menu Items',
-      placement: 'bottom',
-      padding: 6,
-      title: 'Head to Menu Items →',
-      text: 'Click the Menu Items tab to continue.',
-      nextPage: '/client/menu-items',
-      nextStepKey: 'menu-items',
-    },
+    { type:'info', selector:'.mi-ph', placement:'bottom', padding:10, title:'Ingredient Cost Tracking', text:'These are 24 core Chick-fil-A ingredients with real market costs. When you upload invoices, this list populates automatically.' },
+    { type:'info', selector:'.mi-grid-wrap', placement:'top', padding:8, title:'Live Cost Updates', text:'Every ingredient links to your menu items. When a supplier raises prices, your menu margins recalculate instantly.' },
+    { type:'nav', selector:'.mi-tab', selectorFilter:'Menu Items', placement:'bottom', padding:6, title:'Next: Menu Items', text:'Click "Take me there" to see how ingredient costs power your menu engineering.', nextPage:'/client/menu-items', nextStepKey:'menu-items' },
   ],
   'menu-items': [
-    {
-      type: 'info',
-      selector: '.mi-sbar',
-      placement: 'bottom',
-      padding: 10,
-      title: 'Menu Engineering',
-      text: '30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin. Every card shows exactly where your money is made.',
-    },
-    {
-      type: 'info',
-      selector: '.mi-grid',
-      placement: 'top',
-      padding: 8,
-      title: 'Margin at a Glance',
-      text: 'Green = healthy margin. Red = needs attention. Click any card for a full ingredient breakdown and pricing optimizer.',
-    },
-    {
-      type: 'nav',
-      selector: '.mi-tab',
-      selectorFilter: 'Analytics',
-      placement: 'bottom',
-      padding: 6,
-      title: 'Head to Analytics →',
-      text: 'Click the Analytics tab to continue.',
-      nextPage: '/client/analytics',
-      nextStepKey: 'analytics',
-    },
+    { type:'info', selector:'.mi-sbar', placement:'bottom', padding:10, title:'Menu Engineering', text:'30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin. Every card shows exactly where your money is made.' },
+    { type:'info', selector:'.mi-grid', placement:'top', padding:8, title:'Margin at a Glance', text:'Green = healthy margin. Red = needs attention. Click any card for a full ingredient breakdown and pricing optimizer.' },
+    { type:'nav', selector:'.mi-tab', selectorFilter:'Analytics', placement:'bottom', padding:6, title:'Next: Analytics', text:'Click "Take me there" to see how sales data and AI recommendations work.', nextPage:'/client/analytics', nextStepKey:'analytics' },
   ],
   analytics: [
-    {
-      type: 'info',
-      selector: '.an-ph',
-      placement: 'bottom',
-      padding: 10,
-      title: 'Sales Analytics',
-      text: 'Upload a CSV from your POS and OptiMenu maps sales velocity against ingredient costs. See which dishes are moving and which are sitting.',
-    },
-    {
-      type: 'nav',
-      selector: '.an-tab',
-      selectorFilter: 'Dashboard',
-      placement: 'bottom',
-      padding: 6,
-      title: 'Back to Dashboard →',
-      text: 'Click Dashboard to finish the tour and import your real menu.',
-      nextPage: '/client/dashboard',
-      nextStepKey: 'final',
-    },
+    { type:'info', selector:'.an-ph', placement:'bottom', padding:10, title:'Sales Analytics', text:'Upload a CSV from your POS and OptiMenu maps sales velocity against ingredient costs. See which dishes are moving and which are sitting.' },
+    { type:'nav', selector:null, placement:'center', title:'Back to Dashboard', text:'Last stop — click "Take me there" to finish the tour and import your real menu.', nextPage:'/client/dashboard', nextStepKey:'final' },
   ],
   final: [
-    {
-      type: 'info',
-      selector: null,
-      placement: 'center',
-      title: "One Last Step 🎉",
-      text: "The sample data will be cleared. Now import YOUR real menu — upload a photo or PDF and Claude will extract every dish automatically.",
-    },
-    {
-      type: 'modal',
-      selector: '#menu-import-btn',
-      placement: 'bottom',
-      title: 'Import Your Menu',
-      text: 'Upload a photo or PDF of your menu. Claude reads it and pulls out every dish. You can edit before importing.',
-    },
+    { type:'info', selector:null, placement:'center', title:"One Last Step 🎉", text:"The sample data will be cleared. Now import YOUR real menu — upload a photo or PDF and Claude will extract every dish automatically." },
+    { type:'modal', selector:'#menu-import-btn', placement:'bottom', title:'Import Your Menu', text:'Upload a photo or PDF of your menu. Claude reads it and pulls out every dish. You can edit before importing.' },
   ],
 };
 
-// ─── Session storage keys ─────────────────────────────────────────────────────
 const SS_KEY = 'optimenu_tour_step';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getEl(selector, filterText) {
   if (!selector) return null;
   if (filterText) {
     const els = document.querySelectorAll(selector);
-    for (const el of els) {
-      if (el.textContent.trim().includes(filterText)) return el;
-    }
+    for (const el of els) { if (el.textContent.trim().includes(filterText)) return el; }
     return null;
   }
   return document.querySelector(selector);
@@ -199,9 +60,7 @@ function spotRect(selector, filterText, pad = 12) {
 
 function tooltipPos(spot, placement, tw = 340, th = 180) {
   const vw = window.innerWidth, vh = window.innerHeight, g = 16;
-  if (!spot || placement === 'center') {
-    return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
-  }
+  if (!spot || placement === 'center') return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
   const { x, y, w, h } = spot;
   let left, top;
   if (placement === 'bottom') { left = x + w / 2 - tw / 2; top = y + h + g; }
@@ -215,8 +74,6 @@ function tooltipPos(spot, placement, tw = 340, th = 180) {
   return { left, top };
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 export default function TourOverlay({ page, restaurantId, onDone }) {
   const router = useRouter();
   const steps = PAGE_STEPS[page] || [];
@@ -225,22 +82,20 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const [ttPos, setTtPos] = useState({ left: 0, top: 0 });
   const [ttVisible, setTtVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [seeded, setSeeded] = useState(false);
   const ttRef = useRef();
+  const seededRef = useRef(false);
 
   const step = steps[stepIdx];
   const isLast = stepIdx === steps.length - 1;
-
-const seededRef = useRef(false);
+  const isNav = step?.type === 'nav';
+  const isModal = step?.type === 'modal';
 
   useEffect(() => {
-    if (!restaurantId || seededRef.current) return;
-    if (page === 'final') return;
+    if (!restaurantId || seededRef.current || page === 'final') return;
     seededRef.current = true;
     seedSampleData(restaurantId);
   }, [restaurantId, page]);
 
-  // ── Measure spotlight ─────────────────────────────────────────────────────
   const measure = useCallback(() => {
     if (!step) return;
     const s = step.selector ? spotRect(step.selector, step.selectorFilter, step.padding) : null;
@@ -250,10 +105,7 @@ const seededRef = useRef(false);
     setTtPos(tooltipPos(s, step.placement, tw, th));
   }, [step]);
 
-  useEffect(() => {
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [measure]);
+  useEffect(() => { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }, [measure]);
 
   useEffect(() => {
     setTtVisible(false);
@@ -262,35 +114,11 @@ const seededRef = useRef(false);
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [stepIdx, measure]);
 
-  // ── Auto-open modal ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (step?.type === 'modal') setShowModal(true);
-  }, [stepIdx]);
+  useEffect(() => { if (step?.type === 'modal') setShowModal(true); }, [stepIdx]);
 
-  useEffect(() => {
-    if (step?.type !== 'nav' || !step?.nextPage) return;
-
-    const el = getEl(step.selector, step.selectorFilter);
-    if (!el) return;
-
-    const handler = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      try { sessionStorage.setItem(SS_KEY, step.nextStepKey); } catch {}
-      router.push(`${step.nextPage}?tour=true`);
-    };
-
-    // Use capture phase so we fire before the tab's own handler
-    el.addEventListener('click', handler, true);
-    return () => el.removeEventListener('click', handler, true);
-  }, [stepIdx, step]);
-
-  // ── Navigation ────────────────────────────────────────────────────────────
   function next() {
-    if (step?.type === 'modal') { setShowModal(true); return; }
-    if (step?.type === 'nav' && step.nextPage) {
-      // Save where we're going so next page knows which tour section to show
+    if (isModal) { setShowModal(true); return; }
+    if (isNav && step.nextPage) {
       try { sessionStorage.setItem(SS_KEY, step.nextStepKey); } catch {}
       router.push(`${step.nextPage}?tour=true`);
       return;
@@ -308,10 +136,7 @@ const seededRef = useRef(false);
 
   async function finish() {
     setTtVisible(false);
-    try {
-      localStorage.setItem('optimenu_tour_done', '1');
-      sessionStorage.removeItem(SS_KEY);
-    } catch {}
+    try { localStorage.setItem('optimenu_tour_done', '1'); sessionStorage.removeItem(SS_KEY); } catch {}
     if (restaurantId) await clearSampleData(restaurantId);
     const url = new URL(window.location.href);
     url.searchParams.delete('tour');
@@ -319,10 +144,7 @@ const seededRef = useRef(false);
     onDone?.();
   }
 
-  function handleImported() {
-    setShowModal(false);
-    finish();
-  }
+  function handleImported() { setShowModal(false); finish(); }
 
   if (!step) return null;
 
@@ -332,10 +154,6 @@ const seededRef = useRef(false);
     ? `M0,0 H${vw} V${vh} H0 Z M${spot.x},${spot.y} h${spot.w} v${spot.h} h-${spot.w} Z`
     : `M0,0 H${vw} V${vh} H0 Z`;
 
-  const isNav = step.type === 'nav';
-  const isModal = step.type === 'modal';
-
-  // Global progress
   const allKeys = ['dashboard','invoices','ingredients','menu-items','analytics','final'];
   const pageOffset = allKeys.slice(0, allKeys.indexOf(page)).reduce((s,k) => s + (PAGE_STEPS[k]?.length || 0), 0);
   const globalStep = pageOffset + stepIdx + 1;
@@ -367,10 +185,9 @@ const seededRef = useRef(false);
         .t-ti{font-family:'Playfair Display',serif;font-size:17px;color:#e8e2d8;line-height:1.25;margin-bottom:8px;}
         .t-tx{font-size:13px;color:#6b6358;line-height:1.65;}
         .t-hint{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;}
-        .t-hint.nav{background:rgba(212,160,32,.07);border:1px solid rgba(212,160,32,.2);color:#d4a020;}
         .t-hint.upload{background:rgba(2,164,186,.07);border:1px solid rgba(2,164,186,.2);color:#02a4ba;}
         .t-hint svg{width:14px;height:14px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
-        .t-hint.nav svg{stroke:#d4a020;} .t-hint.upload svg{stroke:#02a4ba;}
+        .t-hint.upload svg{stroke:#02a4ba;}
         .t-ft{display:flex;align-items:center;gap:8px;padding:11px 20px;border-top:1px solid #2a2620;}
         .t-skip{background:none;border:none;cursor:pointer;font-size:11px;color:#3a3630;font-family:'Inter',sans-serif;padding:5px 8px;border-radius:5px;transition:color .15s;margin-right:auto;}
         .t-skip:hover{color:#6b6358;}
@@ -378,7 +195,6 @@ const seededRef = useRef(false);
         .t-back:hover{color:#9a9086;border-color:#3a3630;}
         .t-next{background:#02a4ba;border:none;border-radius:8px;padding:7px 18px;font-size:12px;font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;}
         .t-next:hover{background:#01bcd4;}
-        .t-nav-btn{background:rgba(212,160,32,.1);border:1px solid rgba(212,160,32,.25);border-radius:8px;padding:7px 14px;font-size:12px;color:#d4a020;font-family:'Inter',sans-serif;pointer-events:none;}
         .t-prog{position:fixed;bottom:20px;right:20px;z-index:10000;pointer-events:none;
           background:#13120f;border:1px solid #2a2620;border-radius:20px;
           padding:5px 12px;display:flex;align-items:center;gap:8px;
@@ -411,20 +227,13 @@ const seededRef = useRef(false);
           </div>
         )}
 
-        <div ref={ttRef} className={`t-tt${ttVisible ? ' vis' : ''}`}
-          style={{ left: ttPos.left, top: ttPos.top }}>
+        <div ref={ttRef} className={`t-tt${ttVisible ? ' vis' : ''}`} style={{ left: ttPos.left, top: ttPos.top }}>
           <div className="t-body">
             <div className="t-ey">
               {page === 'final' ? 'Final Step' : `${page.replace('-', ' ')} · Step ${stepIdx + 1} of ${steps.length}`}
             </div>
             <div className="t-ti">{step.title}</div>
             <div className="t-tx">{step.text}</div>
-            {isNav && (
-              <div className="t-hint nav">
-                <svg viewBox="0 0 24 24"><path d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/></svg>
-                Click the highlighted tab to continue
-              </div>
-            )}
             {isModal && (
               <div className="t-hint upload">
                 <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -432,17 +241,17 @@ const seededRef = useRef(false);
               </div>
             )}
           </div>
+
           <div className="t-ft">
             <button className="t-skip" onClick={finish}>Skip tour</button>
             {stepIdx > 0 && !isNav && !isModal && (
               <button className="t-back" onClick={back}>← Back</button>
             )}
-            {!isNav && !isModal && (
+            {!isModal && (
               <button className="t-next" onClick={next}>
-                {isLast ? '✓ Done' : 'Next →'}
+                {isNav ? 'Take me there →' : isLast ? '✓ Done' : 'Next →'}
               </button>
             )}
-            {isNav && <div className="t-nav-btn">Click the tab →</div>}
             {isModal && (
               <button className="t-next" onClick={() => setShowModal(true)}>Open Import ↑</button>
             )}
