@@ -6,27 +6,29 @@ import { seedSampleData, clearSampleData } from '../lib/seedSampleData';
 
 const MenuImportModal = dynamic(() => import('./MenuImportModal'), { ssr: false });
 
+// ─── Step definitions ─────────────────────────────────────────────────────────
+
 const PAGE_STEPS = {
   dashboard: [
     { type:'info', selector:null, placement:'center', title:'Welcome to OptiMenu 👋', text:"We've loaded sample Chick-fil-A data so you can see what a fully populated account looks like. Let's take a 2-minute tour." },
     { type:'info', selector:'.db-wbar', placement:'bottom', padding:10, title:'Your Key Metrics', text:'These five numbers give you a real-time pulse — invoices, ingredients, menu items, average margin, and year-to-date spend. All update automatically as you add data.' },
     { type:'info', selector:'.db-panel', placement:'right', padding:8, title:'AI Profit Score', text:'This score reflects your overall financial health based on margin quality, invoice coverage, and ingredient pricing completeness.' },
-    { type:'nav', selector:'.db-tab', selectorFilter:'Invoices', placement:'bottom', padding:6, title:'Next: Invoices', text:'Click "Take me there" to see how invoice tracking works with sample supplier data loaded in.', nextPage:'/client/invoices', nextStepKey:'invoices' },
+    { type:'nav', selector:null, placement:'center', title:'Next: Invoices', text:'Click "Take me there" to see how invoice tracking works with sample supplier data loaded in.', nextPage:'/client/invoices', nextStepKey:'invoices' },
   ],
   invoices: [
     { type:'info', selector:'.mi-ph', placement:'bottom', padding:10, title:'Invoice Tracking', text:"These are sample invoices from Chick-fil-A's real supplier network — Tyson Foods, Golden State Foods, and more. Upload your own and OptiMenu reads every line item automatically." },
     { type:'info', selector:'.mi-add-btn', placement:'bottom', padding:8, title:'Add an Invoice', text:'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.' },
-    { type:'nav', selector:'.mi-tab', selectorFilter:'Ingredients', placement:'bottom', padding:6, title:'Next: Ingredients', text:'Click "Take me there" to see how invoice data flows into your ingredient costs.', nextPage:'/client/ingredients', nextStepKey:'ingredients' },
+    { type:'nav', selector:null, placement:'center', title:'Next: Ingredients', text:'Click "Take me there" to see how invoice data flows into your ingredient costs.', nextPage:'/client/ingredients', nextStepKey:'ingredients' },
   ],
   ingredients: [
     { type:'info', selector:'.mi-ph', placement:'bottom', padding:10, title:'Ingredient Cost Tracking', text:'These are 24 core Chick-fil-A ingredients with real market costs. When you upload invoices, this list populates automatically.' },
     { type:'info', selector:'.mi-grid-wrap', placement:'top', padding:8, title:'Live Cost Updates', text:'Every ingredient links to your menu items. When a supplier raises prices, your menu margins recalculate instantly.' },
-    { type:'nav', selector:'.mi-tab', selectorFilter:'Menu Items', placement:'bottom', padding:6, title:'Next: Menu Items', text:'Click "Take me there" to see how ingredient costs power your menu engineering.', nextPage:'/client/menu-items', nextStepKey:'menu-items' },
+    { type:'nav', selector:null, placement:'center', title:'Next: Menu Items', text:'Click "Take me there" to see how ingredient costs power your menu engineering.', nextPage:'/client/menu-items', nextStepKey:'menu-items' },
   ],
   'menu-items': [
     { type:'info', selector:'.mi-sbar', placement:'bottom', padding:10, title:'Menu Engineering', text:'30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin. Every card shows exactly where your money is made.' },
     { type:'info', selector:'.mi-grid', placement:'top', padding:8, title:'Margin at a Glance', text:'Green = healthy margin. Red = needs attention. Click any card for a full ingredient breakdown and pricing optimizer.' },
-    { type:'nav', selector:'.mi-tab', selectorFilter:'Analytics', placement:'bottom', padding:6, title:'Next: Analytics', text:'Click "Take me there" to see how sales data and AI recommendations work.', nextPage:'/client/analytics', nextStepKey:'analytics' },
+    { type:'nav', selector:null, placement:'center', title:'Next: Analytics', text:'Click "Take me there" to see how sales data and AI recommendations work.', nextPage:'/client/analytics', nextStepKey:'analytics' },
   ],
   analytics: [
     { type:'info', selector:'.an-ph', placement:'bottom', padding:10, title:'Sales Analytics', text:'Upload a CSV from your POS and OptiMenu maps sales velocity against ingredient costs. See which dishes are moving and which are sitting.' },
@@ -40,6 +42,8 @@ const PAGE_STEPS = {
 
 const SS_KEY = 'optimenu_tour_step';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function getEl(selector, filterText) {
   if (!selector) return null;
   if (filterText) {
@@ -50,7 +54,7 @@ function getEl(selector, filterText) {
   return document.querySelector(selector);
 }
 
-function spotRect(selector, filterText, pad = 12) {
+function computeSpot(selector, filterText, pad = 12) {
   const el = getEl(selector, filterText);
   if (!el) return null;
   const r = el.getBoundingClientRect();
@@ -58,9 +62,11 @@ function spotRect(selector, filterText, pad = 12) {
   return { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
 }
 
-function tooltipPos(spot, placement, tw = 340, th = 180) {
+function computeTooltipPos(spot, placement, tw = 340, th = 200) {
   const vw = window.innerWidth, vh = window.innerHeight, g = 16;
-  if (!spot || placement === 'center') return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
+  if (!spot || placement === 'center') {
+    return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
+  }
   const { x, y, w, h } = spot;
   let left, top;
   if (placement === 'bottom') { left = x + w / 2 - tw / 2; top = y + h + g; }
@@ -74,48 +80,86 @@ function tooltipPos(spot, placement, tw = 340, th = 180) {
   return { left, top };
 }
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
 export default function TourOverlay({ page, restaurantId, onDone }) {
   const router = useRouter();
   const steps = PAGE_STEPS[page] || [];
-  const [stepIdx, setStepIdx] = useState(0);
+
+  // Use a ref for stepIdx to avoid stale closures in measure
+  const stepIdxRef = useRef(0);
+  const [stepIdx, setStepIdxState] = useState(0);
+  function setStepIdx(val) {
+    const next = typeof val === 'function' ? val(stepIdxRef.current) : val;
+    stepIdxRef.current = next;
+    setStepIdxState(next);
+  }
+
   const [spot, setSpot] = useState(null);
   const [ttPos, setTtPos] = useState({ left: 0, top: 0 });
   const [ttVisible, setTtVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const ttRef = useRef();
   const seededRef = useRef(false);
+  const measureTimerRef = useRef();
 
   const step = steps[stepIdx];
   const isLast = stepIdx === steps.length - 1;
   const isNav = step?.type === 'nav';
   const isModal = step?.type === 'modal';
 
+  // ── Seed sample data once ─────────────────────────────────────────────────
   useEffect(() => {
     if (!restaurantId || seededRef.current || page === 'final') return;
     seededRef.current = true;
-    seedSampleData(restaurantId);
+    seedSampleData(restaurantId).then(() => {
+      // Signal dashboard to refetch
+      window.dispatchEvent(new CustomEvent('optimenu-tour-seeded'));
+    });
   }, [restaurantId, page]);
 
+  // ── Measure spotlight — stable, uses ref not state ────────────────────────
   const measure = useCallback(() => {
-    if (!step) return;
-    const s = step.selector ? spotRect(step.selector, step.selectorFilter, step.padding) : null;
+    const currentStep = PAGE_STEPS[page]?.[stepIdxRef.current];
+    if (!currentStep) return;
+
+    const s = currentStep.selector
+      ? computeSpot(currentStep.selector, currentStep.selectorFilter, currentStep.padding)
+      : null;
     setSpot(s);
+
     const tw = ttRef.current?.offsetWidth || 340;
-    const th = ttRef.current?.offsetHeight || 180;
-    setTtPos(tooltipPos(s, step.placement, tw, th));
-  }, [step]);
+    const th = ttRef.current?.offsetHeight || 200;
+    setTtPos(computeTooltipPos(s, currentStep.placement, tw, th));
+  }, [page]); // only depends on page, not step — stable reference
 
-  useEffect(() => { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }, [measure]);
+  // Re-measure on resize
+  useEffect(() => {
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure]);
 
+  // Measure when step changes — with generous delay for page render
   useEffect(() => {
     setTtVisible(false);
-    const t1 = setTimeout(() => { measure(); }, 120);
-    const t2 = setTimeout(() => setTtVisible(true), 280);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [stepIdx, measure]);
+    clearTimeout(measureTimerRef.current);
 
-  useEffect(() => { if (step?.type === 'modal') setShowModal(true); }, [stepIdx]);
+    // Wait longer on first step of each page to ensure DOM is ready
+    const delay = stepIdx === 0 ? 800 : 200;
+    measureTimerRef.current = setTimeout(() => {
+      measure();
+      setTimeout(() => setTtVisible(true), 120);
+    }, delay);
 
+    return () => clearTimeout(measureTimerRef.current);
+  }, [stepIdx]); // only stepIdx, not measure — avoids the loop
+
+  // Auto-open modal
+  useEffect(() => {
+    if (step?.type === 'modal') setShowModal(true);
+  }, [stepIdx]);
+
+  // ── Navigation ────────────────────────────────────────────────────────────
   function next() {
     if (isModal) { setShowModal(true); return; }
     if (isNav && step.nextPage) {
@@ -165,16 +209,14 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         @keyframes t-fade{from{opacity:0}to{opacity:1}}
         @keyframes t-up{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
         @keyframes t-ring{0%{box-shadow:0 0 0 0 rgba(2,164,186,.55)}60%{box-shadow:0 0 0 10px rgba(2,164,186,0)}100%{box-shadow:0 0 0 0 rgba(2,164,186,0)}}
-        @keyframes t-nav-ring{0%{box-shadow:0 0 0 0 rgba(212,160,32,.7)}60%{box-shadow:0 0 0 14px rgba(212,160,32,0)}100%{box-shadow:0 0 0 0 rgba(212,160,32,0)}}
         @keyframes t-blink{0%,100%{opacity:1}50%{opacity:.3}}
         .t-root{position:fixed;inset:0;z-index:9998;pointer-events:none;animation:t-fade .3s ease both;}
         .t-svg{position:absolute;inset:0;width:100%;height:100%;}
         .t-svg path{fill:rgba(0,0,0,.72);fill-rule:evenodd;transition:d .5s cubic-bezier(.4,0,.2,1);}
-        .t-ring{position:absolute;border-radius:10px;pointer-events:none;
+        .t-ring{position:absolute;border-radius:10px;pointer-events:none;border:2px solid #02a4ba;
+          animation:t-ring 2s ease infinite;
           transition:left .5s cubic-bezier(.4,0,.2,1),top .5s cubic-bezier(.4,0,.2,1),
                      width .5s cubic-bezier(.4,0,.2,1),height .5s cubic-bezier(.4,0,.2,1);}
-        .t-ring.info{border:2px solid #02a4ba;animation:t-ring 2s ease infinite;}
-        .t-ring.nav{border:2px solid #d4a020;animation:t-nav-ring 1.4s ease infinite;}
         .t-tt{position:fixed;width:340px;background:#13120f;border:1px solid #3a3630;border-radius:14px;
           box-shadow:0 24px 64px rgba(0,0,0,.75),0 0 0 1px rgba(2,164,186,.1);
           font-family:'Inter',sans-serif;pointer-events:all;z-index:9999;
@@ -184,10 +226,8 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         .t-ey{font-size:10px;font-weight:600;color:#02a4ba;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;}
         .t-ti{font-family:'Playfair Display',serif;font-size:17px;color:#e8e2d8;line-height:1.25;margin-bottom:8px;}
         .t-tx{font-size:13px;color:#6b6358;line-height:1.65;}
-        .t-hint{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;}
-        .t-hint.upload{background:rgba(2,164,186,.07);border:1px solid rgba(2,164,186,.2);color:#02a4ba;}
-        .t-hint svg{width:14px;height:14px;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
-        .t-hint.upload svg{stroke:#02a4ba;}
+        .t-hint{display:flex;align-items:center;gap:8px;margin-top:12px;padding:9px 12px;border-radius:8px;font-size:12px;font-weight:500;background:rgba(2,164,186,.07);border:1px solid rgba(2,164,186,.2);color:#02a4ba;}
+        .t-hint svg{width:14px;height:14px;fill:none;stroke:#02a4ba;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;}
         .t-ft{display:flex;align-items:center;gap:8px;padding:11px 20px;border-top:1px solid #2a2620;}
         .t-skip{background:none;border:none;cursor:pointer;font-size:11px;color:#3a3630;font-family:'Inter',sans-serif;padding:5px 8px;border-radius:5px;transition:color .15s;margin-right:auto;}
         .t-skip:hover{color:#6b6358;}
@@ -216,7 +256,7 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         </svg>
 
         {spot && (
-          <div className={`t-ring ${isNav ? 'nav' : 'info'}`}
+          <div className="t-ring"
             style={{ left: spot.x, top: spot.y, width: spot.w, height: spot.h }} />
         )}
 
@@ -235,7 +275,7 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
             <div className="t-ti">{step.title}</div>
             <div className="t-tx">{step.text}</div>
             {isModal && (
-              <div className="t-hint upload">
+              <div className="t-hint">
                 <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 Upload your menu to complete the tour
               </div>

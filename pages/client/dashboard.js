@@ -513,6 +513,12 @@ export default function ClientDashboard() {
     router.prefetch('/client/analytics');
   }, []);
 
+  useEffect(() => {
+    const handler = () => { if (restaurantId) fetchDashboardData(); };
+    window.addEventListener('optimenu-tour-seeded', handler);
+    return () => window.removeEventListener('optimenu-tour-seeded', handler);
+  }, [restaurantId]);
+
   const { TourComponent } = useTour('dashboard', restaurantId);
 
   async function getRestaurantId() {
