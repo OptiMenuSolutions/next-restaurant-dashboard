@@ -267,6 +267,25 @@ const seededRef = useRef(false);
     if (step?.type === 'modal') setShowModal(true);
   }, [stepIdx]);
 
+  useEffect(() => {
+    if (step?.type !== 'nav' || !step?.nextPage) return;
+
+    const el = getEl(step.selector, step.selectorFilter);
+    if (!el) return;
+
+    const handler = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      try { sessionStorage.setItem(SS_KEY, step.nextStepKey); } catch {}
+      router.push(`${step.nextPage}?tour=true`);
+    };
+
+    // Use capture phase so we fire before the tab's own handler
+    el.addEventListener('click', handler, true);
+    return () => el.removeEventListener('click', handler, true);
+  }, [stepIdx, step]);
+
   // ── Navigation ────────────────────────────────────────────────────────────
   function next() {
     if (step?.type === 'modal') { setShowModal(true); return; }
