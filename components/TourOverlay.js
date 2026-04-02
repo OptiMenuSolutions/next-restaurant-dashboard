@@ -270,16 +270,17 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   // ── Seed on first dashboard view ─────────────────────────────────────────
 
-    const seededRef = useRef(false);
+  const seededRef = useRef(false);
 
     useEffect(() => {
     if (page === 'dashboard' && !isFinal && restaurantId && !seededRef.current) {
         seededRef.current = true;
         seedSampleData(restaurantId).then(() => {
-        // Hard reload the page once after seeding — no event loop possible
         const url = new URL(window.location.href);
         if (!url.searchParams.has('seeded')) {
             url.searchParams.set('seeded', '1');
+            // Preserve tour=true so the tour continues after reload
+            url.searchParams.set('tour', 'true');
             window.location.replace(url.toString());
         }
         });
@@ -317,14 +318,16 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     if (step?.type !== 'click') return;
     const el = getElement(step.selector, step.selectorFilter);
     if (!el) return;
-    const handler = () => {
-      if (step.nextPage) {
-        try { sessionStorage.setItem('optimenu_tour_active', '1'); } catch {}
-      }
+    const handler = (e) => {
+        if (step.nextPage) {
+        e.preventDefault();
+        e.stopPropagation();
+        router.push(step.nextPage);
+        }
     };
-    el.addEventListener('click', handler);
-    return () => el.removeEventListener('click', handler);
-  }, [stepIdx, step]);
+    el.addEventListener('click', handler, true); // capture phase
+    return () => el.removeEventListener('click', handler, true);
+    }, [stepIdx, step]);
 
   // ── Auto-open modal on modal step ─────────────────────────────────────────
 
