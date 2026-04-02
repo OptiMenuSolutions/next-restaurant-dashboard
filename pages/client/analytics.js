@@ -280,7 +280,7 @@ export default function AnalyticsPage() {
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
-  useTour('analytics', restaurantId);
+  const { TourComponent } = useTour('analytics');
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -615,6 +615,7 @@ export default function AnalyticsPage() {
             );})}
           </div>
         </div>
+        <TourComponent />
       </>
     );
   }
@@ -880,6 +881,7 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
+      <TourComponent />
     </>
   );
 }

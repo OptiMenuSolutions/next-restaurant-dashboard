@@ -507,7 +507,7 @@ export default function ClientDashboard() {
     router.prefetch('/client/analytics');
   }, []);
 
-  useTour('dashboard', restaurantId);
+  const { TourComponent } = useTour('dashboard');
 
   async function getRestaurantId() {
     try {
@@ -850,6 +850,7 @@ export default function ClientDashboard() {
         </div>
         <Analytics />
         <SpeedInsights />
+        <TourComponent />
       </>
     );
   }
@@ -1096,6 +1097,7 @@ export default function ClientDashboard() {
 
       <Analytics />
       <SpeedInsights />
+      <TourComponent />
     </>
   );
 }

@@ -233,7 +233,7 @@ export default function ClientIngredients() {
     router.prefetch('/client/analytics');
   }, []);
 
-  useTour('ingredients', restaurantId);
+  const { TourComponent } = useTour('ingredients');
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -560,6 +560,7 @@ export default function ClientIngredients() {
           </div>
 
         </div>
+        <TourComponent />
       </>
     );
   }
@@ -893,6 +894,7 @@ export default function ClientIngredients() {
         </div>
         )}
       </div>
+      <TourComponent />
     </>
   );
 }

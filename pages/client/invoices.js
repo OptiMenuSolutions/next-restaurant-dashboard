@@ -363,7 +363,7 @@ export default function ClientInvoices() {
     router.prefetch('/client/analytics');
   }, []);
 
-  useTour('invoices', restaurantId);
+  const { TourComponent } = useTour('invoices');
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -631,6 +631,7 @@ export default function ClientInvoices() {
 
           <MobBottomNav current="/client/invoices" router={router} />
         </div>
+        <TourComponent />
       </>
     );
   }
@@ -967,6 +968,7 @@ export default function ClientInvoices() {
         )}
 
       </div>
+      <TourComponent />
     </>
   );
 }

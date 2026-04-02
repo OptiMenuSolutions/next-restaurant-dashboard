@@ -284,7 +284,7 @@ export default function ClientMenuItems() {
   }, []);
 
   // ── Tour ──
-  useTour('menu-items', restaurantId);
+  const { TourComponent } = useTour('menu-items');
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -680,6 +680,7 @@ export default function ClientMenuItems() {
           )}
 
         </div>
+        <TourComponent />
       </>
     );
   }
@@ -1127,6 +1128,7 @@ export default function ClientMenuItems() {
         )}
 
       </div>
+      <TourComponent />
     </>
   );
 }
