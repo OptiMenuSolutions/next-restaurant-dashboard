@@ -15,18 +15,18 @@ const PAGE_STEPS = {
     { selector: null, nav: true, title: 'Next: Invoices', text: 'Click "Take me there" to see invoice tracking with sample supplier data.', nextPage: '/client/invoices', nextKey: 'invoices' },
   ],
   invoices: [
-    { selector: '.mi-ph', placement: 'bottom', padding: 10, title: 'Invoice Tracking', text: "Sample invoices from Chick-fil-A's real supplier network. Upload your own and OptiMenu reads every line item automatically." },
-    { selector: '.mi-add-btn', placement: 'bottom', padding: 8, title: 'Add an Invoice', text: 'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.' },
+    { selector: '.inv-ph', placement: 'bottom', padding: 10, title: 'Invoice Tracking', text: "Sample invoices from Chick-fil-A's real supplier network. Upload your own and OptiMenu reads every line item automatically." },
+    { selector: '.inv-upload-btn', placement: 'bottom', padding: 8, title: 'Add an Invoice', text: 'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.' },
     { selector: null, nav: true, title: 'Next: Ingredients', text: 'Click "Take me there" to see ingredient cost tracking.', nextPage: '/client/ingredients', nextKey: 'ingredients' },
   ],
   ingredients: [
-    { selector: '.mi-ph', placement: 'bottom', padding: 10, title: 'Ingredient Cost Tracking', text: '24 core Chick-fil-A ingredients with real market costs. Populates automatically from your invoices.' },
-    { selector: '.mi-grid-wrap', placement: 'top', padding: 8, title: 'Live Cost Updates', text: 'Every ingredient links to your menu items. When a supplier raises prices, your margins recalculate instantly.' },
+    { selector: '.ing-ph', placement: 'bottom', padding: 10, title: 'Ingredient Cost Tracking', text: '24 core Chick-fil-A ingredients with real market costs. Populates automatically from your invoices.' },
+    { selector: '.ing-split', placement: 'top', padding: 8, title: 'Live Cost Updates', text: 'Every ingredient links to your menu items. When a supplier raises prices, your margins recalculate instantly.' },
     { selector: null, nav: true, title: 'Next: Menu Items', text: 'Click "Take me there" to see menu engineering.', nextPage: '/client/menu-items', nextKey: 'menu-items' },
   ],
   'menu-items': [
     { selector: '.mi-sbar', placement: 'bottom', padding: 10, title: 'Menu Engineering', text: '30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin.' },
-    { selector: '.mi-grid', placement: 'top', padding: 8, title: 'Margin at a Glance', text: 'Green = healthy margin. Red = needs attention. Click any card for a full breakdown.' },
+    { selector: '.mi-grid-wrap', placement: 'top', padding: 8, title: 'Margin at a Glance', text: 'Green = healthy margin. Red = needs attention. Click any card for a full breakdown.' },
     { selector: null, nav: true, title: 'Next: Analytics', text: 'Click "Take me there" to see sales analytics.', nextPage: '/client/analytics', nextKey: 'analytics' },
   ],
   analytics: [
@@ -39,30 +39,44 @@ const PAGE_STEPS = {
   ],
 };
 
-function getSpotRect(selector, pad = 12) {
-  if (!selector) return null;
-  const el = document.querySelector(selector);
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (!r.width || !r.height) return null;
-  return { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
-}
+function measure(selector, pad, ttEl) {
+  // Spotlight
+  let spot = null;
+  if (selector) {
+    const el = document.querySelector(selector);
+    if (el) {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) {
+        spot = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
+      }
+    }
+  }
 
-function getTTPos(spot, placement, tw, th) {
-  const vw = window.innerWidth, vh = window.innerHeight, g = 16;
-  if (!spot) return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
-  const { x, y, w, h } = spot;
+  // Tooltip position — read dimensions AFTER element is in DOM
+  const tw = ttEl ? ttEl.offsetWidth || 340 : 340;
+  const th = ttEl ? ttEl.offsetHeight || 180 : 180;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const g = 16;
+
   let left, top;
-  if (placement === 'bottom') { left = x + w / 2 - tw / 2; top = y + h + g; }
-  else if (placement === 'top') { left = x + w / 2 - tw / 2; top = y - th - g; }
-  else if (placement === 'right') { left = x + w + g; top = y + h / 2 - th / 2; }
-  else { left = x + w / 2 - tw / 2; top = y + h + g; }
-  if (top + th > vh - 60) top = y - th - g;
-  if (top < 10) top = y + h + g;
-  return {
-    left: Math.max(16, Math.min(vw - tw - 16, left)),
-    top: Math.max(10, Math.min(vh - th - 70, top)),
-  };
+  if (!spot) {
+    left = Math.max(16, (vw - tw) / 2);
+    top = Math.max(16, (vh - th) / 2);
+  } else {
+    const { x, y, w, h } = spot;
+    // Default bottom
+    left = x + w / 2 - tw / 2;
+    top = y + h + g;
+    // Flip if off bottom
+    if (top + th > vh - 60) top = y - th - g;
+    // Flip if off top
+    if (top < 10) top = y + h + g;
+    left = Math.max(16, Math.min(vw - tw - 16, left));
+    top = Math.max(10, Math.min(vh - th - 70, top));
+  }
+
+  return { spot, ttPos: { left, top } };
 }
 
 export default function TourOverlay({ page, restaurantId, onDone }) {
@@ -70,23 +84,34 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const steps = PAGE_STEPS[page] || [];
   const [idx, setIdx] = useState(0);
   const [spot, setSpot] = useState(null);
-  const [ttPos, setTtPos] = useState({ left: 0, top: 0 });
+  const [ttPos, setTtPos] = useState(null); // null = not yet positioned
   const [visible, setVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const ttRef = useRef();
-  const timers = useRef([]);
+  const ttRef = useRef(null);
+  const timersRef = useRef([]);
+  const retryRef = useRef(null);
 
   const step = steps[idx];
   const isLast = idx === steps.length - 1;
 
-  function schedule(fn, ms) {
+  function addTimer(fn, ms) {
     const t = setTimeout(fn, ms);
-    timers.current.push(t);
+    timersRef.current.push(t);
+    return t;
   }
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  function clearRetry() {
+    if (retryRef.current) { clearInterval(retryRef.current); retryRef.current = null; }
+  }
 
-  // ── Seed once per tour session ──────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      clearRetry();
+    };
+  }, []);
+
+  // ── Seed once ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!restaurantId || page === 'final') return;
     if (sessionStorage.getItem(SEED_KEY)) return;
@@ -94,61 +119,58 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     seedSampleData(restaurantId).then(() => {
       window.dispatchEvent(new CustomEvent('optimenu-tour-seeded'));
     });
-  // empty deps: run once on mount, never again
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // intentional empty deps
 
-  // ── Spotlight with retry loop ───────────────────────────────────────────
-  // Retries every 200ms for up to 3 seconds if element not found yet
+  // ── Measure & position when step changes ──────────────────────────────────
   useEffect(() => {
     setVisible(false);
     setSpot(null);
+    setTtPos(null);
+    clearRetry();
 
     const currentStep = steps[idx];
     if (!currentStep) return;
 
-    // If no selector, just center the tooltip
-    if (!currentStep.selector) {
-      schedule(() => {
-        const tw = ttRef.current?.offsetWidth || 340;
-        const th = ttRef.current?.offsetHeight || 200;
-        setTtPos(getTTPos(null, null, tw, th));
-        setVisible(true);
-      }, 300);
-      return;
-    }
-
-    // Retry finding the element every 200ms, up to 15 attempts (3s)
+    // Wait for page paint, then try to find the element
+    // Retry every 250ms for up to 4s to handle slow renders
     let attempts = 0;
-    const maxAttempts = 15;
+    const maxAttempts = 16;
 
     function tryMeasure() {
       attempts++;
-      const s = getSpotRect(currentStep.selector, currentStep.padding);
-      if (s) {
-        setSpot(s);
-        const tw = ttRef.current?.offsetWidth || 340;
-        const th = ttRef.current?.offsetHeight || 200;
-        setTtPos(getTTPos(s, currentStep.placement, tw, th));
-        setVisible(true);
-      } else if (attempts < maxAttempts) {
-        schedule(tryMeasure, 200);
-      } else {
-        // Element never found — show centered tooltip anyway
-        const tw = ttRef.current?.offsetWidth || 340;
-        const th = ttRef.current?.offsetHeight || 200;
-        setTtPos(getTTPos(null, null, tw, th));
-        setVisible(true);
+      const result = measure(
+        currentStep.selector,
+        currentStep.padding || 12,
+        ttRef.current
+      );
+
+      // If we need a spotlight but didn't find the element yet, keep retrying
+      if (currentStep.selector && !result.spot && attempts < maxAttempts) {
+        return; // interval will call again
       }
+
+      // Got what we need (or gave up)
+      clearRetry();
+      setSpot(result.spot);
+      setTtPos(result.ttPos);
+      // Small delay before showing so position is painted first
+      addTimer(() => setVisible(true), 80);
     }
 
-    // Start first attempt after 400ms to let page render
-    schedule(tryMeasure, 400);
+    // First attempt after 300ms
+    addTimer(() => {
+      tryMeasure();
+      if (currentStep.selector) {
+        // Set up retry interval
+        retryRef.current = setInterval(tryMeasure, 250);
+      }
+    }, 300);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, page]); // only idx and page — no functions in deps
+  }, [idx, page]); // only idx + page
 
-  // ── Navigation ──────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   function goNext() {
     if (step?.modal) { setShowModal(true); return; }
     if (step?.nav && step.nextPage) {
@@ -158,18 +180,19 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     }
     if (isLast) { finish(); return; }
     setVisible(false);
-    schedule(() => setIdx(i => i + 1), 150);
+    addTimer(() => setIdx(i => i + 1), 120);
   }
 
   function goBack() {
     if (idx === 0) return;
     setVisible(false);
-    schedule(() => setIdx(i => i - 1), 150);
+    addTimer(() => setIdx(i => i - 1), 120);
   }
 
   async function finish() {
     setVisible(false);
     setShowModal(false);
+    clearRetry();
     try {
       localStorage.setItem('optimenu_tour_done', '1');
       sessionStorage.removeItem(SS_KEY);
@@ -182,18 +205,11 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     onDone?.();
   }
 
-  // Modal: render only the import modal, no overlay behind it
   if (showModal) {
-    return (
-      <MenuImportModal
-        restaurantId={restaurantId}
-        onClose={finish}
-        onImported={finish}
-      />
-    );
+    return <MenuImportModal restaurantId={restaurantId} onClose={finish} onImported={finish} />;
   }
 
-  if (!step) return null;
+  if (!step || !ttPos) return null; // don't render until positioned
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
@@ -211,20 +227,17 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     <>
       <style>{`
         @keyframes t-fade{from{opacity:0}to{opacity:1}}
-        @keyframes t-up{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+        @keyframes t-pop{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
         @keyframes t-ring{0%{box-shadow:0 0 0 0 rgba(2,164,186,.5)}60%{box-shadow:0 0 0 10px rgba(2,164,186,0)}100%{box-shadow:0 0 0 0 rgba(2,164,186,0)}}
         @keyframes t-blink{0%,100%{opacity:1}50%{opacity:.3}}
-        .t-root{position:fixed;inset:0;z-index:9998;pointer-events:none;animation:t-fade .3s ease both;}
+        .t-root{position:fixed;inset:0;z-index:9998;pointer-events:none;}
         .t-svg{position:absolute;inset:0;width:100%;height:100%;}
-        .t-svg path{fill:rgba(0,0,0,.75);fill-rule:evenodd;transition:d .5s cubic-bezier(.4,0,.2,1);}
-        .t-ring{position:absolute;border-radius:10px;pointer-events:none;border:2px solid #02a4ba;
-          animation:t-ring 2s ease infinite;
-          transition:left .4s cubic-bezier(.4,0,.2,1),top .4s cubic-bezier(.4,0,.2,1),
-                     width .4s cubic-bezier(.4,0,.2,1),height .4s cubic-bezier(.4,0,.2,1);}
+        .t-svg path{fill:rgba(0,0,0,.75);fill-rule:evenodd;}
+        .t-ring{position:absolute;border-radius:10px;pointer-events:none;border:2px solid #02a4ba;animation:t-ring 2s ease infinite;}
         .t-tt{position:fixed;width:340px;background:#13120f;border:1px solid #3a3630;border-radius:14px;
           box-shadow:0 24px 64px rgba(0,0,0,.8),0 0 0 1px rgba(2,164,186,.12);
-          font-family:'Inter',sans-serif;pointer-events:all;z-index:9999;}
-        .t-tt.vis{animation:t-up .25s cubic-bezier(.4,0,.2,1) both;}
+          font-family:'Inter',sans-serif;pointer-events:all;z-index:9999;opacity:0;}
+        .t-tt.vis{animation:t-pop .2s cubic-bezier(.4,0,.2,1) forwards;}
         .t-body{padding:18px 20px 14px;}
         .t-ey{font-size:10px;font-weight:600;color:#02a4ba;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;}
         .t-ti{font-family:'Playfair Display',serif;font-size:17px;color:#e8e2d8;line-height:1.25;margin-bottom:8px;}
@@ -267,8 +280,11 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
           </div>
         )}
 
-        <div ref={ttRef} className={`t-tt${visible ? ' vis' : ''}`}
-          style={{ left: ttPos.left, top: ttPos.top }}>
+        <div
+          ref={ttRef}
+          className={`t-tt${visible ? ' vis' : ''}`}
+          style={{ left: ttPos.left, top: ttPos.top }}
+        >
           <div className="t-body">
             <div className="t-ey">
               {page === 'final' ? 'Final Step' : `${page.replace('-', ' ')} · Step ${idx + 1} of ${steps.length}`}

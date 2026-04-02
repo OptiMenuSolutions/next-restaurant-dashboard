@@ -500,13 +500,6 @@ export default function ClientDashboard() {
 
   useEffect(() => { getRestaurantId(); }, []);
   useEffect(() => {
-    if (!restaurantId) return;
-    // Small delay during tour to allow sample data to seed first
-    const delay = router.query.tour === 'true' ? 2000 : 0;
-    const t = setTimeout(() => fetchDashboardData(), delay);
-    return () => clearTimeout(t);
-  }, [restaurantId, router.query.tour]);
-  useEffect(() => {
     router.prefetch('/client/dashboard');
     router.prefetch('/client/invoices');
     router.prefetch('/client/ingredients');
