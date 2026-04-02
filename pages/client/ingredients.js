@@ -232,8 +232,13 @@ export default function ClientIngredients() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+  useEffect(() => {
+    const handler = () => { if (restaurantId) fetchIngredients(); };
+    window.addEventListener('optimenu-data-refresh', handler);
+    return () => window.removeEventListener('optimenu-data-refresh', handler);
+  }, [restaurantId]);
 
-  const { TourComponent } = useTour('ingredients');
+  const { TourComponent } = useTour('ingredients', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
+import { restartTour } from '../../lib/useTour';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -686,6 +687,10 @@ export default function ProfilePage() {
           {/* ── SUPPORT TAB ── */}
           {activeTab === 'support' && (
             <>
+              <div className="pr-link-row" onClick={() => restartTour(router)}>
+                <div className="pr-link-label">Restart Tour</div>
+                <div className="pr-link-arrow">→</div>
+              </div>
               <div className="pr-section">
                 <div className="pr-section-title">Send Feedback</div>
                 <div className="pr-field">

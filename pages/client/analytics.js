@@ -279,8 +279,13 @@ export default function AnalyticsPage() {
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
+  useEffect(() => {
+    const handler = () => { if (restaurantId) loadSalesData(restaurantId); };
+    window.addEventListener('optimenu-data-refresh', handler);
+    return () => window.removeEventListener('optimenu-data-refresh', handler);
+  }, [restaurantId]);
 
-  const { TourComponent } = useTour('analytics');
+  const { TourComponent } = useTour('analytics', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
