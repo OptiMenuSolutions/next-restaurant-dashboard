@@ -7,6 +7,7 @@ import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
 import MenuImportModal from '../../components/MenuImportModal';
 import { useTour } from '../../lib/useTour';
+import TourOverlay from '../../components/TourOverlay';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -284,7 +285,7 @@ export default function ClientMenuItems() {
   }, []);
 
   // ── Tour ──
-  const { TourComponent } = useTour('menu-items', restaurantId);
+  const { tourProps } = useTour('menu-items', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -680,7 +681,7 @@ export default function ClientMenuItems() {
           )}
 
         </div>
-        <TourComponent />
+        {tourProps && <TourOverlay {...tourProps} />}
       </>
     );
   }
@@ -1128,7 +1129,7 @@ export default function ClientMenuItems() {
         )}
 
       </div>
-      <TourComponent />
+      {tourProps && <TourOverlay {...tourProps} />}
     </>
   );
 }

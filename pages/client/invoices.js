@@ -5,6 +5,7 @@ import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
+import TourOverlay from '../../components/TourOverlay';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -363,7 +364,7 @@ export default function ClientInvoices() {
     router.prefetch('/client/analytics');
   }, []);
 
-  const { TourComponent } = useTour('invoices', restaurantId);
+  const { tourProps } = useTour('invoices', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -631,7 +632,7 @@ export default function ClientInvoices() {
 
           <MobBottomNav current="/client/invoices" router={router} />
         </div>
-        <TourComponent />
+        {tourProps && <TourOverlay {...tourProps} />}
       </>
     );
   }
@@ -968,7 +969,7 @@ export default function ClientInvoices() {
         )}
 
       </div>
-      <TourComponent />
+      {tourProps && <TourOverlay {...tourProps} />}
     </>
   );
 }

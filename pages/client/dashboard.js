@@ -7,6 +7,7 @@ import { SpeedInsights } from '@vercel/speed-insights/next';
 import { useWindowSize } from "../../lib/useWindowSize";
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
+import TourOverlay from '../../components/TourOverlay';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -519,7 +520,7 @@ export default function ClientDashboard() {
     return () => window.removeEventListener('optimenu-tour-seeded', handler);
   }, [restaurantId]);
 
-  const { TourComponent } = useTour('dashboard', restaurantId);
+  const { tourProps } = useTour('dashboard', restaurantId);
 
   async function getRestaurantId() {
     try {
@@ -862,7 +863,7 @@ export default function ClientDashboard() {
         </div>
         <Analytics />
         <SpeedInsights />
-        <TourComponent />
+        {tourProps && <TourOverlay {...tourProps} />}
       </>
     );
   }
@@ -1109,7 +1110,7 @@ export default function ClientDashboard() {
 
       <Analytics />
       <SpeedInsights />
-      <TourComponent />
+      {tourProps && <TourOverlay {...tourProps} />}
     </>
   );
 }

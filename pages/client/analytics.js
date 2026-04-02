@@ -6,6 +6,7 @@ import { useWindowSize } from '../../lib/useWindowSize';
 import { parseCSV, detectPOSSystem, buildColumnMapping, normalizeRows } from '../../lib/parsePOScsv';
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
+import TourOverlay from '../../components/TourOverlay';
 
 function formatCurrency(n) {
   if (!n && n !== 0) return '$0';
@@ -280,7 +281,7 @@ export default function AnalyticsPage() {
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
-  const { TourComponent } = useTour('analytics', restaurantId);
+  const { tourProps } = useTour('analytics', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -615,7 +616,7 @@ export default function AnalyticsPage() {
             );})}
           </div>
         </div>
-        <TourComponent />
+        {tourProps && <TourOverlay {...tourProps} />}
       </>
     );
   }
@@ -881,7 +882,7 @@ export default function AnalyticsPage() {
           </div>
         )}
       </div>
-      <TourComponent />
+      {tourProps && <TourOverlay {...tourProps} />}
     </>
   );
 }

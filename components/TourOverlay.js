@@ -1,10 +1,8 @@
 // components/TourOverlay.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import dynamic from 'next/dynamic';
+import MenuImportModal from './MenuImportModal';
 import { seedSampleData, clearSampleData } from '../lib/seedSampleData';
-
-const MenuImportModal = dynamic(() => import('./MenuImportModal'), { ssr: false });
 
 const SS_KEY = 'optimenu_tour_step';
 const SEED_KEY = 'optimenu_tour_seeded';
@@ -28,7 +26,7 @@ const PAGE_STEPS = {
   ],
   'menu-items': [
     { selector: '.mi-sbar', placement: 'bottom', padding: 10, title: 'Menu Engineering', text: '30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin.' },
-    { selector: '.mi-grid', placement: 'top', padding: 8, title: 'Margin at a Glance', text: 'Green = healthy margin. Red = needs attention. Click any card for a full breakdown and pricing optimizer.' },
+    { selector: '.mi-grid', placement: 'top', padding: 8, title: 'Margin at a Glance', text: 'Green = healthy margin. Red = needs attention. Click any card for a full breakdown.' },
     { selector: null, nav: true, title: 'Next: Analytics', text: 'Click "Take me there" to see sales analytics.', nextPage: '/client/analytics', nextKey: 'analytics' },
   ],
   analytics: [
@@ -36,7 +34,7 @@ const PAGE_STEPS = {
     { selector: null, nav: true, title: 'Back to Dashboard', text: 'Last stop — click "Take me there" to finish and import your real menu.', nextPage: '/client/dashboard', nextKey: 'final' },
   ],
   final: [
-    { selector: null, title: 'One Last Step 🎉', text: 'The sample data will be cleared. Upload a photo or PDF of your real menu and Claude will extract every dish automatically.' },
+    { selector: null, title: 'One Last Step 🎉', text: 'Sample data cleared. Upload a photo or PDF of your real menu and Claude will extract every dish automatically.' },
     { selector: null, modal: true, title: 'Import Your Menu', text: 'Upload your menu now to complete the tour.' },
   ],
 };
@@ -52,7 +50,7 @@ function getSpotRect(selector, pad = 12) {
 
 function getTTPos(spot, placement, tw, th) {
   const vw = window.innerWidth, vh = window.innerHeight, g = 16;
-  if (!spot) return { left: (vw - tw) / 2, top: (vh - th) / 2 };
+  if (!spot) return { left: Math.max(16, (vw - tw) / 2), top: Math.max(16, (vh - th) / 2) };
   const { x, y, w, h } = spot;
   let left, top;
   if (placement === 'bottom') { left = x + w / 2 - tw / 2; top = y + h + g; }
@@ -76,24 +74,19 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const [visible, setVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const ttRef = useRef();
-  const idxRef = useRef(0);
   const timers = useRef([]);
 
   const step = steps[idx];
   const isLast = idx === steps.length - 1;
 
-  function addTimer(fn, ms) {
+  function schedule(fn, ms) {
     const t = setTimeout(fn, ms);
     timers.current.push(t);
-    return t;
   }
 
-  // Clear all timers on unmount
-  useEffect(() => {
-    return () => timers.current.forEach(clearTimeout);
-  }, []);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  // ── Seed once per tour session ─────────────────────────────────────────────
+  // ── Seed once per tour session ──────────────────────────────────────────
   useEffect(() => {
     if (!restaurantId || page === 'final') return;
     if (sessionStorage.getItem(SEED_KEY)) return;
@@ -101,40 +94,61 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     seedSampleData(restaurantId).then(() => {
       window.dispatchEvent(new CustomEvent('optimenu-tour-seeded'));
     });
+  // empty deps: run once on mount, never again
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // empty deps — run once on mount only
+  }, []);
 
-  // ── Measure spotlight ─────────────────────────────────────────────────────
-  function doMeasure(stepObj) {
-    if (!stepObj) return;
-    const s = stepObj.selector ? getSpotRect(stepObj.selector, stepObj.padding) : null;
-    setSpot(s);
-    const tw = ttRef.current?.offsetWidth || 340;
-    const th = ttRef.current?.offsetHeight || 200;
-    setTtPos(getTTPos(s, stepObj.placement, tw, th));
-  }
-
-  // Run measure when idx changes — delay on first step only
+  // ── Spotlight with retry loop ───────────────────────────────────────────
+  // Retries every 200ms for up to 3 seconds if element not found yet
   useEffect(() => {
     setVisible(false);
+    setSpot(null);
+
     const currentStep = steps[idx];
-    const delay = idx === 0 ? 700 : 200;
-    addTimer(() => {
-      doMeasure(currentStep);
-      addTimer(() => setVisible(true), 100);
-    }, delay);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx]); // only idx — no callbacks in deps
+    if (!currentStep) return;
 
-  // Auto-open modal
-  useEffect(() => {
-    if (step?.modal) {
-      addTimer(() => setShowModal(true), 300);
+    // If no selector, just center the tooltip
+    if (!currentStep.selector) {
+      schedule(() => {
+        const tw = ttRef.current?.offsetWidth || 340;
+        const th = ttRef.current?.offsetHeight || 200;
+        setTtPos(getTTPos(null, null, tw, th));
+        setVisible(true);
+      }, 300);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx]);
 
-  // ── Navigation ────────────────────────────────────────────────────────────
+    // Retry finding the element every 200ms, up to 15 attempts (3s)
+    let attempts = 0;
+    const maxAttempts = 15;
+
+    function tryMeasure() {
+      attempts++;
+      const s = getSpotRect(currentStep.selector, currentStep.padding);
+      if (s) {
+        setSpot(s);
+        const tw = ttRef.current?.offsetWidth || 340;
+        const th = ttRef.current?.offsetHeight || 200;
+        setTtPos(getTTPos(s, currentStep.placement, tw, th));
+        setVisible(true);
+      } else if (attempts < maxAttempts) {
+        schedule(tryMeasure, 200);
+      } else {
+        // Element never found — show centered tooltip anyway
+        const tw = ttRef.current?.offsetWidth || 340;
+        const th = ttRef.current?.offsetHeight || 200;
+        setTtPos(getTTPos(null, null, tw, th));
+        setVisible(true);
+      }
+    }
+
+    // Start first attempt after 400ms to let page render
+    schedule(tryMeasure, 400);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, page]); // only idx and page — no functions in deps
+
+  // ── Navigation ──────────────────────────────────────────────────────────
   function goNext() {
     if (step?.modal) { setShowModal(true); return; }
     if (step?.nav && step.nextPage) {
@@ -144,19 +158,13 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     }
     if (isLast) { finish(); return; }
     setVisible(false);
-    addTimer(() => {
-      idxRef.current = idx + 1;
-      setIdx(idx + 1);
-    }, 150);
+    schedule(() => setIdx(i => i + 1), 150);
   }
 
   function goBack() {
     if (idx === 0) return;
     setVisible(false);
-    addTimer(() => {
-      idxRef.current = idx - 1;
-      setIdx(idx - 1);
-    }, 150);
+    schedule(() => setIdx(i => i - 1), 150);
   }
 
   async function finish() {
@@ -174,6 +182,17 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     onDone?.();
   }
 
+  // Modal: render only the import modal, no overlay behind it
+  if (showModal) {
+    return (
+      <MenuImportModal
+        restaurantId={restaurantId}
+        onClose={finish}
+        onImported={finish}
+      />
+    );
+  }
+
   if (!step) return null;
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
@@ -188,17 +207,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const globalIdx = pageOffset + idx + 1;
   const total = Object.values(PAGE_STEPS).reduce((s, a) => s + a.length, 0);
 
-  // When modal is showing, hide the overlay so import modal is fully visible
-  if (showModal) {
-    return (
-      <MenuImportModal
-        restaurantId={restaurantId}
-        onClose={finish}
-        onImported={finish}
-      />
-    );
-  }
-
   return (
     <>
       <style>{`
@@ -211,8 +219,8 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         .t-svg path{fill:rgba(0,0,0,.75);fill-rule:evenodd;transition:d .5s cubic-bezier(.4,0,.2,1);}
         .t-ring{position:absolute;border-radius:10px;pointer-events:none;border:2px solid #02a4ba;
           animation:t-ring 2s ease infinite;
-          transition:left .5s cubic-bezier(.4,0,.2,1),top .5s cubic-bezier(.4,0,.2,1),
-                     width .5s cubic-bezier(.4,0,.2,1),height .5s cubic-bezier(.4,0,.2,1);}
+          transition:left .4s cubic-bezier(.4,0,.2,1),top .4s cubic-bezier(.4,0,.2,1),
+                     width .4s cubic-bezier(.4,0,.2,1),height .4s cubic-bezier(.4,0,.2,1);}
         .t-tt{position:fixed;width:340px;background:#13120f;border:1px solid #3a3630;border-radius:14px;
           box-shadow:0 24px 64px rgba(0,0,0,.8),0 0 0 1px rgba(2,164,186,.12);
           font-family:'Inter',sans-serif;pointer-events:all;z-index:9999;}
