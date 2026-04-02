@@ -506,6 +506,21 @@ export default function ClientDashboard() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+  // DASHBOARD PATCH — add this useEffect after your existing useEffects
+// It watches for the tour seed signal and refetches data
+
+  useEffect(() => {
+    function checkAndRefetch() {
+      if (window.__optimenuTourSeeded && restaurantId) {
+        window.__optimenuTourSeeded = false;
+        fetchDashboardData();
+      }
+    }
+    // Poll briefly after tour starts to catch the seed completion
+    const interval = setInterval(checkAndRefetch, 500);
+    const timeout = setTimeout(() => clearInterval(interval), 10000);
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [restaurantId]);
 
   const { TourComponent } = useTour('dashboard', restaurantId);
 
