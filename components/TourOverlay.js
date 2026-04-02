@@ -100,7 +100,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   const [ttVisible, setTtVisible] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const ttRef = useRef();
-  const seededRef = useRef(false);
   const measureTimerRef = useRef();
 
   const step = steps[stepIdx];
@@ -110,10 +109,14 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   // ── Seed sample data once ─────────────────────────────────────────────────
   useEffect(() => {
-    if (!restaurantId || seededRef.current || page === 'final') return;
-    seededRef.current = true;
+    if (!restaurantId || page === 'final') return;
+
+    // Use sessionStorage so this survives re-renders and re-mounts
+    const alreadySeeded = sessionStorage.getItem('optimenu_tour_seeded');
+    if (alreadySeeded) return;
+
+    sessionStorage.setItem('optimenu_tour_seeded', '1');
     seedSampleData(restaurantId).then(() => {
-      // Signal dashboard to refetch
       window.dispatchEvent(new CustomEvent('optimenu-tour-seeded'));
     });
   }, [restaurantId, page]);
@@ -180,7 +183,11 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   async function finish() {
     setTtVisible(false);
-    try { localStorage.setItem('optimenu_tour_done', '1'); sessionStorage.removeItem(SS_KEY); } catch {}
+    try {
+      localStorage.setItem('optimenu_tour_done', '1');
+      sessionStorage.removeItem(SS_KEY);
+      sessionStorage.removeItem('optimenu_tour_seeded'); // ← add this
+    } catch {}
     if (restaurantId) await clearSampleData(restaurantId);
     const url = new URL(window.location.href);
     url.searchParams.delete('tour');
