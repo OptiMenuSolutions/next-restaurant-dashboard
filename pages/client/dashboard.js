@@ -597,73 +597,126 @@ export default function ClientDashboard() {
     const processedInvoices = invoices.filter(i => i.number && i.supplier && i.amount);
     const totalSpending = processedInvoices.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
     const unpricedIngredients = ingredients.filter(i => !i.last_price || parseFloat(i.last_price) === 0).length;
-    const recentInvoices = processedInvoices.slice(0, 4).map(i => ({ id: i.id, number: i.number, supplier: i.supplier, amount: i.amount, date: i.date }));
-
+    const recentInvoices = processedInvoices.slice(0, 4).map(i => ({
+      id: i.id, number: i.number, supplier: i.supplier, amount: i.amount, date: i.date,
+    }));
+  
     const menuItemAnalysis = menuItems.map(item => {
-      const cost = (item.menu_item_components || []).reduce((t, c) => t + parseFloat(c.cost || 0), 0);
       const price = parseFloat(item.price || 0);
-      const margin = price > 0 ? ((price - cost) / price) * 100 : 0;
-      const hasData = (item.menu_item_components || []).length > 0 &&
-        (item.menu_item_components || []).every(c =>
+  
+      // Use component-calculated cost if available, fall back to item.cost directly
+      let cost = 0;
+      let hasCompleteData = false;
+  
+      if (item.menu_item_components && item.menu_item_components.length > 0) {
+        cost = item.menu_item_components.reduce((t, c) => t + parseFloat(c.cost || 0), 0);
+        hasCompleteData = item.menu_item_components.every(c =>
           (c.component_ingredients || []).length > 0 &&
-          (c.component_ingredients || []).every(ci => ci.ingredients?.last_price && parseFloat(ci.ingredients.last_price) > 0)
+          (c.component_ingredients || []).every(ci =>
+            ci.ingredients?.last_price && parseFloat(ci.ingredients.last_price) > 0
+          )
         );
-      return { id: item.id, name: item.name, price, cost, margin, hasCompleteData: hasData };
+      } else if (item.cost && parseFloat(item.cost) > 0) {
+        // Sample data: cost is stored directly on the item
+        cost = parseFloat(item.cost);
+        hasCompleteData = price > 0; // if we have price and cost, data is complete
+      }
+  
+      const margin = price > 0 && cost > 0 ? ((price - cost) / price) * 100 : 0;
+      return { id: item.id, name: item.name, price, cost, margin, hasCompleteData };
     });
-
+  
     const itemsWithMargins = menuItemAnalysis.filter(i => i.hasCompleteData && i.price > 0);
     const averageMargin = itemsWithMargins.length > 0
       ? itemsWithMargins.reduce((s, i) => s + i.margin, 0) / itemsWithMargins.length
       : 0;
     const lowMarginCount = itemsWithMargins.filter(i => i.margin < LOW_MARGIN_THRESHOLD).length;
-
+  
     const ingredientTrends = ingredients
       .filter(i => i.last_price > 0)
       .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
       .slice(0, 5)
       .map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
-
-    const currentYear = new Date().getFullYear();
-    const monthlySpending = Array.from({ length: 12 }, (_, m) => {
-      const name = new Date(currentYear, m).toLocaleDateString('en-US', { month: 'short' });
+  
+    // Use rolling 12 months instead of calendar year so tour data always shows
+    const now = new Date();
+    const monthlySpending = Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (11 - i), 1);
+      const name = d.toLocaleDateString('en-US', { month: 'short' });
       const total = processedInvoices
-        .filter(i => i.date && new Date(i.date).getFullYear() === currentYear && new Date(i.date).getMonth() === m)
-        .reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+        .filter(inv => {
+          if (!inv.date) return false;
+          const id = new Date(inv.date);
+          return id.getFullYear() === d.getFullYear() && id.getMonth() === d.getMonth();
+        })
+        .reduce((s, inv) => s + parseFloat(inv.amount || 0), 0);
       return { month: name, total };
     });
-
+  
     const aiProfitScore = calculateAIProfitScore({
       itemsWithMargins, averageMargin, unpricedIngredients,
-      totalIngredients: ingredients.length, totalMenuItems: menuItems.length,
-      processedInvoices, totalInvoices: invoices.length,
+      totalIngredients: ingredients.length,
+      totalMenuItems: menuItems.length,
+      processedInvoices,
+      totalInvoices: invoices.length,
     });
-
+  
     return {
-      totalInvoices: invoices.length, totalIngredients: ingredients.length,
-      totalMenuItems: menuItems.length, recentInvoices, ingredientTrends,
-      menuItemAnalysis, monthlySpending, unpricedIngredients, averageMargin,
-      totalSpending, aiProfitScore, lowMarginCount,
+      totalInvoices: invoices.length,
+      totalIngredients: ingredients.length,
+      totalMenuItems: menuItems.length,
+      recentInvoices,
+      ingredientTrends,
+      menuItemAnalysis,
+      monthlySpending,
+      unpricedIngredients,
+      averageMargin,
+      totalSpending,
+      aiProfitScore,
+      lowMarginCount,
     };
   }
 
-  function calculateAIProfitScore({ itemsWithMargins, averageMargin, unpricedIngredients, totalIngredients, totalMenuItems, processedInvoices, totalInvoices }) {
+  function calculateAIProfitScore({
+    itemsWithMargins, averageMargin, unpricedIngredients,
+    totalIngredients, totalMenuItems, processedInvoices, totalInvoices,
+  }) {
     let score = 0;
-    score += Math.min((averageMargin / 60) * 30, 30);
-    score += totalIngredients > 0 ? ((totalIngredients - unpricedIngredients) / totalIngredients) * 10 : 0;
-    score += totalMenuItems > 0 ? (itemsWithMargins.length / totalMenuItems) * 10 : 0;
-    score += totalInvoices > 0 ? (processedInvoices.length / totalInvoices) * 5 : 0;
+  
+    // Margin quality — up to 35 points
+    // averageMargin for sample CFA data is ~73%, so this gives ~35 pts
+    score += Math.min((averageMargin / 60) * 35, 35);
+  
+    // Ingredient pricing coverage — up to 15 points
+    score += totalIngredients > 0
+      ? ((totalIngredients - unpricedIngredients) / totalIngredients) * 15
+      : 0;
+  
+    // Menu item costing coverage — up to 15 points
+    score += totalMenuItems > 0
+      ? (itemsWithMargins.length / totalMenuItems) * 15
+      : 0;
+  
+    // Invoice processing rate — up to 10 points
+    score += totalInvoices > 0
+      ? (processedInvoices.length / totalInvoices) * 10
+      : 0;
+  
+    // High vs low margin balance — up to 15 points
     if (itemsWithMargins.length > 0) {
       const high = itemsWithMargins.filter(i => i.margin >= 50).length;
-      const low = itemsWithMargins.filter(i => i.margin < 25).length;
-      score += Math.max(Math.min(((high / itemsWithMargins.length) * 15) - ((low / itemsWithMargins.length) * 10) + 10, 20), 0);
+      const low  = itemsWithMargins.filter(i => i.margin < 25).length;
+      const balance = ((high / itemsWithMargins.length) * 15)
+        - ((low / itemsWithMargins.length) * 8);
+      score += Math.max(0, Math.min(15, balance + 5));
     }
-    const recent = processedInvoices.filter(i => {
-      const d = new Date(i.created_at);
-      const ago = new Date();
-      ago.setDate(ago.getDate() - 30);
-      return d >= ago;
-    }).length;
-    score += Math.min((recent / 10) * 15, 15);
+  
+    // Recent invoice activity — up to 10 points
+    const thirtyAgo = new Date();
+    thirtyAgo.setDate(thirtyAgo.getDate() - 30);
+    const recent = processedInvoices.filter(i => new Date(i.date || i.created_at) >= thirtyAgo).length;
+    score += Math.min((recent / 5) * 10, 10);
+  
     return { score: Math.max(0, Math.min(100, Math.round(score))) };
   }
 
@@ -948,20 +1001,6 @@ export default function ClientDashboard() {
             <span className="db-wname">Welcome back, {userName}</span>
             <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
           </div>
-          <div style={{ display: 'flex', gap: 'clamp(14px,1.8vw,32px)' }}>
-            {[
-              { v: data.totalInvoices, l: 'Invoices', c: '#02a4ba' },
-              { v: data.totalIngredients, l: 'Ingredients', c: '#e8e2d8' },
-              { v: data.totalMenuItems, l: 'Menu Items', c: '#e8e2d8' },
-              { v: `${data.averageMargin.toFixed(1)}%`, l: 'Avg Margin', c: getMarginColor(data.averageMargin) },
-              { v: formatCurrency(data.totalSpending), l: 'YTD Spend', c: '#d4a020' },
-            ].map(({ v, l, c }) => (
-              <div key={l}>
-                <div className="db-wstat-v" style={{ color: c }}>{v}</div>
-                <div className="db-wstat-l">{l}</div>
-              </div>
-            ))}
-          </div>
         </div>
 
         {/* GRID */}
@@ -986,6 +1025,8 @@ export default function ClientDashboard() {
               <div className="db-pills">
                 {[
                   { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba' },
+                  { l: 'Ingredients',   v: data.totalIngredients, c: '#e8e2d8' },
+                  { l: 'Menu Items',    v: data.totalMenuItems,   c: '#e8e2d8' },
                   { l: 'Unpriced', v: data.unpricedIngredients, c: '#d4a020' },
                   { l: 'Low Margin', v: data.lowMarginCount, c: '#c04040' },
                   { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a' },

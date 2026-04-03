@@ -1,8 +1,4 @@
 // components/TourOverlay.js
-// IMPORTANT: This file must NOT import from lib/seedSampleData or lib/useTour.
-// Seeding and cleanup are handled entirely in lib/useTour.js.
-// onDone (passed as prop) handles clearSampleData before calling back to the page.
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import MenuImportModal from './MenuImportModal';
@@ -144,6 +140,9 @@ const PAGE_STEPS = {
     {
       selector: null,
       nav: true,
+      // finishTour: true marks the tour as done BEFORE navigating,
+      // so the dashboard doesn't re-trigger the tour on arrival
+      finishTour: true,
       title: 'Back to Dashboard',
       text: 'Last stop — click "Take me there" to finish and import your real menu.',
       nextPage: '/client/dashboard',
@@ -154,13 +153,13 @@ const PAGE_STEPS = {
     {
       selector: null,
       title: 'One Last Step 🎉',
-      text: 'Sample data cleared. Upload a photo or PDF of your real menu and Claude will extract every dish automatically.',
+      text: 'Upload a photo or PDF of your real menu and Claude will extract every dish automatically.',
     },
     {
       selector: null,
       modal: true,
       title: 'Import Your Menu',
-      text: 'Upload your menu now to complete the tour.',
+      text: 'Upload your menu now to complete setup.',
     },
   ],
 };
@@ -168,8 +167,6 @@ const PAGE_STEPS = {
 const TRANSITION_MS = 400;
 const EASE = 'cubic-bezier(.4,0,.2,1)';
 const TYPE_SPEED = 16;
-
-// ─── Typewriter hook ──────────────────────────────────────────────────────────
 
 function useTypewriter(text, active) {
   const [displayed, setDisplayed] = useState('');
@@ -180,23 +177,15 @@ function useTypewriter(text, active) {
   useEffect(() => {
     clearTimeout(timer.current);
     if (!active || !text) {
-      setDisplayed('');
-      setDone(false);
-      charIdx.current = 0;
-      return;
+      setDisplayed(''); setDone(false); charIdx.current = 0; return;
     }
-    setDisplayed('');
-    setDone(false);
-    charIdx.current = 0;
-
+    setDisplayed(''); setDone(false); charIdx.current = 0;
     function tick() {
       charIdx.current += 1;
       setDisplayed(text.slice(0, charIdx.current));
       if (charIdx.current < text.length) {
         timer.current = setTimeout(tick, TYPE_SPEED);
-      } else {
-        setDone(true);
-      }
+      } else { setDone(true); }
     }
     timer.current = setTimeout(tick, TYPE_SPEED);
     return () => clearTimeout(timer.current);
@@ -204,8 +193,6 @@ function useTypewriter(text, active) {
 
   return { displayed, done };
 }
-
-// ─── Geometry helpers ─────────────────────────────────────────────────────────
 
 function getSpot(selector, pad) {
   if (!selector) return null;
@@ -236,19 +223,17 @@ function getTooltipPos(spot, ttW, ttH) {
   return { left, top };
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
-
 export default function TourOverlay({ page, restaurantId, onDone }) {
   const router = useRouter();
   const steps  = PAGE_STEPS[page] || [];
 
-  const [idx,       setIdx]       = useState(0);
-  const [spot,      setSpot]      = useState(null);
-  const [ttPos,     setTtPos]     = useState(null);
-  const [ttVisible, setTtVisible] = useState(false);
-  const [typeActive,setTypeActive]= useState(false);
-  const [showModal, setShowModal] = useState(false);
-  const [ready,     setReady]     = useState(false);
+  const [idx,        setIdx]       = useState(0);
+  const [spot,       setSpot]      = useState(null);
+  const [ttPos,      setTtPos]     = useState(null);
+  const [ttVisible,  setTtVisible] = useState(false);
+  const [typeActive, setTypeActive]= useState(false);
+  const [showModal,  setShowModal] = useState(false);
+  const [ready,      setReady]     = useState(false);
 
   const ttRef    = useRef(null);
   const timers   = useRef([]);
@@ -257,7 +242,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   const step   = steps[idx];
   const isLast = idx === steps.length - 1;
-
   const { displayed, done: typeDone } = useTypewriter(step?.text || '', typeActive);
 
   function after(fn, ms) {
@@ -273,14 +257,12 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
 
   useEffect(() => () => clearAll(), []);
 
-  // On mount: restore cross-page spotlight, then glide to first step
   useEffect(() => {
     let fromSpot = null;
     try {
       const s = sessionStorage.getItem(SPOT_KEY);
       if (s) { fromSpot = JSON.parse(s); sessionStorage.removeItem(SPOT_KEY); }
     } catch {}
-
     if (fromSpot) {
       setSpot(fromSpot);
       setTtPos(getTooltipPos(fromSpot, 340, 180));
@@ -293,7 +275,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-position when idx changes
   useEffect(() => {
     if (!ready) return;
     if (prevIdx.current === -1) { prevIdx.current = 0; return; }
@@ -307,36 +288,23 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     clearAll();
     const s = steps[stepIdx];
     if (!s) return;
-
     let attempts = 0;
-
     function tryPlace() {
       attempts++;
       const ttEl = ttRef.current;
       const ttW  = ttEl?.offsetWidth  || 340;
       const ttH  = ttEl?.offsetHeight || 180;
-      const newSpot   = getSpot(s.selector, s.padding || 12);
-
-      if (s.selector && !newSpot && attempts < 20) return; // keep retrying
-
+      const newSpot  = getSpot(s.selector, s.padding || 12);
+      if (s.selector && !newSpot && attempts < 20) return;
       clearAll();
       const newTtPos = getTooltipPos(newSpot, ttW, ttH);
-
       if (!animate) {
-        // Snap into place on first step
-        setSpot(newSpot);
-        setTtPos(newTtPos);
-        after(() => {
-          setTtVisible(true);
-          after(() => setTypeActive(true), 80);
-        }, 80);
+        setSpot(newSpot); setTtPos(newTtPos);
+        after(() => { setTtVisible(true); after(() => setTypeActive(true), 80); }, 80);
       } else {
-        // Fade out → spotlight glides → fade in + typewriter
-        setTtVisible(false);
-        setTypeActive(false);
+        setTtVisible(false); setTypeActive(false);
         after(() => {
-          setSpot(newSpot);
-          setTtPos(newTtPos);
+          setSpot(newSpot); setTtPos(newTtPos);
           after(() => {
             setTtVisible(true);
             after(() => setTypeActive(true), 60);
@@ -344,14 +312,11 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         }, 80);
       }
     }
-
     after(() => {
       tryPlace();
       if (s.selector) retryRef.current = setInterval(tryPlace, 250);
     }, animate ? 60 : 0);
   }
-
-  // ── Navigation ────────────────────────────────────────────────────────────
 
   function goNext() {
     if (step?.modal) { setShowModal(true); return; }
@@ -359,8 +324,17 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
       if (spot) {
         try { sessionStorage.setItem(SPOT_KEY, JSON.stringify(spot)); } catch {}
       }
-      try { sessionStorage.setItem(SS_KEY, step.nextKey); } catch {}
-      router.push(`${step.nextPage}?tour=true`);
+      if (step.finishTour) {
+        // Mark tour done BEFORE navigating so destination doesn't restart it
+        try {
+          localStorage.setItem('optimenu_tour_done', '1');
+          sessionStorage.removeItem(SS_KEY);
+        } catch {}
+        router.push(step.nextPage);
+      } else {
+        try { sessionStorage.setItem(SS_KEY, step.nextKey); } catch {}
+        router.push(`${step.nextPage}?tour=true`);
+      }
       return;
     }
     if (isLast) { onDone?.(); return; }
@@ -380,13 +354,7 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   }
 
   if (showModal) {
-    return (
-      <MenuImportModal
-        restaurantId={restaurantId}
-        onClose={onDone}
-        onImported={onDone}
-      />
-    );
+    return <MenuImportModal restaurantId={restaurantId} onClose={onDone} onImported={onDone} />;
   }
 
   if (!step || !ttPos || !ready) return null;
@@ -411,139 +379,49 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         @keyframes t-ring  { 0%{box-shadow:0 0 0 0 rgba(2,164,186,.5)} 60%{box-shadow:0 0 0 10px rgba(2,164,186,0)} 100%{box-shadow:0 0 0 0 rgba(2,164,186,0)} }
         @keyframes t-blink { 0%,100%{opacity:1} 50%{opacity:.3} }
         @keyframes t-cur   { 0%,100%{opacity:1} 50%{opacity:0} }
-
-        .t-root { position:fixed; inset:0; z-index:9998; pointer-events:none; }
-
-        .t-svg { position:absolute; inset:0; width:100%; height:100%; }
-        .t-svg path {
-          fill:rgba(0,0,0,.78); fill-rule:evenodd;
-          transition: d ${TRANSITION_MS}ms ${EASE};
-        }
-
-        .t-ring {
-          position:absolute; border-radius:10px; pointer-events:none;
-          border:2px solid #02a4ba; animation:t-ring 2s ease infinite;
-          transition:
-            left   ${TRANSITION_MS}ms ${EASE},
-            top    ${TRANSITION_MS}ms ${EASE},
-            width  ${TRANSITION_MS}ms ${EASE},
-            height ${TRANSITION_MS}ms ${EASE};
-        }
-
-        .t-tt {
-          position:fixed; width:340px; background:#13120f;
-          border:1px solid #3a3630; border-radius:14px;
-          box-shadow:0 24px 64px rgba(0,0,0,.85),0 0 0 1px rgba(2,164,186,.12);
-          font-family:'Inter',sans-serif; pointer-events:all; z-index:9999;
-          transition:
-            left    ${TRANSITION_MS}ms ${EASE},
-            top     ${TRANSITION_MS}ms ${EASE},
-            opacity .2s ease;
-          opacity:0;
-        }
-        .t-tt.vis { opacity:1; }
-
-        .t-body { padding:18px 20px 14px; }
-        .t-ey {
-          font-size:10px; font-weight:600; color:#02a4ba;
-          text-transform:uppercase; letter-spacing:1.5px; margin-bottom:6px;
-        }
-        .t-ti {
-          font-family:'Playfair Display',serif; font-size:17px;
-          color:#e8e2d8; line-height:1.25; margin-bottom:10px;
-        }
-        .t-tx { font-size:13px; color:#6b6358; line-height:1.65; min-height:42px; }
-        .t-cur {
-          display:inline-block; width:2px; height:12px; background:#02a4ba;
-          margin-left:1px; vertical-align:middle; border-radius:1px;
-          animation:t-cur .6s ease infinite;
-        }
-        .t-cur.done { opacity:0; }
-
-        .t-ft {
-          display:flex; align-items:center; gap:8px;
-          padding:11px 20px; border-top:1px solid #2a2620;
-        }
-        .t-skip {
-          background:none; border:none; cursor:pointer; font-size:11px;
-          color:#3a3630; font-family:'Inter',sans-serif; padding:5px 8px;
-          border-radius:5px; transition:color .15s; margin-right:auto;
-        }
-        .t-skip:hover { color:#6b6358; }
-        .t-back {
-          background:none; border:1px solid #2a2620; border-radius:8px;
-          padding:7px 14px; font-size:12px; color:#4a453e; cursor:pointer;
-          font-family:'Inter',sans-serif; transition:all .15s;
-        }
-        .t-back:hover { color:#9a9086; border-color:#3a3630; }
-        .t-next {
-          background:#02a4ba; border:none; border-radius:8px; padding:7px 18px;
-          font-size:12px; font-weight:600; color:#0a0908; cursor:pointer;
-          font-family:'Inter',sans-serif; transition:background .15s;
-        }
-        .t-next:hover { background:#01bcd4; }
-
-        .t-prog {
-          position:fixed; bottom:20px; right:20px; z-index:10000;
-          pointer-events:none; background:#13120f; border:1px solid #2a2620;
-          border-radius:20px; padding:5px 12px; display:flex;
-          align-items:center; gap:8px; font-size:11px; color:#4a453e;
-          font-family:'Inter',sans-serif;
-        }
-        .t-dots { display:flex; gap:4px; }
-        .t-dot { width:5px; height:5px; border-radius:50%; background:#2a2620; transition:all .25s; }
-        .t-dot.active { background:#02a4ba; transform:scale(1.4); }
-        .t-dot.done   { background:rgba(2,164,186,.35); }
-
-        .t-badge {
-          position:fixed; top:58px; left:50%; transform:translateX(-50%);
-          z-index:10000; pointer-events:none;
-          background:rgba(212,160,32,.1); border:1px solid rgba(212,160,32,.25);
-          border-radius:20px; padding:5px 14px; font-size:11px; color:#d4a020;
-          font-family:'Inter',sans-serif; display:flex; align-items:center; gap:6px;
-        }
-        .t-badge-dot {
-          width:5px; height:5px; border-radius:50%; background:#d4a020;
-          animation:t-blink 1.8s ease infinite;
-        }
+        .t-root{position:fixed;inset:0;z-index:9998;pointer-events:none;}
+        .t-svg{position:absolute;inset:0;width:100%;height:100%;}
+        .t-svg path{fill:rgba(0,0,0,.78);fill-rule:evenodd;transition:d ${TRANSITION_MS}ms ${EASE};}
+        .t-ring{position:absolute;border-radius:10px;pointer-events:none;border:2px solid #02a4ba;animation:t-ring 2s ease infinite;transition:left ${TRANSITION_MS}ms ${EASE},top ${TRANSITION_MS}ms ${EASE},width ${TRANSITION_MS}ms ${EASE},height ${TRANSITION_MS}ms ${EASE};}
+        .t-tt{position:fixed;width:340px;background:#13120f;border:1px solid #3a3630;border-radius:14px;box-shadow:0 24px 64px rgba(0,0,0,.85),0 0 0 1px rgba(2,164,186,.12);font-family:'Inter',sans-serif;pointer-events:all;z-index:9999;transition:left ${TRANSITION_MS}ms ${EASE},top ${TRANSITION_MS}ms ${EASE},opacity .2s ease;opacity:0;}
+        .t-tt.vis{opacity:1;}
+        .t-body{padding:18px 20px 14px;}
+        .t-ey{font-size:10px;font-weight:600;color:#02a4ba;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px;}
+        .t-ti{font-family:'Playfair Display',serif;font-size:17px;color:#e8e2d8;line-height:1.25;margin-bottom:10px;}
+        .t-tx{font-size:13px;color:#6b6358;line-height:1.65;min-height:42px;}
+        .t-cur{display:inline-block;width:2px;height:12px;background:#02a4ba;margin-left:1px;vertical-align:middle;border-radius:1px;animation:t-cur .6s ease infinite;}
+        .t-cur.done{opacity:0;}
+        .t-ft{display:flex;align-items:center;gap:8px;padding:11px 20px;border-top:1px solid #2a2620;}
+        .t-skip{background:none;border:none;cursor:pointer;font-size:11px;color:#3a3630;font-family:'Inter',sans-serif;padding:5px 8px;border-radius:5px;transition:color .15s;margin-right:auto;}
+        .t-skip:hover{color:#6b6358;}
+        .t-back{background:none;border:1px solid #2a2620;border-radius:8px;padding:7px 14px;font-size:12px;color:#4a453e;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+        .t-back:hover{color:#9a9086;border-color:#3a3630;}
+        .t-next{background:#02a4ba;border:none;border-radius:8px;padding:7px 18px;font-size:12px;font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .15s;}
+        .t-next:hover{background:#01bcd4;}
+        .t-prog{position:fixed;bottom:20px;right:20px;z-index:10000;pointer-events:none;background:#13120f;border:1px solid #2a2620;border-radius:20px;padding:5px 12px;display:flex;align-items:center;gap:8px;font-size:11px;color:#4a453e;font-family:'Inter',sans-serif;}
+        .t-dots{display:flex;gap:4px;}
+        .t-dot{width:5px;height:5px;border-radius:50%;background:#2a2620;transition:all .25s;}
+        .t-dot.active{background:#02a4ba;transform:scale(1.4);}
+        .t-dot.done{background:rgba(2,164,186,.35);}
+        .t-badge{position:fixed;top:58px;left:50%;transform:translateX(-50%);z-index:10000;pointer-events:none;background:rgba(212,160,32,.1);border:1px solid rgba(212,160,32,.25);border-radius:20px;padding:5px 14px;font-size:11px;color:#d4a020;font-family:'Inter',sans-serif;display:flex;align-items:center;gap:6px;}
+        .t-badge-dot{width:5px;height:5px;border-radius:50%;background:#d4a020;animation:t-blink 1.8s ease infinite;}
       `}</style>
 
       <div className="t-root">
-
         <svg className="t-svg" viewBox={`0 0 ${vw} ${vh}`} preserveAspectRatio="none">
           <path d={clip} />
         </svg>
-
-        {spot && (
-          <div
-            className="t-ring"
-            style={{ left: spot.x, top: spot.y, width: spot.w, height: spot.h }}
-          />
-        )}
-
+        {spot && <div className="t-ring" style={{ left: spot.x, top: spot.y, width: spot.w, height: spot.h }} />}
         {page !== 'final' && (
-          <div className="t-badge">
-            <div className="t-badge-dot" />
-            Showing sample Chick-fil-A data
-          </div>
+          <div className="t-badge"><div className="t-badge-dot" />Showing sample Chick-fil-A data</div>
         )}
-
-        <div
-          ref={ttRef}
-          className={`t-tt${ttVisible ? ' vis' : ''}`}
-          style={{ left: ttPos.left, top: ttPos.top }}
-        >
+        <div ref={ttRef} className={`t-tt${ttVisible ? ' vis' : ''}`} style={{ left: ttPos.left, top: ttPos.top }}>
           <div className="t-body">
             <div className="t-ey">
-              {page === 'final'
-                ? 'Final Step'
-                : `${page.replace('-', ' ')} · Step ${idx + 1} of ${steps.length}`}
+              {page === 'final' ? 'Final Step' : `${page.replace('-', ' ')} · Step ${idx + 1} of ${steps.length}`}
             </div>
             <div className="t-ti">{step.title}</div>
-            <div className="t-tx">
-              {displayed}
-              <span className={`t-cur${typeDone ? ' done' : ''}`} />
-            </div>
+            <div className="t-tx">{displayed}<span className={`t-cur${typeDone ? ' done' : ''}`} /></div>
           </div>
           <div className="t-ft">
             <button className="t-skip" onClick={handleSkip}>Skip tour</button>
@@ -551,25 +429,18 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
               <button className="t-back" onClick={goBack}>← Back</button>
             )}
             <button className="t-next" onClick={goNext}>
-              {step.nav   ? 'Take me there →' :
-               step.modal ? 'Import Menu ↑'   :
-               isLast     ? '✓ Done'           : 'Next →'}
+              {step.nav ? 'Take me there →' : step.modal ? 'Import Menu ↑' : isLast ? '✓ Done' : 'Next →'}
             </button>
           </div>
         </div>
-
         <div className="t-prog">
           <div className="t-dots">
             {Array.from({ length: total }).map((_, i) => (
-              <div
-                key={i}
-                className={`t-dot${i === globalIdx - 1 ? ' active' : i < globalIdx - 1 ? ' done' : ''}`}
-              />
+              <div key={i} className={`t-dot${i === globalIdx - 1 ? ' active' : i < globalIdx - 1 ? ' done' : ''}`} />
             ))}
           </div>
           <span>{globalIdx} / {total}</span>
         </div>
-
       </div>
     </>
   );
