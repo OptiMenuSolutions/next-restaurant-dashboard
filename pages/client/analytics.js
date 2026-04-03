@@ -49,109 +49,98 @@ function NavIcon({ path }) {
 
 function formatDateLabel(dateStr) {
   if (!dateStr) return '';
-  // dateStr is YYYY-MM-DD — parse as local date to avoid UTC shift
   const [, m, d] = dateStr.split('-');
   return `${parseInt(m)}/${parseInt(d)}`;
 }
 
-function niceMax(val) {
-  // Round up to a clean ceiling so the line never kisses the top edge
-  if (!val || val === 0) return 100;
-  const mag = Math.pow(10, Math.floor(Math.log10(val)));
-  return Math.ceil(val / mag) * mag;
-}
-
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const [tip, setTip] = useState(null);
-  const pts = data.filter(d => d[valueKey] >= 0);
-  if (pts.length < 1) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,fontSize:11,color:'#4a453e'}}>Not enough data points</div>;
 
-  // Layout constants
-  const W=800, H=160, PL=58, PR=16, PT=12, PB=28;
-  const chartW = W - PL - PR;
-  const chartH = H - PT - PB;
+  // Always show last 30 days
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffStr = cutoff.toISOString().split('T')[0];
+  const pts = data.filter(d => d.date >= cutoffStr && d[valueKey] >= 0);
 
-  // Y axis: always start at 0, nice ceiling
-  const rawMax = Math.max(...pts.map(d => d[valueKey]), 1);
-  const yMax = niceMax(rawMax * 1.1); // 10% headroom
-  const yMin = 0;
-  const yRange = yMax - yMin;
+  if (pts.length < 2) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,fontSize:'clamp(9px,.72vw,12px)',color:'#4a453e'}}>
+      Not enough data — upload at least 2 days of sales
+    </div>
+  );
 
-  // X positions — evenly spaced regardless of date gaps
-  const xOf = i => PL + (pts.length === 1 ? chartW / 2 : (i / (pts.length - 1)) * chartW);
-  const yOf = v => PT + chartH - ((v - yMin) / yRange) * chartH;
+  // SVG canvas — wide, short, with left margin for y-labels
+  const W=400, H=90, PL=36, PR=8, PT=6, PB=18;
+  const cW = W-PL-PR, cH = H-PT-PB;
 
-  // Grid lines & y-axis labels (4 ticks)
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => yMin + f * yRange);
+  const vals = pts.map(d => d[valueKey]);
+  const rawMax = Math.max(...vals, 1);
+  // Nice round ceiling
+  const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
+  const yMax = Math.ceil((rawMax * 1.15) / mag) * mag;
+  const xOf = i => PL + (pts.length === 1 ? cW/2 : (i/(pts.length-1))*cW);
+  const yOf = v => PT + cH - (v/yMax)*cH;
 
-  // Line path
-  const pth = pts.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
-  const area = pts.length > 1
-    ? `${pth} L${xOf(pts.length-1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`
-    : '';
+  const pth = pts.map((d,i)=>`${i===0?'M':'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
+  const area = `${pth} L${xOf(pts.length-1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
 
-  // Date labels — show up to 8, always include first and last
-  const labelIndices = (() => {
-    if (pts.length <= 8) return pts.map((_, i) => i);
-    const step = Math.floor((pts.length - 1) / 7);
-    const idxs = new Set([0]);
-    for (let i = step; i < pts.length - 1; i += step) idxs.add(i);
-    idxs.add(pts.length - 1);
-    return [...idxs].sort((a, b) => a - b);
-  })();
+  // 3 y-ticks: 0, half, max
+  const yTicks = [0, yMax/2, yMax];
+
+  // x labels: first, middle, last
+  const xLabelIdxs = pts.length <= 6
+    ? pts.map((_,i)=>i)
+    : [0, Math.floor((pts.length-1)/2), pts.length-1];
 
   return (
     <div style={{position:'relative', flex:1, minHeight:0}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%', height:'100%'}} preserveAspectRatio="xMidYMid meet">
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%'}} preserveAspectRatio="none">
         <defs>
           <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.15"/>
+            <stop offset="0%" stopColor={color} stopOpacity="0.2"/>
             <stop offset="100%" stopColor={color} stopOpacity="0"/>
           </linearGradient>
-          <clipPath id="tclip">
-            <rect x={PL} y={PT} width={chartW} height={chartH}/>
-          </clipPath>
+          <clipPath id="tclip"><rect x={PL} y={PT} width={cW} height={cH}/></clipPath>
         </defs>
 
-        {/* Grid lines + Y labels */}
-        {ticks.map((t, i) => {
-          const y = yOf(t).toFixed(1);
-          const label = valueKey === 'rev' ? formatCurrency(t) : Math.round(t);
-          return (
-            <g key={i}>
-              <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="#1a1915" strokeWidth="1"/>
-              <text x={PL - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="9" fill="#3a3630">{label}</text>
-            </g>
-          );
-        })}
-
-        {/* Area fill */}
-        {area && <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)"/>}
-
-        {/* Line */}
-        <path d={pth} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
-
-        {/* Dots */}
-        {pts.map((d, i) => (
-          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="3.5" fill={color}
-            style={{cursor:'pointer'}}
-            onMouseEnter={e => setTip({x: e.clientX, y: e.clientY, d})}
-            onMouseLeave={() => setTip(null)}/>
+        {/* Gridlines + y labels */}
+        {yTicks.map((t,i) => (
+          <g key={i}>
+            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.8"/>
+            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle" fontSize="7" fill="#3a3630">
+              {valueKey==='rev' ? formatCurrency(t) : Math.round(t)}
+            </text>
+          </g>
         ))}
 
-        {/* X-axis date labels */}
-        {labelIndices.map(i => (
-          <text key={i} x={xOf(i).toFixed(1)} y={H - 6} textAnchor="middle" fontSize="9" fill="#3a3630">
+        {/* Area + line */}
+        <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)"/>
+        <path d={pth} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
+
+        {/* Dots — only when few points */}
+        {pts.length <= 14 && pts.map((d,i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2.5" fill={color} style={{cursor:'pointer'}}
+            onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
+            onMouseLeave={()=>setTip(null)}/>
+        ))}
+        {/* Invisible wider hit targets when dots hidden */}
+        {pts.length > 14 && pts.map((d,i) => (
+          <rect key={i} x={xOf(i)-4} y={PT} width={8} height={cH} fill="transparent" style={{cursor:'pointer'}}
+            onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
+            onMouseLeave={()=>setTip(null)}/>
+        ))}
+
+        {/* X date labels */}
+        {xLabelIdxs.map(i => (
+          <text key={i} x={xOf(i).toFixed(1)} y={H-3} textAnchor={i===0?'start':i===pts.length-1?'end':'middle'} fontSize="7" fill="#3a3630">
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
 
-        {/* X axis baseline */}
-        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W - PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="1"/>
+        {/* Baseline */}
+        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W-PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="0.8"/>
       </svg>
 
       {tip && (
-        <div style={{position:'fixed',left:tip.x+12,top:tip.y-48,background:'#1a1915',border:'1px solid #2a2620',borderRadius:6,padding:'6px 10px',fontSize:11,color:'#e8e2d8',pointerEvents:'none',whiteSpace:'nowrap',zIndex:999}}>
+        <div style={{position:'fixed',left:tip.x+10,top:tip.y-44,background:'#1a1915',border:'1px solid #2a2620',borderRadius:5,padding:'5px 9px',fontSize:11,color:'#e8e2d8',pointerEvents:'none',whiteSpace:'nowrap',zIndex:999}}>
           <div style={{fontWeight:600,color}}>{valueKey==='rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
           <div style={{color:'#4a453e',fontSize:10}}>{formatDateLabel(tip.d.date)}</div>
         </div>
@@ -860,12 +849,12 @@ export default function AnalyticsPage() {
                     <div className="an-card-hd">
                       <div className="an-card-title">
                         <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Daily Revenue
+                        Daily Revenue <span style={{fontSize:'clamp(8px,.6vw,10px)',color:'#4a453e',fontWeight:400,marginLeft:4}}>last 30 days</span>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:8}}>
-                        {trendData.length>1&&(()=>{ const key=trendView; const first=trendData[0]?.[key]||0,last=trendData[trendData.length-1]?.[key]||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
+                        {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
                         <div className="an-toggle">
-                          <button className={`an-toggle-btn${trendView==='rev'?' active':''}`} onClick={()=>setTrendView('rev')}>Revenue</button>
+                          <button className={`an-toggle-btn${trendView==='rev'?' active':''}`} onClick={()=>setTrendView('rev')}>Rev</button>
                           <button className={`an-toggle-btn${trendView==='qty'?' active':''}`} onClick={()=>setTrendView('qty')}>Qty</button>
                         </div>
                       </div>
