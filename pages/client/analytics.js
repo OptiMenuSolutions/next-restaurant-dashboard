@@ -141,7 +141,10 @@ const CSS = `
   .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.68vw,11px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:3px 10px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
   .an-sync-dot{width:6px;height:6px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
   .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0;}
-  .an-body{flex:1;overflow:hidden;padding:clamp(8px,.8vw,12px);display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);}
+  .an-body{flex:1;overflow:hidden;padding:clamp(8px,.8vw,12px);display:flex;flex-direction:row;gap:clamp(8px,.8vw,14px);}
+  .an-col-l{flex:0 0 54%;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow:hidden;}
+  .an-col-r{flex:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow-y:auto;min-width:0;}
+  .an-col-r::-webkit-scrollbar{width:3px;}
   .an-body::-webkit-scrollbar{width:3px;}
   .an-upload-zone{background:#13120f;border:2px dashed #2a2620;border-radius:10px;padding:clamp(24px,3vh,48px);text-align:center;cursor:pointer;transition:border-color .2s;}
   .an-upload-zone:hover,.an-upload-zone.drag{border-color:#02a4ba;}
@@ -667,15 +670,14 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {hasSalesData&&(
           <div className="an-sbar">
             {[
-              { v: hasSalesData ? stats.totalDays : '—',         l: 'Days of Data',     c: '#02a4ba' },
-              { v: hasSalesData ? topSellers.length : '—',        l: 'Items Tracked',    c: '#e8e2d8' },
-              { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—', l: 'Total Revenue', c: '#2a8a5a' },
-              { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',  c: '#d4a020' },
-              { v: hasSalesData ? (topSellers[0]?.name || '—') : '—', l: 'Top Seller',   c: '#e8e2d8' },
-              { v: hasSalesData ? slowMovers.length : '—',        l: 'Slow Movers',      c: '#c04040' },
+              { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: '#02a4ba' },
+              { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: '#e8e2d8' },
+              { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: '#2a8a5a' },
+              { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: '#d4a020' },
+              { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: '#e8e2d8' },
+              { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: '#c04040' },
             ].map(({ v, l, c }) => (
               <div key={l} style={{ flexShrink: 0 }}>
                 <div className="an-sv" style={{ color: c }}>{v}</div>
@@ -686,7 +688,6 @@ export default function AnalyticsPage() {
               <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>
             )}
           </div>
-        )}
 
         {loading?(
           <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
@@ -695,6 +696,7 @@ export default function AnalyticsPage() {
           </div>
         ):(
           <div className="an-body">
+            <div className="an-col-1">
             {uploadStep==='idle'&&!hasSalesData&&(
               <div className="an-upload-zone" onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}} onClick={()=>fileInputRef.current?.click()} style={{borderColor:dragOver?'#02a4ba':undefined}}>
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:12}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -752,6 +754,8 @@ export default function AnalyticsPage() {
               </div>
               {renderDishCards()}
             </div>
+            <div className="an-col-r">
+            
 
             {hasSalesData&&(
               <>
@@ -909,6 +913,8 @@ export default function AnalyticsPage() {
                 </div>
               </>
             )}
+            </div>
+            </div>
           </div>
         )}
       </div>
