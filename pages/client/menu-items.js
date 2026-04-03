@@ -283,12 +283,14 @@ export default function ClientMenuItems() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+
+  // ── Tour ──
+  const { tourProps, seedVersion } = useTour('menu-items', restaurantId);
+
   useEffect(() => {
     if (seedVersion > 0 && restaurantId) fetchMenuItems();
   }, [seedVersion]);
 
-  // ── Tour ──
-  const { tourProps, seedVersion } = useTour('menu-items', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
