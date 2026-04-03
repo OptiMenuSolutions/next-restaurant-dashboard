@@ -50,8 +50,8 @@ function NavIcon({ path }) {
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const [tip, setTip] = useState(null);
   const pts = data.filter(d => d[valueKey] > 0);
-  if (pts.length < 2) return <div style={{textAlign:'center',padding:'20px 0',fontSize:12,color:'#4a453e'}}>Not enough data points</div>;
-  const W=800,H=120,PL=10,PR=10,PT=10,PB=24;
+  if (pts.length < 2) return <div style={{textAlign:'center',padding:'8px 0',fontSize:11,color:'#4a453e'}}>Not enough data points</div>;
+  const W=800,H=80,PL=10,PR=10,PT=8,PB=20;
   const xs = pts.map((_,i)=>PL+(i/(pts.length-1))*(W-PL-PR));
   const vals = pts.map(d=>d[valueKey]);
   const mn=Math.min(...vals),mx=Math.max(...vals),rng=mx-mn||1;
@@ -59,7 +59,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const pth = xs.map((x,i)=>`${i===0?'M':'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   const area = `${pth} L${xs[xs.length-1].toFixed(1)},${(H-PB).toFixed(1)} L${xs[0].toFixed(1)},${(H-PB).toFixed(1)} Z`;
   return (
-    <div style={{position:'relative',flex:1,minHeight:100}}>
+    <div style={{position:'relative',flex:1,minHeight:0}}>
       <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%',overflow:'visible'}} preserveAspectRatio="none">
         <defs><linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.18"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
         <path d={area} fill="url(#tgrad)"/>
@@ -83,28 +83,28 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
 
 function DonutChart({ data }) {
   const total = data.reduce((s,d)=>s+d.value,0);
-  if(!total) return <div style={{textAlign:'center',padding:'16px 0',fontSize:12,color:'#4a453e'}}>No category data</div>;
+  if(!total) return <div style={{textAlign:'center',padding:'8px 0',fontSize:11,color:'#4a453e'}}>No category data</div>;
   const circ=2*Math.PI*40; let off=circ*0.25;
   const slices=data.map((d,i)=>{ const pct=d.value/total,dash=pct*circ; const s={...d,pct,dash,off,color:CAT_COLORS[i%CAT_COLORS.length]}; off+=dash; return s; });
   return (
-    <div style={{display:'flex',alignItems:'center',gap:'clamp(14px,1.4vw,24px)'}}>
-      <div style={{position:'relative',width:'clamp(80px,8vw,120px)',height:'clamp(80px,8vw,120px)',flexShrink:0}}>
+    <div style={{display:'flex',alignItems:'center',gap:'clamp(10px,1vw,18px)',flex:1,minHeight:0}}>
+      <div style={{position:'relative',width:'clamp(60px,6vw,90px)',height:'clamp(60px,6vw,90px)',flexShrink:0}}>
         <svg viewBox="0 0 100 100" style={{width:'100%',height:'100%'}}>
           <circle cx="50" cy="50" r="40" fill="none" stroke="#1a1915" strokeWidth="12"/>
           {slices.map((s,i)=><circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*0.25}/>)}
         </svg>
         <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(12px,1.1vw,17px)',color:'#e8e2d8',lineHeight:1}}>{formatCurrency(total)}</div>
-          <div style={{fontSize:'clamp(7px,.58vw,9px)',color:'#4a453e',marginTop:2}}>total</div>
+          <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(10px,.9vw,14px)',color:'#e8e2d8',lineHeight:1}}>{formatCurrency(total)}</div>
+          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'#4a453e',marginTop:1}}>total</div>
         </div>
       </div>
-      <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vh,9px)',flex:1}}>
-        {slices.slice(0,6).map((s,i)=>(
-          <div key={i} style={{display:'flex',alignItems:'center',gap:8}}>
-            <div style={{width:'clamp(7px,.6vw,10px)',height:'clamp(7px,.6vw,10px)',borderRadius:'50%',background:s.color,flexShrink:0}}/>
-            <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#9a9086',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
-            <div style={{fontSize:'clamp(10px,.75vw,13px)',fontWeight:600,color:'#e8e2d8'}}>{formatCurrency(s.value)}</div>
-            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'#4a453e',minWidth:36,textAlign:'right'}}>{(s.pct*100).toFixed(0)}%</div>
+      <div style={{display:'flex',flexDirection:'column',gap:'clamp(3px,.35vh,6px)',flex:1,overflow:'hidden'}}>
+        {slices.slice(0,5).map((s,i)=>(
+          <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
+            <div style={{width:'clamp(6px,.5vw,8px)',height:'clamp(6px,.5vw,8px)',borderRadius:'50%',background:s.color,flexShrink:0}}/>
+            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'#9a9086',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
+            <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:'#e8e2d8'}}>{formatCurrency(s.value)}</div>
+            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'#4a453e',minWidth:30,textAlign:'right'}}>{(s.pct*100).toFixed(0)}%</div>
           </div>
         ))}
       </div>
@@ -122,78 +122,112 @@ const CSS = `
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
   input::placeholder,textarea::placeholder{color:#3a3630!important;}
   ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:#0f0e0c;}::-webkit-scrollbar-thumb{background:#2a2620;border-radius:2px;}
+
+  /* ── Root shell ── */
   .an-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+  /* ── Top nav ── */
   .an-nav{background:#0f0e0c;border-bottom:1px solid #2a2620;height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .an-logo{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;letter-spacing:-.3px;}
   .an-logo span{color:#02a4ba;}
   .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:#4a453e;border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
   .an-tab.active{color:#e8e2d8;background:#1a1915;}
-  .an-ph{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(6px,.6vh,10px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
-  .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(14px,1.2vw,20px);color:#e8e2d8;}
-  .an-ph-sub{font-size:clamp(9px,.65vw,11px);color:#4a453e;}
+
+  /* ── Page header ── */
+  .an-ph{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
+  .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;}
+  .an-ph-sub{font-size:clamp(9px,.65vw,10px);color:#4a453e;}
+
+  /* ── Date range toggle ── */
   .an-range-toggle{display:flex;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:2px;gap:2px;}
-  .an-range-btn{padding:clamp(3px,.3vh,5px) clamp(8px,.7vw,14px);border-radius:4px;font-size:clamp(10px,.75vw,12px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
+  .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
   .an-range-btn.active{background:#1a1915;color:#e8e2d8;}
-  .an-sbar{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;gap:clamp(14px,1.8vw,32px);align-items:center;flex-shrink:0;overflow-x:auto;}
+
+  /* ── Stats bar ── */
+  .an-sbar{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
   .an-sbar::-webkit-scrollbar{display:none;}
-  .an-sv{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);line-height:1;}
-  .an-sl{font-size:clamp(8px,.6vw,10px);color:#4a453e;margin-top:2px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
-  .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.68vw,11px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:3px 10px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
-  .an-sync-dot{width:6px;height:6px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
-  .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0;}
-  .an-body{flex:1;overflow:hidden;padding:clamp(8px,.8vw,12px);display:flex;flex-direction:row;gap:clamp(8px,.8vw,14px);}
-  .an-col-l{flex:0 0 54%;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow:hidden;}
-  .an-col-r{flex:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow-y:auto;min-width:0;}
-  .an-col-r::-webkit-scrollbar{width:3px;}
-  .an-body::-webkit-scrollbar{width:3px;}
-  .an-upload-zone{background:#13120f;border:2px dashed #2a2620;border-radius:10px;padding:clamp(24px,3vh,48px);text-align:center;cursor:pointer;transition:border-color .2s;}
-  .an-upload-zone:hover,.an-upload-zone.drag{border-color:#02a4ba;}
-  .an-upload-btn{background:#02a4ba;border:none;border-radius:7px;padding:clamp(8px,.8vw,12px) clamp(16px,1.4vw,24px);font-size:clamp(11px,.85vw,14px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;}
-  .an-pos-pills{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap;}
-  .an-pos-pill{font-size:clamp(9px,.68vw,11px);padding:3px 10px;border-radius:10px;border:1px solid #2a2620;color:#4a453e;cursor:pointer;transition:all .15s;background:none;font-family:'Inter',sans-serif;}
-  .an-pos-pill.active{border-color:#02a4ba;color:#02a4ba;background:rgba(2,164,186,.08);}
-  .an-mapper{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(14px,1.4vw,22px);}
-  .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:#e8e2d8;margin-bottom:4px;}
-  .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:#4a453e;margin-bottom:14px;}
-  .an-mapper-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(8px,.8vw,12px);margin-bottom:14px;}
-  .an-mapper-lbl{font-size:clamp(9px,.68vw,11px);color:#6b6358;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:5px;}
-  .an-mapper-lbl.req::after{content:' *';color:#c04040;}
-  .an-mapper-select{background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:clamp(6px,.6vw,10px) clamp(8px,.75vw,12px);font-size:clamp(11px,.85vw,14px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
-  .an-mapper-select:focus{border-color:#02a4ba;}
-  .an-g2{display:grid;grid-template-columns:1fr 1fr;gap:clamp(8px,.8vw,14px);}
-  .an-card{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(12px,1.1vw,18px);display:flex;flex-direction:column;}
-  .an-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(10px,1vh,16px);flex-shrink:0;gap:8px;flex-wrap:wrap;}
-  .an-card-title{font-size:clamp(10px,.78vw,14px);font-weight:600;color:#e8e2d8;display:flex;align-items:center;gap:6px;}
-  .an-card-title svg{width:clamp(11px,.88vw,15px);height:clamp(11px,.88vw,15px);stroke:#02a4ba;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .an-badge{font-size:clamp(8px,.62vw,10px);font-weight:600;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+  .an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
+  .an-sl{font-size:clamp(7px,.55vw,9px);color:#4a453e;margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
+  .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
+  .an-sync-dot{width:5px;height:5px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
+  .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:2px 8px;white-space:nowrap;flex-shrink:0;}
+
+  /* ════════════════════════════════════════════════
+     MAIN BODY — CSS GRID (mirrors dashboard approach)
+     Row 1: dish recs (tall) | trend + sellers + slow
+     Row 2: day/hour/cat    | wow + inventory + vc
+  ════════════════════════════════════════════════ */
+  .an-body{
+    flex:1;
+    min-height:0;
+    padding:clamp(6px,.6vw,10px);
+    gap:clamp(6px,.6vw,10px);
+    display:grid;
+    grid-template-columns:clamp(260px,28vw,380px) 1fr 1fr 1fr;
+    grid-template-rows:1fr 1fr;
+    overflow:hidden;
+  }
+
+  /* Upload / no-data state spans full grid */
+  .an-upload-full{grid-column:1/-1;grid-row:1/-1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow:hidden;}
+
+  /* Dish recs card spans both rows, col 1 */
+  .an-recs-col{grid-column:1;grid-row:1/3;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+
+  /* Trend row — cols 2-4, row 1 */
+  .an-trend-row{grid-column:2/5;grid-row:1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
+
+  /* Bottom row — cols 2-4, row 2 */
+  .an-bottom-row{grid-column:2/5;grid-row:2;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
+
+  /* ── Generic card ── */
+  .an-card{background:#13120f;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .an-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(6px,.6vh,10px);flex-shrink:0;gap:6px;flex-wrap:wrap;}
+  .an-card-title{font-size:clamp(9px,.72vw,13px);font-weight:600;color:#e8e2d8;display:flex;align-items:center;gap:5px;}
+  .an-card-title svg{width:clamp(10px,.8vw,13px);height:clamp(10px,.8vw,13px);stroke:#02a4ba;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+  .an-badge{font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;}
+
+  /* ── Qty/Rev toggle ── */
   .an-toggle{display:flex;background:#0f0e0c;border-radius:5px;padding:2px;gap:2px;}
-  .an-toggle-btn{padding:clamp(2px,.22vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.65vw,11px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
+  .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
   .an-toggle-btn.active{background:#1a1915;color:#e8e2d8;}
-  .an-dish-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(8px,.8vw,14px);}
-  .an-dish-card{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(14px,1.2vw,20px);display:flex;flex-direction:column;gap:clamp(8px,.8vh,12px);position:relative;overflow:hidden;}
-  .an-dish-num{font-family:'Playfair Display',serif;font-size:clamp(28px,2.8vw,44px);color:#1a1915;line-height:1;position:absolute;top:10px;right:14px;}
-  .an-dish-name{font-family:'Playfair Display',serif;font-size:clamp(15px,1.3vw,21px);color:#e8e2d8;line-height:1.2;padding-right:32px;}
-  .an-dish-reason{font-size:clamp(10px,.75vw,13px);color:#6b6358;line-height:1.5;}
-  .an-dish-talking{background:#0f0e0c;border-left:2px solid #2a2620;border-radius:0 6px 6px 0;padding:clamp(7px,.7vw,11px) clamp(10px,.9vw,14px);font-size:clamp(9px,.68vw,12px);color:#9a9086;line-height:1.5;font-style:italic;}
-  .an-dish-talking-lbl{font-size:clamp(7px,.58vw,9px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;font-style:normal;}
-  .an-dish-meta{display:flex;gap:clamp(10px,1vw,18px);padding-top:clamp(8px,.8vh,12px);border-top:1px solid #2a2620;align-items:flex-end;flex-wrap:wrap;}
-  .an-dish-meta-lbl{font-size:clamp(8px,.6vw,10px);color:#4a453e;text-transform:uppercase;letter-spacing:.5px;}
-  .an-dish-meta-val{font-size:clamp(11px,.88vw,15px);font-weight:600;margin-top:2px;}
-  .an-conf-bar{height:3px;border-radius:2px;background:#1a1915;flex:1;overflow:hidden;margin:4px 0;}
+
+  /* ── Dish recommendation cards (stacked vertically inside .an-recs-col) ── */
+  .an-dish-stack{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
+  .an-dish-card{background:#0f0e0c;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.75vw,13px);display:flex;flex-direction:column;gap:clamp(4px,.4vh,7px);position:relative;overflow:hidden;flex:1;min-height:0;}
+  .an-dish-top-bar{position:absolute;top:0;left:0;right:0;height:2px;border-radius:8px 8px 0 0;}
+  .an-dish-badge{display:inline-flex;align-items:center;gap:4px;font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 8px;border-radius:10px;align-self:flex-start;text-transform:uppercase;letter-spacing:.5px;}
+  .an-dish-name{font-family:'Playfair Display',serif;font-size:clamp(13px,1.15vw,18px);color:#e8e2d8;line-height:1.2;}
+  .an-dish-reason{font-size:clamp(9px,.68vw,11px);color:#6b6358;line-height:1.4;flex:1;overflow:hidden;}
+  .an-dish-talking{background:#0a0908;border-left:2px solid #2a2620;border-radius:0 5px 5px 0;padding:clamp(4px,.4vw,7px) clamp(6px,.55vw,10px);font-size:clamp(8px,.62vw,10px);color:#9a9086;line-height:1.4;font-style:italic;overflow:hidden;}
+  .an-dish-talking-lbl{font-size:clamp(7px,.55vw,8px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;font-style:normal;}
+  .an-dish-meta{display:flex;gap:clamp(8px,.75vw,14px);padding-top:clamp(5px,.5vh,8px);border-top:1px solid #2a2620;align-items:flex-end;flex-wrap:wrap;flex-shrink:0;}
+  .an-dish-meta-lbl{font-size:clamp(7px,.55vw,9px);color:#4a453e;text-transform:uppercase;letter-spacing:.5px;}
+  .an-dish-meta-val{font-size:clamp(10px,.8vw,13px);font-weight:600;margin-top:1px;}
+  .an-conf-bar{height:2px;border-radius:2px;background:#1a1915;flex:1;overflow:hidden;margin:3px 0;}
   .an-conf-fill{height:100%;border-radius:2px;}
-  .an-bar-row{display:flex;align-items:center;gap:clamp(6px,.55vw,10px);margin-bottom:clamp(6px,.6vh,10px);}
+
+  /* ── Bar rows ── */
+  .an-bar-row{display:flex;align-items:center;gap:clamp(5px,.45vw,8px);margin-bottom:clamp(4px,.4vh,7px);}
   .an-bar-row:last-child{margin-bottom:0;}
-  .an-bar-label{font-size:clamp(9px,.68vw,12px);color:#9a9086;width:clamp(80px,8vw,130px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .an-bar-track{flex:1;background:#1a1915;border-radius:3px;height:clamp(4px,.4vh,7px);}
+  .an-bar-label{font-size:clamp(8px,.62vw,11px);color:#9a9086;width:clamp(65px,6.5vw,110px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .an-bar-track{flex:1;background:#1a1915;border-radius:3px;height:clamp(3px,.3vh,5px);}
   .an-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
-  .an-bar-val{font-size:clamp(9px,.68vw,12px);font-weight:600;width:clamp(44px,4vw,72px);text-align:right;flex-shrink:0;}
-  .an-heatmap-cell{border-radius:4px;display:flex;align-items:center;justify-content:center;position:relative;}
+  .an-bar-val{font-size:clamp(8px,.62vw,11px);font-weight:600;width:clamp(38px,3.5vw,60px);text-align:right;flex-shrink:0;}
+
+  /* ── Heatmap ── */
+  .an-heatmap-wrap{display:flex;gap:3px;flex-wrap:wrap;flex:1;align-content:flex-start;}
+  .an-heatmap-cell{border-radius:3px;display:flex;align-items:center;justify-content:center;position:relative;width:clamp(24px,2.2vw,34px);height:clamp(24px,2.2vw,34px);}
   .an-heatmap-cell:hover .an-heatmap-tip{display:block;}
-  .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid #2a2620;border-radius:5px;padding:4px 8px;font-size:clamp(8px,.62vw,10px);color:#e8e2d8;white-space:nowrap;z-index:20;pointer-events:none;}
+  .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid #2a2620;border-radius:4px;padding:3px 7px;font-size:clamp(8px,.6vw,10px);color:#e8e2d8;white-space:nowrap;z-index:20;pointer-events:none;}
+  .an-heat-legend{display:flex;gap:10px;margin-top:6px;flex-shrink:0;flex-wrap:wrap;}
+  .an-heat-legend-item{display:flex;align-items:center;gap:3px;font-size:clamp(7px,.55vw,9px);color:'#4a453e';}
+
+  /* ── Tables ── */
   .an-table{width:100%;border-collapse:collapse;}
-  .an-th{font-size:clamp(8px,.62vw,10px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.7px;padding:clamp(5px,.5vh,8px) clamp(8px,.7vw,12px);border-bottom:1px solid #2a2620;text-align:left;white-space:nowrap;}
+  .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid #2a2620;text-align:left;white-space:nowrap;}
   .an-th.r{text-align:right;}
-  .an-td{font-size:clamp(10px,.75vw,13px);color:#9a9086;padding:clamp(7px,.7vh,11px) clamp(8px,.7vw,12px);border-bottom:1px solid #1a1915;}
+  .an-td{font-size:clamp(9px,.68vw,11px);color:#9a9086;padding:clamp(5px,.5vh,8px) clamp(6px,.55vw,10px);border-bottom:1px solid #1a1915;}
   .an-td.p{color:#e8e2d8;font-weight:500;}
   .an-td.a{color:#02a4ba;font-weight:600;}
   .an-td.r{text-align:right;}
@@ -201,19 +235,45 @@ const CSS = `
   .an-td.d{color:#c04040;}
   .an-td.s{color:#2a8a5a;}
   .an-tr:hover td{background:rgba(26,25,21,.5);}
-  .an-risk-h{background:rgba(192,64,64,.1);color:#c04040;border:1px solid rgba(192,64,64,.2);font-size:clamp(8px,.62vw,10px);padding:2px 7px;border-radius:8px;white-space:nowrap;}
-  .an-risk-m{background:rgba(212,160,32,.1);color:#d4a020;border:1px solid rgba(212,160,32,.2);font-size:clamp(8px,.62vw,10px);padding:2px 7px;border-radius:8px;white-space:nowrap;}
-  .an-trend-up{color:#2a8a5a;font-size:clamp(9px,.68vw,11px);font-weight:600;}
-  .an-trend-dn{color:#c04040;font-size:clamp(9px,.68vw,11px);font-weight:600;}
-  .an-btn-p{background:#02a4ba;border:none;border-radius:7px;padding:clamp(6px,.6vw,10px) clamp(12px,1.1vw,18px);font-size:clamp(11px,.85vw,13px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
+  .an-risk-h{background:rgba(192,64,64,.1);color:#c04040;border:1px solid rgba(192,64,64,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
+  .an-risk-m{background:rgba(212,160,32,.1);color:#d4a020;border:1px solid rgba(212,160,32,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
+  .an-trend-up{color:#2a8a5a;font-size:clamp(8px,.62vw,10px);font-weight:600;}
+  .an-trend-dn{color:#c04040;font-size:clamp(8px,.62vw,10px);font-weight:600;}
+
+  /* ── Buttons ── */
+  .an-btn-p{background:#02a4ba;border:none;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
   .an-btn-p:hover{background:#01bcd4;}
-  .an-btn-g{background:none;border:1px solid #2a2620;border-radius:7px;padding:clamp(6px,.6vw,10px) clamp(12px,1.1vw,18px);font-size:clamp(11px,.85vw,13px);color:#4a453e;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
+  .an-btn-g{background:none;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#4a453e;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-g:hover{color:#e8e2d8;border-color:#3a3630;}
-  .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:7px;padding:clamp(6px,.6vw,10px) clamp(12px,1.1vw,18px);font-size:clamp(11px,.85vw,13px);color:#c04040;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
+  .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#c04040;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-d:hover{background:rgba(192,64,64,.08);}
-  .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(10px,.78vw,14px);color:#4a453e;padding:clamp(16px,2vh,32px) 0;text-align:center;}
-  .an-note-input{width:100%;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:7px 10px;font-size:clamp(11px,.85vw,13px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
+
+  /* ── Upload zone ── */
+  .an-upload-zone{background:#13120f;border:2px dashed #2a2620;border-radius:10px;padding:clamp(20px,3vh,40px);text-align:center;cursor:pointer;transition:border-color .2s;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .an-upload-zone:hover,.an-upload-zone.drag{border-color:#02a4ba;}
+  .an-upload-btn{background:#02a4ba;border:none;border-radius:7px;padding:clamp(8px,.8vw,12px) clamp(16px,1.4vw,24px);font-size:clamp(11px,.85vw,14px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;}
+  .an-pos-pills{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;}
+  .an-pos-pill{font-size:clamp(9px,.68vw,11px);padding:3px 10px;border-radius:10px;border:1px solid #2a2620;color:#4a453e;cursor:pointer;transition:all .15s;background:none;font-family:'Inter',sans-serif;}
+  .an-pos-pill.active{border-color:#02a4ba;color:#02a4ba;background:rgba(2,164,186,.08);}
+
+  /* ── Column mapper ── */
+  .an-mapper{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
+  .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:#e8e2d8;margin-bottom:4px;}
+  .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:#4a453e;margin-bottom:12px;}
+  .an-mapper-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,.6vw,10px);margin-bottom:12px;}
+  .an-mapper-lbl{font-size:clamp(9px,.65vw,10px);color:#6b6358;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;}
+  .an-mapper-lbl.req::after{content:' *';color:#c04040;}
+  .an-mapper-select{background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
+  .an-mapper-select:focus{border-color:#02a4ba;}
+
+  /* ── Misc ── */
+  .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:#4a453e;padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
+  .an-note-input{width:100%;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:6px 9px;font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
   .an-note-input:focus{border-color:#02a4ba;}
+  .an-scrollable{overflow-y:auto;flex:1;min-height:0;}
+  .an-scrollable::-webkit-scrollbar{width:3px;}
+
+  /* ── Mobile ── */
   .mob-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
   .mob-header{background:#0f0e0c;border-bottom:1px solid #2a2620;padding:10px 16px;padding-top:env(safe-area-inset-top,10px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .mob-logo{font-family:'Playfair Display',serif;font-size:20px;color:#e8e2d8;letter-spacing:-.3px;}
@@ -291,15 +351,11 @@ export default function AnalyticsPage() {
   useEffect(() => {
     if (!router.isReady) return;
     if (router.query.tour !== 'true') return;
-
     fetchSampleData().then(sample => {
       if (!sample?.posSales) return;
       setAllSales(sample.posSales);
       setHasSalesData(true);
-      setSalesMeta({
-        lastSync: sample.posSales[0]?.sale_date || null,
-        posSystem: 'tour',
-      });
+      setSalesMeta({ lastSync: sample.posSales[0]?.sale_date || null, posSystem: 'tour' });
     });
   }, [router.isReady, router.query.tour]);
 
@@ -311,9 +367,7 @@ export default function AnalyticsPage() {
     if (!profile?.restaurant_id) { setLoading(false); return; }
     setRestaurantId(profile.restaurant_id);
     setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
-    if (router.query.tour !== 'true') {
-      await loadSalesData(profile.restaurant_id);
-    }
+    if (router.query.tour !== 'true') { await loadSalesData(profile.restaurant_id); }
     setLoading(false);
   }
 
@@ -346,20 +400,20 @@ export default function AnalyticsPage() {
       itemMap[s.item_name].rev += parseFloat(s.revenue||0);
     }
     const items = Object.values(itemMap).sort((a,b) => b.qty-a.qty);
-    setTopSellers(items.slice(0,10));
+    setTopSellers(items.slice(0,8));
     const sevenAgo = new Date(); sevenAgo.setDate(sevenAgo.getDate()-7);
     const sevenAgoStr = sevenAgo.toISOString().split('T')[0];
     const recentMap = {};
     for (const s of filtered.filter(s => s.sale_date >= sevenAgoStr))
       recentMap[s.item_name] = (recentMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
-    setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,8).map(i=>({...i, recentQty:recentMap[i.name]||0})));
+    setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,6).map(i=>({...i, recentQty:recentMap[i.name]||0})));
     const vcMap = {};
     for (const s of filtered) {
       if (!vcMap[s.item_name]) vcMap[s.item_name]={name:s.item_name,voids:0,comps:0};
       vcMap[s.item_name].voids += parseInt(s.voids||0);
       vcMap[s.item_name].comps += parseFloat(s.comps||0);
     }
-    setVoidsComps(Object.values(vcMap).filter(i=>i.voids>0||i.comps>0).sort((a,b)=>b.voids-a.voids).slice(0,8));
+    setVoidsComps(Object.values(vcMap).filter(i=>i.voids>0||i.comps>0).sort((a,b)=>b.voids-a.voids).slice(0,6));
     const dayMap = {};
     for (const d of DAYS) dayMap[d]={day:d,qty:0,rev:0};
     for (const s of filtered) { if (s.day_of_week&&dayMap[s.day_of_week]) { dayMap[s.day_of_week].qty+=parseFloat(s.quantity_sold||0); dayMap[s.day_of_week].rev+=parseFloat(s.revenue||0); } }
@@ -386,7 +440,7 @@ export default function AnalyticsPage() {
       else if (s.sale_date>=lastWkStr) lwMap[s.item_name]=(lwMap[s.item_name]||0)+parseFloat(s.quantity_sold||0);
     }
     const wowItems=Object.keys({...twMap,...lwMap}).map(name=>{ const tw=twMap[name]||0,lw=lwMap[name]||0,change=lw>0?((tw-lw)/lw)*100:tw>0?100:0; return {name,tw,lw,change}; });
-    setWeekOverWeek({ improvers:wowItems.filter(i=>i.change>0&&i.tw>0).sort((a,b)=>b.change-a.change).slice(0,5), decliners:wowItems.filter(i=>i.change<0&&i.lw>0).sort((a,b)=>a.change-b.change).slice(0,5) });
+    setWeekOverWeek({ improvers:wowItems.filter(i=>i.change>0&&i.tw>0).sort((a,b)=>b.change-a.change).slice(0,4), decliners:wowItems.filter(i=>i.change<0&&i.lw>0).sort((a,b)=>a.change-b.change).slice(0,4) });
     if (restaurantId) {
       const { data: ings } = await supabase.from('ingredients').select('name,last_ordered_at,unit').eq('restaurant_id', restaurantId).not('last_ordered_at','is',null);
       const risk=(ings||[]).filter(ing=>ing.last_ordered_at>=sevenAgoStr).map(ing=>{
@@ -395,7 +449,7 @@ export default function AnalyticsPage() {
         if (!slow) return null;
         return {ingredient:ing.name,unit:ing.unit,lastOrdered:ing.last_ordered_at,riskLevel:(recentMap[slow.name]||0)===0?'high':'medium',linkedDish:slow.name};
       }).filter(Boolean).sort((a,b)=>a.riskLevel==='high'?-1:1);
-      setInventoryRisk(risk.slice(0,10));
+      setInventoryRisk(risk.slice(0,6));
     }
   }
 
@@ -477,35 +531,8 @@ export default function AnalyticsPage() {
 
   const MAPPER_FIELDS=[{f:'item_name',req:true},{f:'sale_date',req:true},{f:'quantity_sold',req:true},{f:'revenue',req:true},{f:'category',req:false},{f:'unit_price',req:false},{f:'hour_of_day',req:false},{f:'voids',req:false},{f:'comps',req:false}];
 
-  function renderDishCards() {
-    if (!hasSalesData) return <div className="an-empty">Upload POS data to generate dish recommendations</div>;
-    if (dishLoading) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:10,padding:'clamp(20px,3vh,40px)',color:'#4a453e',fontSize:'clamp(11px,.85vw,14px)'}}><div style={{width:18,height:18,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>Analyzing sales data and inventory...</div>;
-    if (!dishRecs.length) return <div className="an-empty">No recommendations yet — <button className="an-btn-g" style={{padding:'4px 10px',fontSize:12,marginLeft:6}} onClick={()=>fetchDishRecs(restaurantId)}>Generate now</button></div>;
-    return (
-      <div className="an-dish-cards">
-        {dishRecs.map((rec,i)=>{
-          const color=getUrgencyColor(rec.urgency);
-          return (
-            <div key={i} className="an-dish-card">
-              <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:color,borderRadius:'10px 10px 0 0'}}/>
-              <div className="an-dish-num">#{i+1}</div>
-              <div style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,padding:'3px 10px',borderRadius:10,alignSelf:'flex-start',textTransform:'uppercase',letterSpacing:'.5px',background:`${color}18`,color}}>{getTypeLabel(rec.type)}</div>
-              <div className="an-dish-name">{rec.dish}</div>
-              <div className="an-dish-reason">{rec.reason}</div>
-              {rec.talking_point&&<div className="an-dish-talking"><div className="an-dish-talking-lbl">Suggest to guests</div>"{rec.talking_point}"</div>}
-              <div className="an-dish-meta">
-                {rec.margin&&<div><div className="an-dish-meta-lbl">Margin</div><div className="an-dish-meta-val" style={{color:getMarginColor(rec.margin)}}>{rec.margin.toFixed(1)}%</div></div>}
-                {rec.confidence&&<div style={{flex:1}}><div className="an-dish-meta-lbl">Confidence</div><div className="an-conf-bar"><div className="an-conf-fill" style={{width:`${rec.confidence}%`,background:color}}/></div><div style={{fontSize:'clamp(9px,.68vw,11px)',color,fontWeight:600}}>{rec.confidence}%</div></div>}
-                <div><div className="an-dish-meta-lbl">Urgency</div><div className="an-dish-meta-val" style={{color,fontSize:'clamp(11px,.85vw,13px)'}}>{rec.urgency.charAt(0).toUpperCase()+rec.urgency.slice(1)}</div></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  if (isMobile && windowSize.width < 480) {
+  // ─── MOBILE ───────────────────────────────────────────────────────────────
+  if (isMobile) {
     return (
       <>
         <style>{CSS}</style>
@@ -643,10 +670,13 @@ export default function AnalyticsPage() {
     );
   }
 
+  // ─── DESKTOP ──────────────────────────────────────────────────────────────
   return (
     <>
       <style>{CSS}</style>
       <div className="an-root">
+
+        {/* ── Top Nav ── */}
         <div className="an-nav">
           <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
             <div className="an-logo">Opti<span>Menu</span></div>
@@ -658,11 +688,12 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* ── Page Header ── */}
         <div className="an-ph">
           <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
             <div className="an-range-toggle">{DATE_RANGES.map(r=><button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={()=>setDateRange(r)}>{r}</button>)}</div>
-            {hasSalesData&&<button className="an-btn-d" style={{padding:'clamp(5px,.5vw,8px) clamp(10px,.9vw,14px)',fontSize:'clamp(10px,.75vw,12px)'}} onClick={handleClearData}>✕ Clear Data</button>}
+            {hasSalesData&&<button className="an-btn-d" style={{padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)',fontSize:'clamp(9px,.68vw,11px)'}} onClick={handleClearData}>✕ Clear Data</button>}
             <button className="an-btn-p" onClick={()=>fileInputRef.current?.click()}>
               <input ref={fileInputRef} type="file" accept=".csv" style={{display:'none'}} onChange={e=>handleFileSelect(e.target.files)}/>
               ↑ Upload CSV
@@ -670,65 +701,82 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-          <div className="an-sbar">
-            {[
-              { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: '#02a4ba' },
-              { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: '#e8e2d8' },
-              { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: '#2a8a5a' },
-              { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: '#d4a020' },
-              { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: '#e8e2d8' },
-              { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: '#c04040' },
-            ].map(({ v, l, c }) => (
-              <div key={l} style={{ flexShrink: 0 }}>
-                <div className="an-sv" style={{ color: c }}>{v}</div>
-                <div className="an-sl">{l}</div>
-              </div>
-            ))}
-            {hasSalesData && salesMeta.lastSync && (
-              <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>
-            )}
-          </div>
+        {/* ── Stats Bar ── */}
+        <div className="an-sbar">
+          {[
+            { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: '#02a4ba' },
+            { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: '#e8e2d8' },
+            { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: '#2a8a5a' },
+            { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: '#d4a020' },
+            { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: '#e8e2d8' },
+            { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: '#c04040' },
+          ].map(({ v, l, c }) => (
+            <div key={l} style={{ flexShrink: 0 }}>
+              <div className="an-sv" style={{ color: c }}>{v}</div>
+              <div className="an-sl">{l}</div>
+            </div>
+          ))}
+          {hasSalesData && salesMeta.lastSync && (
+            <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>
+          )}
+        </div>
 
-        {loading?(
+        {/* ── Loading ── */}
+        {loading ? (
           <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
             <div style={{width:24,height:24,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
             <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'#4a453e'}}>Loading analytics...</div>
           </div>
-        ):(
+        ) : (
+
+          /* ════════════════════════════════════════
+             MAIN GRID
+          ════════════════════════════════════════ */
           <div className="an-body">
-            <div className="an-col-1">
-            {uploadStep==='idle'&&!hasSalesData&&(
-              <div className="an-upload-zone" onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}} onClick={()=>fileInputRef.current?.click()} style={{borderColor:dragOver?'#02a4ba':undefined}}>
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:12}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <div style={{fontSize:'clamp(13px,1vw,16px)',fontWeight:600,color:'#e8e2d8',marginBottom:6}}>Upload your POS sales export</div>
-                <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e',marginBottom:14}}>Drag & drop a CSV, or click to browse. Supports Toast, Square, Clover, Lightspeed, and any standard CSV.</div>
-                <button className="an-upload-btn" onClick={e=>e.stopPropagation()}>Browse Files</button>
-                <div className="an-pos-pills">{['toast','square','clover','lightspeed','other'].map(p=><button key={p} className={`an-pos-pill${selectedPOS===p?' active':''}`} onClick={e=>{e.stopPropagation();setSelectedPOS(p);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}</div>
-              </div>
-            )}
 
-            {uploadStep==='mapping'&&(
-              <div className="an-mapper">
-                <div className="an-mapper-title">Map your columns</div>
-                <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
-                <div className="an-mapper-grid">
-                  {MAPPER_FIELDS.map(({f,req})=>(
-                    <div key={f}>
-                      <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
-                      <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e=>setColumnMapping(prev=>({...prev,[f]:e.target.value||null}))}>
-                        <option value="">— not in CSV —</option>
-                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
-                      </select>
-                    </div>
-                  ))}
+            {/* ── No data / upload states — span full grid ── */}
+            {!hasSalesData && uploadStep === 'idle' && (
+              <div className="an-upload-full">
+                <div className="an-upload-zone"
+                  onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+                  onDragLeave={()=>setDragOver(false)}
+                  onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}}
+                  onClick={()=>fileInputRef.current?.click()}
+                  style={{borderColor:dragOver?'#02a4ba':undefined}}
+                >
+                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:10}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <div style={{fontSize:'clamp(13px,1vw,16px)',fontWeight:600,color:'#e8e2d8',marginBottom:6}}>Upload your POS sales export</div>
+                  <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e',marginBottom:14}}>Drag & drop a CSV, or click to browse. Supports Toast, Square, Clover, Lightspeed, and any standard CSV.</div>
+                  <button className="an-upload-btn" onClick={e=>e.stopPropagation()}>Browse Files</button>
+                  <div className="an-pos-pills">{['toast','square','clover','lightspeed','other'].map(p=><button key={p} className={`an-pos-pill${selectedPOS===p?' active':''}`} onClick={e=>{e.stopPropagation();setSelectedPOS(p);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}</div>
                 </div>
-                {uploadMsg&&<div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#c04040',marginBottom:10}}>{uploadMsg}</div>}
-                <div style={{display:'flex',gap:10}}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Cancel</button></div>
               </div>
             )}
 
-            {uploadStep==='uploading'&&(
-              <div className="an-card" style={{alignItems:'center',padding:'32px 20px'}}>
+            {uploadStep === 'mapping' && (
+              <div className="an-upload-full">
+                <div className="an-mapper">
+                  <div className="an-mapper-title">Map your columns</div>
+                  <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
+                  <div className="an-mapper-grid">
+                    {MAPPER_FIELDS.map(({f,req})=>(
+                      <div key={f}>
+                        <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
+                        <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e=>setColumnMapping(prev=>({...prev,[f]:e.target.value||null}))}>
+                          <option value="">— not in CSV —</option>
+                          {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  {uploadMsg&&<div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#c04040',marginBottom:10}}>{uploadMsg}</div>}
+                  <div style={{display:'flex',gap:10}}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Cancel</button></div>
+                </div>
+              </div>
+            )}
+
+            {uploadStep === 'uploading' && (
+              <div className="an-upload-full" style={{alignItems:'center',justifyContent:'center'}}>
                 <div style={{width:28,height:28,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite',marginBottom:12}}/>
                 <div style={{fontSize:'clamp(12px,.95vw,16px)',color:'#e8e2d8',fontWeight:600}}>Importing sales data...</div>
                 <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e',marginTop:6}}>{uploadProgress}%</div>
@@ -736,185 +784,245 @@ export default function AnalyticsPage() {
               </div>
             )}
 
-            {uploadStep==='done'&&(
-              <div style={{background:'rgba(42,138,90,.08)',border:'1px solid rgba(42,138,90,.2)',borderRadius:10,padding:'clamp(12px,1.2vw,18px)',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                <div style={{fontSize:'clamp(12px,.95vw,15px)',color:'#2a8a5a',fontWeight:500}}>✓ {uploadMsg}</div>
-                <button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Upload More</button>
+            {uploadStep === 'done' && (
+              <div className="an-upload-full" style={{alignItems:'center',justifyContent:'center'}}>
+                <div style={{background:'rgba(42,138,90,.08)',border:'1px solid rgba(42,138,90,.2)',borderRadius:10,padding:'clamp(12px,1.2vw,18px)',display:'flex',alignItems:'center',gap:16}}>
+                  <div style={{fontSize:'clamp(12px,.95vw,15px)',color:'#2a8a5a',fontWeight:500}}>✓ {uploadMsg}</div>
+                  <button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Upload More</button>
+                </div>
               </div>
             )}
 
-            <div className="an-card">
-              <div className="an-card-hd">
-                <div className="an-card-title"><svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>Today's Dish Recommendations</div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  {dishLoading&&<div style={{display:'flex',alignItems:'center',gap:6,fontSize:'clamp(9px,.68vw,11px)',color:'#4a453e'}}><div style={{width:10,height:10,border:'1.5px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>Analyzing...</div>}
-                  {dishRecs.length>0&&<><button className="an-btn-g" style={{fontSize:'clamp(9px,.68vw,11px)',padding:'4px 10px'}} onClick={handleShare}>⎘ Copy for Team</button><button className="an-btn-g" style={{fontSize:'clamp(9px,.68vw,11px)',padding:'4px 10px'}} onClick={handlePrint}>⎙ Print</button></>}
-                  <button className="an-btn-g" style={{fontSize:'clamp(9px,.68vw,11px)',padding:'4px 10px'}} onClick={()=>fetchDishRecs(restaurantId)}>↻ Refresh</button>
-                </div>
-              </div>
-              {renderDishCards()}
-            </div>
-            <div className="an-col-r">
-            
-
-            {hasSalesData&&(
+            {/* ══════════════════════════════════════════════════════════════
+                DATA GRID — only renders when we have sales data
+            ══════════════════════════════════════════════════════════════ */}
+            {hasSalesData && uploadStep !== 'mapping' && uploadStep !== 'uploading' && (
               <>
-                <div className="an-card">
-                  <div className="an-card-hd">
-                    <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Daily Revenue Trend</div>
-                    {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'} {Math.abs(pct)}% vs start of period</span>; })()}
-                  </div>
-                  <TrendLine data={trendData} color="#02a4ba" valueKey="rev"/>
-                </div>
-
-                <div className="an-g2">
-                  <div className="an-card">
-                    <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Top Sellers</div>
-                      <div className="an-toggle"><button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button><button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Revenue</button></div>
-                    </div>
-                    {topSellers.map(item=>(
-                      <div key={item.name} className="an-bar-row">
-                        <div className="an-bar-label">{item.name}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
-                        <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
+                {/* ── Col 1, Rows 1-2: Dish Recommendations ── */}
+                <div className="an-recs-col">
+                  <div className="an-card" style={{flex:1}}>
+                    <div className="an-card-hd" style={{flexShrink:0}}>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        Today's Dish Picks
                       </div>
-                    ))}
-                  </div>
-                  <div className="an-card">
-                    <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>Slow Movers</div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 sold this week</div>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        {dishLoading&&<div style={{width:10,height:10,border:'1.5px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>}
+                        {dishRecs.length>0&&<>
+                          <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={handleShare}>⎘ Copy</button>
+                          <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={handlePrint}>⎙ Print</button>
+                        </>}
+                        <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={()=>fetchDishRecs(restaurantId)}>↻ Refresh</button>
+                      </div>
                     </div>
-                    {slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
-                      <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d Total</th><th className="an-th r">Last 7d</th></tr></thead>
-                      <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody></table>
+
+                    {dishLoading ? (
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,flex:1,color:'#4a453e',fontSize:'clamp(10px,.78vw,12px)'}}>
+                        <div style={{width:14,height:14,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                        Analyzing...
+                      </div>
+                    ) : !dishRecs.length ? (
+                      <div className="an-empty" style={{flexDirection:'column',gap:8}}>
+                        <div>No recommendations yet</div>
+                        <button className="an-btn-g" style={{fontSize:'clamp(9px,.68vw,11px)',padding:'4px 10px'}} onClick={()=>fetchDishRecs(restaurantId)}>Generate now</button>
+                      </div>
+                    ) : (
+                      <div className="an-dish-stack">
+                        {dishRecs.map((rec,i)=>{
+                          const color=getUrgencyColor(rec.urgency);
+                          return (
+                            <div key={i} className="an-dish-card">
+                              <div className="an-dish-top-bar" style={{background:color}}/>
+                              <div className="an-dish-badge" style={{background:`${color}18`,color}}>{getTypeLabel(rec.type)}</div>
+                              <div className="an-dish-name">{rec.dish}</div>
+                              <div className="an-dish-reason">{rec.reason}</div>
+                              {rec.talking_point&&(
+                                <div className="an-dish-talking">
+                                  <div className="an-dish-talking-lbl">Suggest to guests</div>
+                                  "{rec.talking_point}"
+                                </div>
+                              )}
+                              <div className="an-dish-meta">
+                                {rec.margin&&<div><div className="an-dish-meta-lbl">Margin</div><div className="an-dish-meta-val" style={{color:getMarginColor(rec.margin)}}>{rec.margin.toFixed(1)}%</div></div>}
+                                {rec.confidence&&<div style={{flex:1}}><div className="an-dish-meta-lbl">Confidence</div><div className="an-conf-bar"><div className="an-conf-fill" style={{width:`${rec.confidence}%`,background:color}}/></div><div style={{fontSize:'clamp(8px,.62vw,10px)',color,fontWeight:600}}>{rec.confidence}%</div></div>}
+                                <div><div className="an-dish-meta-lbl">Urgency</div><div className="an-dish-meta-val" style={{color,fontSize:'clamp(10px,.78vw,12px)'}}>{rec.urgency.charAt(0).toUpperCase()+rec.urgency.slice(1)}</div></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
                 </div>
 
-                <div className="an-g2">
+                {/* ── Cols 2-4, Row 1: Trend · Top Sellers · Slow Movers ── */}
+                <div className="an-trend-row">
+
+                  {/* Trend */}
                   <div className="an-card">
                     <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>Most Improved This Week</div>
-                      <div className="an-badge" style={{background:'rgba(42,138,90,.1)',color:'#2a8a5a'}}>vs last week</div>
-                    </div>
-                    {weekOverWeek.improvers.length===0?<div className="an-empty">Not enough weekly data</div>:weekOverWeek.improvers.map(item=>(
-                      <div key={item.name} className="an-bar-row">
-                        <div className="an-bar-label">{item.name}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,item.change)}%`,background:'#2a8a5a'}}/></div>
-                        <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        Daily Revenue
                       </div>
-                    ))}
+                      {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
+                    </div>
+                    <TrendLine data={trendData} color="#02a4ba" valueKey="rev"/>
                   </div>
+
+                  {/* Top Sellers */}
                   <div className="an-card">
                     <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="17 6 12 11 7 6"/><polyline points="17 13 12 18 7 13"/></svg>Biggest Decliners</div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>vs last week</div>
-                    </div>
-                    {weekOverWeek.decliners.length===0?<div className="an-empty">Not enough weekly data</div>:weekOverWeek.decliners.map(item=>(
-                      <div key={item.name} className="an-bar-row">
-                        <div className="an-bar-label">{item.name}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,Math.abs(item.change))}%`,background:'#c04040'}}/></div>
-                        <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        Top Sellers
                       </div>
-                    ))}
+                      <div className="an-toggle">
+                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
+                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
+                      </div>
+                    </div>
+                    <div className="an-scrollable">
+                      {topSellers.map(item=>(
+                        <div key={item.name} className="an-bar-row">
+                          <div className="an-bar-label">{item.name}</div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
+                          <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Slow Movers */}
+                  <div className="an-card">
+                    <div className="an-card-hd">
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+                        Slow Movers
+                      </div>
+                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 this week</div>
+                    </div>
+                    {slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
+                      <div className="an-scrollable">
+                        <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
+                        <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody></table>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="an-g2">
+                {/* ── Cols 2-4, Row 2: Day of Week · Hourly · Category · WoW/Risk ── */}
+                <div className="an-bottom-row">
+
+                  {/* Sales by Day */}
                   <div className="an-card">
                     <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Sales by Day of Week</div>
-                      <div className="an-toggle"><button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button><button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Revenue</button></div>
-                    </div>
-                    {dayOfWeekData.map(d=>(
-                      <div key={d.day} className="an-bar-row">
-                        <div className="an-bar-label">{d.day}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`,background:'#d4a020'}}/></div>
-                        <div className="an-bar-val" style={{color:'#d4a020'}}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        By Day
                       </div>
-                    ))}
+                      <div className="an-toggle">
+                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
+                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
+                      </div>
+                    </div>
+                    <div className="an-scrollable">
+                      {dayOfWeekData.map(d=>(
+                        <div key={d.day} className="an-bar-row">
+                          <div className="an-bar-label">{d.day.slice(0,3)}</div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`,background:'#d4a020'}}/></div>
+                          <div className="an-bar-val" style={{color:'#d4a020'}}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Hourly heatmap */}
                   <div className="an-card">
                     <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Hourly Sales {openHours.length>0&&<span style={{fontSize:'clamp(9px,.65vw,10px)',color:'#4a453e',fontWeight:400}}>({formatHour(openHours[0])}–{formatHour(openHours[openHours.length-1])})</span>}</div>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                        Hourly
+                      </div>
                     </div>
-                    <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                    <div className="an-heatmap-wrap">
                       {hourlyData.map(h=>{ const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'#c04040':intensity>0.4?'#d4a020':intensity>0.1?'#02a4ba':'#1a1915'; return (
-                        <div key={h.hour} className="an-heatmap-cell" style={{width:'clamp(28px,3vw,42px)',height:'clamp(28px,3vw,42px)',background:bg,opacity:intensity>0?0.3+intensity*0.7:0.25}}>
-                          <span style={{fontSize:'clamp(7px,.58vw,9px)',color:intensity>0.5?'#0a0908':'#4a453e'}}>{formatHour(h.hour)}</span>
+                        <div key={h.hour} className="an-heatmap-cell" style={{background:bg,opacity:intensity>0?0.3+intensity*0.7:0.25}}>
+                          <span style={{fontSize:'clamp(7px,.55vw,9px)',color:intensity>0.5?'#0a0908':'#4a453e'}}>{formatHour(h.hour)}</span>
                           <div className="an-heatmap-tip">{formatHour(h.hour)} — {Math.round(h.qty)} items</div>
                         </div>
                       );})}
                     </div>
-                    <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap'}}>
+                    <div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap',flexShrink:0}}>
                       {[{c:'#c04040',l:'Peak'},{c:'#d4a020',l:'Busy'},{c:'#02a4ba',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l})=>(
-                        <div key={l} style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(8px,.62vw,10px)',color:'#4a453e'}}><div style={{width:8,height:8,borderRadius:2,background:c}}/>{l}</div>
+                        <div key={l} style={{display:'flex',alignItems:'center',gap:3,fontSize:'clamp(7px,.55vw,9px)',color:'#4a453e'}}><div style={{width:7,height:7,borderRadius:2,background:c}}/>{l}</div>
                       ))}
                     </div>
                   </div>
-                </div>
 
-                <div className="an-g2">
-                  <div className="an-card">
-                    <div className="an-card-hd"><div className="an-card-title"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>Revenue by Category</div></div>
-                    <DonutChart data={categoryData}/>
-                  </div>
+                  {/* Category donut */}
                   <div className="an-card">
                     <div className="an-card-hd">
-                      <div className="an-card-title"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Inventory Risk</div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>ordered recently · slow selling</div>
-                    </div>
-                    {inventoryRisk.length===0?<div className="an-empty">No at-risk ingredients</div>:(
-                      <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th">Used In</th><th className="an-th">Last Ordered</th><th className="an-th r">Risk</th></tr></thead>
-                      <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p">{r.ingredient}</td><td className="an-td">{r.linkedDish||<span style={{color:'#4a453e'}}>—</span>}</td><td className="an-td">{r.lastOrdered}</td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-
-                <div className="an-g2">
-                  <div className="an-card">
-                    <div className="an-card-hd"><div className="an-card-title"><svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Revenue by Item</div></div>
-                    <table className="an-table"><thead><tr><th className="an-th">#</th><th className="an-th">Item</th><th className="an-th">Category</th><th className="an-th r">Qty</th><th className="an-th r">Revenue</th><th className="an-th r">Avg Price</th></tr></thead>
-                    <tbody>{[...topSellers].sort((a,b)=>b.rev-a.rev).slice(0,12).map((item,i)=>(
-                      <tr key={item.name} className="an-tr">
-                        <td className="an-td" style={{color:'#4a453e'}}>{i+1}</td>
-                        <td className="an-td p">{item.name}</td>
-                        <td className="an-td">{item.category||<span style={{color:'#4a453e'}}>—</span>}</td>
-                        <td className="an-td r">{Math.round(item.qty)}</td>
-                        <td className="an-td r a">{formatCurrency(item.rev)}</td>
-                        <td className="an-td r">{item.qty>0?formatCurrencyDetailed(item.rev/item.qty):'—'}</td>
-                      </tr>
-                    ))}</tbody></table>
-                  </div>
-                  <div className="an-card">
-                    <div className="an-card-hd"><div className="an-card-title"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>Voids & Comps</div></div>
-                    {voidsComps.length===0?<div className="an-empty">No void or comp data</div>:(
-                      <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">Voids</th><th className="an-th r">Comps</th></tr></thead>
-                      <tbody>{voidsComps.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r w">{item.voids}</td><td className="an-td r w">{formatCurrency(item.comps)}</td></tr>)}</tbody></table>
-                    )}
-                    <div style={{marginTop:16,borderTop:'1px solid #2a2620',paddingTop:14}}>
-                      <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:'#4a453e',textTransform:'uppercase',letterSpacing:'.7px',marginBottom:8}}>Manager Notes</div>
-                      <div style={{display:'flex',gap:6,marginBottom:8}}>
-                        <input type="date" value={noteDate} onChange={e=>setNoteDate(e.target.value)} style={{background:'#0f0e0c',border:'1px solid #2a2620',borderRadius:6,padding:'5px 8px',fontSize:11,color:'#e8e2d8',outline:'none',fontFamily:"'Inter',sans-serif",flexShrink:0}}/>
-                        <textarea rows={2} className="an-note-input" placeholder="Note for this date..." value={noteText} onChange={e=>setNoteText(e.target.value)}/>
-                        <button className="an-btn-p" style={{fontSize:11,padding:'6px 12px',alignSelf:'flex-end'}} onClick={()=>{ if(noteDate&&noteText){setNotes(prev=>({...prev,[noteDate]:noteText}));setNoteText('');} }}>Save</button>
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
+                        By Category
                       </div>
-                      {Object.entries(notes).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,4).map(([date,note])=>(
-                        <div key={date} style={{padding:'7px 0',borderBottom:'1px solid #1a1915',display:'flex',gap:10}}>
-                          <div style={{fontSize:11,color:'#4a453e',flexShrink:0}}>{date}</div>
-                          <div style={{fontSize:12,color:'#9a9086'}}>{note}</div>
+                    </div>
+                    <DonutChart data={categoryData}/>
+                  </div>
+
+                  {/* WoW + Inventory Risk stacked */}
+                  <div style={{display:'flex',flexDirection:'column',gap:'clamp(6px,.6vw,10px)',minHeight:0,overflow:'hidden'}}>
+
+                    {/* Week over week */}
+                    <div className="an-card" style={{flex:1}}>
+                      <div className="an-card-hd">
+                        <div className="an-card-title">
+                          <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+                          Week vs Week
                         </div>
-                      ))}
+                      </div>
+                      <div className="an-scrollable">
+                        {weekOverWeek.improvers.slice(0,3).map(item=>(
+                          <div key={item.name} className="an-bar-row">
+                            <div className="an-bar-label">{item.name}</div>
+                            <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,item.change)}%`,background:'#2a8a5a'}}/></div>
+                            <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
+                          </div>
+                        ))}
+                        {weekOverWeek.decliners.slice(0,3).map(item=>(
+                          <div key={item.name} className="an-bar-row">
+                            <div className="an-bar-label">{item.name}</div>
+                            <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,Math.abs(item.change))}%`,background:'#c04040'}}/></div>
+                            <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
+                          </div>
+                        ))}
+                        {weekOverWeek.improvers.length===0&&weekOverWeek.decliners.length===0&&<div className="an-empty">Not enough weekly data</div>}
+                      </div>
+                    </div>
+
+                    {/* Inventory Risk */}
+                    <div className="an-card" style={{flex:1}}>
+                      <div className="an-card-hd">
+                        <div className="an-card-title">
+                          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                          Inv. Risk
+                        </div>
+                        <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>slow + recent</div>
+                      </div>
+                      {inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
+                        <div className="an-scrollable">
+                          <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
+                          <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p" style={{fontSize:'clamp(8px,.62vw,10px)'}}>{r.ingredient}<div style={{fontSize:'clamp(7px,.55vw,8px)',color:'#4a453e'}}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody></table>
+                        </div>
+                      )}
                     </div>
                   </div>
+
                 </div>
               </>
             )}
-            </div>
-            </div>
+
           </div>
         )}
       </div>
