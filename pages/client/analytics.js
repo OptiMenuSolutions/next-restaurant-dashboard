@@ -68,12 +68,14 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   );
 
   // SVG canvas — wide, short, with left margin for y-labels
-  const W=400, H=90, PL=36, PR=8, PT=6, PB=18;
+  // Wide landscape viewBox — ratio matches a typical card (≈5:1 wide:tall)
+  // preserveAspectRatio="xMidYMid meet" keeps the aspect ratio so text
+  // scales naturally with the card width instead of blowing up.
+  const W=600, H=120, PL=44, PR=10, PT=8, PB=22;
   const cW = W-PL-PR, cH = H-PT-PB;
 
   const vals = pts.map(d => d[valueKey]);
   const rawMax = Math.max(...vals, 1);
-  // Nice round ceiling
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const yMax = Math.ceil((rawMax * 1.15) / mag) * mag;
   const xOf = i => PL + (pts.length === 1 ? cW/2 : (i/(pts.length-1))*cW);
@@ -82,17 +84,15 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const pth = pts.map((d,i)=>`${i===0?'M':'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
   const area = `${pth} L${xOf(pts.length-1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
 
-  // 3 y-ticks: 0, half, max
   const yTicks = [0, yMax/2, yMax];
 
-  // x labels: first, middle, last
   const xLabelIdxs = pts.length <= 6
     ? pts.map((_,i)=>i)
     : [0, Math.floor((pts.length-1)/2), pts.length-1];
 
   return (
     <div style={{position:'relative', flex:1, minHeight:0}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%'}} preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%'}} preserveAspectRatio="xMidYMid meet">
         <defs>
           <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity="0.2"/>
@@ -104,8 +104,9 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
         {/* Gridlines + y labels */}
         {yTicks.map((t,i) => (
           <g key={i}>
-            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.8"/>
-            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle" fontSize="7" fill="#3a3630">
+            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.6"/>
+            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle" fontSize="9" fill="#3a3630"
+              style={{fontFamily:"'Inter',sans-serif"}}>
               {valueKey==='rev' ? formatCurrency(t) : Math.round(t)}
             </text>
           </g>
@@ -121,7 +122,6 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
             onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
             onMouseLeave={()=>setTip(null)}/>
         ))}
-        {/* Invisible wider hit targets when dots hidden */}
         {pts.length > 14 && pts.map((d,i) => (
           <rect key={i} x={xOf(i)-4} y={PT} width={8} height={cH} fill="transparent" style={{cursor:'pointer'}}
             onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
@@ -130,7 +130,8 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
 
         {/* X date labels */}
         {xLabelIdxs.map(i => (
-          <text key={i} x={xOf(i).toFixed(1)} y={H-3} textAnchor={i===0?'start':i===pts.length-1?'end':'middle'} fontSize="7" fill="#3a3630">
+          <text key={i} x={xOf(i).toFixed(1)} y={H-4} textAnchor={i===0?'start':i===pts.length-1?'end':'middle'}
+            fontSize="9" fill="#3a3630" style={{fontFamily:"'Inter',sans-serif"}}>
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
@@ -422,6 +423,7 @@ export default function AnalyticsPage() {
       setAllSales(sample.posSales);
       setHasSalesData(true);
       setSalesMeta({ lastSync: sample.posSales[0]?.sale_date || null, posSystem: 'tour' });
+      if (sample.dishRecs?.length) setDishRecs(sample.dishRecs);
     });
   }, [router.isReady, router.query.tour]);
 
