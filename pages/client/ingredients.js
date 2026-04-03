@@ -235,6 +235,7 @@ export default function ClientIngredients() {
     router.prefetch('/client/analytics');
   }, []);
 
+  const { tourProps } = useTour('ingredients', restaurantId);
   const isTour = router.query.tour === 'true';
 
   useEffect(() => {

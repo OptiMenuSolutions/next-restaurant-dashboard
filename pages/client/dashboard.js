@@ -479,6 +479,7 @@ export default function ClientDashboard() {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => { getRestaurantId(); }, []);
 
+  const { tourProps } = useTour('dashboard', restaurantId);
   const isTour = router.query.tour === 'true';
 
   // Dashboard:

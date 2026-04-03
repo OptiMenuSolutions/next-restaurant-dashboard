@@ -365,7 +365,7 @@ export default function ClientInvoices() {
     router.prefetch('/client/analytics');
   }, []);
 
-
+  const { tourProps } = useTour('invoices', restaurantId);
   const isTour = router.query.tour === 'true';
 
   useEffect(() => {

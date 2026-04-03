@@ -282,6 +282,7 @@ export default function AnalyticsPage() {
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
+  const { tourProps } = useTour('analytics', restaurantId);
   const isTour = router.query.tour === 'true';
   
   useEffect(() => {

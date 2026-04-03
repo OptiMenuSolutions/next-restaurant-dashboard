@@ -286,6 +286,7 @@ export default function ClientMenuItems() {
   }, []);
 
   // ── Tour ──
+  const { tourProps } = useTour('menu-items', restaurantId);
   const isTour = router.query.tour === 'true';
 
   useEffect(() => {
