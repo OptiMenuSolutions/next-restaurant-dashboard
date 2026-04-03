@@ -47,36 +47,115 @@ function NavIcon({ path }) {
   return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
 }
 
+function formatDateLabel(dateStr) {
+  if (!dateStr) return '';
+  // dateStr is YYYY-MM-DD — parse as local date to avoid UTC shift
+  const [, m, d] = dateStr.split('-');
+  return `${parseInt(m)}/${parseInt(d)}`;
+}
+
+function niceMax(val) {
+  // Round up to a clean ceiling so the line never kisses the top edge
+  if (!val || val === 0) return 100;
+  const mag = Math.pow(10, Math.floor(Math.log10(val)));
+  return Math.ceil(val / mag) * mag;
+}
+
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const [tip, setTip] = useState(null);
-  const pts = data.filter(d => d[valueKey] > 0);
-  if (pts.length < 2) return <div style={{textAlign:'center',padding:'8px 0',fontSize:11,color:'#4a453e'}}>Not enough data points</div>;
-  const W=800,H=80,PL=10,PR=10,PT=8,PB=20;
-  const xs = pts.map((_,i)=>PL+(i/(pts.length-1))*(W-PL-PR));
-  const vals = pts.map(d=>d[valueKey]);
-  const mn=Math.min(...vals),mx=Math.max(...vals),rng=mx-mn||1;
-  const ys = vals.map(v=>PT+((mx-v)/rng)*(H-PT-PB));
-  const pth = xs.map((x,i)=>`${i===0?'M':'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
-  const area = `${pth} L${xs[xs.length-1].toFixed(1)},${(H-PB).toFixed(1)} L${xs[0].toFixed(1)},${(H-PB).toFixed(1)} Z`;
+  const pts = data.filter(d => d[valueKey] >= 0);
+  if (pts.length < 1) return <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,fontSize:11,color:'#4a453e'}}>Not enough data points</div>;
+
+  // Layout constants
+  const W=800, H=160, PL=58, PR=16, PT=12, PB=28;
+  const chartW = W - PL - PR;
+  const chartH = H - PT - PB;
+
+  // Y axis: always start at 0, nice ceiling
+  const rawMax = Math.max(...pts.map(d => d[valueKey]), 1);
+  const yMax = niceMax(rawMax * 1.1); // 10% headroom
+  const yMin = 0;
+  const yRange = yMax - yMin;
+
+  // X positions — evenly spaced regardless of date gaps
+  const xOf = i => PL + (pts.length === 1 ? chartW / 2 : (i / (pts.length - 1)) * chartW);
+  const yOf = v => PT + chartH - ((v - yMin) / yRange) * chartH;
+
+  // Grid lines & y-axis labels (4 ticks)
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => yMin + f * yRange);
+
+  // Line path
+  const pth = pts.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
+  const area = pts.length > 1
+    ? `${pth} L${xOf(pts.length-1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`
+    : '';
+
+  // Date labels — show up to 8, always include first and last
+  const labelIndices = (() => {
+    if (pts.length <= 8) return pts.map((_, i) => i);
+    const step = Math.floor((pts.length - 1) / 7);
+    const idxs = new Set([0]);
+    for (let i = step; i < pts.length - 1; i += step) idxs.add(i);
+    idxs.add(pts.length - 1);
+    return [...idxs].sort((a, b) => a - b);
+  })();
+
   return (
-    <div style={{position:'relative',flex:1,minHeight:0}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%',overflow:'visible'}} preserveAspectRatio="none">
-        <defs><linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity="0.18"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
-        <path d={area} fill="url(#tgrad)"/>
-        <path d={pth} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        {xs.map((x,i)=>(
-          <circle key={i} cx={x} cy={ys[i]} r="3" fill={color} style={{cursor:'pointer'}}
-            onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d:pts[i]})} onMouseLeave={()=>setTip(null)}/>
-        ))}
-        {xs.map((x,i)=>{
-          if(i%Math.max(1,Math.floor(pts.length/6))!==0&&i!==pts.length-1)return null;
-          return <text key={i} x={x} y={H-4} textAnchor="middle" fontSize="10" fill="#4a453e">{pts[i].date?.slice(5)}</text>;
+    <div style={{position:'relative', flex:1, minHeight:0}}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%', height:'100%'}} preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.15"/>
+            <stop offset="100%" stopColor={color} stopOpacity="0"/>
+          </linearGradient>
+          <clipPath id="tclip">
+            <rect x={PL} y={PT} width={chartW} height={chartH}/>
+          </clipPath>
+        </defs>
+
+        {/* Grid lines + Y labels */}
+        {ticks.map((t, i) => {
+          const y = yOf(t).toFixed(1);
+          const label = valueKey === 'rev' ? formatCurrency(t) : Math.round(t);
+          return (
+            <g key={i}>
+              <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="#1a1915" strokeWidth="1"/>
+              <text x={PL - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize="9" fill="#3a3630">{label}</text>
+            </g>
+          );
         })}
+
+        {/* Area fill */}
+        {area && <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)"/>}
+
+        {/* Line */}
+        <path d={pth} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
+
+        {/* Dots */}
+        {pts.map((d, i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="3.5" fill={color}
+            style={{cursor:'pointer'}}
+            onMouseEnter={e => setTip({x: e.clientX, y: e.clientY, d})}
+            onMouseLeave={() => setTip(null)}/>
+        ))}
+
+        {/* X-axis date labels */}
+        {labelIndices.map(i => (
+          <text key={i} x={xOf(i).toFixed(1)} y={H - 6} textAnchor="middle" fontSize="9" fill="#3a3630">
+            {formatDateLabel(pts[i].date)}
+          </text>
+        ))}
+
+        {/* X axis baseline */}
+        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W - PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="1"/>
       </svg>
-      {tip&&<div style={{position:'fixed',left:tip.x+10,top:tip.y-40,background:'#1a1915',border:'1px solid #2a2620',borderRadius:6,padding:'6px 10px',fontSize:11,color:'#e8e2d8',pointerEvents:'none',whiteSpace:'nowrap',zIndex:999}}>
-        <div style={{fontWeight:600,color}}>{valueKey==='rev'?formatCurrency(tip.d[valueKey]):Math.round(tip.d[valueKey])}</div>
-        <div style={{color:'#4a453e',fontSize:10}}>{tip.d.date}</div>
-      </div>}
+
+      {tip && (
+        <div style={{position:'fixed',left:tip.x+12,top:tip.y-48,background:'#1a1915',border:'1px solid #2a2620',borderRadius:6,padding:'6px 10px',fontSize:11,color:'#e8e2d8',pointerEvents:'none',whiteSpace:'nowrap',zIndex:999}}>
+          <div style={{fontWeight:600,color}}>{valueKey==='rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
+          <div style={{color:'#4a453e',fontSize:10}}>{formatDateLabel(tip.d.date)}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -253,14 +332,6 @@ const CSS = `
   .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#c04040;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-d:hover{background:rgba(192,64,64,.08);}
 
-  /* ── Upload zone ── */
-  .an-upload-zone{background:#13120f;border:2px dashed #2a2620;border-radius:10px;padding:clamp(20px,3vh,40px);text-align:center;cursor:pointer;transition:border-color .2s;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .an-upload-zone:hover,.an-upload-zone.drag{border-color:#02a4ba;}
-  .an-upload-btn{background:#02a4ba;border:none;border-radius:7px;padding:clamp(8px,.8vw,12px) clamp(16px,1.4vw,24px);font-size:clamp(11px,.85vw,14px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;}
-  .an-pos-pills{display:flex;gap:8px;justify-content:center;margin-top:12px;flex-wrap:wrap;}
-  .an-pos-pill{font-size:clamp(9px,.68vw,11px);padding:3px 10px;border-radius:10px;border:1px solid #2a2620;color:#4a453e;cursor:pointer;transition:all .15s;background:none;font-family:'Inter',sans-serif;}
-  .an-pos-pill.active{border-color:#02a4ba;color:#02a4ba;background:rgba(2,164,186,.08);}
-
   /* ── Column mapper ── */
   .an-mapper{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
   .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:#e8e2d8;margin-bottom:4px;}
@@ -327,6 +398,7 @@ export default function AnalyticsPage() {
   const [uploadMsg, setUploadMsg] = useState('');
   const [dateRange, setDateRange] = useState('14d');
   const [dayView, setDayView] = useState('qty');
+  const [trendView, setTrendView] = useState('rev');
   const [allSales, setAllSales] = useState([]);
   const [hasSalesData, setHasSalesData] = useState(false);
   const [salesMeta, setSalesMeta] = useState({ lastSync: null, posSystem: null });
@@ -697,6 +769,7 @@ export default function AnalyticsPage() {
         <div className="an-ph">
           <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
           <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            {uploadStep==='done'&&<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'#2a8a5a',background:'rgba(42,138,90,.1)',border:'1px solid rgba(42,138,90,.2)',borderRadius:6,padding:'3px 10px',display:'flex',alignItems:'center',gap:6}}>✓ {uploadMsg}<button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'2px 8px',marginLeft:4}} onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>×</button></div>}
             <div className="an-range-toggle">{DATE_RANGES.map(r=><button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={()=>setDateRange(r)}>{r}</button>)}</div>
             {hasSalesData&&<button className="an-btn-d" style={{padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)',fontSize:'clamp(9px,.68vw,11px)'}} onClick={handleClearData}>✕ Clear Data</button>}
             <button className="an-btn-p" onClick={()=>fileInputRef.current?.click()}>
@@ -733,79 +806,54 @@ export default function AnalyticsPage() {
             <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'#4a453e'}}>Loading analytics...</div>
           </div>
         ) : (
+          <div style={{flex:1,minHeight:0,position:'relative',display:'flex',flexDirection:'column'}}>
 
-          /* ════════════════════════════════════════
-             MAIN GRID
-          ════════════════════════════════════════ */
-          <div className="an-body">
-
-            {/* ── No data / upload states — span full grid ── */}
-            {!hasSalesData && uploadStep === 'idle' && (
-              <div className="an-upload-full">
-                <div className="an-upload-zone"
-                  onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-                  onDragLeave={()=>setDragOver(false)}
-                  onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}}
-                  onClick={()=>fileInputRef.current?.click()}
-                  style={{borderColor:dragOver?'#02a4ba':undefined}}
-                >
-                  <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:10}}><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                  <div style={{fontSize:'clamp(13px,1vw,16px)',fontWeight:600,color:'#e8e2d8',marginBottom:6}}>Upload your POS sales export</div>
-                  <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e',marginBottom:14}}>Drag & drop a CSV, or click to browse. Supports Toast, Square, Clover, Lightspeed, and any standard CSV.</div>
-                  <button className="an-upload-btn" onClick={e=>e.stopPropagation()}>Browse Files</button>
-                  <div className="an-pos-pills">{['toast','square','clover','lightspeed','other'].map(p=><button key={p} className={`an-pos-pill${selectedPOS===p?' active':''}`} onClick={e=>{e.stopPropagation();setSelectedPOS(p);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>)}</div>
+          {/* ── Column mapper overlay ── */}
+          {uploadStep === 'mapping' && (
+            <div style={{position:'absolute',inset:0,zIndex:10,background:'rgba(10,9,8,.92)',display:'flex',alignItems:'center',justifyContent:'center',padding:'clamp(12px,1.2vw,20px)'}}>
+              <div className="an-mapper" style={{flex:'none',width:'min(720px,90%)',maxHeight:'90%',overflowY:'auto'}}>
+                <div className="an-mapper-title">Map your columns</div>
+                <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
+                <div className="an-mapper-grid">
+                  {MAPPER_FIELDS.map(({f,req})=>(
+                    <div key={f}>
+                      <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
+                      <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e=>setColumnMapping(prev=>({...prev,[f]:e.target.value||null}))}>
+                        <option value="">— not in CSV —</option>
+                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
+                      </select>
+                    </div>
+                  ))}
                 </div>
+                {uploadMsg&&<div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#c04040',marginBottom:10}}>{uploadMsg}</div>}
+                <div style={{display:'flex',gap:10}}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Cancel</button></div>
               </div>
-            )}
+            </div>
+          )}
 
-            {uploadStep === 'mapping' && (
-              <div className="an-upload-full">
-                <div className="an-mapper">
-                  <div className="an-mapper-title">Map your columns</div>
-                  <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
-                  <div className="an-mapper-grid">
-                    {MAPPER_FIELDS.map(({f,req})=>(
-                      <div key={f}>
-                        <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
-                        <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e=>setColumnMapping(prev=>({...prev,[f]:e.target.value||null}))}>
-                          <option value="">— not in CSV —</option>
-                          {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                  {uploadMsg&&<div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#c04040',marginBottom:10}}>{uploadMsg}</div>}
-                  <div style={{display:'flex',gap:10}}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Cancel</button></div>
-                </div>
-              </div>
-            )}
+          {/* ── Uploading overlay ── */}
+          {uploadStep === 'uploading' && (
+            <div style={{position:'absolute',inset:0,zIndex:10,background:'rgba(10,9,8,.92)',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
+              <div style={{width:28,height:28,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+              <div style={{fontSize:'clamp(12px,.95vw,16px)',color:'#e8e2d8',fontWeight:600}}>Importing sales data...</div>
+              <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e'}}>{uploadProgress}%</div>
+              <div style={{width:280,background:'#1a1915',borderRadius:4,height:4}}><div style={{height:4,borderRadius:4,background:'#02a4ba',width:`${uploadProgress}%`,transition:'width .3s'}}/></div>
+            </div>
+          )}
 
-            {uploadStep === 'uploading' && (
-              <div className="an-upload-full" style={{alignItems:'center',justifyContent:'center'}}>
-                <div style={{width:28,height:28,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite',marginBottom:12}}/>
-                <div style={{fontSize:'clamp(12px,.95vw,16px)',color:'#e8e2d8',fontWeight:600}}>Importing sales data...</div>
-                <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e',marginTop:6}}>{uploadProgress}%</div>
-                <div style={{width:'100%',maxWidth:320,background:'#1a1915',borderRadius:4,height:4,marginTop:14}}><div style={{height:4,borderRadius:4,background:'#02a4ba',width:`${uploadProgress}%`,transition:'width .3s'}}/></div>
-              </div>
-            )}
-
-            {uploadStep === 'done' && (
-              <div className="an-upload-full" style={{alignItems:'center',justifyContent:'center'}}>
-                <div style={{background:'rgba(42,138,90,.08)',border:'1px solid rgba(42,138,90,.2)',borderRadius:10,padding:'clamp(12px,1.2vw,18px)',display:'flex',alignItems:'center',gap:16}}>
-                  <div style={{fontSize:'clamp(12px,.95vw,15px)',color:'#2a8a5a',fontWeight:500}}>✓ {uploadMsg}</div>
-                  <button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Upload More</button>
-                </div>
-              </div>
-            )}
+          <div className="an-body"
+            onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+            onDragLeave={()=>setDragOver(false)}
+            onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}}
+            style={dragOver?{outline:'2px dashed #02a4ba',outlineOffset:'-4px',borderRadius:8}:undefined}
+          >
 
             {/* ══════════════════════════════════════════════════════════════
-                DATA GRID — only renders when we have sales data
-
+                GRID — always rendered; cards show empty states when no data.
                 Row 1: Daily Revenue (cols 1-3) | Top Sellers + Slow Movers (col 4)
                 Row 2: Dish Picks (col 1) | By Category (col 2) | By Day + Hourly (col 3) | WoW + Inv Risk (col 4)
             ══════════════════════════════════════════════════════════════ */}
-            {hasSalesData && uploadStep !== 'mapping' && uploadStep !== 'uploading' && (
-              <>
+            <>
                 {/* ── Row 1, Cols 1-3: Daily Revenue trend ── */}
                 <div className="an-trend-card">
                   <div className="an-card" style={{flex:1}}>
@@ -814,9 +862,15 @@ export default function AnalyticsPage() {
                         <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
                         Daily Revenue
                       </div>
-                      {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        {trendData.length>1&&(()=>{ const key=trendView; const first=trendData[0]?.[key]||0,last=trendData[trendData.length-1]?.[key]||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
+                        <div className="an-toggle">
+                          <button className={`an-toggle-btn${trendView==='rev'?' active':''}`} onClick={()=>setTrendView('rev')}>Revenue</button>
+                          <button className={`an-toggle-btn${trendView==='qty'?' active':''}`} onClick={()=>setTrendView('qty')}>Qty</button>
+                        </div>
+                      </div>
                     </div>
-                    <TrendLine data={trendData} color="#02a4ba" valueKey="rev"/>
+                    {hasSalesData ? <TrendLine data={trendData} color="#02a4ba" valueKey={trendView}/> : <div className="an-empty">Upload POS data to see revenue trends</div>}
                   </div>
                 </div>
 
@@ -834,13 +888,13 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                     <div className="an-scrollable">
-                      {topSellers.map(item=>(
+                      {hasSalesData && topSellers.length > 0 ? topSellers.map(item=>(
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
                           <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
                           <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
                         </div>
-                      ))}
+                      )) : <div className="an-empty">No data yet</div>}
                     </div>
                   </div>
                   <div className="an-card" style={{flex:1}}>
@@ -851,7 +905,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 this week</div>
                     </div>
-                    {slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
+                    {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
                       <div className="an-scrollable">
                         <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
                         <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody>
@@ -878,7 +932,12 @@ export default function AnalyticsPage() {
                         <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={()=>fetchDishRecs(restaurantId)}>↻ Refresh</button>
                       </div>
                     </div>
-                    {dishLoading ? (
+                    {!hasSalesData ? (
+                      <div className="an-empty" style={{flexDirection:'column',gap:6}}>
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <div>Upload POS data to generate dish picks</div>
+                      </div>
+                    ) : dishLoading ? (
                       <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,flex:1,color:'#4a453e',fontSize:'clamp(10px,.78vw,12px)'}}>
                         <div style={{width:14,height:14,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
                         Analyzing...
@@ -926,7 +985,7 @@ export default function AnalyticsPage() {
                         By Category
                       </div>
                     </div>
-                    <DonutChart data={categoryData}/>
+                    {hasSalesData ? <DonutChart data={categoryData}/> : <div className="an-empty">No data yet</div>}
                   </div>
                 </div>
 
@@ -944,13 +1003,13 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                     <div className="an-scrollable">
-                      {dayOfWeekData.map(d=>(
+                      {hasSalesData && dayOfWeekData.some(d=>d.qty>0) ? dayOfWeekData.map(d=>(
                         <div key={d.day} className="an-bar-row">
                           <div className="an-bar-label">{d.day.slice(0,3)}</div>
                           <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`,background:'#d4a020'}}/></div>
                           <div className="an-bar-val" style={{color:'#d4a020'}}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
                         </div>
-                      ))}
+                      )) : <div className="an-empty">No data yet</div>}
                     </div>
                   </div>
                   <div className="an-card" style={{flex:1}}>
@@ -960,6 +1019,7 @@ export default function AnalyticsPage() {
                         By Time
                       </div>
                     </div>
+                    {hasSalesData && hourlyData.length > 0 ? <>
                     <div className="an-heatmap-wrap">
                       {hourlyData.map(h=>{ const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'#c04040':intensity>0.4?'#d4a020':intensity>0.1?'#02a4ba':'#1a1915'; return (
                         <div key={h.hour} className="an-heatmap-cell" style={{background:bg,opacity:intensity>0?0.3+intensity*0.7:0.25}}>
@@ -973,6 +1033,7 @@ export default function AnalyticsPage() {
                         <div key={l} style={{display:'flex',alignItems:'center',gap:3,fontSize:'clamp(7px,.55vw,9px)',color:'#4a453e'}}><div style={{width:7,height:7,borderRadius:2,background:c}}/>{l}</div>
                       ))}
                     </div>
+                    </> : <div className="an-empty">No data yet</div>}
                   </div>
                 </div>
 
@@ -986,6 +1047,7 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                     <div className="an-scrollable">
+                      {!hasSalesData ? <div className="an-empty">No data yet</div> : <>
                       {weekOverWeek.improvers.slice(0,3).map(item=>(
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
@@ -1001,6 +1063,7 @@ export default function AnalyticsPage() {
                         </div>
                       ))}
                       {weekOverWeek.improvers.length===0&&weekOverWeek.decliners.length===0&&<div className="an-empty">Not enough weekly data</div>}
+                      </>}
                     </div>
                   </div>
                   <div className="an-card" style={{flex:1}}>
@@ -1011,7 +1074,7 @@ export default function AnalyticsPage() {
                       </div>
                       <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>slow + recent</div>
                     </div>
-                    {inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
+                    {!hasSalesData ? <div className="an-empty">No data yet</div> : inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
                       <div className="an-scrollable">
                         <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
                         <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p" style={{fontSize:'clamp(8px,.62vw,10px)'}}>{r.ingredient}<div style={{fontSize:'clamp(7px,.55vw,8px)',color:'#4a453e'}}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
@@ -1021,9 +1084,9 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
               </>
-            )}
 
           </div>
+        </div>
         )}
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
