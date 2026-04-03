@@ -283,15 +283,13 @@ export default function AnalyticsPage() {
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
   const { tourProps } = useTour('analytics', restaurantId);
-  const isTour = router.query.tour === 'true';
-  
+  const isTour = router.isReady && router.query.tour === 'true';
+
   useEffect(() => {
     if (!isTour) return;
-  
+
     fetchSampleData().then(sample => {
       if (!sample?.posSales) return;
-  
-      // Feed sample POS rows directly into the same state allSales uses
       setAllSales(sample.posSales);
       setHasSalesData(true);
       setSalesMeta({
