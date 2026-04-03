@@ -307,7 +307,9 @@ export default function AnalyticsPage() {
     if (!profile?.restaurant_id) { setLoading(false); return; }
     setRestaurantId(profile.restaurant_id);
     setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
-    await loadSalesData(profile.restaurant_id);
+    if (router.query.tour !== 'true') {
+      await loadSalesData(profile.restaurant_id);
+    }
     setLoading(false);
   }
 

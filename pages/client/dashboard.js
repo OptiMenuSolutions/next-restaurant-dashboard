@@ -471,10 +471,27 @@ export default function ClientDashboard() {
 
   // ── Re-fetch when tour seeds sample data ─────────────────────────────────
   useEffect(() => {
+    if (router.query.tour === 'true') return;
     const handler = () => { if (restaurantId) fetchDashboardData(restaurantId); };
     window.addEventListener('optimenu-tour-seeded', handler);
     return () => window.removeEventListener('optimenu-tour-seeded', handler);
   }, [restaurantId]);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.tour !== 'true') return;
+    if (!restaurantId) return;
+    fetchSampleData().then(sample => {
+      if (!sample) return;
+      const processed = processDashboardData(
+        sample.invoices,
+        sample.ingredients,
+        sample.menuItems
+      );
+      setData(processed);
+      setLoading(false);
+    });
+  }, [router.isReady, router.query.tour, restaurantId]);
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => { getRestaurantId(); }, []);
@@ -524,12 +541,16 @@ export default function ClientDashboard() {
       setRestaurantName(rd?.name || "Your Restaurant");
 
       // Pass the id directly — don't rely on state being set yet
-      await fetchDashboardData(profile.restaurant_id);
-    } catch {
-      setError("An unexpected error occurred");
-      setLoading(false);
+      if (router.query.tour !== 'true') {
+        await fetchDashboardData(profile.restaurant_id);
+      } else {
+        setLoading(false);
+      }
+      } catch {
+        setError("An unexpected error occurred");
+        setLoading(false);
+      }
     }
-  }
 
   async function fetchDashboardData(restId) {
     try {

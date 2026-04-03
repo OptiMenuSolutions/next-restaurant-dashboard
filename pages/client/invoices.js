@@ -356,7 +356,9 @@ export default function ClientInvoices() {
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
-  useEffect(() => { if (restaurantId) fetchInvoices(); }, [restaurantId]);
+  useEffect(() => {
+    if (restaurantId && router.query.tour !== 'true') fetchInvoices();
+  }, [restaurantId]);
   useEffect(() => {
     router.prefetch('/client/dashboard');
     router.prefetch('/client/invoices');
@@ -367,6 +369,16 @@ export default function ClientInvoices() {
 
   const { tourProps } = useTour('invoices', restaurantId);
   const isTour = router.query.tour === 'true';
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.tour !== 'true') return;
+    fetchSampleData().then(sample => {
+      if (!sample) return;
+      setInvoices(sample.invoices);
+      setLoading(false);
+    });
+  }, [router.isReady, router.query.tour]);
 
   useEffect(() => {
     if (isTour) {

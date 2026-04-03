@@ -275,7 +275,9 @@ export default function ClientMenuItems() {
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
-  useEffect(() => { if (restaurantId) fetchMenuItems(); }, [restaurantId]);
+  useEffect(() => {
+    if (restaurantId && router.query.tour !== 'true') fetchMenuItems();
+  }, [restaurantId]);
   useEffect(() => { if (selectedItem && restaurantId) fetchItemDetail(selectedItem); }, [selectedItem, restaurantId]);
   useEffect(() => {
     router.prefetch('/client/dashboard');
@@ -288,6 +290,16 @@ export default function ClientMenuItems() {
   // ── Tour ──
   const { tourProps } = useTour('menu-items', restaurantId);
   const isTour = router.query.tour === 'true';
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.tour !== 'true') return;
+    fetchSampleData().then(sample => {
+      if (!sample) return;
+      setMenuItems(sample.menuItems);
+      setLoading(false);
+    });
+  }, [router.isReady, router.query.tour]);
 
   useEffect(() => {
     if (isTour) {

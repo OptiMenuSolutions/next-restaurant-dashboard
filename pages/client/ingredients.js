@@ -226,7 +226,9 @@ export default function ClientIngredients() {
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   useEffect(() => { init(); }, []);
-  useEffect(() => { if (restaurantId) fetchIngredients(); }, [restaurantId]);
+  useEffect(() => {
+    if (restaurantId && router.query.tour !== 'true') fetchIngredients();
+  }, [restaurantId]);
   useEffect(() => {
     router.prefetch('/client/dashboard');
     router.prefetch('/client/invoices');
@@ -237,6 +239,16 @@ export default function ClientIngredients() {
 
   const { tourProps } = useTour('ingredients', restaurantId);
   const isTour = router.query.tour === 'true';
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.tour !== 'true') return;
+    fetchSampleData().then(sample => {
+      if (!sample) return;
+      setIngredients(sample.ingredients);
+      setLoading(false);
+    });
+  }, [router.isReady, router.query.tour]);
 
   useEffect(() => {
     if (isTour) {
