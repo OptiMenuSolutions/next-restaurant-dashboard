@@ -153,9 +153,11 @@ const CSS = `
   .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:2px 8px;white-space:nowrap;flex-shrink:0;}
 
   /* ════════════════════════════════════════════════
-     MAIN BODY — CSS GRID (mirrors dashboard approach)
-     Row 1: dish recs (tall) | trend + sellers + slow
-     Row 2: day/hour/cat    | wow + inventory + vc
+     MAIN BODY — 4-col × 2-row CSS grid
+
+     Row 1: Daily Revenue (cols 1-3, tall) | Top Sellers (col 4)
+                                            | Slow Movers  (col 4)
+     Row 2: Dish Picks (col 1) | By Category (col 2) | By Day + By Time (col 3) | WoW + Inv Risk (col 4)
   ════════════════════════════════════════════════ */
   .an-body{
     flex:1;
@@ -163,7 +165,7 @@ const CSS = `
     padding:clamp(6px,.6vw,10px);
     gap:clamp(6px,.6vw,10px);
     display:grid;
-    grid-template-columns:clamp(260px,28vw,380px) 1fr 1fr 1fr;
+    grid-template-columns:1fr 1fr 1fr 1fr;
     grid-template-rows:1fr 1fr;
     overflow:hidden;
   }
@@ -171,14 +173,17 @@ const CSS = `
   /* Upload / no-data state spans full grid */
   .an-upload-full{grid-column:1/-1;grid-row:1/-1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow:hidden;}
 
-  /* Dish recs card spans both rows, col 1 */
-  .an-recs-col{grid-column:1;grid-row:1/3;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  /* Row 1: Daily Revenue spans cols 1-3 */
+  .an-trend-card{grid-column:1/4;grid-row:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 
-  /* Trend row — cols 2-4, row 1 */
-  .an-trend-row{grid-column:2/5;grid-row:1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
+  /* Row 1 col 4: Top Sellers + Slow Movers stacked */
+  .an-r1-col4{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
-  /* Bottom row — cols 2-4, row 2 */
-  .an-bottom-row{grid-column:2/5;grid-row:2;display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
+  /* Row 2: four equal columns */
+  .an-dish-col{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .an-cat-col{grid-column:2;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .an-time-col{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
+  .an-wow-col{grid-column:4;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
   /* ── Generic card ── */
   .an-card{background:#13120f;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
@@ -795,11 +800,69 @@ export default function AnalyticsPage() {
 
             {/* ══════════════════════════════════════════════════════════════
                 DATA GRID — only renders when we have sales data
+
+                Row 1: Daily Revenue (cols 1-3) | Top Sellers + Slow Movers (col 4)
+                Row 2: Dish Picks (col 1) | By Category (col 2) | By Day + Hourly (col 3) | WoW + Inv Risk (col 4)
             ══════════════════════════════════════════════════════════════ */}
             {hasSalesData && uploadStep !== 'mapping' && uploadStep !== 'uploading' && (
               <>
-                {/* ── Col 1, Rows 1-2: Dish Recommendations ── */}
-                <div className="an-recs-col">
+                {/* ── Row 1, Cols 1-3: Daily Revenue trend ── */}
+                <div className="an-trend-card">
+                  <div className="an-card" style={{flex:1}}>
+                    <div className="an-card-hd">
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        Daily Revenue
+                      </div>
+                      {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
+                    </div>
+                    <TrendLine data={trendData} color="#02a4ba" valueKey="rev"/>
+                  </div>
+                </div>
+
+                {/* ── Row 1, Col 4: Top Sellers + Slow Movers stacked ── */}
+                <div className="an-r1-col4">
+                  <div className="an-card" style={{flex:1}}>
+                    <div className="an-card-hd">
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        Top Sellers
+                      </div>
+                      <div className="an-toggle">
+                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
+                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
+                      </div>
+                    </div>
+                    <div className="an-scrollable">
+                      {topSellers.map(item=>(
+                        <div key={item.name} className="an-bar-row">
+                          <div className="an-bar-label">{item.name}</div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
+                          <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="an-card" style={{flex:1}}>
+                    <div className="an-card-hd">
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+                        Slow Movers
+                      </div>
+                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 this week</div>
+                    </div>
+                    {slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
+                      <div className="an-scrollable">
+                        <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
+                        <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Row 2, Col 1: Today's Dish Picks ── */}
+                <div className="an-dish-col">
                   <div className="an-card" style={{flex:1}}>
                     <div className="an-card-hd" style={{flexShrink:0}}>
                       <div className="an-card-title">
@@ -815,7 +878,6 @@ export default function AnalyticsPage() {
                         <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={()=>fetchDishRecs(restaurantId)}>↻ Refresh</button>
                       </div>
                     </div>
-
                     {dishLoading ? (
                       <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,flex:1,color:'#4a453e',fontSize:'clamp(10px,.78vw,12px)'}}>
                         <div style={{width:14,height:14,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
@@ -855,67 +917,22 @@ export default function AnalyticsPage() {
                   </div>
                 </div>
 
-                {/* ── Cols 2-4, Row 1: Trend · Top Sellers · Slow Movers ── */}
-                <div className="an-trend-row">
-
-                  {/* Trend */}
-                  <div className="an-card">
+                {/* ── Row 2, Col 2: By Category ── */}
+                <div className="an-cat-col">
+                  <div className="an-card" style={{flex:1}}>
                     <div className="an-card-hd">
                       <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Daily Revenue
-                      </div>
-                      {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
-                    </div>
-                    <TrendLine data={trendData} color="#02a4ba" valueKey="rev"/>
-                  </div>
-
-                  {/* Top Sellers */}
-                  <div className="an-card">
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Top Sellers
-                      </div>
-                      <div className="an-toggle">
-                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
-                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
+                        By Category
                       </div>
                     </div>
-                    <div className="an-scrollable">
-                      {topSellers.map(item=>(
-                        <div key={item.name} className="an-bar-row">
-                          <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
-                          <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Slow Movers */}
-                  <div className="an-card">
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
-                        Slow Movers
-                      </div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 this week</div>
-                    </div>
-                    {slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
-                      <div className="an-scrollable">
-                        <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
-                        <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody></table>
-                      </div>
-                    )}
+                    <DonutChart data={categoryData}/>
                   </div>
                 </div>
 
-                {/* ── Cols 2-4, Row 2: Day of Week · Hourly · Category · WoW/Risk ── */}
-                <div className="an-bottom-row">
-
-                  {/* Sales by Day */}
-                  <div className="an-card">
+                {/* ── Row 2, Col 3: By Day + Hourly stacked ── */}
+                <div className="an-time-col">
+                  <div className="an-card" style={{flex:1}}>
                     <div className="an-card-hd">
                       <div className="an-card-title">
                         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -936,13 +953,11 @@ export default function AnalyticsPage() {
                       ))}
                     </div>
                   </div>
-
-                  {/* Hourly heatmap */}
-                  <div className="an-card">
+                  <div className="an-card" style={{flex:1}}>
                     <div className="an-card-hd">
                       <div className="an-card-title">
                         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        Hourly
+                        By Time
                       </div>
                     </div>
                     <div className="an-heatmap-wrap">
@@ -959,66 +974,51 @@ export default function AnalyticsPage() {
                       ))}
                     </div>
                   </div>
+                </div>
 
-                  {/* Category donut */}
-                  <div className="an-card">
+                {/* ── Row 2, Col 4: Week vs Week + Inventory Risk stacked ── */}
+                <div className="an-wow-col">
+                  <div className="an-card" style={{flex:1}}>
                     <div className="an-card-hd">
                       <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
-                        By Category
+                        <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+                        Week vs Week
                       </div>
                     </div>
-                    <DonutChart data={categoryData}/>
-                  </div>
-
-                  {/* WoW + Inventory Risk stacked */}
-                  <div style={{display:'flex',flexDirection:'column',gap:'clamp(6px,.6vw,10px)',minHeight:0,overflow:'hidden'}}>
-
-                    {/* Week over week */}
-                    <div className="an-card" style={{flex:1}}>
-                      <div className="an-card-hd">
-                        <div className="an-card-title">
-                          <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
-                          Week vs Week
+                    <div className="an-scrollable">
+                      {weekOverWeek.improvers.slice(0,3).map(item=>(
+                        <div key={item.name} className="an-bar-row">
+                          <div className="an-bar-label">{item.name}</div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,item.change)}%`,background:'#2a8a5a'}}/></div>
+                          <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
                         </div>
+                      ))}
+                      {weekOverWeek.decliners.slice(0,3).map(item=>(
+                        <div key={item.name} className="an-bar-row">
+                          <div className="an-bar-label">{item.name}</div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,Math.abs(item.change))}%`,background:'#c04040'}}/></div>
+                          <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
+                        </div>
+                      ))}
+                      {weekOverWeek.improvers.length===0&&weekOverWeek.decliners.length===0&&<div className="an-empty">Not enough weekly data</div>}
+                    </div>
+                  </div>
+                  <div className="an-card" style={{flex:1}}>
+                    <div className="an-card-hd">
+                      <div className="an-card-title">
+                        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                        Inv. Risk
                       </div>
+                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>slow + recent</div>
+                    </div>
+                    {inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
                       <div className="an-scrollable">
-                        {weekOverWeek.improvers.slice(0,3).map(item=>(
-                          <div key={item.name} className="an-bar-row">
-                            <div className="an-bar-label">{item.name}</div>
-                            <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,item.change)}%`,background:'#2a8a5a'}}/></div>
-                            <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
-                          </div>
-                        ))}
-                        {weekOverWeek.decliners.slice(0,3).map(item=>(
-                          <div key={item.name} className="an-bar-row">
-                            <div className="an-bar-label">{item.name}</div>
-                            <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,Math.abs(item.change))}%`,background:'#c04040'}}/></div>
-                            <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
-                          </div>
-                        ))}
-                        {weekOverWeek.improvers.length===0&&weekOverWeek.decliners.length===0&&<div className="an-empty">Not enough weekly data</div>}
+                        <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
+                        <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p" style={{fontSize:'clamp(8px,.62vw,10px)'}}>{r.ingredient}<div style={{fontSize:'clamp(7px,.55vw,8px)',color:'#4a453e'}}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
+                        </table>
                       </div>
-                    </div>
-
-                    {/* Inventory Risk */}
-                    <div className="an-card" style={{flex:1}}>
-                      <div className="an-card-hd">
-                        <div className="an-card-title">
-                          <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                          Inv. Risk
-                        </div>
-                        <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>slow + recent</div>
-                      </div>
-                      {inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
-                        <div className="an-scrollable">
-                          <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
-                          <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p" style={{fontSize:'clamp(8px,.62vw,10px)'}}>{r.ingredient}<div style={{fontSize:'clamp(7px,.55vw,8px)',color:'#4a453e'}}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody></table>
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </div>
-
                 </div>
               </>
             )}
