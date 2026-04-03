@@ -280,8 +280,12 @@ export default function AnalyticsPage() {
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
-  
+
   const { tourProps, seedVersion } = useTour('analytics', restaurantId);
+
+  useEffect(() => {
+    if (seedVersion > 0 && restaurantId) loadSalesData(restaurantId);
+  }, [seedVersion]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

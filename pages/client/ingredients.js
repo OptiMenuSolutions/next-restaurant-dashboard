@@ -233,11 +233,12 @@ export default function ClientIngredients() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+
+  const { tourProps, seedVersion } = useTour('ingredients.js', restaurantId);
+
   useEffect(() => {
     if (seedVersion > 0 && restaurantId) fetchIngredients();
   }, [seedVersion]);
-
-  const { tourProps, seedVersion } = useTour('ingredients.js', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
