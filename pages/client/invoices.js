@@ -363,8 +363,11 @@ export default function ClientInvoices() {
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
   }, []);
+  useEffect(() => {
+    if (seedVersion > 0 && restaurantId) fetchInvoices();
+  }, [seedVersion]);
 
-  const { tourProps } = useTour('invoices', restaurantId);
+  const { tourProps, seedVersion } = useTour('invoices.js', restaurantId);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

@@ -460,7 +460,7 @@ export default function ClientDashboard() {
   const LOW_MARGIN_THRESHOLD = 40;
 
   // ── Tour ──────────────────────────────────────────────────────────────────
-  const { tourProps } = useTour('dashboard', restaurantId);
+  const { tourProps, seedVersion } = useTour('dashboard', restaurantId);
 
   // ── Prefetch routes ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -480,6 +480,10 @@ export default function ClientDashboard() {
 
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => { getRestaurantId(); }, []);
+
+  useEffect(() => {
+    if (seedVersion > 0 && restaurantId) fetchDashboardData(restaurantId);
+  }, [seedVersion]);
 
   async function getRestaurantId() {
     try {
