@@ -283,10 +283,10 @@ export default function AnalyticsPage() {
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
   const { tourProps } = useTour('analytics', restaurantId);
-  const isTour = router.isReady && router.query.tour === 'true';
 
   useEffect(() => {
-    if (!isTour) return;
+    if (!router.isReady) return;
+    if (router.query.tour !== 'true') return;
 
     fetchSampleData().then(sample => {
       if (!sample?.posSales) return;
@@ -297,7 +297,7 @@ export default function AnalyticsPage() {
         posSystem: 'tour',
       });
     });
-  }, [isTour]);
+  }, [router.isReady, router.query.tour]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
