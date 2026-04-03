@@ -141,7 +141,7 @@ const CSS = `
   .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.68vw,11px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:3px 10px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
   .an-sync-dot{width:6px;height:6px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
   .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:3px 10px;white-space:nowrap;flex-shrink:0;}
-  .an-body{flex:1;overflow-y:auto;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;gap:clamp(8px,.8vw,14px);}
+  .an-body{flex:1;overflow:hidden;padding:clamp(8px,.8vw,12px);display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);}
   .an-body::-webkit-scrollbar{width:3px;}
   .an-upload-zone{background:#13120f;border:2px dashed #2a2620;border-radius:10px;padding:clamp(24px,3vh,48px);text-align:center;cursor:pointer;transition:border-color .2s;}
   .an-upload-zone:hover,.an-upload-zone.drag{border-color:#02a4ba;}
@@ -240,7 +240,8 @@ const CSS = `
 
 export default function AnalyticsPage() {
   const router = useRouter();
-  const { isMobile } = useWindowSize();
+  const { isMobile: _isMobile, width } = useWindowSize();
+  const isMobile = width < 480;
   const fileInputRef = useRef(null);
 
   const [restaurantId, setRestaurantId] = useState(null);
@@ -501,7 +502,7 @@ export default function AnalyticsPage() {
     );
   }
 
-  if (isMobile) {
+  if (isMobile && windowSize.width < 480) {
     return (
       <>
         <style>{CSS}</style>
@@ -668,11 +669,22 @@ export default function AnalyticsPage() {
 
         {hasSalesData&&(
           <div className="an-sbar">
-            {[{v:stats.totalDays,l:'Days of Data',c:'#02a4ba'},{v:topSellers.length,l:'Items Tracked',c:'#e8e2d8'},{v:formatCurrency(stats.totalRevenue),l:'Total Revenue',c:'#2a8a5a'},{v:formatCurrency(stats.avgDailyRevenue),l:'Avg Daily Revenue',c:'#d4a020'},{v:topSellers[0]?.name||'—',l:'Top Seller',c:'#e8e2d8'},{v:slowMovers.length,l:'Slow Movers',c:'#c04040'}].map(({v,l,c})=>(
-              <div key={l} style={{flexShrink:0}}><div className="an-sv" style={{color:c,fontSize:l==='Top Seller'?'clamp(11px,.9vw,15px)':undefined}}>{v}</div><div className="an-sl">{l}</div></div>
+            {[
+              { v: hasSalesData ? stats.totalDays : '—',         l: 'Days of Data',     c: '#02a4ba' },
+              { v: hasSalesData ? topSellers.length : '—',        l: 'Items Tracked',    c: '#e8e2d8' },
+              { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—', l: 'Total Revenue', c: '#2a8a5a' },
+              { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',  c: '#d4a020' },
+              { v: hasSalesData ? (topSellers[0]?.name || '—') : '—', l: 'Top Seller',   c: '#e8e2d8' },
+              { v: hasSalesData ? slowMovers.length : '—',        l: 'Slow Movers',      c: '#c04040' },
+            ].map(({ v, l, c }) => (
+              <div key={l} style={{ flexShrink: 0 }}>
+                <div className="an-sv" style={{ color: c }}>{v}</div>
+                <div className="an-sl">{l}</div>
+              </div>
             ))}
-            {salesMeta.lastSync&&<div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>}
-            {salesMeta.posSystem&&salesMeta.posSystem!=='other'&&<div className="an-pos-badge">POS: {salesMeta.posSystem.charAt(0).toUpperCase()+salesMeta.posSystem.slice(1)}</div>}
+            {hasSalesData && salesMeta.lastSync && (
+              <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>
+            )}
           </div>
         )}
 
