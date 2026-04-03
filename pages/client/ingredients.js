@@ -6,6 +6,7 @@ import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
+import { fetchSampleData } from '../../lib/seedSampleData';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -234,11 +235,16 @@ export default function ClientIngredients() {
     router.prefetch('/client/analytics');
   }, []);
 
-  const { tourProps, seedVersion } = useTour('ingredients.js', restaurantId);
+  const isTour = router.query.tour === 'true';
 
   useEffect(() => {
-    if (seedVersion > 0 && restaurantId) fetchIngredients();
-  }, [seedVersion]);
+    if (isTour) {
+      fetchSampleData().then(sample => {
+        if (sample) { setIngredients(sample.ingredients); setLoading(false); }
+      });
+    }
+  }, [isTour]);
+
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

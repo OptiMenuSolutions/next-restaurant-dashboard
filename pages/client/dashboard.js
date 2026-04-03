@@ -8,6 +8,7 @@ import { useWindowSize } from "../../lib/useWindowSize";
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
+import { fetchSampleData } from '../../lib/seedSampleData';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -459,9 +460,6 @@ export default function ClientDashboard() {
 
   const LOW_MARGIN_THRESHOLD = 40;
 
-  // ── Tour ──────────────────────────────────────────────────────────────────
-  const { tourProps, seedVersion } = useTour('dashboard', restaurantId);
-
   // ── Prefetch routes ───────────────────────────────────────────────────────
   useEffect(() => {
     router.prefetch('/client/dashboard');
@@ -481,9 +479,20 @@ export default function ClientDashboard() {
   // ── Bootstrap ─────────────────────────────────────────────────────────────
   useEffect(() => { getRestaurantId(); }, []);
 
+  const isTour = router.query.tour === 'true';
+
+  // Dashboard:
   useEffect(() => {
-    if (seedVersion > 0 && restaurantId) fetchDashboardData(restaurantId);
-  }, [seedVersion]);
+    if (isTour && restaurantId) {
+      fetchSampleData().then(sample => {
+        if (sample) {
+          const processed = processDashboardData(sample.invoices, sample.ingredients, sample.menuItems);
+          setData(processed);
+          setLoading(false);
+        }
+      });
+    }
+  }, [isTour, restaurantId]);
 
   async function getRestaurantId() {
     try {

@@ -7,6 +7,7 @@ import { parseCSV, detectPOSSystem, buildColumnMapping, normalizeRows } from '..
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
+import { fetchSampleData } from '../../lib/seedSampleData';
 
 function formatCurrency(n) {
   if (!n && n !== 0) return '$0';
@@ -281,11 +282,23 @@ export default function AnalyticsPage() {
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
-  const { tourProps, seedVersion } = useTour('analytics', restaurantId);
-
+  const isTour = router.query.tour === 'true';
+  
   useEffect(() => {
-    if (seedVersion > 0 && restaurantId) loadSalesData(restaurantId);
-  }, [seedVersion]);
+    if (!isTour) return;
+  
+    fetchSampleData().then(sample => {
+      if (!sample?.posSales) return;
+  
+      // Feed sample POS rows directly into the same state allSales uses
+      setAllSales(sample.posSales);
+      setHasSalesData(true);
+      setSalesMeta({
+        lastSync: sample.posSales[0]?.sale_date || null,
+        posSystem: 'tour',
+      });
+    });
+  }, [isTour]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

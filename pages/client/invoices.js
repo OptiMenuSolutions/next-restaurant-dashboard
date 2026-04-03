@@ -6,6 +6,7 @@ import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
+import { fetchSampleData } from '../../lib/seedSampleData';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -365,11 +366,15 @@ export default function ClientInvoices() {
   }, []);
 
 
-  const { tourProps, seedVersion } = useTour('invoices', restaurantId);
+  const isTour = router.query.tour === 'true';
 
   useEffect(() => {
-    if (seedVersion > 0 && restaurantId) fetchInvoices();
-  }, [seedVersion]);
+    if (isTour) {
+      fetchSampleData().then(sample => {
+        if (sample) { setInvoices(sample.invoices); setLoading(false); }
+      });
+    }
+  }, [isTour]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();

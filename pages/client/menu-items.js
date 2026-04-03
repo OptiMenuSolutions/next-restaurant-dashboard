@@ -8,6 +8,7 @@ import ProfileDropdown from '../../components/ProfileDropdown';
 import MenuImportModal from '../../components/MenuImportModal';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
+import { fetchSampleData } from '../../lib/seedSampleData';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -285,11 +286,15 @@ export default function ClientMenuItems() {
   }, []);
 
   // ── Tour ──
-  const { tourProps, seedVersion } = useTour('menu-items', restaurantId);
+  const isTour = router.query.tour === 'true';
 
   useEffect(() => {
-    if (seedVersion > 0 && restaurantId) fetchMenuItems();
-  }, [seedVersion]);
+    if (isTour) {
+      fetchSampleData().then(sample => {
+        if (sample) { setMenuItems(sample.menuItems); setLoading(false); }
+      });
+    }
+  }, [isTour]);
 
 
   async function init() {
