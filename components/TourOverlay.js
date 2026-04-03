@@ -1,11 +1,12 @@
 // components/TourOverlay.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import MenuImportModal from './MenuImportModal';
 import { seedSampleData, clearSampleData } from '../lib/seedSampleData';
 
 const SS_KEY = 'optimenu_tour_step';
 const SEED_KEY = 'optimenu_tour_seeded';
+const SPOT_KEY = 'optimenu_tour_spot'; // persists last spotlight rect across page nav
 
 const PAGE_STEPS = {
   dashboard: [
@@ -15,7 +16,6 @@ const PAGE_STEPS = {
       text: "We've loaded sample Chick-fil-A data so you can see what a fully populated account looks like. Let's take a 2-minute tour.",
     },
     {
-      // Targets the 3-column top row of cards (AI recs, Menu Analysis, Recent Invoices)
       selector: '.db-wbar',
       placement: 'bottom',
       padding: 10,
@@ -40,7 +40,6 @@ const PAGE_STEPS = {
   ],
   invoices: [
     {
-      // Upload button — shown first so user sees the action they'd take
       selector: '.inv-upload-btn',
       placement: 'bottom',
       padding: 8,
@@ -48,7 +47,6 @@ const PAGE_STEPS = {
       text: 'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.',
     },
     {
-      // The invoice list panel on the left
       selector: '.inv-list',
       placement: 'right',
       padding: 8,
@@ -56,7 +54,6 @@ const PAGE_STEPS = {
       text: "Sample invoices from Chick-fil-A's real supplier network. Upload your own and OptiMenu reads every line item automatically.",
     },
     {
-      // The invoice detail / overview panel on the right
       selector: '.inv-detail',
       placement: 'left',
       padding: 8,
@@ -74,7 +71,6 @@ const PAGE_STEPS = {
   ],
   ingredients: [
     {
-      // The ingredient list panel
       selector: '.ing-list',
       placement: 'right',
       padding: 8,
@@ -82,7 +78,6 @@ const PAGE_STEPS = {
       text: '24 core Chick-fil-A ingredients with real market costs. Populates automatically from your invoices.',
     },
     {
-      // The ingredient detail / overview panel
       selector: '.ing-detail',
       placement: 'left',
       padding: 8,
@@ -90,7 +85,6 @@ const PAGE_STEPS = {
       text: 'Select any ingredient to see its full price history, purchase records, and which menu items use it.',
     },
     {
-      // A specific ingredient row to show live cost linkage
       selector: '.ing-row',
       placement: 'bottom',
       padding: 6,
@@ -108,15 +102,13 @@ const PAGE_STEPS = {
   ],
   'menu-items': [
     {
-      // The card grid of menu items
       selector: '.mi-grid-wrap',
       placement: 'right',
       padding: 8,
       title: 'Menu Engineering',
-      text: '30 Chick-fil-A menu items with real prices and food costs. Waffle Fries run 83% margin. Green = healthy, red = needs attention.',
+      text: '30 Chick-fil-A menu items with real prices and food costs. Green = healthy margin, red = needs attention.',
     },
     {
-      // The detail panel on the right showing overview / optimizer
       selector: '.mi-detail',
       placement: 'left',
       padding: 8,
@@ -134,7 +126,6 @@ const PAGE_STEPS = {
   ],
   analytics: [
     {
-      // The upload zone / page header area
       selector: '.an-ph',
       placement: 'bottom',
       padding: 10,
@@ -142,7 +133,6 @@ const PAGE_STEPS = {
       text: 'Upload a CSV export from your POS and OptiMenu maps sales velocity against ingredient costs to surface what to push today.',
     },
     {
-      // The dish recommendations card
       selector: '.an-card',
       placement: 'bottom',
       padding: 8,
@@ -173,44 +163,76 @@ const PAGE_STEPS = {
   ],
 };
 
-// ─── Measure spotlight + tooltip position ─────────────────────────────────────
+const TRANSITION_MS = 400;
+const EASE = 'cubic-bezier(.4,0,.2,1)';
+const TYPE_SPEED = 16; // ms per character
 
-function measure(selector, pad, ttEl) {
-  let spot = null;
-  if (selector) {
-    const el = document.querySelector(selector);
-    if (el) {
-      const r = el.getBoundingClientRect();
-      if (r.width && r.height) {
-        spot = { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
+// ─── Typewriter hook ──────────────────────────────────────────────────────────
+
+function useTypewriter(text, active) {
+  const [displayed, setDisplayed] = useState('');
+  const [done, setDone] = useState(false);
+  const timerRef = useRef(null);
+  const idxRef = useRef(0);
+
+  useEffect(() => {
+    clearTimeout(timerRef.current);
+    if (!active || !text) {
+      setDisplayed('');
+      setDone(false);
+      idxRef.current = 0;
+      return;
+    }
+    setDisplayed('');
+    setDone(false);
+    idxRef.current = 0;
+
+    function tick() {
+      idxRef.current += 1;
+      const next = text.slice(0, idxRef.current);
+      setDisplayed(next);
+      if (idxRef.current < text.length) {
+        timerRef.current = setTimeout(tick, TYPE_SPEED);
+      } else {
+        setDone(true);
       }
     }
-  }
+    timerRef.current = setTimeout(tick, TYPE_SPEED);
+    return () => clearTimeout(timerRef.current);
+  }, [text, active]);
 
-  const tw = ttEl ? ttEl.offsetWidth || 340 : 340;
-  const th = ttEl ? ttEl.offsetHeight || 180 : 180;
+  return { displayed, done };
+}
+
+// ─── Geometry helpers ─────────────────────────────────────────────────────────
+
+function getSpot(selector, pad) {
+  if (!selector) return null;
+  const el = document.querySelector(selector);
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  return { x: r.left - pad, y: r.top - pad, w: r.width + pad * 2, h: r.height + pad * 2 };
+}
+
+function getTooltipPos(spot, ttW, ttH) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const g = 16;
-
   let left, top;
   if (!spot) {
-    left = Math.max(16, (vw - tw) / 2);
-    top = Math.max(16, (vh - th) / 2);
+    left = Math.max(16, (vw - ttW) / 2);
+    top = Math.max(16, (vh - ttH) / 2);
   } else {
     const { x, y, w, h } = spot;
-    // Default: below
-    left = x + w / 2 - tw / 2;
+    left = x + w / 2 - ttW / 2;
     top = y + h + g;
-    // Flip above if off bottom
-    if (top + th > vh - 60) top = y - th - g;
-    // Flip back below if now off top
+    if (top + ttH > vh - 60) top = y - ttH - g;
     if (top < 10) top = y + h + g;
-    left = Math.max(16, Math.min(vw - tw - 16, left));
-    top = Math.max(10, Math.min(vh - th - 70, top));
+    left = Math.max(16, Math.min(vw - ttW - 16, left));
+    top = Math.max(10, Math.min(vh - ttH - 70, top));
   }
-
-  return { spot, ttPos: { left, top } };
+  return { left, top };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -218,39 +240,39 @@ function measure(selector, pad, ttEl) {
 export default function TourOverlay({ page, restaurantId, onDone }) {
   const router = useRouter();
   const steps = PAGE_STEPS[page] || [];
-  const [idx, setIdx] = useState(0);
 
-  // Separate "current" and "target" spotlight so we can animate between them
+  const [idx, setIdx] = useState(0);
   const [spot, setSpot] = useState(null);
   const [ttPos, setTtPos] = useState(null);
-  const [visible, setVisible] = useState(false);
+  const [ttVisible, setTtVisible] = useState(false);
+  const [typeActive, setTypeActive] = useState(false);
   const [showModal, setShowModal] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const ttRef = useRef(null);
-  const timersRef = useRef([]);
-  const retryRef = useRef(null);
+  const timers = useRef([]);
+  const retryInterval = useRef(null);
+  const prevIdx = useRef(-1);
 
   const step = steps[idx];
   const isLast = idx === steps.length - 1;
 
-  function addTimer(fn, ms) {
+  const { displayed, done: typeDone } = useTypewriter(step?.text || '', typeActive);
+
+  function after(fn, ms) {
     const t = setTimeout(fn, ms);
-    timersRef.current.push(t);
+    timers.current.push(t);
     return t;
   }
-
-  function clearRetry() {
-    if (retryRef.current) { clearInterval(retryRef.current); retryRef.current = null; }
+  function clearAll() {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    if (retryInterval.current) { clearInterval(retryInterval.current); retryInterval.current = null; }
   }
 
-  useEffect(() => {
-    return () => {
-      timersRef.current.forEach(clearTimeout);
-      clearRetry();
-    };
-  }, []);
+  useEffect(() => () => clearAll(), []);
 
-  // ── Seed once ──────────────────────────────────────────────────────────────
+  // ── Seed sample data once ─────────────────────────────────────────────────
   useEffect(() => {
     if (!restaurantId || page === 'final') return;
     if (sessionStorage.getItem(SEED_KEY)) return;
@@ -261,80 +283,121 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Measure & position when step changes ──────────────────────────────────
+  // ── Mount: restore cross-page spotlight position, then animate in ─────────
   useEffect(() => {
-    // Don't hide — let the SVG clip-path and tooltip animate to new position
-    clearRetry();
+    let fromSpot = null;
+    try {
+      const s = sessionStorage.getItem(SPOT_KEY);
+      if (s) { fromSpot = JSON.parse(s); sessionStorage.removeItem(SPOT_KEY); }
+    } catch {}
 
-    const currentStep = steps[idx];
-    if (!currentStep) return;
+    if (fromSpot) {
+      // Paint at previous page's position, then glide to this step's position
+      setSpot(fromSpot);
+      setTtPos(getTooltipPos(fromSpot, 340, 180));
+      setReady(true);
+      after(() => positionStep(0, true), 60);
+    } else {
+      setReady(true);
+      after(() => positionStep(0, false), 300);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Re-position when idx changes (skip on initial mount) ─────────────────
+  useEffect(() => {
+    if (!ready) return;
+    if (prevIdx.current === -1) { prevIdx.current = 0; return; }
+    if (prevIdx.current === idx) return;
+    prevIdx.current = idx;
+    positionStep(idx, true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, ready]);
+
+  // ── Core positioning logic ────────────────────────────────────────────────
+  function positionStep(stepIdx, animate) {
+    clearAll();
+    const s = steps[stepIdx];
+    if (!s) return;
 
     let attempts = 0;
-    const maxAttempts = 16;
 
-    function tryMeasure() {
+    function tryPlace() {
       attempts++;
-      const result = measure(
-        currentStep.selector,
-        currentStep.padding || 12,
-        ttRef.current
-      );
+      const ttEl = ttRef.current;
+      const ttW = ttEl?.offsetWidth || 340;
+      const ttH = ttEl?.offsetHeight || 180;
+      const newSpot = getSpot(s.selector, s.padding || 12);
 
-      if (currentStep.selector && !result.spot && attempts < maxAttempts) return;
+      if (s.selector && !newSpot && attempts < 20) return; // retry
 
-      clearRetry();
+      clearAll();
+      const newTtPos = getTooltipPos(newSpot, ttW, ttH);
 
-      // On very first step, snap into position with no animation
-      if (idx === 0 && !spot) {
-        setSpot(result.spot);
-        setTtPos(result.ttPos);
-        addTimer(() => setVisible(true), 80);
+      if (!animate) {
+        // First step on fresh load — snap, then fade in
+        setSpot(newSpot);
+        setTtPos(newTtPos);
+        after(() => {
+          setTtVisible(true);
+          after(() => setTypeActive(true), 80);
+        }, 80);
       } else {
-        // Subsequent steps: update position (CSS transition handles the glide)
-        setSpot(result.spot);
-        setTtPos(result.ttPos);
-        setVisible(true);
+        // Fade tooltip out → spotlight glides → fade tooltip back in with typewriter
+        setTtVisible(false);
+        setTypeActive(false);
+        after(() => {
+          // Update positions while tooltip is invisible — CSS transitions the spotlight
+          setSpot(newSpot);
+          setTtPos(newTtPos);
+          // Fade tooltip back in after spotlight has mostly arrived
+          after(() => {
+            setTtVisible(true);
+            after(() => setTypeActive(true), 60);
+          }, Math.round(TRANSITION_MS * 0.65));
+        }, 80);
       }
     }
 
-    addTimer(() => {
-      tryMeasure();
-      if (currentStep.selector) {
-        retryRef.current = setInterval(tryMeasure, 250);
+    after(() => {
+      tryPlace();
+      if (s.selector) {
+        retryInterval.current = setInterval(tryPlace, 250);
       }
-    }, 300);
+    }, animate ? 60 : 0);
+  }
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, page]);
-
-  // ── Navigation ─────────────────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   function goNext() {
     if (step?.modal) { setShowModal(true); return; }
     if (step?.nav && step.nextPage) {
+      // Save current spotlight so next page glides from it
+      if (spot) {
+        try { sessionStorage.setItem(SPOT_KEY, JSON.stringify(spot)); } catch {}
+      }
       try { sessionStorage.setItem(SS_KEY, step.nextKey); } catch {}
       router.push(`${step.nextPage}?tour=true`);
       return;
     }
     if (isLast) { finish(); return; }
-    // Fade tooltip out briefly, then jump to next step (spotlight glides via CSS)
-    setVisible(false);
-    addTimer(() => setIdx(i => i + 1), 100);
+    setIdx(i => i + 1);
   }
 
   function goBack() {
     if (idx === 0) return;
-    setVisible(false);
-    addTimer(() => setIdx(i => i - 1), 100);
+    setIdx(i => i - 1);
   }
 
   async function finish() {
-    setVisible(false);
+    setTtVisible(false);
+    setTypeActive(false);
     setShowModal(false);
-    clearRetry();
+    clearAll();
     try {
       localStorage.setItem('optimenu_tour_done', '1');
       sessionStorage.removeItem(SS_KEY);
       sessionStorage.removeItem(SEED_KEY);
+      sessionStorage.removeItem(SPOT_KEY);
     } catch {}
     if (restaurantId) await clearSampleData(restaurantId);
     const url = new URL(window.location.href);
@@ -347,12 +410,11 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
     return <MenuImportModal restaurantId={restaurantId} onClose={finish} onImported={finish} />;
   }
 
-  if (!step || !ttPos) return null;
+  if (!step || !ttPos || !ready) return null;
 
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1440;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 900;
 
-  // Build clip path — punch a hole where the spotlight is
   const clip = spot
     ? `M0,0 H${vw} V${vh} H0 Z M${spot.x},${spot.y} h${spot.w} v${spot.h} h-${spot.w} Z`
     : `M0,0 H${vw} V${vh} H0 Z`;
@@ -367,92 +429,132 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   return (
     <>
       <style>{`
-        @keyframes t-fade { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes t-pop  { from { opacity: 0; transform: translateY(6px) scale(.98) } to { opacity: 1; transform: none } }
-        @keyframes t-ring { 0% { box-shadow: 0 0 0 0 rgba(2,164,186,.5) } 60% { box-shadow: 0 0 0 10px rgba(2,164,186,0) } 100% { box-shadow: 0 0 0 0 rgba(2,164,186,0) } }
-        @keyframes t-blink { 0%,100% { opacity: 1 } 50% { opacity: .3 } }
+        @keyframes t-ring {
+          0%   { box-shadow: 0 0 0 0 rgba(2,164,186,.5); }
+          60%  { box-shadow: 0 0 0 10px rgba(2,164,186,0); }
+          100% { box-shadow: 0 0 0 0 rgba(2,164,186,0); }
+        }
+        @keyframes t-blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+        @keyframes t-cursor { 0%,100%{opacity:1} 50%{opacity:0} }
 
         .t-root { position: fixed; inset: 0; z-index: 9998; pointer-events: none; }
 
-        /* SVG overlay — clip path transitions smoothly via CSS */
         .t-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
         .t-svg path {
-          fill: rgba(0,0,0,.75);
+          fill: rgba(0,0,0,.78);
           fill-rule: evenodd;
-          transition: d 0.35s cubic-bezier(.4,0,.2,1);
+          transition: d ${TRANSITION_MS}ms ${EASE};
         }
 
-        /* Spotlight ring — moves via top/left transition */
         .t-ring {
           position: absolute;
           border-radius: 10px;
           pointer-events: none;
           border: 2px solid #02a4ba;
           animation: t-ring 2s ease infinite;
-          transition: left 0.35s cubic-bezier(.4,0,.2,1),
-                      top  0.35s cubic-bezier(.4,0,.2,1),
-                      width  0.35s cubic-bezier(.4,0,.2,1),
-                      height 0.35s cubic-bezier(.4,0,.2,1);
+          transition:
+            left   ${TRANSITION_MS}ms ${EASE},
+            top    ${TRANSITION_MS}ms ${EASE},
+            width  ${TRANSITION_MS}ms ${EASE},
+            height ${TRANSITION_MS}ms ${EASE};
         }
 
-        /* Tooltip — moves via top/left transition, fades in/out */
         .t-tt {
           position: fixed;
           width: 340px;
           background: #13120f;
           border: 1px solid #3a3630;
           border-radius: 14px;
-          box-shadow: 0 24px 64px rgba(0,0,0,.8), 0 0 0 1px rgba(2,164,186,.12);
+          box-shadow: 0 24px 64px rgba(0,0,0,.85), 0 0 0 1px rgba(2,164,186,.12);
           font-family: 'Inter', sans-serif;
           pointer-events: all;
           z-index: 9999;
-          transition: left 0.35s cubic-bezier(.4,0,.2,1),
-                      top  0.35s cubic-bezier(.4,0,.2,1),
-                      opacity 0.15s ease;
+          transition:
+            left    ${TRANSITION_MS}ms ${EASE},
+            top     ${TRANSITION_MS}ms ${EASE},
+            opacity 0.2s ease;
           opacity: 0;
         }
         .t-tt.vis { opacity: 1; }
 
         .t-body { padding: 18px 20px 14px; }
-        .t-ey { font-size: 10px; font-weight: 600; color: #02a4ba; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px; }
-        .t-ti { font-family: 'Playfair Display', serif; font-size: 17px; color: #e8e2d8; line-height: 1.25; margin-bottom: 8px; }
-        .t-tx { font-size: 13px; color: #6b6358; line-height: 1.65; }
 
-        .t-ft { display: flex; align-items: center; gap: 8px; padding: 11px 20px; border-top: 1px solid #2a2620; }
-        .t-skip { background: none; border: none; cursor: pointer; font-size: 11px; color: #3a3630; font-family: 'Inter', sans-serif; padding: 5px 8px; border-radius: 5px; transition: color .15s; margin-right: auto; }
+        .t-ey {
+          font-size: 10px; font-weight: 600; color: #02a4ba;
+          text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;
+        }
+        .t-ti {
+          font-family: 'Playfair Display', serif; font-size: 17px;
+          color: #e8e2d8; line-height: 1.25; margin-bottom: 10px;
+        }
+        .t-tx {
+          font-size: 13px; color: #6b6358; line-height: 1.65;
+          min-height: 42px;
+        }
+        .t-cursor {
+          display: inline-block; width: 2px; height: 12px;
+          background: #02a4ba; margin-left: 1px; vertical-align: middle;
+          border-radius: 1px; animation: t-cursor .6s ease infinite;
+        }
+        .t-cursor.done { opacity: 0; }
+
+        .t-ft {
+          display: flex; align-items: center; gap: 8px;
+          padding: 11px 20px; border-top: 1px solid #2a2620;
+        }
+        .t-skip {
+          background: none; border: none; cursor: pointer; font-size: 11px;
+          color: #3a3630; font-family: 'Inter', sans-serif; padding: 5px 8px;
+          border-radius: 5px; transition: color .15s; margin-right: auto;
+        }
         .t-skip:hover { color: #6b6358; }
-        .t-back { background: none; border: 1px solid #2a2620; border-radius: 8px; padding: 7px 14px; font-size: 12px; color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+        .t-back {
+          background: none; border: 1px solid #2a2620; border-radius: 8px;
+          padding: 7px 14px; font-size: 12px; color: #4a453e; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: all .15s;
+        }
         .t-back:hover { color: #9a9086; border-color: #3a3630; }
-        .t-next { background: #02a4ba; border: none; border-radius: 8px; padding: 7px 18px; font-size: 12px; font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .15s; }
+        .t-next {
+          background: #02a4ba; border: none; border-radius: 8px; padding: 7px 18px;
+          font-size: 12px; font-weight: 600; color: #0a0908; cursor: pointer;
+          font-family: 'Inter', sans-serif; transition: background .15s;
+        }
         .t-next:hover { background: #01bcd4; }
 
         .t-prog {
-          position: fixed; bottom: 20px; right: 20px; z-index: 10000; pointer-events: none;
-          background: #13120f; border: 1px solid #2a2620; border-radius: 20px;
-          padding: 5px 12px; display: flex; align-items: center; gap: 8px;
+          position: fixed; bottom: 20px; right: 20px; z-index: 10000;
+          pointer-events: none; background: #13120f; border: 1px solid #2a2620;
+          border-radius: 20px; padding: 5px 12px;
+          display: flex; align-items: center; gap: 8px;
           font-size: 11px; color: #4a453e; font-family: 'Inter', sans-serif;
         }
         .t-dots { display: flex; gap: 4px; }
-        .t-dot { width: 5px; height: 5px; border-radius: 50%; background: #2a2620; transition: all .2s; }
+        .t-dot {
+          width: 5px; height: 5px; border-radius: 50%;
+          background: #2a2620; transition: all .25s;
+        }
         .t-dot.active { background: #02a4ba; transform: scale(1.4); }
-        .t-dot.done { background: rgba(2,164,186,.35); }
+        .t-dot.done   { background: rgba(2,164,186,.35); }
 
         .t-badge {
-          position: fixed; top: 58px; left: 50%; transform: translateX(-50%); z-index: 10000; pointer-events: none;
-          background: rgba(212,160,32,.1); border: 1px solid rgba(212,160,32,.25); border-radius: 20px;
-          padding: 5px 14px; font-size: 11px; color: #d4a020; font-family: 'Inter', sans-serif;
-          display: flex; align-items: center; gap: 6px;
+          position: fixed; top: 58px; left: 50%; transform: translateX(-50%);
+          z-index: 10000; pointer-events: none;
+          background: rgba(212,160,32,.1); border: 1px solid rgba(212,160,32,.25);
+          border-radius: 20px; padding: 5px 14px; font-size: 11px; color: #d4a020;
+          font-family: 'Inter', sans-serif; display: flex; align-items: center; gap: 6px;
         }
-        .t-badge-dot { width: 5px; height: 5px; border-radius: 50%; background: #d4a020; animation: t-blink 1.8s ease infinite; }
+        .t-badge-dot {
+          width: 5px; height: 5px; border-radius: 50%; background: #d4a020;
+          animation: t-blink 1.8s ease infinite;
+        }
       `}</style>
 
       <div className="t-root">
-        {/* Dimmed overlay with animated clip-path hole */}
+
         <svg className="t-svg" viewBox={`0 0 ${vw} ${vh}`} preserveAspectRatio="none">
           <path d={clip} />
         </svg>
 
-        {/* Animated ring around spotlight */}
         {spot && (
           <div
             className="t-ring"
@@ -460,7 +562,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
           />
         )}
 
-        {/* Sample data badge */}
         {page !== 'final' && (
           <div className="t-badge">
             <div className="t-badge-dot" />
@@ -468,10 +569,9 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
           </div>
         )}
 
-        {/* Tooltip — glides to new position */}
         <div
           ref={ttRef}
-          className={`t-tt${visible ? ' vis' : ''}`}
+          className={`t-tt${ttVisible ? ' vis' : ''}`}
           style={{ left: ttPos.left, top: ttPos.top }}
         >
           <div className="t-body">
@@ -481,7 +581,10 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
                 : `${page.replace('-', ' ')} · Step ${idx + 1} of ${steps.length}`}
             </div>
             <div className="t-ti">{step.title}</div>
-            <div className="t-tx">{step.text}</div>
+            <div className="t-tx">
+              {displayed}
+              <span className={`t-cursor${typeDone ? ' done' : ''}`} />
+            </div>
           </div>
           <div className="t-ft">
             <button className="t-skip" onClick={finish}>Skip tour</button>
@@ -500,7 +603,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
           </div>
         </div>
 
-        {/* Progress dots */}
         <div className="t-prog">
           <div className="t-dots">
             {Array.from({ length: total }).map((_, i) => (
@@ -512,6 +614,7 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
           </div>
           <span>{globalIdx} / {total}</span>
         </div>
+
       </div>
     </>
   );
