@@ -1,6 +1,5 @@
 // pages/api/menu/parse-menu-test.js
-// Identical file handling to parse-menu-image.js but with an extended prompt
-// that also estimates recipe components and ingredients with costs.
+// Extended prompt returning components + ingredients with estimated costs.
 // NO Supabase writes — dry run only.
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -22,14 +21,20 @@ async function pdfToImages(filePath) {
     width: 1200,
     height: 1600,
   });
-  const { default: pdfParse } = await import('pdf-parse');
-  const dataBuffer = fs.readFileSync(filePath);
-  const pdfData = await pdfParse(dataBuffer);
-  const pageCount = Math.min(pdfData.numpages, 6);
+
+  // Try pages 1–6, stop when conversion fails or returns nothing
   const images = [];
-  for (let i = 1; i <= pageCount; i++) {
-    const result = await convert(i, { responseType: 'base64' });
-    if (result.base64) images.push(result.base64);
+  for (let i = 1; i <= 6; i++) {
+    try {
+      const result = await convert(i, { responseType: 'base64' });
+      if (result?.base64) {
+        images.push(result.base64);
+      } else {
+        break;
+      }
+    } catch {
+      break;
+    }
   }
   return images;
 }
@@ -51,11 +56,19 @@ export default async function handler(req, res) {
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
 
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowed.includes(file.mimetype) && !isPDF) {
+    return res.status(400).json({ error: 'Unsupported file type. Please upload a JPG, PNG, WEBP, or PDF.' });
+  }
+
   try {
     let imageContents = [];
 
     if (isPDF) {
       const base64Pages = await pdfToImages(file.filepath);
+      if (base64Pages.length === 0) {
+        return res.status(500).json({ error: 'Could not extract pages from PDF. Try a different file.' });
+      }
       imageContents = base64Pages.map(b64 => ({
         type: 'image',
         source: { type: 'base64', media_type: 'image/png', data: b64 },
@@ -63,7 +76,10 @@ export default async function handler(req, res) {
     } else {
       const data = fs.readFileSync(file.filepath);
       const base64 = data.toString('base64');
-      const mediaType = ext === '.png' ? 'image/png' : 'image/jpeg';
+      const mediaType =
+        ext === '.png'  ? 'image/png'  :
+        ext === '.webp' ? 'image/webp' :
+        'image/jpeg';
       imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
     }
 
@@ -87,19 +103,19 @@ Return ONLY a valid JSON array. No markdown, no explanation, no preamble.
 Each item in the array must have exactly these fields:
 
 {
-  "name": string,           // dish name, title case
-  "price": number | null,   // menu price, no $ symbol, null if not listed
-  "category": string,       // e.g. "Appetizers", "Entrees", "Desserts", "Drinks", "Sides", "Salads", "Soups", "Pasta", "Sandwiches", "Pizza", "Breakfast", "Burgers", or best guess
-  "description": string | null, // brief description if shown on menu, otherwise null
-  "components": [           // array of recipe components
+  "name": string,
+  "price": number | null,
+  "category": string,
+  "description": string | null,
+  "components": [
     {
-      "name": string,       // component name e.g. "Protein", "Sauce", "Bun & Toppings", "Sides"
-      "ingredients": [      // key ingredients in this component
+      "name": string,
+      "ingredients": [
         {
-          "name": string,   // ingredient name e.g. "Ground Beef Patty (6oz)"
-          "unit": string,   // purchasing unit e.g. "lb", "oz", "each", "gallon", "case"
-          "quantity": number, // quantity used per dish in that unit
-          "estimated_unit_cost": number // estimated cost in USD per unit based on typical US restaurant wholesale pricing
+          "name": string,
+          "unit": string,
+          "quantity": number,
+          "estimated_unit_cost": number
         }
       ]
     }
@@ -136,7 +152,7 @@ Rules:
 - Include every item visible on the menu
 - Do not include section headers, combos, or add-ons as separate items
 - If the same item appears at multiple sizes/prices, include each as a separate entry with size in the name
-- Components should reflect how the dish is actually plated (protein + sauce + side is typical for entrees; bread + protein + toppings for sandwiches; etc.)
+- Components should reflect how the dish is actually plated (protein + sauce + side for entrees; bread + protein + toppings for sandwiches; etc.)
 - Aim for 2–4 components per dish, 2–5 ingredients per component
 - Be realistic — a Caesar salad should not have 12 components
 - Return ONLY the JSON array, nothing else`,
@@ -159,7 +175,6 @@ Rules:
       return res.status(500).json({ error: 'Unexpected response format' });
     }
 
-    // Validate and compute costs
     const validated = dishes
       .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
       .map(d => {
@@ -169,9 +184,10 @@ Rules:
             unit: i.unit || 'each',
             quantity: typeof i.quantity === 'number' ? i.quantity : 0,
             estimated_unit_cost: typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0,
-            estimated_total_cost: typeof i.quantity === 'number' && typeof i.estimated_unit_cost === 'number'
-              ? Math.round(i.quantity * i.estimated_unit_cost * 10000) / 10000
-              : 0,
+            estimated_total_cost:
+              typeof i.quantity === 'number' && typeof i.estimated_unit_cost === 'number'
+                ? Math.round(i.quantity * i.estimated_unit_cost * 10000) / 10000
+                : 0,
           }));
           const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
           return {
@@ -182,10 +198,14 @@ Rules:
         });
 
         const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
-        const price = typeof d.price === 'number' && !isNaN(d.price) ? Math.round(d.price * 100) / 100 : null;
-        const estimatedMargin = price && totalEstimatedCost > 0
-          ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
-          : null;
+        const price =
+          typeof d.price === 'number' && !isNaN(d.price)
+            ? Math.round(d.price * 100) / 100
+            : null;
+        const estimatedMargin =
+          price && totalEstimatedCost > 0
+            ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
+            : null;
 
         return {
           name: d.name.trim(),
@@ -200,18 +220,22 @@ Rules:
 
     try { fs.unlinkSync(file.filepath); } catch {}
 
+    const withMargin = validated.filter(d => d.estimated_margin !== null);
+
     return res.status(200).json({
       dishes: validated,
       count: validated.length,
       summary: {
         total_items: validated.length,
         categories: [...new Set(validated.map(d => d.category))].sort(),
-        avg_estimated_cost: validated.length > 0
-          ? Math.round(validated.reduce((s, d) => s + d.total_estimated_cost, 0) / validated.length * 100) / 100
-          : 0,
-        avg_estimated_margin: validated.filter(d => d.estimated_margin !== null).length > 0
-          ? Math.round(validated.filter(d => d.estimated_margin !== null).reduce((s, d) => s + d.estimated_margin, 0) / validated.filter(d => d.estimated_margin !== null).length * 10) / 10
-          : null,
+        avg_estimated_cost:
+          validated.length > 0
+            ? Math.round(validated.reduce((s, d) => s + d.total_estimated_cost, 0) / validated.length * 100) / 100
+            : 0,
+        avg_estimated_margin:
+          withMargin.length > 0
+            ? Math.round(withMargin.reduce((s, d) => s + d.estimated_margin, 0) / withMargin.length * 10) / 10
+            : null,
       },
     });
 

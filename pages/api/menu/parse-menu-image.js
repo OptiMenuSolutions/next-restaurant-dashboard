@@ -8,7 +8,6 @@ export const config = { api: { bodyParser: false } };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Convert PDF to base64 images using pdf2pic
 async function pdfToImages(filePath) {
   const { fromPath } = await import('pdf2pic');
   const convert = fromPath(filePath, {
@@ -20,16 +19,19 @@ async function pdfToImages(filePath) {
     height: 1600,
   });
 
-  // Get page count
-  const { default: pdfParse } = await import('pdf-parse');
-  const dataBuffer = fs.readFileSync(filePath);
-  const pdfData = await pdfParse(dataBuffer);
-  const pageCount = Math.min(pdfData.numpages, 6); // cap at 6 pages
-
+  // Try pages 1–6, stop when conversion fails or returns nothing
   const images = [];
-  for (let i = 1; i <= pageCount; i++) {
-    const result = await convert(i, { responseType: 'base64' });
-    if (result.base64) images.push(result.base64);
+  for (let i = 1; i <= 6; i++) {
+    try {
+      const result = await convert(i, { responseType: 'base64' });
+      if (result?.base64) {
+        images.push(result.base64);
+      } else {
+        break;
+      }
+    } catch {
+      break;
+    }
   }
   return images;
 }
@@ -37,7 +39,7 @@ async function pdfToImages(filePath) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const form = formidable({ maxFileSize: 20 * 1024 * 1024 }); // 20MB
+  const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
 
   let fields, files;
   try {
@@ -57,15 +59,20 @@ export default async function handler(req, res) {
 
     if (isPDF) {
       const base64Pages = await pdfToImages(file.filepath);
+      if (base64Pages.length === 0) {
+        return res.status(500).json({ error: 'Could not extract pages from PDF. Try a different file.' });
+      }
       imageContents = base64Pages.map(b64 => ({
         type: 'image',
         source: { type: 'base64', media_type: 'image/png', data: b64 },
       }));
     } else {
-      // JPG or PNG
       const data = fs.readFileSync(file.filepath);
       const base64 = data.toString('base64');
-      const mediaType = ext === '.png' ? 'image/png' : 'image/jpeg';
+      const mediaType =
+        ext === '.png'  ? 'image/png'  :
+        ext === '.webp' ? 'image/webp' :
+        'image/jpeg';
       imageContents = [{
         type: 'image',
         source: { type: 'base64', media_type: mediaType, data: base64 },
@@ -103,9 +110,8 @@ Example format:
     });
 
     const rawText = response.content[0]?.text || '[]';
-
-    // Strip any accidental markdown fences
     const cleaned = rawText.replace(/```json|```/g, '').trim();
+
     let dishes;
     try {
       dishes = JSON.parse(cleaned);
@@ -117,7 +123,6 @@ Example format:
       return res.status(500).json({ error: 'Unexpected response format' });
     }
 
-    // Clean up and validate each dish
     const validated = dishes
       .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
       .map(d => ({
@@ -127,7 +132,6 @@ Example format:
         description: typeof d.description === 'string' ? d.description.trim() : null,
       }));
 
-    // Clean up temp file
     try { fs.unlinkSync(file.filepath); } catch {}
 
     return res.status(200).json({ dishes: validated, count: validated.length });
