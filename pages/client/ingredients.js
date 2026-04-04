@@ -8,7 +8,6 @@ import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
-import TourDataBanner from '../../components/TourDataBanner';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
