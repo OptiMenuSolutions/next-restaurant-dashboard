@@ -36,22 +36,29 @@ const PAGE_STEPS = {
   ],
   invoices: [
     {
-      selector: '.inv-upload-btn',
-      padding: 8,
-      title: 'Add an Invoice',
-      text: 'Upload a PDF or photo of any supplier invoice. Claude extracts items and prices in under 30 seconds.',
-    },
-    {
       selector: '.inv-list',
       padding: 8,
-      title: 'Invoice Tracking',
+      title: 'Invoice List',
       text: "Sample invoices from Chick-fil-A's real supplier network. Upload your own and OptiMenu reads every line item automatically.",
     },
     {
       selector: '.inv-detail',
       padding: 8,
       title: 'Invoice Overview',
-      text: 'Monthly spend trends, processing breakdown, and top suppliers by spend. Click any invoice row to see full line-item detail.',
+      text: 'Monthly spend trends, processing breakdown, and top suppliers by spend. This panel updates as you add invoices.',
+    },
+    {
+      selector: '.inv-row',
+      padding: 6,
+      clickTarget: true,
+      title: 'Click an Invoice',
+      text: 'Click this invoice row to see the full line-item detail — every ingredient, quantity, and unit cost extracted automatically.',
+    },
+    {
+      selector: '.inv-detail',
+      padding: 8,
+      title: 'Invoice Detail',
+      text: 'Full line-item breakdown with supplier, date, and per-ingredient costs. OptiMenu links these prices to your ingredient cost tracking.',
     },
     {
       selector: null,
@@ -78,7 +85,7 @@ const PAGE_STEPS = {
     {
       selector: '.ing-row',
       padding: 6,
-      clickTarget: true,  // overlay becomes transparent — click passes through to page
+      clickTarget: true,
       title: 'Click an Ingredient',
       text: 'Click this ingredient to see its individual price history, purchase records, and which menu items it affects.',
     },
@@ -113,7 +120,7 @@ const PAGE_STEPS = {
     {
       selector: '.mi-card',
       padding: 6,
-      clickTarget: true,  // overlay becomes transparent — click passes through to page
+      clickTarget: true,
       title: 'Click a Menu Item',
       text: 'Click this card to see a full ingredient-level cost breakdown and pricing recommendations.',
     },
@@ -140,7 +147,8 @@ const PAGE_STEPS = {
       text: 'Upload a CSV export from your POS — Toast, Square, Clover, Lightspeed — and OptiMenu maps sales velocity against ingredient costs.',
     },
     {
-      selector: '.an-card',
+      // Target the dish picks column specifically, not a generic card
+      selector: '.an-dish-col',
       padding: 8,
       title: "Today's Dish Recommendations",
       text: 'Claude analyzes your margins, inventory, and sales velocity to tell you exactly which dishes to push each day and why.',
@@ -269,9 +277,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, ready]);
 
-  // For clickTarget steps: listen for clicks in the spotlight area and advance
-  // The entire overlay is pointer-events:none during these steps so the click
-  // actually reaches the underlying page element first, THEN we advance the tour
   useEffect(() => {
     if (!isClick || !spot || !ready) return;
     function handleClick(e) {
@@ -353,18 +358,13 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         @keyframes t-blink      { 0%,100%{opacity:1} 50%{opacity:.3} }
         @keyframes t-cur        { 0%,100%{opacity:1} 50%{opacity:0} }
 
-        /* ── Root ── */
         .t-root { position:fixed; inset:0; z-index:9998; pointer-events:none; }
 
-        /* ── Dim overlay ──
-           Normal steps: SVG intercepts clicks outside the spotlight (blocks navigation etc)
-           Click steps: entire root is pointer-events:none so ALL clicks reach the page */
         .t-svg { position:absolute; inset:0; width:100%; height:100%; pointer-events:all; }
         .t-root.is-click .t-svg { pointer-events:none; }
 
         .t-svg path { fill:rgba(0,0,0,.72); fill-rule:evenodd; transition:d ${TRANSITION_MS}ms ${EASE}; }
 
-        /* ── Spotlight ring ── */
         .t-ring {
           position:absolute; border-radius:10px; pointer-events:none;
           border:2px solid #02a4ba; animation:t-ring 2s ease infinite;
@@ -373,7 +373,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         }
         .t-ring.is-click { border:3px solid #d4a020; border-radius:8px; animation:t-ring-click 1.4s ease infinite; }
 
-        /* ── Tooltip ── */
         .t-tt {
           position:fixed; width:340px; background:#13120f;
           border:1px solid #3a3630; border-radius:14px;
@@ -392,7 +391,6 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         .t-cur   { display:inline-block; width:2px; height:12px; background:#02a4ba; margin-left:1px; vertical-align:middle; border-radius:1px; animation:t-cur .6s ease infinite; }
         .t-cur.d { opacity:0; }
 
-        /* click-step hint bar */
         .t-click-hint {
           margin:0 20px 10px; padding:8px 12px; border-radius:8px;
           background:rgba(212,160,32,.08); border:1px solid rgba(212,160,32,.2);
@@ -407,23 +405,19 @@ export default function TourOverlay({ page, restaurantId, onDone }) {
         .t-back:hover { color:#9a9086; border-color:#3a3630; }
         .t-next  { background:#02a4ba; border:none; border-radius:8px; padding:7px 18px; font-size:12px; font-weight:600; color:#0a0908; cursor:pointer; font-family:'Inter',sans-serif; transition:background .15s; }
         .t-next:hover { background:#01bcd4; }
-        /* ghost variant for click-step skip button */
         .t-next.ghost { background:none; border:1px solid #2a2620; color:#4a453e; font-weight:400; }
         .t-next.ghost:hover { border-color:#3a3630; color:#9a9086; }
 
-        /* ── Progress ── */
         .t-prog { position:fixed; bottom:20px; right:20px; z-index:10000; pointer-events:none; background:#13120f; border:1px solid #2a2620; border-radius:20px; padding:5px 12px; display:flex; align-items:center; gap:8px; font-size:11px; color:#4a453e; font-family:'Inter',sans-serif; }
         .t-dots { display:flex; gap:4px; }
         .t-dot  { width:5px; height:5px; border-radius:50%; background:#2a2620; transition:all .25s; }
         .t-dot.on   { background:#02a4ba; transform:scale(1.4); }
         .t-dot.done { background:rgba(2,164,186,.35); }
 
-        /* ── Sample data badge ── */
         .t-badge { position:fixed; top:58px; left:50%; transform:translateX(-50%); z-index:10000; pointer-events:none; background:rgba(212,160,32,.1); border:1px solid rgba(212,160,32,.25); border-radius:20px; padding:5px 14px; font-size:11px; color:#d4a020; font-family:'Inter',sans-serif; display:flex; align-items:center; gap:6px; }
         .t-badge-dot { width:5px; height:5px; border-radius:50%; background:#d4a020; animation:t-blink 1.8s ease infinite; }
       `}</style>
 
-      {/* is-click class removes pointer-events from the SVG dim so clicks reach the page */}
       <div className={`t-root${isClick ? ' is-click' : ''}`}>
 
         <svg className="t-svg" viewBox={`0 0 ${vw} ${vh}`} preserveAspectRatio="none">

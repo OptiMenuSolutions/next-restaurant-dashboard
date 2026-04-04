@@ -8,6 +8,7 @@ import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
+import TourDataBanner from '../../components/TourDataBanner';
 
 function formatCurrency(n) {
   if (!n && n !== 0) return '$0';
@@ -678,6 +679,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
         {tourProps && <TourOverlay {...tourProps} />}
+        <TourDataBanner />
       </>
     );
   }
@@ -1012,6 +1014,7 @@ export default function AnalyticsPage() {
         )}
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
+      <TourDataBanner />
     </>
   );
 }

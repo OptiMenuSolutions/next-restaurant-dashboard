@@ -9,6 +9,7 @@ import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
+import TourDataBanner from "../../components/TourDataBanner";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -949,6 +950,7 @@ export default function ClientDashboard() {
         <Analytics />
         <SpeedInsights />
         {tourProps && <TourOverlay {...tourProps} />}
+        <TourDataBanner />
       </>
     );
   }
@@ -1187,6 +1189,7 @@ export default function ClientDashboard() {
       <Analytics />
       <SpeedInsights />
       {tourProps && <TourOverlay {...tourProps} />}
+      <TourDataBanner />
     </>
   );
 }

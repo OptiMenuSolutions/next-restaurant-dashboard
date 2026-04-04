@@ -7,6 +7,7 @@ import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
+import TourDataBanner from '../../components/TourDataBanner';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -655,6 +656,7 @@ export default function ClientInvoices() {
           <MobBottomNav current="/client/invoices" router={router} />
         </div>
         {tourProps && <TourOverlay {...tourProps} />}
+        <TourDataBanner />
       </>
     );
   }
@@ -992,6 +994,7 @@ export default function ClientInvoices() {
 
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
+      <TourDataBanner />
     </>
   );
 }
