@@ -36,7 +36,6 @@ const CSS = `
 
   .mpt-root { max-width: 1100px; margin: 0 auto; padding: 32px 20px 80px; }
 
-  /* HEADER */
   .mpt-header { margin-bottom: 32px; }
   .mpt-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; margin-bottom: 10px; }
   .mpt-logo span { color: #02a4ba; }
@@ -45,7 +44,9 @@ const CSS = `
   .mpt-warn { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; background: rgba(212,160,32,.08); border: 1px solid rgba(212,160,32,.2); border-radius: 8px; padding: 7px 14px; font-size: 12px; color: #d4a020; }
   .mpt-warn-dot { width: 6px; height: 6px; border-radius: 50%; background: #d4a020; flex-shrink: 0; }
 
-  /* UPLOAD ZONE */
+  .mpt-truncated-banner { display: flex; align-items: center; gap: 10px; background: rgba(192,64,64,.08); border: 1px solid rgba(192,64,64,.2); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: #c04040; margin-bottom: 16px; animation: fadeIn .3s ease; }
+  .mpt-truncated-banner svg { width: 16px; height: 16px; stroke: #c04040; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
   .mpt-upload { background: #13120f; border: 2px dashed #2a2620; border-radius: 12px; padding: 52px 32px; text-align: center; cursor: pointer; transition: all .2s; margin-bottom: 16px; }
   .mpt-upload:hover, .mpt-upload.drag { border-color: #02a4ba; background: rgba(2,164,186,.04); }
   .mpt-upload-icon { width: 56px; height: 56px; border-radius: 50%; background: rgba(2,164,186,.08); border: 1px solid rgba(2,164,186,.2); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
@@ -55,17 +56,14 @@ const CSS = `
   .mpt-upload-btn { background: #02a4ba; border: none; border-radius: 8px; padding: 11px 26px; font-size: 14px; font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; }
   .mpt-upload-btn:hover { background: #01bcd4; }
 
-  /* PARSING */
   .mpt-parsing { background: #13120f; border: 1px solid #2a2620; border-radius: 12px; padding: 64px 32px; text-align: center; animation: fadeIn .3s ease; }
   .mpt-spinner { width: 36px; height: 36px; border: 3px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 20px; }
   .mpt-parsing-label { font-size: 16px; color: #9a9086; margin-bottom: 8px; font-weight: 500; }
   .mpt-parsing-sub { font-size: 13px; color: #4a453e; line-height: 1.6; }
   .mpt-parsing-file { font-size: 12px; color: #02a4ba; margin-top: 10px; font-weight: 500; }
 
-  /* ERROR */
   .mpt-error { background: rgba(192,64,64,.08); border: 1px solid rgba(192,64,64,.2); border-radius: 10px; padding: 14px 18px; font-size: 13px; color: #c04040; margin-bottom: 16px; }
 
-  /* SUMMARY BAR */
   .mpt-summary { background: #13120f; border: 1px solid #2a2620; border-radius: 10px; padding: 18px 22px; display: flex; gap: 32px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; animation: fadeIn .3s ease; }
   .mpt-summary-stat { flex-shrink: 0; }
   .mpt-summary-val { font-family: 'Playfair Display', serif; font-size: 24px; line-height: 1; }
@@ -74,7 +72,6 @@ const CSS = `
   .mpt-summary-cats { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: 1; }
   .mpt-cat-pill { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500; white-space: nowrap; }
 
-  /* FILTER BAR */
   .mpt-filterbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; align-items: center; }
   .mpt-filter-btn { background: #13120f; border: 1px solid #2a2620; border-radius: 20px; padding: 5px 14px; font-size: 12px; color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; }
   .mpt-filter-btn:hover { color: #9a9086; border-color: #3a3630; }
@@ -85,10 +82,8 @@ const CSS = `
   .mpt-reset-btn { background: none; border: 1px solid #2a2620; border-radius: 8px; padding: 7px 16px; font-size: 13px; color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; margin-left: auto; white-space: nowrap; }
   .mpt-reset-btn:hover { color: #9a9086; border-color: #3a3630; }
 
-  /* GRID */
   .mpt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 
-  /* DISH CARD */
   .mpt-card { background: #13120f; border: 1px solid #2a2620; border-radius: 10px; overflow: hidden; animation: fadeIn .25s ease; transition: border-color .15s; display: flex; flex-direction: column; }
   .mpt-card:hover { border-color: #3a3630; }
 
@@ -104,7 +99,6 @@ const CSS = `
   .mpt-card-cost-lbl { color: #4a453e; }
   .mpt-card-cost-val { font-weight: 600; margin-left: 4px; }
 
-  /* COMPONENTS */
   .mpt-comps { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
   .mpt-comp { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 7px; overflow: hidden; }
   .mpt-comp-hd { padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background .15s; user-select: none; }
@@ -122,19 +116,17 @@ const CSS = `
   .mpt-ing-qty { font-size: 11px; color: #4a453e; text-align: right; white-space: nowrap; }
   .mpt-ing-cost { font-size: 12px; font-weight: 600; color: #6b6358; text-align: right; white-space: nowrap; min-width: 52px; }
 
-  /* CARD FOOTER */
   .mpt-card-ft { padding: 10px 16px; background: #0f0e0c; border-top: 1px solid #1a1915; display: flex; align-items: center; gap: 10px; margin-top: auto; }
   .mpt-margin-lbl { font-size: 11px; color: #4a453e; white-space: nowrap; }
   .mpt-margin-bar-wrap { flex: 1; background: #1a1915; border-radius: 3px; height: 4px; }
   .mpt-margin-bar { height: 4px; border-radius: 3px; transition: width .4s ease; }
   .mpt-margin-val { font-size: 13px; font-weight: 700; white-space: nowrap; }
 
-  /* EMPTY */
   .mpt-empty { text-align: center; padding: 56px; color: #4a453e; font-size: 14px; }
 `;
 
 export default function MenuParseTest() {
-  const [stage, setStage] = useState('upload'); // upload | parsing | results | error
+  const [stage, setStage] = useState('upload');
   const [dragging, setDragging] = useState(false);
   const [fileName, setFileName] = useState('');
   const [results, setResults] = useState(null);
@@ -279,7 +271,7 @@ export default function MenuParseTest() {
             <div className="mpt-parsing-label">Claude is reading your menu...</div>
             <div className="mpt-parsing-sub">
               Extracting dishes, estimating recipes and ingredient costs.<br />
-              This takes 20–45 seconds depending on menu size.
+              Large menus can take 30–60 seconds.
             </div>
             {fileName && <div className="mpt-parsing-file">{fileName}</div>}
           </div>
@@ -288,7 +280,18 @@ export default function MenuParseTest() {
         {/* RESULTS */}
         {stage === 'results' && results && (
           <>
-            {/* Summary bar */}
+            {/* Truncation warning */}
+            {results.truncated && (
+              <div className="mpt-truncated-banner">
+                <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <div>
+                  <strong>Response was truncated</strong> — this menu has more items than fit in one pass.
+                  {results.count} items were recovered. Try uploading one section at a time for full coverage.
+                </div>
+              </div>
+            )}
+
+            {/* Summary */}
             <div className="mpt-summary">
               <div className="mpt-summary-stat">
                 <div className="mpt-summary-val" style={{ color: '#02a4ba' }}>{results.count}</div>
@@ -310,10 +313,7 @@ export default function MenuParseTest() {
                 <>
                   <div className="mpt-summary-divider" />
                   <div className="mpt-summary-stat">
-                    <div
-                      className="mpt-summary-val"
-                      style={{ color: getMarginColor(results.summary.avg_estimated_margin) }}
-                    >
+                    <div className="mpt-summary-val" style={{ color: getMarginColor(results.summary.avg_estimated_margin) }}>
                       {results.summary.avg_estimated_margin}%
                     </div>
                     <div className="mpt-summary-lbl">Avg Est. Margin</div>
@@ -370,7 +370,6 @@ export default function MenuParseTest() {
                   return (
                     <div key={globalDishIdx} className="mpt-card">
 
-                      {/* Header */}
                       <div className="mpt-card-hd">
                         <div className="mpt-card-top">
                           <div className="mpt-card-name">{dish.name}</div>
@@ -403,10 +402,7 @@ export default function MenuParseTest() {
                           {dish.estimated_margin !== null && (
                             <div className="mpt-card-cost-item">
                               <span className="mpt-card-cost-lbl">Est. Margin</span>
-                              <span
-                                className="mpt-card-cost-val"
-                                style={{ color: getMarginColor(dish.estimated_margin) }}
-                              >
+                              <span className="mpt-card-cost-val" style={{ color: getMarginColor(dish.estimated_margin) }}>
                                 {dish.estimated_margin}%
                               </span>
                             </div>
@@ -414,7 +410,6 @@ export default function MenuParseTest() {
                         </div>
                       </div>
 
-                      {/* Components */}
                       {dish.components && dish.components.length > 0 && (
                         <div className="mpt-comps">
                           {dish.components.map((comp, compIdx) => {
@@ -454,7 +449,6 @@ export default function MenuParseTest() {
                         </div>
                       )}
 
-                      {/* Footer margin bar */}
                       {dish.estimated_margin !== null && (
                         <div className="mpt-card-ft">
                           <div className="mpt-margin-lbl">Margin</div>
@@ -467,10 +461,7 @@ export default function MenuParseTest() {
                               }}
                             />
                           </div>
-                          <div
-                            className="mpt-margin-val"
-                            style={{ color: getMarginColor(dish.estimated_margin) }}
-                          >
+                          <div className="mpt-margin-val" style={{ color: getMarginColor(dish.estimated_margin) }}>
                             {dish.estimated_margin}%
                           </div>
                         </div>

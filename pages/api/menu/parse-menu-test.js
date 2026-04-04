@@ -21,22 +21,37 @@ async function pdfToImages(filePath) {
     width: 1200,
     height: 1600,
   });
-
-  // Try pages 1–6, stop when conversion fails or returns nothing
   const images = [];
   for (let i = 1; i <= 6; i++) {
     try {
       const result = await convert(i, { responseType: 'base64' });
-      if (result?.base64) {
-        images.push(result.base64);
-      } else {
-        break;
-      }
-    } catch {
-      break;
-    }
+      if (result?.base64) images.push(result.base64);
+      else break;
+    } catch { break; }
   }
   return images;
+}
+
+// If Claude's response was truncated, recover all complete JSON objects
+function recoverPartialJSON(text) {
+  const cleaned = text.replace(/```json|```/g, '').trim();
+
+  // Full parse first
+  try { return JSON.parse(cleaned); } catch {}
+
+  // Find last complete object — try trimming at last "}," boundary
+  const lastComma = cleaned.lastIndexOf('},');
+  if (lastComma > 0) {
+    try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
+  }
+
+  // Last resort: trim at last closing brace
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (lastBrace > 0) {
+    try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
+  }
+
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -85,7 +100,7 @@ export default async function handler(req, res) {
 
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-5',
-      max_tokens: 8000,
+      max_tokens: 16000,
       messages: [{
         role: 'user',
         content: [
@@ -123,18 +138,24 @@ Each item in the array must have exactly these fields:
 }
 
 Estimation guidelines for ingredients:
-- Ground beef: ~$4.50/lb wholesale
+- Ground beef (8oz patty): ~$4.50/lb wholesale
 - Chicken breast: ~$3.00/lb
 - Salmon fillet: ~$9.00/lb
 - Shrimp (16/20): ~$8.00/lb
 - Bacon: ~$4.00/lb
 - Cheddar cheese: ~$4.50/lb
 - Mozzarella: ~$4.00/lb
+- Goat cheese: ~$8.00/lb
+- Gorgonzola: ~$7.00/lb
 - Brioche bun: ~$0.45/each
 - Burger bun: ~$0.30/each
+- Long roll: ~$0.40/each
+- Multi-grain bread (2 slices): ~$0.35/each
 - Romaine lettuce: ~$1.80/lb
+- Mixed greens: ~$4.00/lb
 - Tomato: ~$1.20/lb
 - Onion: ~$0.60/lb
+- Avocado: ~$0.80/each
 - Potato (fries portion): ~$0.40/lb
 - Pasta (dry): ~$1.20/lb
 - Heavy cream: ~$3.50/quart
@@ -142,19 +163,23 @@ Estimation guidelines for ingredients:
 - Olive oil: ~$8.00/liter
 - Flour: ~$0.50/lb
 - Eggs: ~$0.25/each
-- Mixed greens: ~$4.00/lb
-- Avocado: ~$0.80/each
 - Lemon: ~$0.40/each
 - Garlic: ~$3.00/lb
+- Cauliflower: ~$2.50/lb
+- Brussels sprouts: ~$2.00/lb
+- Corn tortilla chips: ~$2.00/lb
+- Flour tortilla (large): ~$0.30/each
+- Black beans: ~$1.20/lb
+- Cilantro rice: ~$0.80/lb
 - For anything not listed, estimate based on typical US restaurant wholesale pricing
 
 Rules:
-- Include every item visible on the menu
-- Do not include section headers, combos, or add-ons as separate items
+- Include EVERY item visible on the menu — do not skip any
+- Do not include section headers, combo deals, or add-ons as separate items
 - If the same item appears at multiple sizes/prices, include each as a separate entry with size in the name
 - Components should reflect how the dish is actually plated (protein + sauce + side for entrees; bread + protein + toppings for sandwiches; etc.)
 - Aim for 2–4 components per dish, 2–5 ingredients per component
-- Be realistic — a Caesar salad should not have 12 components
+- Be concise — keep ingredient names short and component names simple
 - Return ONLY the JSON array, nothing else`,
           },
         ],
@@ -162,18 +187,23 @@ Rules:
     });
 
     const rawText = response.content[0]?.text || '[]';
-    const cleaned = rawText.replace(/```json|```/g, '').trim();
 
-    let dishes;
-    try {
-      dishes = JSON.parse(cleaned);
-    } catch {
-      return res.status(500).json({ error: 'Failed to parse Claude response as JSON', raw: rawText });
+    // Try to parse — fall back to partial recovery if truncated
+    let dishes = recoverPartialJSON(rawText);
+
+    if (!dishes) {
+      return res.status(500).json({
+        error: 'Failed to parse Claude response as JSON. The menu may be too large — try cropping to one section at a time.',
+        raw: rawText.slice(0, 500) + '...',
+      });
     }
 
     if (!Array.isArray(dishes)) {
       return res.status(500).json({ error: 'Unexpected response format' });
     }
+
+    // Log stop reason to server console for debugging
+    console.log('Stop reason:', response.stop_reason, '| Items recovered:', dishes.length);
 
     const validated = dishes
       .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
@@ -225,6 +255,7 @@ Rules:
     return res.status(200).json({
       dishes: validated,
       count: validated.length,
+      truncated: response.stop_reason === 'max_tokens',
       summary: {
         total_items: validated.length,
         categories: [...new Set(validated.map(d => d.category))].sort(),
