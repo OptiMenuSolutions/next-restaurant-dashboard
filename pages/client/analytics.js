@@ -27,6 +27,12 @@ function getMarginColor(m) {
   if (!m) return '#4a453e';
   if (m >= 60) return '#2a8a5a'; if (m >= 40) return '#02a4ba'; if (m >= 25) return '#d4a020'; return '#c04040';
 }
+function formatDateLabel(dateStr) {
+  if (!dateStr) return '';
+  const [, m, d] = dateStr.split('-');
+  return `${parseInt(m)}/${parseInt(d)}`;
+}
+
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DATE_RANGES = ['7d','14d','30d','All'];
 const CAT_COLORS = ['#02a4ba','#d4a020','#2a8a5a','#c04040','#9b7ee8','#e85e8a','#4a9ede'];
@@ -39,6 +45,7 @@ const NAV = [
   { label:'Menu', path:'/client/menu-items' },
   { label:'Analytics', path:'/client/analytics' },
 ];
+
 function NavIcon({ path }) {
   if (path==='/client/dashboard') return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
   if (path==='/client/invoices') return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
@@ -47,133 +54,132 @@ function NavIcon({ path }) {
   return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
 }
 
-function formatDateLabel(dateStr) {
-  if (!dateStr) return '';
-  const [, m, d] = dateStr.split('-');
-  return `${parseInt(m)}/${parseInt(d)}`;
-}
-
+// ── TrendLine ────────────────────────────────────────────────────────────────
+// Fixed: smaller viewBox (700×100), smaller font sizes (7.5–8px SVG units),
+// smarter x-label count (max 4), preserveAspectRatio keeps text proportional.
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const [tip, setTip] = useState(null);
 
-  // Always show last 30 days
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
   const cutoffStr = cutoff.toISOString().split('T')[0];
   const pts = data.filter(d => d.date >= cutoffStr && d[valueKey] >= 0);
 
   if (pts.length < 2) return (
-    <div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,fontSize:'clamp(9px,.72vw,12px)',color:'#4a453e'}}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, fontSize:11, color:'#4a453e' }}>
       Not enough data — upload at least 2 days of sales
     </div>
   );
 
-  // SVG canvas — wide, short, with left margin for y-labels
-  // Wide landscape viewBox — ratio matches a typical card (≈5:1 wide:tall)
-  // preserveAspectRatio="xMidYMid meet" keeps the aspect ratio so text
-  // scales naturally with the card width instead of blowing up.
-  const W=600, H=120, PL=44, PR=10, PT=8, PB=22;
-  const cW = W-PL-PR, cH = H-PT-PB;
+  const W = 700, H = 100, PL = 48, PR = 8, PT = 6, PB = 20;
+  const cW = W - PL - PR, cH = H - PT - PB;
 
   const vals = pts.map(d => d[valueKey]);
   const rawMax = Math.max(...vals, 1);
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const yMax = Math.ceil((rawMax * 1.15) / mag) * mag;
-  const xOf = i => PL + (pts.length === 1 ? cW/2 : (i/(pts.length-1))*cW);
-  const yOf = v => PT + cH - (v/yMax)*cH;
+  const xOf = i => PL + (pts.length === 1 ? cW / 2 : (i / (pts.length - 1)) * cW);
+  const yOf = v => PT + cH - (v / yMax) * cH;
 
-  const pth = pts.map((d,i)=>`${i===0?'M':'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
-  const area = `${pth} L${xOf(pts.length-1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
+  const pth = pts.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
+  const area = `${pth} L${xOf(pts.length - 1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
 
-  const yTicks = [0, yMax/2, yMax];
+  const yTicks = [0, yMax / 2, yMax];
 
-  const xLabelIdxs = pts.length <= 6
-    ? pts.map((_,i)=>i)
-    : [0, Math.floor((pts.length-1)/2), pts.length-1];
+  // Max ~4 x-axis labels regardless of point count
+  const xLabelIdxs = pts.length <= 4
+    ? pts.map((_, i) => i)
+    : [
+        0,
+        Math.round((pts.length - 1) / 3),
+        Math.round((pts.length - 1) * 2 / 3),
+        pts.length - 1,
+      ].filter((v, i, arr) => arr.indexOf(v) === i);
 
   return (
-    <div style={{position:'relative', flex:1, minHeight:0}}>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{width:'100%',height:'100%'}} preserveAspectRatio="xMidYMid meet">
+    <div style={{ position:'relative', flex:1, minHeight:0 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width:'100%', height:'100%', display:'block' }}
+        preserveAspectRatio="xMidYMid meet"
+      >
         <defs>
           <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.2"/>
+            <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
             <stop offset="100%" stopColor={color} stopOpacity="0"/>
           </linearGradient>
           <clipPath id="tclip"><rect x={PL} y={PT} width={cW} height={cH}/></clipPath>
         </defs>
 
-        {/* Gridlines + y labels */}
-        {yTicks.map((t,i) => (
+        {yTicks.map((t, i) => (
           <g key={i}>
-            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.6"/>
-            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle" fontSize="9" fill="#3a3630"
-              style={{fontFamily:"'Inter',sans-serif"}}>
-              {valueKey==='rev' ? formatCurrency(t) : Math.round(t)}
+            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.5"/>
+            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle"
+              fontSize="8" fill="#3a3630" style={{ fontFamily:"'Inter',sans-serif" }}>
+              {valueKey === 'rev' ? formatCurrency(t) : Math.round(t)}
             </text>
           </g>
         ))}
 
-        {/* Area + line */}
         <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)"/>
-        <path d={pth} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
+        <path d={pth} fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
 
-        {/* Dots — only when few points */}
-        {pts.length <= 14 && pts.map((d,i) => (
-          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2.5" fill={color} style={{cursor:'pointer'}}
-            onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
-            onMouseLeave={()=>setTip(null)}/>
+        {pts.length <= 14 && pts.map((d, i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2" fill={color} style={{ cursor:'pointer' }}
+            onMouseEnter={e => setTip({ x:e.clientX, y:e.clientY, d })}
+            onMouseLeave={() => setTip(null)}/>
         ))}
-        {pts.length > 14 && pts.map((d,i) => (
-          <rect key={i} x={xOf(i)-4} y={PT} width={8} height={cH} fill="transparent" style={{cursor:'pointer'}}
-            onMouseEnter={e=>setTip({x:e.clientX,y:e.clientY,d})}
-            onMouseLeave={()=>setTip(null)}/>
+        {pts.length > 14 && pts.map((d, i) => (
+          <rect key={i} x={xOf(i)-4} y={PT} width={8} height={cH} fill="transparent" style={{ cursor:'pointer' }}
+            onMouseEnter={e => setTip({ x:e.clientX, y:e.clientY, d })}
+            onMouseLeave={() => setTip(null)}/>
         ))}
 
-        {/* X date labels */}
         {xLabelIdxs.map(i => (
-          <text key={i} x={xOf(i).toFixed(1)} y={H-4} textAnchor={i===0?'start':i===pts.length-1?'end':'middle'}
-            fontSize="9" fill="#3a3630" style={{fontFamily:"'Inter',sans-serif"}}>
+          <text key={i} x={xOf(i).toFixed(1)} y={H - 3}
+            textAnchor={i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
+            fontSize="7.5" fill="#3a3630" style={{ fontFamily:"'Inter',sans-serif" }}>
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
 
-        {/* Baseline */}
-        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W-PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="0.8"/>
+        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W-PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="0.6"/>
       </svg>
 
       {tip && (
-        <div style={{position:'fixed',left:tip.x+10,top:tip.y-44,background:'#1a1915',border:'1px solid #2a2620',borderRadius:5,padding:'5px 9px',fontSize:11,color:'#e8e2d8',pointerEvents:'none',whiteSpace:'nowrap',zIndex:999}}>
-          <div style={{fontWeight:600,color}}>{valueKey==='rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
-          <div style={{color:'#4a453e',fontSize:10}}>{formatDateLabel(tip.d.date)}</div>
+        <div style={{ position:'fixed', left:tip.x+10, top:tip.y-44, background:'#1a1915', border:'1px solid #2a2620', borderRadius:5, padding:'5px 9px', fontSize:11, color:'#e8e2d8', pointerEvents:'none', whiteSpace:'nowrap', zIndex:999 }}>
+          <div style={{ fontWeight:600, color }}>{valueKey==='rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
+          <div style={{ color:'#4a453e', fontSize:10 }}>{formatDateLabel(tip.d.date)}</div>
         </div>
       )}
     </div>
   );
 }
 
+// ── DonutChart ───────────────────────────────────────────────────────────────
 function DonutChart({ data }) {
-  const total = data.reduce((s,d)=>s+d.value,0);
-  if(!total) return <div style={{textAlign:'center',padding:'8px 0',fontSize:11,color:'#4a453e'}}>No category data</div>;
-  const circ=2*Math.PI*40; let off=circ*0.25;
-  const slices=data.map((d,i)=>{ const pct=d.value/total,dash=pct*circ; const s={...d,pct,dash,off,color:CAT_COLORS[i%CAT_COLORS.length]}; off+=dash; return s; });
+  const total = data.reduce((s,d) => s+d.value, 0);
+  if (!total) return <div style={{ textAlign:'center', padding:'8px 0', fontSize:11, color:'#4a453e' }}>No category data</div>;
+  const circ = 2*Math.PI*40; let off = circ*0.25;
+  const slices = data.map((d,i) => { const pct=d.value/total, dash=pct*circ; const s={...d,pct,dash,off,color:CAT_COLORS[i%CAT_COLORS.length]}; off+=dash; return s; });
   return (
-    <div style={{display:'flex',alignItems:'center',gap:'clamp(10px,1vw,18px)',flex:1,minHeight:0}}>
-      <div style={{position:'relative',width:'clamp(60px,6vw,90px)',height:'clamp(60px,6vw,90px)',flexShrink:0}}>
-        <svg viewBox="0 0 100 100" style={{width:'100%',height:'100%'}}>
+    <div style={{ display:'flex', alignItems:'center', gap:'clamp(10px,1vw,18px)', flex:1, minHeight:0 }}>
+      <div style={{ position:'relative', width:'clamp(60px,6vw,90px)', height:'clamp(60px,6vw,90px)', flexShrink:0 }}>
+        <svg viewBox="0 0 100 100" style={{ width:'100%', height:'100%' }}>
           <circle cx="50" cy="50" r="40" fill="none" stroke="#1a1915" strokeWidth="12"/>
-          {slices.map((s,i)=><circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*0.25}/>)}
+          {slices.map((s,i) => <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*0.25}/>)}
         </svg>
-        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
-          <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(10px,.9vw,14px)',color:'#e8e2d8',lineHeight:1}}>{formatCurrency(total)}</div>
-          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'#4a453e',marginTop:1}}>total</div>
+        <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(10px,.9vw,14px)', color:'#e8e2d8', lineHeight:1 }}>{formatCurrency(total)}</div>
+          <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'#4a453e', marginTop:1 }}>total</div>
         </div>
       </div>
-      <div style={{display:'flex',flexDirection:'column',gap:'clamp(3px,.35vh,6px)',flex:1,overflow:'hidden'}}>
-        {slices.slice(0,5).map((s,i)=>(
-          <div key={i} style={{display:'flex',alignItems:'center',gap:6}}>
-            <div style={{width:'clamp(6px,.5vw,8px)',height:'clamp(6px,.5vw,8px)',borderRadius:'50%',background:s.color,flexShrink:0}}/>
-            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'#9a9086',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</div>
-            <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:'#e8e2d8'}}>{formatCurrency(s.value)}</div>
-            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'#4a453e',minWidth:30,textAlign:'right'}}>{(s.pct*100).toFixed(0)}%</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:'clamp(3px,.35vh,6px)', flex:1, overflow:'hidden' }}>
+        {slices.slice(0,5).map((s,i) => (
+          <div key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <div style={{ width:'clamp(6px,.5vw,8px)', height:'clamp(6px,.5vw,8px)', borderRadius:'50%', background:s.color, flexShrink:0 }}/>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'#e8e2d8' }}>{formatCurrency(s.value)}</div>
+            <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'#4a453e', minWidth:30, textAlign:'right' }}>{(s.pct*100).toFixed(0)}%</div>
           </div>
         ))}
       </div>
@@ -181,7 +187,7 @@ function DonutChart({ data }) {
   );
 }
 
-
+// ── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400&family=Inter:wght@400;500;600&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -192,81 +198,49 @@ const CSS = `
   input::placeholder,textarea::placeholder{color:#3a3630!important;}
   ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:#0f0e0c;}::-webkit-scrollbar-thumb{background:#2a2620;border-radius:2px;}
 
-  /* ── Root shell ── */
   .an-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
-  /* ── Top nav ── */
   .an-nav{background:#0f0e0c;border-bottom:1px solid #2a2620;height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .an-logo{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;letter-spacing:-.3px;}
   .an-logo span{color:#02a4ba;}
   .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:#4a453e;border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
   .an-tab.active{color:#e8e2d8;background:#1a1915;}
 
-  /* ── Page header ── */
   .an-ph{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
   .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;}
   .an-ph-sub{font-size:clamp(9px,.65vw,10px);color:#4a453e;}
 
-  /* ── Date range toggle ── */
   .an-range-toggle{display:flex;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:2px;gap:2px;}
   .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
   .an-range-btn.active{background:#1a1915;color:#e8e2d8;}
 
-  /* ── Stats bar ── */
   .an-sbar{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
   .an-sbar::-webkit-scrollbar{display:none;}
   .an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
   .an-sl{font-size:clamp(7px,.55vw,9px);color:#4a453e;margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
   .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
   .an-sync-dot{width:5px;height:5px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
-  .an-pos-badge{font-size:clamp(8px,.62vw,10px);color:#4a453e;background:#0f0e0c;border:1px solid #2a2620;border-radius:20px;padding:2px 8px;white-space:nowrap;flex-shrink:0;}
 
-  /* ════════════════════════════════════════════════
-     MAIN BODY — 4-col × 2-row CSS grid
+  .an-body{flex:1;min-height:0;padding:clamp(6px,.6vw,10px);gap:clamp(6px,.6vw,10px);display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:1fr 1fr;overflow:hidden;}
 
-     Row 1: Daily Revenue (cols 1-3, tall) | Top Sellers (col 4)
-                                            | Slow Movers  (col 4)
-     Row 2: Dish Picks (col 1) | By Category (col 2) | By Day + By Time (col 3) | WoW + Inv Risk (col 4)
-  ════════════════════════════════════════════════ */
-  .an-body{
-    flex:1;
-    min-height:0;
-    padding:clamp(6px,.6vw,10px);
-    gap:clamp(6px,.6vw,10px);
-    display:grid;
-    grid-template-columns:1fr 1fr 1fr 1fr;
-    grid-template-rows:1fr 1fr;
-    overflow:hidden;
-  }
-
-  /* Upload / no-data state spans full grid */
-  .an-upload-full{grid-column:1/-1;grid-row:1/-1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);overflow:hidden;}
-
-  /* Row 1: Daily Revenue spans cols 1-3 */
   .an-trend-card{grid-column:1/4;grid-row:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
-
-  /* Row 1 col 4: Top Sellers + Slow Movers stacked */
   .an-r1-col4{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
-  /* Row 2: four equal columns */
   .an-dish-col{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-cat-col{grid-column:2;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-time-col{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
   .an-wow-col{grid-column:4;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
-  /* ── Generic card ── */
   .an-card{background:#13120f;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(6px,.6vh,10px);flex-shrink:0;gap:6px;flex-wrap:wrap;}
   .an-card-title{font-size:clamp(9px,.72vw,13px);font-weight:600;color:#e8e2d8;display:flex;align-items:center;gap:5px;}
   .an-card-title svg{width:clamp(10px,.8vw,13px);height:clamp(10px,.8vw,13px);stroke:#02a4ba;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
   .an-badge{font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;}
 
-  /* ── Qty/Rev toggle ── */
   .an-toggle{display:flex;background:#0f0e0c;border-radius:5px;padding:2px;gap:2px;}
   .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
   .an-toggle-btn.active{background:#1a1915;color:#e8e2d8;}
 
-  /* ── Dish recommendation cards (stacked vertically inside .an-recs-col) ── */
   .an-dish-stack{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
   .an-dish-card{background:#0f0e0c;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.75vw,13px);display:flex;flex-direction:column;gap:clamp(4px,.4vh,7px);position:relative;overflow:hidden;flex:1;min-height:0;}
   .an-dish-top-bar{position:absolute;top:0;left:0;right:0;height:2px;border-radius:8px 8px 0 0;}
@@ -281,7 +255,6 @@ const CSS = `
   .an-conf-bar{height:2px;border-radius:2px;background:#1a1915;flex:1;overflow:hidden;margin:3px 0;}
   .an-conf-fill{height:100%;border-radius:2px;}
 
-  /* ── Bar rows ── */
   .an-bar-row{display:flex;align-items:center;gap:clamp(5px,.45vw,8px);margin-bottom:clamp(4px,.4vh,7px);}
   .an-bar-row:last-child{margin-bottom:0;}
   .an-bar-label{font-size:clamp(8px,.62vw,11px);color:#9a9086;width:clamp(65px,6.5vw,110px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -289,15 +262,11 @@ const CSS = `
   .an-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
   .an-bar-val{font-size:clamp(8px,.62vw,11px);font-weight:600;width:clamp(38px,3.5vw,60px);text-align:right;flex-shrink:0;}
 
-  /* ── Heatmap ── */
   .an-heatmap-wrap{display:flex;gap:3px;flex-wrap:wrap;flex:1;align-content:flex-start;}
   .an-heatmap-cell{border-radius:3px;display:flex;align-items:center;justify-content:center;position:relative;width:clamp(24px,2.2vw,34px);height:clamp(24px,2.2vw,34px);}
   .an-heatmap-cell:hover .an-heatmap-tip{display:block;}
   .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid #2a2620;border-radius:4px;padding:3px 7px;font-size:clamp(8px,.6vw,10px);color:#e8e2d8;white-space:nowrap;z-index:20;pointer-events:none;}
-  .an-heat-legend{display:flex;gap:10px;margin-top:6px;flex-shrink:0;flex-wrap:wrap;}
-  .an-heat-legend-item{display:flex;align-items:center;gap:3px;font-size:clamp(7px,.55vw,9px);color:'#4a453e';}
 
-  /* ── Tables ── */
   .an-table{width:100%;border-collapse:collapse;}
   .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid #2a2620;text-align:left;white-space:nowrap;}
   .an-th.r{text-align:right;}
@@ -314,7 +283,6 @@ const CSS = `
   .an-trend-up{color:#2a8a5a;font-size:clamp(8px,.62vw,10px);font-weight:600;}
   .an-trend-dn{color:#c04040;font-size:clamp(8px,.62vw,10px);font-weight:600;}
 
-  /* ── Buttons ── */
   .an-btn-p{background:#02a4ba;border:none;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
   .an-btn-p:hover{background:#01bcd4;}
   .an-btn-g{background:none;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#4a453e;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
@@ -322,7 +290,6 @@ const CSS = `
   .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#c04040;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-d:hover{background:rgba(192,64,64,.08);}
 
-  /* ── Column mapper ── */
   .an-mapper{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
   .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:#e8e2d8;margin-bottom:4px;}
   .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:#4a453e;margin-bottom:12px;}
@@ -332,14 +299,12 @@ const CSS = `
   .an-mapper-select{background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
   .an-mapper-select:focus{border-color:#02a4ba;}
 
-  /* ── Misc ── */
   .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:#4a453e;padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
   .an-note-input{width:100%;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:6px 9px;font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
   .an-note-input:focus{border-color:#02a4ba;}
   .an-scrollable{overflow-y:auto;flex:1;min-height:0;}
   .an-scrollable::-webkit-scrollbar{width:3px;}
 
-  /* ── Mobile ── */
   .mob-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
   .mob-header{background:#0f0e0c;border-bottom:1px solid #2a2620;padding:10px 16px;padding-top:env(safe-area-inset-top,10px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
   .mob-logo{font-family:'Playfair Display',serif;font-size:20px;color:#e8e2d8;letter-spacing:-.3px;}
@@ -365,7 +330,6 @@ const CSS = `
   .mob-nav-label.active{color:#02a4ba;}
   .mob-nav-dot{width:4px;height:4px;border-radius:50%;background:#02a4ba;}
 `;
-
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -405,19 +369,16 @@ export default function AnalyticsPage() {
   const [stats, setStats] = useState({ totalDays: 0, totalRevenue: 0, avgDailyRevenue: 0 });
   const [dishRecs, setDishRecs] = useState([]);
   const [dishLoading, setDishLoading] = useState(false);
-  const [notes, setNotes] = useState({});
-  const [noteDate, setNoteDate] = useState('');
-  const [noteText, setNoteText] = useState('');
   const [mobileSection, setMobileSection] = useState('recs');
+
+  const { tourProps } = useTour('analytics', restaurantId);
+  const isTour = router.query.tour === 'true';
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
-  const { tourProps } = useTour('analytics', restaurantId);
-
   useEffect(() => {
-    if (!router.isReady) return;
-    if (router.query.tour !== 'true') return;
+    if (!router.isReady || !isTour) return;
     fetchSampleData().then(sample => {
       if (!sample?.posSales) return;
       setAllSales(sample.posSales);
@@ -425,7 +386,7 @@ export default function AnalyticsPage() {
       setSalesMeta({ lastSync: sample.posSales[0]?.sale_date || null, posSystem: 'tour' });
       if (sample.dishRecs?.length) setDishRecs(sample.dishRecs);
     });
-  }, [router.isReady, router.query.tour]);
+  }, [router.isReady, isTour]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -435,7 +396,7 @@ export default function AnalyticsPage() {
     if (!profile?.restaurant_id) { setLoading(false); return; }
     setRestaurantId(profile.restaurant_id);
     setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
-    if (router.query.tour !== 'true') { await loadSalesData(profile.restaurant_id); }
+    if (!isTour) { await loadSalesData(profile.restaurant_id); }
     setLoading(false);
   }
 
@@ -459,11 +420,11 @@ export default function AnalyticsPage() {
     const filtered = getFilteredSales(sales);
     if (!filtered.length) return;
     const dates = [...new Set(filtered.map(s => s.sale_date))];
-    const totalRevenue = filtered.reduce((t,s) => t + parseFloat(s.revenue||0), 0);
+    const totalRevenue = filtered.reduce((t, s) => t + parseFloat(s.revenue||0), 0);
     setStats({ totalDays: dates.length, totalRevenue, avgDailyRevenue: dates.length > 0 ? totalRevenue/dates.length : 0 });
     const itemMap = {};
     for (const s of filtered) {
-      if (!itemMap[s.item_name]) itemMap[s.item_name] = { name:s.item_name, qty:0, rev:0, category:s.category };
+      if (!itemMap[s.item_name]) itemMap[s.item_name] = { name: s.item_name, qty: 0, rev: 0, category: s.category };
       itemMap[s.item_name].qty += parseFloat(s.quantity_sold||0);
       itemMap[s.item_name].rev += parseFloat(s.revenue||0);
     }
@@ -474,49 +435,42 @@ export default function AnalyticsPage() {
     const recentMap = {};
     for (const s of filtered.filter(s => s.sale_date >= sevenAgoStr))
       recentMap[s.item_name] = (recentMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
-    setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,6).map(i=>({...i, recentQty:recentMap[i.name]||0})));
-    const vcMap = {};
-    for (const s of filtered) {
-      if (!vcMap[s.item_name]) vcMap[s.item_name]={name:s.item_name,voids:0,comps:0};
-      vcMap[s.item_name].voids += parseInt(s.voids||0);
-      vcMap[s.item_name].comps += parseFloat(s.comps||0);
-    }
-    setVoidsComps(Object.values(vcMap).filter(i=>i.voids>0||i.comps>0).sort((a,b)=>b.voids-a.voids).slice(0,6));
+    setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,6).map(i => ({...i, recentQty: recentMap[i.name]||0})));
     const dayMap = {};
-    for (const d of DAYS) dayMap[d]={day:d,qty:0,rev:0};
-    for (const s of filtered) { if (s.day_of_week&&dayMap[s.day_of_week]) { dayMap[s.day_of_week].qty+=parseFloat(s.quantity_sold||0); dayMap[s.day_of_week].rev+=parseFloat(s.revenue||0); } }
-    setDayOfWeekData(DAYS.map(d=>dayMap[d]));
+    for (const d of DAYS) dayMap[d] = { day: d, qty: 0, rev: 0 };
+    for (const s of filtered) { if (s.day_of_week && dayMap[s.day_of_week]) { dayMap[s.day_of_week].qty += parseFloat(s.quantity_sold||0); dayMap[s.day_of_week].rev += parseFloat(s.revenue||0); } }
+    setDayOfWeekData(DAYS.map(d => dayMap[d]));
     const hourMap = {};
-    for (const s of filtered) { if (s.hour_of_day!==null&&s.hour_of_day!==undefined) { const h=parseInt(s.hour_of_day); hourMap[h]=(hourMap[h]||0)+parseFloat(s.quantity_sold||0); } }
-    const hoursWithData = Object.keys(hourMap).map(Number).filter(h=>hourMap[h]>0).sort((a,b)=>a-b);
-    const minH=hoursWithData[0]??0, maxH=hoursWithData[hoursWithData.length-1]??23;
-    const openHrs=Array.from({length:maxH-minH+1},(_,i)=>minH+i);
+    for (const s of filtered) { if (s.hour_of_day !== null && s.hour_of_day !== undefined) { const h = parseInt(s.hour_of_day); hourMap[h] = (hourMap[h]||0) + parseFloat(s.quantity_sold||0); } }
+    const hoursWithData = Object.keys(hourMap).map(Number).filter(h => hourMap[h]>0).sort((a,b) => a-b);
+    const minH = hoursWithData[0]??0, maxH = hoursWithData[hoursWithData.length-1]??23;
+    const openHrs = Array.from({ length: maxH-minH+1 }, (_,i) => minH+i);
     setOpenHours(openHrs);
-    setHourlyData(openHrs.map(h=>({hour:h,qty:hourMap[h]||0})));
+    setHourlyData(openHrs.map(h => ({ hour: h, qty: hourMap[h]||0 })));
     const catMap = {};
-    for (const s of filtered) { const cat=s.category||'Uncategorized'; catMap[cat]=(catMap[cat]||0)+parseFloat(s.revenue||0); }
-    setCategoryData(Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([name,value])=>({name,value})));
+    for (const s of filtered) { const cat = s.category||'Uncategorized'; catMap[cat] = (catMap[cat]||0) + parseFloat(s.revenue||0); }
+    setCategoryData(Object.entries(catMap).sort((a,b) => b[1]-a[1]).map(([name,value]) => ({name,value})));
     const dailyMap = {};
-    for (const s of filtered) { if (!dailyMap[s.sale_date]) dailyMap[s.sale_date]={date:s.sale_date,rev:0,qty:0}; dailyMap[s.sale_date].rev+=parseFloat(s.revenue||0); dailyMap[s.sale_date].qty+=parseFloat(s.quantity_sold||0); }
-    setTrendData(Object.values(dailyMap).sort((a,b)=>a.date.localeCompare(b.date)));
+    for (const s of filtered) { if (!dailyMap[s.sale_date]) dailyMap[s.sale_date] = { date: s.sale_date, rev: 0, qty: 0 }; dailyMap[s.sale_date].rev += parseFloat(s.revenue||0); dailyMap[s.sale_date].qty += parseFloat(s.quantity_sold||0); }
+    setTrendData(Object.values(dailyMap).sort((a,b) => a.date.localeCompare(b.date)));
     const thisWk = new Date(); thisWk.setDate(thisWk.getDate()-7);
     const lastWk = new Date(); lastWk.setDate(lastWk.getDate()-14);
-    const thisWkStr=thisWk.toISOString().split('T')[0], lastWkStr=lastWk.toISOString().split('T')[0];
-    const twMap={},lwMap={};
+    const thisWkStr = thisWk.toISOString().split('T')[0], lastWkStr = lastWk.toISOString().split('T')[0];
+    const twMap = {}, lwMap = {};
     for (const s of sales) {
-      if (s.sale_date>=thisWkStr) twMap[s.item_name]=(twMap[s.item_name]||0)+parseFloat(s.quantity_sold||0);
-      else if (s.sale_date>=lastWkStr) lwMap[s.item_name]=(lwMap[s.item_name]||0)+parseFloat(s.quantity_sold||0);
+      if (s.sale_date >= thisWkStr) twMap[s.item_name] = (twMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
+      else if (s.sale_date >= lastWkStr) lwMap[s.item_name] = (lwMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
     }
-    const wowItems=Object.keys({...twMap,...lwMap}).map(name=>{ const tw=twMap[name]||0,lw=lwMap[name]||0,change=lw>0?((tw-lw)/lw)*100:tw>0?100:0; return {name,tw,lw,change}; });
-    setWeekOverWeek({ improvers:wowItems.filter(i=>i.change>0&&i.tw>0).sort((a,b)=>b.change-a.change).slice(0,4), decliners:wowItems.filter(i=>i.change<0&&i.lw>0).sort((a,b)=>a.change-b.change).slice(0,4) });
+    const wowItems = Object.keys({...twMap,...lwMap}).map(name => { const tw=twMap[name]||0, lw=lwMap[name]||0, change=lw>0?((tw-lw)/lw)*100:tw>0?100:0; return {name,tw,lw,change}; });
+    setWeekOverWeek({ improvers: wowItems.filter(i => i.change>0&&i.tw>0).sort((a,b) => b.change-a.change).slice(0,4), decliners: wowItems.filter(i => i.change<0&&i.lw>0).sort((a,b) => a.change-b.change).slice(0,4) });
     if (restaurantId) {
       const { data: ings } = await supabase.from('ingredients').select('name,last_ordered_at,unit').eq('restaurant_id', restaurantId).not('last_ordered_at','is',null);
-      const risk=(ings||[]).filter(ing=>ing.last_ordered_at>=sevenAgoStr).map(ing=>{
-        const ingL=ing.name.toLowerCase();
-        const slow=items.find(i=>(recentMap[i.name]||0)<3&&(i.name.toLowerCase().includes(ingL.split(' ')[0])||ingL.includes(i.name.toLowerCase().split(' ')[0])));
+      const risk = (ings||[]).filter(ing => ing.last_ordered_at >= sevenAgoStr).map(ing => {
+        const ingL = ing.name.toLowerCase();
+        const slow = items.find(i => (recentMap[i.name]||0)<3 && (i.name.toLowerCase().includes(ingL.split(' ')[0])||ingL.includes(i.name.toLowerCase().split(' ')[0])));
         if (!slow) return null;
-        return {ingredient:ing.name,unit:ing.unit,lastOrdered:ing.last_ordered_at,riskLevel:(recentMap[slow.name]||0)===0?'high':'medium',linkedDish:slow.name};
-      }).filter(Boolean).sort((a,b)=>a.riskLevel==='high'?-1:1);
+        return { ingredient: ing.name, unit: ing.unit, lastOrdered: ing.last_ordered_at, riskLevel: (recentMap[slow.name]||0)===0?'high':'medium', linkedDish: slow.name };
+      }).filter(Boolean).sort((a,b) => a.riskLevel==='high'?-1:1);
       setInventoryRisk(risk.slice(0,6));
     }
   }
@@ -524,39 +478,39 @@ export default function AnalyticsPage() {
   async function fetchDishRecs(restId) {
     setDishLoading(true);
     try {
-      const res = await fetch('/api/dish-recommendations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId:restId})});
+      const res = await fetch('/api/dish-recommendations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ restaurantId: restId }) });
       const json = await res.json();
       setDishRecs(json.recommendations||[]);
-    } catch(e){console.error(e);}
+    } catch(e) { console.error(e); }
     setDishLoading(false);
   }
 
   function handlePrint() {
-    const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    const w=window.open('','_blank');
-    w.document.write(`<html><head><title>Dish Picks ${today}</title><style>body{font-family:Georgia,serif;padding:32px;}.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;}.card{border:1px solid #ddd;border-radius:8px;padding:16px;}.num{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}.dish{font-size:18px;font-weight:bold;margin-bottom:8px;}.reason{font-size:13px;color:#555;margin-bottom:10px;line-height:1.5;}.talking{font-size:12px;color:#777;font-style:italic;border-top:1px solid #eee;padding-top:8px;line-height:1.5;}</style></head><body><h2>Today's Dish Picks — ${today}</h2><p style="color:#888;font-size:13px;">Generated by OptiMenu</p><div class="cards">${dishRecs.map((r,i)=>`<div class="card"><div class="num">#${i+1} Push Today</div><div class="dish">${r.dish}</div><div class="reason">${r.reason}</div>${r.talking_point?`<div class="talking">"${r.talking_point}"</div>`:''}</div>`).join('')}</div></body></html>`);
+    const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+    const w = window.open('','_blank');
+    w.document.write(`<html><head><title>Dish Picks ${today}</title><style>body{font-family:Georgia,serif;padding:32px;}.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;}.card{border:1px solid #ddd;border-radius:8px;padding:16px;}.dish{font-size:18px;font-weight:bold;margin-bottom:8px;}.reason{font-size:13px;color:#555;margin-bottom:10px;line-height:1.5;}.talking{font-size:12px;color:#777;font-style:italic;border-top:1px solid #eee;padding-top:8px;line-height:1.5;}</style></head><body><h2>Today's Dish Picks — ${today}</h2><div class="cards">${dishRecs.map((r,i)=>`<div class="card"><div class="dish">${r.dish}</div><div class="reason">${r.reason}</div>${r.talking_point?`<div class="talking">"${r.talking_point}"</div>`:''}</div>`).join('')}</div></body></html>`);
     w.document.close(); w.print();
   }
 
   function handleShare() {
-    const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-    const text=`OptiMenu Dish Picks — ${today}\n\n${dishRecs.map((r,i)=>`#${i+1} ${r.dish}\n${r.reason}${r.talking_point?`\n"${r.talking_point}"`:''}`).join('\n\n')}`;
+    const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+    const text = `OptiMenu Dish Picks — ${today}\n\n${dishRecs.map((r,i) => `#${i+1} ${r.dish}\n${r.reason}${r.talking_point?`\n"${r.talking_point}"`:''}`).join('\n\n')}`;
     navigator.clipboard.writeText(text).catch(()=>{});
   }
 
   function handleFileSelect(files) {
-    const file=files[0]; if (!file) return;
-    const reader=new FileReader();
-    reader.onload=(e)=>{
+    const file = files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
       try {
-        const rows=parseCSV(e.target.result);
-        const headers=Object.keys(rows[0]||{});
-        const det=detectPOSSystem(headers);
-        const mapping=buildColumnMapping(headers,selectedPOS!=='other'?selectedPOS:det);
+        const rows = parseCSV(e.target.result);
+        const headers = Object.keys(rows[0]||{});
+        const det = detectPOSSystem(headers);
+        const mapping = buildColumnMapping(headers, selectedPOS!=='other'?selectedPOS:det);
         setCsvRows(rows); setCsvHeaders(headers); setColumnMapping(mapping);
-        if (det!=='other'){setSelectedPOS(det);setDetectedPOS(det);}
+        if (det!=='other') { setSelectedPOS(det); setDetectedPOS(det); }
         setUploadStep('mapping'); setUploadMsg('');
-      } catch(err){setUploadMsg('Failed to parse CSV: '+err.message);}
+      } catch(err) { setUploadMsg('Failed to parse CSV: '+err.message); }
     };
     reader.readAsText(file);
   }
@@ -565,41 +519,44 @@ export default function AnalyticsPage() {
     if (!restaurantId) return;
     setUploadStep('uploading'); setUploadProgress(0);
     try {
-      const normalized=normalizeRows(csvRows,columnMapping,restaurantId,selectedPOS);
+      const normalized = normalizeRows(csvRows, columnMapping, restaurantId, selectedPOS);
       if (!normalized.length) throw new Error('No valid rows found. Check your column selections.');
-      const dates=[...new Set(normalized.map(r=>r.sale_date))];
-      await supabase.from('pos_sales').delete().eq('restaurant_id',restaurantId).gte('sale_date',dates.sort()[0]).lte('sale_date',[...dates].sort().pop());
-      const CHUNK=500;
-      for (let i=0;i<normalized.length;i+=CHUNK) {
-        const {error}=await supabase.from('pos_sales').insert(normalized.slice(i,i+CHUNK));
+      const dates = [...new Set(normalized.map(r => r.sale_date))];
+      await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId).gte('sale_date', dates.sort()[0]).lte('sale_date', [...dates].sort().pop());
+      const CHUNK = 500;
+      for (let i = 0; i < normalized.length; i += CHUNK) {
+        const { error } = await supabase.from('pos_sales').insert(normalized.slice(i, i+CHUNK));
         if (error) throw error;
-        setUploadProgress(Math.min(99,Math.round(((i+CHUNK)/normalized.length)*100)));
+        setUploadProgress(Math.min(99, Math.round(((i+CHUNK)/normalized.length)*100)));
       }
       setUploadProgress(100);
       setUploadMsg(`Successfully imported ${normalized.length} records across ${dates.length} days.`);
       setUploadStep('done'); setHasSalesData(true);
       await loadSalesData(restaurantId);
-    } catch(err){setUploadMsg('Upload failed: '+err.message);setUploadStep('mapping');}
+    } catch(err) { setUploadMsg('Upload failed: '+err.message); setUploadStep('mapping'); }
   }
 
   async function handleClearData() {
-    if (!restaurantId||!confirm('Delete all uploaded sales data? This cannot be undone.')) return;
-    await supabase.from('pos_sales').delete().eq('restaurant_id',restaurantId);
+    if (!restaurantId || !confirm('Delete all uploaded sales data? This cannot be undone.')) return;
+    await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId);
     setAllSales([]); setHasSalesData(false); setUploadStep('idle'); setUploadMsg('');
     setTopSellers([]); setSlowMovers([]); setDayOfWeekData([]); setHourlyData([]);
     setCategoryData([]); setTrendData([]); setInventoryRisk([]); setVoidsComps([]);
-    setDishRecs([]); setStats({totalDays:0,totalRevenue:0,avgDailyRevenue:0});
+    setDishRecs([]); setStats({ totalDays:0, totalRevenue:0, avgDailyRevenue:0 });
   }
 
-  const maxTopQty=topSellers[0]?.qty||1;
-  const maxTopRev=Math.max(...topSellers.map(i=>i.rev),1);
-  const maxDayQty=Math.max(...dayOfWeekData.map(d=>d.qty),1);
-  const maxDayRev=Math.max(...dayOfWeekData.map(d=>d.rev),1);
-  const maxHourQty=Math.max(...hourlyData.map(h=>h.qty),1);
+  const maxTopQty = topSellers[0]?.qty||1;
+  const maxTopRev = Math.max(...topSellers.map(i => i.rev), 1);
+  const maxDayQty = Math.max(...dayOfWeekData.map(d => d.qty), 1);
+  const maxDayRev = Math.max(...dayOfWeekData.map(d => d.rev), 1);
+  const maxHourQty = Math.max(...hourlyData.map(h => h.qty), 1);
 
-  const MAPPER_FIELDS=[{f:'item_name',req:true},{f:'sale_date',req:true},{f:'quantity_sold',req:true},{f:'revenue',req:true},{f:'category',req:false},{f:'unit_price',req:false},{f:'hour_of_day',req:false},{f:'voids',req:false},{f:'comps',req:false}];
+  const MAPPER_FIELDS = [
+    {f:'item_name',req:true},{f:'sale_date',req:true},{f:'quantity_sold',req:true},{f:'revenue',req:true},
+    {f:'category',req:false},{f:'unit_price',req:false},{f:'hour_of_day',req:false},{f:'voids',req:false},{f:'comps',req:false}
+  ];
 
-  // ─── MOBILE ───────────────────────────────────────────────────────────────
+  // ── MOBILE ──────────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
       <>
@@ -610,77 +567,71 @@ export default function AnalyticsPage() {
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true}/>
           </div>
           <div className="mob-titlebar">
-            <div><div style={{fontFamily:"'Playfair Display',serif",fontSize:20,color:'#e8e2d8'}}>Analytics</div><div style={{fontSize:11,color:'#4a453e',marginTop:3}}>POS Sales Intelligence</div></div>
-            <div className="an-range-toggle">{DATE_RANGES.map(r=><button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={()=>setDateRange(r)}>{r}</button>)}</div>
+            <div><div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, color:'#e8e2d8' }}>Analytics</div><div style={{ fontSize:11, color:'#4a453e', marginTop:3 }}>POS Sales Intelligence</div></div>
+            <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
           </div>
-          <div style={{background:'#13120f',borderBottom:'1px solid #2a2620',display:'flex',flexShrink:0}}>
-            {[{id:'recs',label:'Dish Picks'},{id:'sales',label:'Sales'},{id:'risk',label:'Risk'},{id:'upload',label:'Upload'}].map(t=>(
-              <button key={t.id} className={`mob-stab${mobileSection===t.id?' active':''}`} onClick={()=>setMobileSection(t.id)}>{t.label}</button>
+          <div style={{ background:'#13120f', borderBottom:'1px solid #2a2620', display:'flex', flexShrink:0 }}>
+            {[{id:'recs',label:'Dish Picks'},{id:'sales',label:'Sales'},{id:'risk',label:'Risk'},{id:'upload',label:'Upload'}].map(t => (
+              <button key={t.id} className={`mob-stab${mobileSection===t.id?' active':''}`} onClick={() => setMobileSection(t.id)}>{t.label}</button>
             ))}
           </div>
           <div className="mob-content">
-            {loading?<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}><div style={{width:22,height:22,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/><div style={{fontSize:12,color:'#4a453e'}}>Loading...</div></div>:(
+            {loading ? (
+              <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
+                <div style={{ width:22, height:22, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                <div style={{ fontSize:12, color:'#4a453e' }}>Loading...</div>
+              </div>
+            ) : (
               <>
-                {mobileSection==='recs'&&(
+                {mobileSection==='recs' && (
                   <div className="mob-card">
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-                      <div className="mob-card-title" style={{marginBottom:0}}>Today's Dish Picks</div>
-                      {dishRecs.length>0&&<button style={{fontSize:11,color:'#02a4ba',background:'none',border:'1px solid #2a2620',borderRadius:5,padding:'4px 8px',cursor:'pointer',fontFamily:"'Inter',sans-serif"}} onClick={handleShare}>⎘ Copy</button>}
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                      <div className="mob-card-title" style={{ marginBottom:0 }}>Today's Dish Picks</div>
+                      {dishRecs.length>0 && <button style={{ fontSize:11, color:'#02a4ba', background:'none', border:'1px solid #2a2620', borderRadius:5, padding:'4px 8px', cursor:'pointer', fontFamily:"'Inter',sans-serif" }} onClick={handleShare}>⎘ Copy</button>}
                     </div>
-                    {dishLoading?<div style={{display:'flex',alignItems:'center',gap:8,color:'#4a453e',fontSize:12}}><div style={{width:16,height:16,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>Analyzing...</div>
-                    :!hasSalesData?<div style={{fontSize:12,color:'#4a453e',textAlign:'center',padding:'16px 0'}}>Upload POS data to get dish picks</div>
-                    :dishRecs.length>0?dishRecs.map((rec,i)=>{
-                      const color=getUrgencyColor(rec.urgency);
+                    {dishLoading ? (
+                      <div style={{ display:'flex', alignItems:'center', gap:8, color:'#4a453e', fontSize:12 }}><div style={{ width:16, height:16, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>Analyzing...</div>
+                    ) : !hasSalesData ? (
+                      <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>Upload POS data to get dish picks</div>
+                    ) : dishRecs.length>0 ? dishRecs.map((rec,i) => {
+                      const color = getUrgencyColor(rec.urgency);
                       return (
-                        <div key={i} style={{background:'#0f0e0c',borderRadius:8,borderLeft:`3px solid ${color}`,padding:12,marginBottom:10}}>
-                          <div style={{fontSize:10,fontWeight:600,color:'#4a453e',marginBottom:4,textTransform:'uppercase',letterSpacing:'.5px'}}>#{i+1} Push Today · {getTypeLabel(rec.type)}</div>
-                          <div style={{fontFamily:"'Playfair Display',serif",fontSize:16,color:'#e8e2d8',marginBottom:5}}>{rec.dish}</div>
-                          <div style={{fontSize:12,color:'#6b6358',lineHeight:1.45,marginBottom:8}}>{rec.reason}</div>
-                          {rec.talking_point&&<div style={{fontSize:11,color:'#4a453e',fontStyle:'italic',borderTop:'1px solid #1a1915',paddingTop:8,marginBottom:8,lineHeight:1.4}}>"{rec.talking_point}"</div>}
-                          <div style={{display:'flex',gap:12}}>
-                            {rec.margin&&<div><div style={{fontSize:9,color:'#4a453e',textTransform:'uppercase',letterSpacing:'.5px'}}>Margin</div><div style={{fontSize:13,fontWeight:600,color:getMarginColor(rec.margin)}}>{rec.margin.toFixed(1)}%</div></div>}
-                            {rec.confidence&&<div><div style={{fontSize:9,color:'#4a453e',textTransform:'uppercase',letterSpacing:'.5px'}}>Confidence</div><div style={{fontSize:13,fontWeight:600,color}}>{rec.confidence}%</div></div>}
+                        <div key={i} style={{ background:'#0f0e0c', borderRadius:8, borderLeft:`3px solid ${color}`, padding:12, marginBottom:10 }}>
+                          <div style={{ fontSize:10, fontWeight:600, color:'#4a453e', marginBottom:4, textTransform:'uppercase', letterSpacing:'.5px' }}>#{i+1} Push Today · {getTypeLabel(rec.type)}</div>
+                          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:'#e8e2d8', marginBottom:5 }}>{rec.dish}</div>
+                          <div style={{ fontSize:12, color:'#6b6358', lineHeight:1.45, marginBottom:8 }}>{rec.reason}</div>
+                          {rec.talking_point && <div style={{ fontSize:11, color:'#4a453e', fontStyle:'italic', borderTop:'1px solid #1a1915', paddingTop:8, marginBottom:8, lineHeight:1.4 }}>"{rec.talking_point}"</div>}
+                          <div style={{ display:'flex', gap:12 }}>
+                            {rec.margin && <div><div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px' }}>Margin</div><div style={{ fontSize:13, fontWeight:600, color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
+                            {rec.confidence && <div><div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px' }}>Confidence</div><div style={{ fontSize:13, fontWeight:600, color }}>{rec.confidence}%</div></div>}
                           </div>
                         </div>
                       );
-                    }):<div style={{fontSize:12,color:'#4a453e',textAlign:'center',padding:'16px 0'}}>No recommendations yet</div>}
+                    }) : <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>No recommendations yet</div>}
                   </div>
                 )}
-                {mobileSection==='sales'&&(
+                {mobileSection==='sales' && (
                   <>
-                    {!hasSalesData?<div style={{fontSize:13,color:'#4a453e',textAlign:'center',padding:32}}>Upload POS data to see analytics</div>:(
+                    {!hasSalesData ? <div style={{ fontSize:13, color:'#4a453e', textAlign:'center', padding:32 }}>Upload POS data to see analytics</div> : (
                       <>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                          {[{l:'Days',v:stats.totalDays,c:'#02a4ba'},{l:'Revenue',v:formatCurrency(stats.totalRevenue),c:'#2a8a5a'},{l:'Avg/Day',v:formatCurrency(stats.avgDailyRevenue),c:'#d4a020'},{l:'Top Seller',v:topSellers[0]?.name?.split(' ').slice(0,2).join(' ')||'—',c:'#e8e2d8'}].map(({l,v,c})=>(
-                            <div key={l} style={{background:'#13120f',border:'1px solid #2a2620',borderRadius:8,padding:12}}>
-                              <div style={{fontSize:9,color:'#4a453e',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
-                              <div style={{fontFamily:"'Playfair Display',serif",fontSize:18,color:c,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v}</div>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                          {[{l:'Days',v:stats.totalDays,c:'#02a4ba'},{l:'Revenue',v:formatCurrency(stats.totalRevenue),c:'#2a8a5a'},{l:'Avg/Day',v:formatCurrency(stats.avgDailyRevenue),c:'#d4a020'},{l:'Top Seller',v:topSellers[0]?.name?.split(' ').slice(0,2).join(' ')||'—',c:'#e8e2d8'}].map(({l,v,c}) => (
+                            <div key={l} style={{ background:'#13120f', border:'1px solid #2a2620', borderRadius:8, padding:12 }}>
+                              <div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:4 }}>{l}</div>
+                              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:c, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v}</div>
                             </div>
                           ))}
                         </div>
                         <div className="mob-card">
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-                            <div className="mob-card-title" style={{marginBottom:0}}>Top Sellers</div>
-                            <div className="an-toggle"><button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button><button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>$</button></div>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                            <div className="mob-card-title" style={{ marginBottom:0 }}>Top Sellers</div>
+                            <div className="an-toggle"><button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={() => setDayView('qty')}>Qty</button><button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={() => setDayView('rev')}>$</button></div>
                           </div>
-                          {topSellers.slice(0,8).map(item=>(
+                          {topSellers.slice(0,8).map(item => (
                             <div key={item.name} className="mob-bar-row">
                               <div className="mob-bar-label">{item.name}</div>
-                              <div className="mob-bar-track"><div className="mob-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
-                              <div className="mob-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mob-card">
-                          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-                            <div className="mob-card-title" style={{marginBottom:0}}>Sales by Day</div>
-                            <div className="an-toggle"><button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button><button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>$</button></div>
-                          </div>
-                          {dayOfWeekData.map(d=>(
-                            <div key={d.day} className="mob-bar-row">
-                              <div className="mob-bar-label">{d.day.slice(0,3)}</div>
-                              <div className="mob-bar-track"><div className="mob-bar-fill" style={{width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`,background:'#d4a020'}}/></div>
-                              <div className="mob-bar-val" style={{color:'#d4a020'}}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
+                              <div className="mob-bar-track"><div className="mob-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'#02a4ba' }}/></div>
+                              <div className="mob-bar-val" style={{ color:'#02a4ba' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
                             </div>
                           ))}
                         </div>
@@ -688,47 +639,40 @@ export default function AnalyticsPage() {
                     )}
                   </>
                 )}
-                {mobileSection==='risk'&&(
+                {mobileSection==='risk' && (
                   <div className="mob-card">
                     <div className="mob-card-title">Inventory Risk</div>
-                    {!hasSalesData?<div style={{fontSize:12,color:'#4a453e',textAlign:'center',padding:'16px 0'}}>Upload POS data first</div>
-                    :inventoryRisk.length===0?<div style={{fontSize:12,color:'#4a453e',textAlign:'center',padding:'16px 0'}}>No at-risk ingredients identified</div>
-                    :inventoryRisk.map((r,i)=>(
-                      <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #1a1915'}}>
-                        <div><div style={{fontSize:13,fontWeight:500,color:'#e8e2d8'}}>{r.ingredient}</div>{r.linkedDish&&<div style={{fontSize:10,color:'#4a453e',marginTop:2}}>Used in: {r.linkedDish}</div>}</div>
+                    {!hasSalesData ? <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>Upload POS data first</div>
+                    : inventoryRisk.length===0 ? <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>No at-risk ingredients identified</div>
+                    : inventoryRisk.map((r,i) => (
+                      <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:'1px solid #1a1915' }}>
+                        <div><div style={{ fontSize:13, fontWeight:500, color:'#e8e2d8' }}>{r.ingredient}</div>{r.linkedDish&&<div style={{ fontSize:10, color:'#4a453e', marginTop:2 }}>Used in: {r.linkedDish}</div>}</div>
                         <span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'} Risk</span>
                       </div>
                     ))}
                   </div>
                 )}
-                {mobileSection==='upload'&&(
+                {mobileSection==='upload' && (
                   <div className="mob-card">
                     <div className="mob-card-title">Upload POS Data</div>
-                    {uploadStep==='idle'&&(
-                      <>
-                        <div style={{border:'2px dashed #2a2620',borderRadius:10,padding:'28px 16px',textAlign:'center',marginBottom:12}} onClick={()=>fileInputRef.current?.click()}>
-                          <input ref={fileInputRef} type="file" accept=".csv" style={{display:'none'}} onChange={e=>handleFileSelect(e.target.files)}/>
-                          <div style={{fontSize:14,fontWeight:600,color:'#e8e2d8',marginBottom:6}}>Upload Sales CSV</div>
-                          <div style={{fontSize:12,color:'#4a453e',marginBottom:14}}>Export from your POS and upload here</div>
-                          <button style={{background:'#02a4ba',border:'none',borderRadius:7,padding:'10px 20px',fontSize:13,fontWeight:600,color:'#0a0908',cursor:'pointer',fontFamily:"'Inter',sans-serif"}}>Choose File</button>
-                        </div>
-                        {hasSalesData&&<button className="an-btn-d" style={{width:'100%'}} onClick={handleClearData}>Clear All Sales Data</button>}
-                      </>
-                    )}
-                    {uploadStep==='uploading'&&<div style={{textAlign:'center',padding:'24px 0',color:'#4a453e',fontSize:13}}>Uploading... {uploadProgress}%</div>}
-                    {uploadStep==='done'&&<div style={{textAlign:'center',padding:'16px 0'}}><div style={{fontSize:13,color:'#2a8a5a',marginBottom:12}}>{uploadMsg}</div><button style={{background:'#02a4ba',border:'none',borderRadius:7,padding:'10px 20px',fontSize:13,fontWeight:600,color:'#0a0908',cursor:'pointer',fontFamily:"'Inter',sans-serif"}} onClick={()=>setUploadStep('idle')}>Upload More</button></div>}
-                    {uploadMsg&&uploadStep==='mapping'&&<div style={{fontSize:12,color:'#c04040',marginTop:8}}>{uploadMsg}</div>}
+                    <div style={{ border:'2px dashed #2a2620', borderRadius:10, padding:'28px 16px', textAlign:'center', marginBottom:12 }} onClick={() => fileInputRef.current?.click()}>
+                      <input ref={fileInputRef} type="file" accept=".csv" style={{ display:'none' }} onChange={e => handleFileSelect(e.target.files)}/>
+                      <div style={{ fontSize:14, fontWeight:600, color:'#e8e2d8', marginBottom:6 }}>Upload Sales CSV</div>
+                      <div style={{ fontSize:12, color:'#4a453e', marginBottom:14 }}>Export from your POS and upload here</div>
+                      <button style={{ background:'#02a4ba', border:'none', borderRadius:7, padding:'10px 20px', fontSize:13, fontWeight:600, color:'#0a0908', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Choose File</button>
+                    </div>
+                    {hasSalesData && <button className="an-btn-d" style={{ width:'100%' }} onClick={handleClearData}>Clear All Sales Data</button>}
                   </div>
                 )}
               </>
             )}
           </div>
           <div className="mob-bottom-nav">
-            {NAV.map(({label,path})=>{ const active=path==='/client/analytics'; return (
-              <div key={label} className="mob-nav-item" onClick={()=>router.push(path)}>
+            {NAV.map(({label,path}) => { const active = path==='/client/analytics'; return (
+              <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
                 <div className={`mob-nav-icon${active?' active':''}`}><NavIcon path={path}/></div>
                 <div className={`mob-nav-label${active?' active':''}`}>{label}</div>
-                {active&&<div className="mob-nav-dot"/>}
+                {active && <div className="mob-nav-dot"/>}
               </div>
             );})}
           </div>
@@ -738,39 +682,36 @@ export default function AnalyticsPage() {
     );
   }
 
-  // ─── DESKTOP ──────────────────────────────────────────────────────────────
+  // ── DESKTOP ──────────────────────────────────────────────────────────────────
   return (
     <>
       <style>{CSS}</style>
       <div className="an-root">
 
-        {/* ── Top Nav ── */}
         <div className="an-nav">
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
+          <div style={{ display:'flex', alignItems:'center', gap:'clamp(8px,1vw,16px)' }}>
             <div className="an-logo">Opti<span>Menu</span></div>
-            <div style={{display:'flex',gap:2}}>{TABS.map(t=><button key={t} className={`an-tab${t==='Analytics'?' active':''}`} onClick={()=>router.push(TAB_PATHS[t])}>{t}</button>)}</div>
+            <div style={{ display:'flex', gap:2 }}>{TABS.map(t => <button key={t} className={`an-tab${t==='Analytics'?' active':''}`} onClick={() => router.push(TAB_PATHS[t])}>{t}</button>)}</div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(6px,.7vw,12px)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.65vw,12px)',color:'#02a4ba'}}><div style={{width:'clamp(4px,.35vw,6px)',height:'clamp(4px,.35vw,6px)',background:'#02a4ba',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active</div>
+          <div style={{ display:'flex', alignItems:'center', gap:'clamp(6px,.7vw,12px)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:'clamp(9px,.65vw,12px)', color:'#02a4ba' }}><div style={{ width:'clamp(4px,.35vw,6px)', height:'clamp(4px,.35vw,6px)', background:'#02a4ba', borderRadius:'50%', animation:'blink 2s infinite' }}/>Active</div>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false}/>
           </div>
         </div>
 
-        {/* ── Page Header ── */}
         <div className="an-ph">
           <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
-          <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            {uploadStep==='done'&&<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'#2a8a5a',background:'rgba(42,138,90,.1)',border:'1px solid rgba(42,138,90,.2)',borderRadius:6,padding:'3px 10px',display:'flex',alignItems:'center',gap:6}}>✓ {uploadMsg}<button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'2px 8px',marginLeft:4}} onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>×</button></div>}
-            <div className="an-range-toggle">{DATE_RANGES.map(r=><button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={()=>setDateRange(r)}>{r}</button>)}</div>
-            {hasSalesData&&<button className="an-btn-d" style={{padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)',fontSize:'clamp(9px,.68vw,11px)'}} onClick={handleClearData}>✕ Clear Data</button>}
-            <button className="an-btn-p" onClick={()=>fileInputRef.current?.click()}>
-              <input ref={fileInputRef} type="file" accept=".csv" style={{display:'none'}} onChange={e=>handleFileSelect(e.target.files)}/>
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            {uploadStep==='done' && <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'#2a8a5a', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>✓ {uploadMsg}<button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>×</button></div>}
+            <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
+            {hasSalesData && <button className="an-btn-d" style={{ padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)', fontSize:'clamp(9px,.68vw,11px)' }} onClick={handleClearData}>✕ Clear Data</button>}
+            <button className="an-btn-p" onClick={() => fileInputRef.current?.click()}>
+              <input ref={fileInputRef} type="file" accept=".csv" style={{ display:'none' }} onChange={e => handleFileSelect(e.target.files)}/>
               ↑ Upload CSV
             </button>
           </div>
         </div>
 
-        {/* ── Stats Bar ── */}
         <div className="an-sbar">
           {[
             { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: '#02a4ba' },
@@ -780,8 +721,8 @@ export default function AnalyticsPage() {
             { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: '#e8e2d8' },
             { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: '#c04040' },
           ].map(({ v, l, c }) => (
-            <div key={l} style={{ flexShrink: 0 }}>
-              <div className="an-sv" style={{ color: c }}>{v}</div>
+            <div key={l} style={{ flexShrink:0 }}>
+              <div className="an-sv" style={{ color:c }}>{v}</div>
               <div className="an-sl">{l}</div>
             </div>
           ))}
@@ -790,294 +731,284 @@ export default function AnalyticsPage() {
           )}
         </div>
 
-        {/* ── Loading ── */}
         {loading ? (
-          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
-            <div style={{width:24,height:24,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-            <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'#4a453e'}}>Loading analytics...</div>
+          <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
+            <div style={{ width:24, height:24, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+            <div style={{ fontSize:'clamp(11px,.85vw,14px)', color:'#4a453e' }}>Loading analytics...</div>
           </div>
         ) : (
-          <div style={{flex:1,minHeight:0,position:'relative',display:'flex',flexDirection:'column'}}>
+          <div style={{ flex:1, minHeight:0, position:'relative', display:'flex', flexDirection:'column' }}>
 
-          {/* ── Column mapper overlay ── */}
-          {uploadStep === 'mapping' && (
-            <div style={{position:'absolute',inset:0,zIndex:10,background:'rgba(10,9,8,.92)',display:'flex',alignItems:'center',justifyContent:'center',padding:'clamp(12px,1.2vw,20px)'}}>
-              <div className="an-mapper" style={{flex:'none',width:'min(720px,90%)',maxHeight:'90%',overflowY:'auto'}}>
-                <div className="an-mapper-title">Map your columns</div>
-                <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
-                <div className="an-mapper-grid">
-                  {MAPPER_FIELDS.map(({f,req})=>(
-                    <div key={f}>
-                      <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
-                      <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e=>setColumnMapping(prev=>({...prev,[f]:e.target.value||null}))}>
-                        <option value="">— not in CSV —</option>
-                        {csvHeaders.map(h=><option key={h} value={h}>{h}</option>)}
-                      </select>
-                    </div>
-                  ))}
+            {uploadStep === 'mapping' && (
+              <div style={{ position:'absolute', inset:0, zIndex:10, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(12px,1.2vw,20px)' }}>
+                <div className="an-mapper" style={{ flex:'none', width:'min(720px,90%)', maxHeight:'90%', overflowY:'auto' }}>
+                  <div className="an-mapper-title">Map your columns</div>
+                  <div className="an-mapper-sub">{csvRows.length} rows detected{detectedPOS?` · Looks like a ${detectedPOS.charAt(0).toUpperCase()+detectedPOS.slice(1)} export`:''}</div>
+                  <div className="an-mapper-grid">
+                    {MAPPER_FIELDS.map(({f,req}) => (
+                      <div key={f}>
+                        <div className={`an-mapper-lbl${req?' req':''}`}>{f.replace(/_/g,' ')}</div>
+                        <select className="an-mapper-select" value={columnMapping[f]||''} onChange={e => setColumnMapping(prev => ({...prev,[f]:e.target.value||null}))}>
+                          <option value="">— not in CSV —</option>
+                          {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  {uploadMsg && <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'#c04040', marginBottom:10 }}>{uploadMsg}</div>}
+                  <div style={{ display:'flex', gap:10 }}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>Cancel</button></div>
                 </div>
-                {uploadMsg&&<div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#c04040',marginBottom:10}}>{uploadMsg}</div>}
-                <div style={{display:'flex',gap:10}}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={()=>{setUploadStep('idle');setUploadMsg('');}}>Cancel</button></div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ── Uploading overlay ── */}
-          {uploadStep === 'uploading' && (
-            <div style={{position:'absolute',inset:0,zIndex:10,background:'rgba(10,9,8,.92)',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
-              <div style={{width:28,height:28,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-              <div style={{fontSize:'clamp(12px,.95vw,16px)',color:'#e8e2d8',fontWeight:600}}>Importing sales data...</div>
-              <div style={{fontSize:'clamp(10px,.75vw,13px)',color:'#4a453e'}}>{uploadProgress}%</div>
-              <div style={{width:280,background:'#1a1915',borderRadius:4,height:4}}><div style={{height:4,borderRadius:4,background:'#02a4ba',width:`${uploadProgress}%`,transition:'width .3s'}}/></div>
-            </div>
-          )}
+            {uploadStep === 'uploading' && (
+              <div style={{ position:'absolute', inset:0, zIndex:10, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}>
+                <div style={{ width:28, height:28, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                <div style={{ fontSize:'clamp(12px,.95vw,16px)', color:'#e8e2d8', fontWeight:600 }}>Importing sales data...</div>
+                <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'#4a453e' }}>{uploadProgress}%</div>
+                <div style={{ width:280, background:'#1a1915', borderRadius:4, height:4 }}><div style={{ height:4, borderRadius:4, background:'#02a4ba', width:`${uploadProgress}%`, transition:'width .3s' }}/></div>
+              </div>
+            )}
 
-          <div className="an-body"
-            onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-            onDragLeave={()=>setDragOver(false)}
-            onDrop={e=>{e.preventDefault();setDragOver(false);handleFileSelect(e.dataTransfer.files);}}
-            style={dragOver?{outline:'2px dashed #02a4ba',outlineOffset:'-4px',borderRadius:8}:undefined}
-          >
+            <div className="an-body"
+              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={e => { e.preventDefault(); setDragOver(false); handleFileSelect(e.dataTransfer.files); }}
+              style={dragOver ? { outline:'2px dashed #02a4ba', outlineOffset:'-4px', borderRadius:8 } : undefined}
+            >
 
-            {/* ══════════════════════════════════════════════════════════════
-                GRID — always rendered; cards show empty states when no data.
-                Row 1: Daily Revenue (cols 1-3) | Top Sellers + Slow Movers (col 4)
-                Row 2: Dish Picks (col 1) | By Category (col 2) | By Day + Hourly (col 3) | WoW + Inv Risk (col 4)
-            ══════════════════════════════════════════════════════════════ */}
-            <>
-                {/* ── Row 1, Cols 1-3: Daily Revenue trend ── */}
-                <div className="an-trend-card">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Daily Revenue <span style={{fontSize:'clamp(8px,.6vw,10px)',color:'#4a453e',fontWeight:400,marginLeft:4}}>last 30 days</span>
-                      </div>
-                      <div style={{display:'flex',alignItems:'center',gap:8}}>
-                        {trendData.length>1&&(()=>{ const first=trendData[0]?.rev||0,last=trendData[trendData.length-1]?.rev||0,pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
-                        <div className="an-toggle">
-                          <button className={`an-toggle-btn${trendView==='rev'?' active':''}`} onClick={()=>setTrendView('rev')}>Rev</button>
-                          <button className={`an-toggle-btn${trendView==='qty'?' active':''}`} onClick={()=>setTrendView('qty')}>Qty</button>
-                        </div>
-                      </div>
+              {/* Row 1, Cols 1-3: Daily Revenue */}
+              <div className="an-trend-card">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                      Daily Revenue <span style={{ fontSize:'clamp(8px,.6vw,10px)', color:'#4a453e', fontWeight:400, marginLeft:4 }}>last 30 days</span>
                     </div>
-                    {hasSalesData ? <TrendLine data={trendData} color="#02a4ba" valueKey={trendView}/> : <div className="an-empty">Upload POS data to see revenue trends</div>}
-                  </div>
-                </div>
-
-                {/* ── Row 1, Col 4: Top Sellers + Slow Movers stacked ── */}
-                <div className="an-r1-col4">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Top Sellers
-                      </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      {trendData.length>1 && (()=>{ const first=trendData[0]?.rev||0, last=trendData[trendData.length-1]?.rev||0, pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
                       <div className="an-toggle">
-                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
-                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
+                        <button className={`an-toggle-btn${trendView==='rev'?' active':''}`} onClick={() => setTrendView('rev')}>Rev</button>
+                        <button className={`an-toggle-btn${trendView==='qty'?' active':''}`} onClick={() => setTrendView('qty')}>Qty</button>
                       </div>
-                    </div>
-                    <div className="an-scrollable">
-                      {hasSalesData && topSellers.length > 0 ? topSellers.map(item=>(
-                        <div key={item.name} className="an-bar-row">
-                          <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`,background:'#02a4ba'}}/></div>
-                          <div className="an-bar-val" style={{color:'#02a4ba'}}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
-                        </div>
-                      )) : <div className="an-empty">No data yet</div>}
                     </div>
                   </div>
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
-                        Slow Movers
-                      </div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>&lt;3 this week</div>
+                  {hasSalesData ? <TrendLine data={trendData} color="#02a4ba" valueKey={trendView}/> : <div className="an-empty">Upload POS data to see revenue trends</div>}
+                </div>
+              </div>
+
+              {/* Row 1, Col 4: Top Sellers + Slow Movers */}
+              <div className="an-r1-col4">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                      Top Sellers
                     </div>
-                    {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0?<div className="an-empty">All items selling well</div>:(
-                      <div className="an-scrollable">
-                        <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
-                        <tbody>{slowMovers.map(item=><tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody>
-                        </table>
+                    <div className="an-toggle">
+                      <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={() => setDayView('qty')}>Qty</button>
+                      <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={() => setDayView('rev')}>Rev</button>
+                    </div>
+                  </div>
+                  <div className="an-scrollable">
+                    {hasSalesData && topSellers.length > 0 ? topSellers.map(item => (
+                      <div key={item.name} className="an-bar-row">
+                        <div className="an-bar-label">{item.name}</div>
+                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'#02a4ba' }}/></div>
+                        <div className="an-bar-val" style={{ color:'#02a4ba' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
                       </div>
-                    )}
+                    )) : <div className="an-empty">No data yet</div>}
                   </div>
                 </div>
-
-                {/* ── Row 2, Col 1: Today's Dish Picks ── */}
-                <div className="an-dish-col">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd" style={{flexShrink:0}}>
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        Today's Dish Picks
-                      </div>
-                      <div style={{display:'flex',alignItems:'center',gap:6}}>
-                        {dishLoading&&<div style={{width:10,height:10,border:'1.5px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>}
-                        {dishRecs.length>0&&<>
-                          <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={handleShare}>⎘ Copy</button>
-                          <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={handlePrint}>⎙ Print</button>
-                        </>}
-                        <button className="an-btn-g" style={{fontSize:'clamp(8px,.62vw,10px)',padding:'3px 8px'}} onClick={()=>fetchDishRecs(restaurantId)}>↻ Refresh</button>
-                      </div>
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
+                      Slow Movers
                     </div>
-                    {!hasSalesData ? (
-                      <div className="an-empty" style={{flexDirection:'column',gap:6}}>
-                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                        <div>Upload POS data to generate dish picks</div>
-                      </div>
-                    ) : dishLoading ? (
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,flex:1,color:'#4a453e',fontSize:'clamp(10px,.78vw,12px)'}}>
-                        <div style={{width:14,height:14,border:'2px solid #2a2620',borderTopColor:'#02a4ba',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-                        Analyzing...
-                      </div>
-                    ) : !dishRecs.length ? (
-                      <div className="an-empty" style={{flexDirection:'column',gap:8}}>
-                        <div>No recommendations yet</div>
-                        <button className="an-btn-g" style={{fontSize:'clamp(9px,.68vw,11px)',padding:'4px 10px'}} onClick={()=>fetchDishRecs(restaurantId)}>Generate now</button>
-                      </div>
-                    ) : (
-                      <div className="an-dish-stack">
-                        {dishRecs.map((rec,i)=>{
-                          const color=getUrgencyColor(rec.urgency);
-                          return (
-                            <div key={i} className="an-dish-card">
-                              <div className="an-dish-top-bar" style={{background:color}}/>
-                              <div className="an-dish-badge" style={{background:`${color}18`,color}}>{getTypeLabel(rec.type)}</div>
-                              <div className="an-dish-name">{rec.dish}</div>
-                              <div className="an-dish-reason">{rec.reason}</div>
-                              {rec.talking_point&&(
-                                <div className="an-dish-talking">
-                                  <div className="an-dish-talking-lbl">Suggest to guests</div>
-                                  "{rec.talking_point}"
-                                </div>
-                              )}
-                              <div className="an-dish-meta">
-                                {rec.margin&&<div><div className="an-dish-meta-lbl">Margin</div><div className="an-dish-meta-val" style={{color:getMarginColor(rec.margin)}}>{rec.margin.toFixed(1)}%</div></div>}
-                                {rec.confidence&&<div style={{flex:1}}><div className="an-dish-meta-lbl">Confidence</div><div className="an-conf-bar"><div className="an-conf-fill" style={{width:`${rec.confidence}%`,background:color}}/></div><div style={{fontSize:'clamp(8px,.62vw,10px)',color,fontWeight:600}}>{rec.confidence}%</div></div>}
-                                <div><div className="an-dish-meta-lbl">Urgency</div><div className="an-dish-meta-val" style={{color,fontSize:'clamp(10px,.78vw,12px)'}}>{rec.urgency.charAt(0).toUpperCase()+rec.urgency.slice(1)}</div></div>
+                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'#c04040' }}>&lt;3 this week</div>
+                  </div>
+                  {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0 ? <div className="an-empty">All items selling well</div> : (
+                    <div className="an-scrollable">
+                      <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
+                      <tbody>{slowMovers.map(item => <tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2, Col 1: Today's Dish Picks */}
+              <div className="an-dish-col">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd" style={{ flexShrink:0 }}>
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      Today's Dish Picks
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      {dishLoading && <div style={{ width:10, height:10, border:'1.5px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>}
+                      {dishRecs.length>0 && <>
+                        <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handleShare}>⎘ Copy</button>
+                        <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handlePrint}>⎙ Print</button>
+                      </>}
+                      <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={() => fetchDishRecs(restaurantId)}>↻ Refresh</button>
+                    </div>
+                  </div>
+                  {!hasSalesData ? (
+                    <div className="an-empty" style={{ flexDirection:'column', gap:6 }}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      <div>Upload POS data to generate dish picks</div>
+                    </div>
+                  ) : dishLoading ? (
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flex:1, color:'#4a453e', fontSize:'clamp(10px,.78vw,12px)' }}>
+                      <div style={{ width:14, height:14, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                      Analyzing...
+                    </div>
+                  ) : !dishRecs.length ? (
+                    <div className="an-empty" style={{ flexDirection:'column', gap:8 }}>
+                      <div>No recommendations yet</div>
+                      <button className="an-btn-g" style={{ fontSize:'clamp(9px,.68vw,11px)', padding:'4px 10px' }} onClick={() => fetchDishRecs(restaurantId)}>Generate now</button>
+                    </div>
+                  ) : (
+                    <div className="an-dish-stack">
+                      {dishRecs.map((rec,i) => {
+                        const color = getUrgencyColor(rec.urgency);
+                        return (
+                          <div key={i} className="an-dish-card">
+                            <div className="an-dish-top-bar" style={{ background:color }}/>
+                            <div className="an-dish-badge" style={{ background:`${color}18`, color }}>{getTypeLabel(rec.type)}</div>
+                            <div className="an-dish-name">{rec.dish}</div>
+                            <div className="an-dish-reason">{rec.reason}</div>
+                            {rec.talking_point && (
+                              <div className="an-dish-talking">
+                                <div className="an-dish-talking-lbl">Suggest to guests</div>
+                                "{rec.talking_point}"
                               </div>
+                            )}
+                            <div className="an-dish-meta">
+                              {rec.margin && <div><div className="an-dish-meta-lbl">Margin</div><div className="an-dish-meta-val" style={{ color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
+                              {rec.confidence && <div style={{ flex:1 }}><div className="an-dish-meta-lbl">Confidence</div><div className="an-conf-bar"><div className="an-conf-fill" style={{ width:`${rec.confidence}%`, background:color }}/></div><div style={{ fontSize:'clamp(8px,.62vw,10px)', color, fontWeight:600 }}>{rec.confidence}%</div></div>}
+                              <div><div className="an-dish-meta-lbl">Urgency</div><div className="an-dish-meta-val" style={{ color, fontSize:'clamp(10px,.78vw,12px)' }}>{rec.urgency.charAt(0).toUpperCase()+rec.urgency.slice(1)}</div></div>
                             </div>
-                          );
-                        })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2, Col 2: By Category */}
+              <div className="an-cat-col">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
+                      By Category
+                    </div>
+                  </div>
+                  {hasSalesData ? <DonutChart data={categoryData}/> : <div className="an-empty">No data yet</div>}
+                </div>
+              </div>
+
+              {/* Row 2, Col 3: By Day + Hourly */}
+              <div className="an-time-col">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      By Day
+                    </div>
+                    <div className="an-toggle">
+                      <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={() => setDayView('qty')}>Qty</button>
+                      <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={() => setDayView('rev')}>Rev</button>
+                    </div>
+                  </div>
+                  <div className="an-scrollable">
+                    {hasSalesData && dayOfWeekData.some(d => d.qty>0) ? dayOfWeekData.map(d => (
+                      <div key={d.day} className="an-bar-row">
+                        <div className="an-bar-label">{d.day.slice(0,3)}</div>
+                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`, background:'#d4a020' }}/></div>
+                        <div className="an-bar-val" style={{ color:'#d4a020' }}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
                       </div>
-                    )}
+                    )) : <div className="an-empty">No data yet</div>}
                   </div>
                 </div>
-
-                {/* ── Row 2, Col 2: By Category ── */}
-                <div className="an-cat-col">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
-                        By Category
-                      </div>
-                    </div>
-                    {hasSalesData ? <DonutChart data={categoryData}/> : <div className="an-empty">No data yet</div>}
-                  </div>
-                </div>
-
-                {/* ── Row 2, Col 3: By Day + Hourly stacked ── */}
-                <div className="an-time-col">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                        By Day
-                      </div>
-                      <div className="an-toggle">
-                        <button className={`an-toggle-btn${dayView==='qty'?' active':''}`} onClick={()=>setDayView('qty')}>Qty</button>
-                        <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={()=>setDayView('rev')}>Rev</button>
-                      </div>
-                    </div>
-                    <div className="an-scrollable">
-                      {hasSalesData && dayOfWeekData.some(d=>d.qty>0) ? dayOfWeekData.map(d=>(
-                        <div key={d.day} className="an-bar-row">
-                          <div className="an-bar-label">{d.day.slice(0,3)}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`,background:'#d4a020'}}/></div>
-                          <div className="an-bar-val" style={{color:'#d4a020'}}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
-                        </div>
-                      )) : <div className="an-empty">No data yet</div>}
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      By Time
                     </div>
                   </div>
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        By Time
-                      </div>
-                    </div>
-                    {hasSalesData && hourlyData.length > 0 ? <>
+                  {hasSalesData && hourlyData.length > 0 ? <>
                     <div className="an-heatmap-wrap">
-                      {hourlyData.map(h=>{ const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'#c04040':intensity>0.4?'#d4a020':intensity>0.1?'#02a4ba':'#1a1915'; return (
-                        <div key={h.hour} className="an-heatmap-cell" style={{background:bg,opacity:intensity>0?0.3+intensity*0.7:0.25}}>
-                          <span style={{fontSize:'clamp(7px,.55vw,9px)',color:intensity>0.5?'#0a0908':'#4a453e'}}>{formatHour(h.hour)}</span>
+                      {hourlyData.map(h => { const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'#c04040':intensity>0.4?'#d4a020':intensity>0.1?'#02a4ba':'#1a1915'; return (
+                        <div key={h.hour} className="an-heatmap-cell" style={{ background:bg, opacity:intensity>0?0.3+intensity*0.7:0.25 }}>
+                          <span style={{ fontSize:'clamp(7px,.55vw,9px)', color:intensity>0.5?'#0a0908':'#4a453e' }}>{formatHour(h.hour)}</span>
                           <div className="an-heatmap-tip">{formatHour(h.hour)} — {Math.round(h.qty)} items</div>
                         </div>
                       );})}
                     </div>
-                    <div style={{display:'flex',gap:8,marginTop:6,flexWrap:'wrap',flexShrink:0}}>
-                      {[{c:'#c04040',l:'Peak'},{c:'#d4a020',l:'Busy'},{c:'#02a4ba',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l})=>(
-                        <div key={l} style={{display:'flex',alignItems:'center',gap:3,fontSize:'clamp(7px,.55vw,9px)',color:'#4a453e'}}><div style={{width:7,height:7,borderRadius:2,background:c}}/>{l}</div>
+                    <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap', flexShrink:0 }}>
+                      {[{c:'#c04040',l:'Peak'},{c:'#d4a020',l:'Busy'},{c:'#02a4ba',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
+                        <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'#4a453e' }}><div style={{ width:7, height:7, borderRadius:2, background:c }}/>{l}</div>
                       ))}
                     </div>
-                    </> : <div className="an-empty">No data yet</div>}
-                  </div>
+                  </> : <div className="an-empty">No data yet</div>}
                 </div>
+              </div>
 
-                {/* ── Row 2, Col 4: Week vs Week + Inventory Risk stacked ── */}
-                <div className="an-wow-col">
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
-                        Week vs Week
-                      </div>
+              {/* Row 2, Col 4: Week vs Week + Inventory Risk */}
+              <div className="an-wow-col">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg>
+                      Week vs Week
                     </div>
-                    <div className="an-scrollable">
-                      {!hasSalesData ? <div className="an-empty">No data yet</div> : <>
-                      {weekOverWeek.improvers.slice(0,3).map(item=>(
+                  </div>
+                  <div className="an-scrollable">
+                    {!hasSalesData ? <div className="an-empty">No data yet</div> : <>
+                      {weekOverWeek.improvers.slice(0,3).map(item => (
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,item.change)}%`,background:'#2a8a5a'}}/></div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,item.change)}%`, background:'#2a8a5a' }}/></div>
                           <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
                         </div>
                       ))}
-                      {weekOverWeek.decliners.slice(0,3).map(item=>(
+                      {weekOverWeek.decliners.slice(0,3).map(item => (
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{width:`${Math.min(100,Math.abs(item.change))}%`,background:'#c04040'}}/></div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,Math.abs(item.change))}%`, background:'#c04040' }}/></div>
                           <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
                         </div>
                       ))}
-                      {weekOverWeek.improvers.length===0&&weekOverWeek.decliners.length===0&&<div className="an-empty">Not enough weekly data</div>}
-                      </>}
-                    </div>
-                  </div>
-                  <div className="an-card" style={{flex:1}}>
-                    <div className="an-card-hd">
-                      <div className="an-card-title">
-                        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                        Inv. Risk
-                      </div>
-                      <div className="an-badge" style={{background:'rgba(192,64,64,.1)',color:'#c04040'}}>slow + recent</div>
-                    </div>
-                    {!hasSalesData ? <div className="an-empty">No data yet</div> : inventoryRisk.length===0?<div className="an-empty">No at-risk items</div>:(
-                      <div className="an-scrollable">
-                        <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
-                        <tbody>{inventoryRisk.map((r,i)=><tr key={i} className="an-tr"><td className="an-td p" style={{fontSize:'clamp(8px,.62vw,10px)'}}>{r.ingredient}<div style={{fontSize:'clamp(7px,.55vw,8px)',color:'#4a453e'}}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
-                        </table>
-                      </div>
-                    )}
+                      {weekOverWeek.improvers.length===0 && weekOverWeek.decliners.length===0 && <div className="an-empty">Not enough weekly data</div>}
+                    </>}
                   </div>
                 </div>
-              </>
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                      Inv. Risk
+                    </div>
+                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'#c04040' }}>slow + recent</div>
+                  </div>
+                  {!hasSalesData ? <div className="an-empty">No data yet</div> : inventoryRisk.length===0 ? <div className="an-empty">No at-risk items</div> : (
+                    <div className="an-scrollable">
+                      <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
+                      <tbody>{inventoryRisk.map((r,i) => <tr key={i} className="an-tr"><td className="an-td p" style={{ fontSize:'clamp(8px,.62vw,10px)' }}>{r.ingredient}<div style={{ fontSize:'clamp(7px,.55vw,8px)', color:'#4a453e' }}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
 
+            </div>
           </div>
-        </div>
         )}
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
