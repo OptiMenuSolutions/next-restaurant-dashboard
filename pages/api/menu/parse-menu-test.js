@@ -1,8 +1,11 @@
 // pages/api/menu/parse-menu-test.js
-// Extended prompt returning components + ingredients with estimated costs.
+// Two-pass menu parser using Claude Haiku.
+// Pass 1: Extract ingredient library from menu images, matched against global_ingredients table.
+// Pass 2: Build recipes for every dish using only the unified ingredient library.
 // NO Supabase writes — dry run only.
 
 import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
@@ -10,6 +13,12 @@ import path from 'path';
 export const config = { api: { bodyParser: false } };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ─── PDF → base64 images ────────────────────────────────────────────────────
 
 async function pdfToImages(filePath) {
   const { fromPath } = await import('pdf2pic');
@@ -32,36 +41,170 @@ async function pdfToImages(filePath) {
   return images;
 }
 
-// If Claude's response was truncated, recover all complete JSON objects
-function recoverPartialJSON(text) {
-  const cleaned = text.replace(/```json|```/g, '').trim();
+// ─── Safe JSON parser with partial recovery ──────────────────────────────────
 
-  // Full parse first
+function safeParseJSON(text) {
+  const cleaned = text.replace(/```json|```/g, '').trim();
   try { return JSON.parse(cleaned); } catch {}
 
-  // Find last complete object — try trimming at last "}," boundary
+  // Try trimming at last complete object
   const lastComma = cleaned.lastIndexOf('},');
   if (lastComma > 0) {
     try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
   }
-
-  // Last resort: trim at last closing brace
   const lastBrace = cleaned.lastIndexOf('}');
   if (lastBrace > 0) {
     try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
   }
-
   return null;
 }
+
+// ─── Pass 1: Extract unified ingredient library ──────────────────────────────
+
+async function pass1_extractIngredients(imageContents, globalIngredients) {
+  const globalList = globalIngredients
+    .map(i => `${i.name} (${i.unit})`)
+    .join('\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4000,
+    system: [
+      {
+        type: 'text',
+        text: `You are a restaurant menu ingredient extraction assistant. Your job is to scan a menu and build a unified ingredient library — one canonical entry per ingredient, consistent across all dishes.`,
+      },
+      {
+        type: 'text',
+        text: `Here is the global ingredient library. Match ingredients you find in the menu to this list wherever possible. Use the EXACT name and unit from this list when there is a match.\n\n${globalList}`,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{
+      role: 'user',
+      content: [
+        ...imageContents,
+        {
+          type: 'text',
+          text: `Scan the entire menu. Identify every ingredient that would be needed across all dishes.
+
+For each ingredient:
+- If it matches something in the global library, use that EXACT name and unit
+- If it is new (not in the global library), propose a clean canonical name and appropriate unit
+- Assign a realistic estimated wholesale unit cost in USD based on typical US restaurant purchasing prices
+
+Rules:
+- One entry per ingredient — do not duplicate
+- Be consistent: if mozzarella appears on multiple dishes, it gets ONE entry
+- Use the same name format as the global library where possible (title case, descriptive)
+- Units must be one of: lb, oz, each, bunch, slice, sheet, sprig
+
+Return ONLY a valid JSON object in this exact format, nothing else:
+
+{
+  "ingredients": [
+    {
+      "name": "Mozzarella",
+      "unit": "oz",
+      "estimated_unit_cost": 0.25,
+      "is_new": false
+    }
+  ]
+}`,
+        },
+      ],
+    }],
+  });
+
+  const raw = response.content[0]?.text || '{}';
+  const parsed = safeParseJSON(raw);
+  return parsed?.ingredients || [];
+}
+
+// ─── Pass 2: Build recipes using the unified ingredient library ───────────────
+
+async function pass2_buildRecipes(imageContents, ingredientLibrary) {
+  // Build a clean reference the model can use
+  const libraryRef = ingredientLibrary
+    .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
+    .join('\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 16000,
+    system: [
+      {
+        type: 'text',
+        text: `You are a restaurant menu recipe builder. Your job is to extract every dish from a menu and build its recipe using ONLY the ingredients from the provided library. Do not invent ingredients or costs outside the library.`,
+      },
+      {
+        type: 'text',
+        text: `INGREDIENT LIBRARY — use ONLY these ingredients. Reference them exactly by name.\n\n${libraryRef}`,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{
+      role: 'user',
+      content: [
+        ...imageContents,
+        {
+          type: 'text',
+          text: `Extract every dish from this menu and build its recipe using ONLY the ingredients in the library above.
+
+Return ONLY a valid JSON array, nothing else. Each item must have exactly these fields:
+
+[
+  {
+    "name": string,
+    "price": number | null,
+    "category": string,
+    "description": string | null,
+    "components": [
+      {
+        "name": string,
+        "ingredients": [
+          {
+            "name": string,
+            "unit": string,
+            "quantity": number,
+            "estimated_unit_cost": number
+          }
+        ]
+      }
+    ]
+  }
+]
+
+Rules:
+- Include EVERY dish visible on the menu
+- Use ONLY ingredient names from the library — copy them exactly
+- Use the exact unit and estimated_unit_cost from the library for each ingredient
+- If a dish needs an ingredient not in the library, use the closest match
+- Components should reflect how the dish is plated (e.g. Dough, Sauce, Cheese, Toppings for pizza)
+- Aim for 2–4 components per dish, 2–5 ingredients per component
+- Return ONLY the JSON array, nothing else`,
+        },
+      ],
+    }],
+  });
+
+  const raw = response.content[0]?.text || '[]';
+  return {
+    dishes: safeParseJSON(raw),
+    truncated: response.stop_reason === 'max_tokens',
+  };
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
-  let fields, files;
+  let files;
   try {
-    [fields, files] = await form.parse(req);
-  } catch (err) {
+    [, files] = await form.parse(req);
+  } catch {
     return res.status(400).json({ error: 'Failed to parse upload' });
   }
 
@@ -70,13 +213,13 @@ export default async function handler(req, res) {
 
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
-
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   if (!allowed.includes(file.mimetype) && !isPDF) {
     return res.status(400).json({ error: 'Unsupported file type. Please upload a JPG, PNG, WEBP, or PDF.' });
   }
 
   try {
+    // ── Build image content blocks ──────────────────────────────────────────
     let imageContents = [];
 
     if (isPDF) {
@@ -98,127 +241,55 @@ export default async function handler(req, res) {
       imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
     }
 
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 16000,
-      messages: [{
-        role: 'user',
-        content: [
-          ...imageContents,
-          {
-            type: 'text',
-            text: `You are analyzing a restaurant menu for a food cost management system.
+    // ── Fetch global ingredient library from Supabase ───────────────────────
+    const { data: globalIngredients, error: dbError } = await supabase
+      .from('global_ingredients')
+      .select('name, unit')
+      .order('name');
 
-Your job is to:
-1. Extract every dish from the menu
-2. For each dish, estimate its recipe broken into logical components (e.g. "Protein", "Sauce", "Sides"), and within each component list the key ingredients with realistic estimated costs based on typical US restaurant purchasing prices.
-
-Return ONLY a valid JSON array. No markdown, no explanation, no preamble.
-
-Each item in the array must have exactly these fields:
-
-{
-  "name": string,
-  "price": number | null,
-  "category": string,
-  "description": string | null,
-  "components": [
-    {
-      "name": string,
-      "ingredients": [
-        {
-          "name": string,
-          "unit": string,
-          "quantity": number,
-          "estimated_unit_cost": number
-        }
-      ]
-    }
-  ]
-}
-
-Estimation guidelines for ingredients:
-- Ground beef (8oz patty): ~$4.50/lb wholesale
-- Chicken breast: ~$3.00/lb
-- Salmon fillet: ~$9.00/lb
-- Shrimp (16/20): ~$8.00/lb
-- Bacon: ~$4.00/lb
-- Cheddar cheese: ~$4.50/lb
-- Mozzarella: ~$4.00/lb
-- Goat cheese: ~$8.00/lb
-- Gorgonzola: ~$7.00/lb
-- Brioche bun: ~$0.45/each
-- Burger bun: ~$0.30/each
-- Long roll: ~$0.40/each
-- Multi-grain bread (2 slices): ~$0.35/each
-- Romaine lettuce: ~$1.80/lb
-- Mixed greens: ~$4.00/lb
-- Tomato: ~$1.20/lb
-- Onion: ~$0.60/lb
-- Avocado: ~$0.80/each
-- Potato (fries portion): ~$0.40/lb
-- Pasta (dry): ~$1.20/lb
-- Heavy cream: ~$3.50/quart
-- Butter: ~$3.50/lb
-- Olive oil: ~$8.00/liter
-- Flour: ~$0.50/lb
-- Eggs: ~$0.25/each
-- Lemon: ~$0.40/each
-- Garlic: ~$3.00/lb
-- Cauliflower: ~$2.50/lb
-- Brussels sprouts: ~$2.00/lb
-- Corn tortilla chips: ~$2.00/lb
-- Flour tortilla (large): ~$0.30/each
-- Black beans: ~$1.20/lb
-- Cilantro rice: ~$0.80/lb
-- For anything not listed, estimate based on typical US restaurant wholesale pricing
-
-Rules:
-- Include EVERY item visible on the menu — do not skip any
-- Do not include section headers, combo deals, or add-ons as separate items
-- If the same item appears at multiple sizes/prices, include each as a separate entry with size in the name
-- Components should reflect how the dish is actually plated (protein + sauce + side for entrees; bread + protein + toppings for sandwiches; etc.)
-- Aim for 2–4 components per dish, 2–5 ingredients per component
-- Be concise — keep ingredient names short and component names simple
-- Return ONLY the JSON array, nothing else`,
-          },
-        ],
-      }],
-    });
-
-    const rawText = response.content[0]?.text || '[]';
-
-    // Try to parse — fall back to partial recovery if truncated
-    let dishes = recoverPartialJSON(rawText);
-
-    if (!dishes) {
-      return res.status(500).json({
-        error: 'Failed to parse Claude response as JSON. The menu may be too large — try cropping to one section at a time.',
-        raw: rawText.slice(0, 500) + '...',
-      });
+    if (dbError) {
+      console.error('Failed to fetch global ingredients:', dbError);
+      return res.status(500).json({ error: 'Failed to load ingredient library.' });
     }
 
-    if (!Array.isArray(dishes)) {
-      return res.status(500).json({ error: 'Unexpected response format' });
+    console.log(`Loaded ${globalIngredients.length} ingredients from global library`);
+
+    // ── Pass 1: Extract unified ingredient library ──────────────────────────
+    console.log('Pass 1: Extracting ingredient library...');
+    const ingredientLibrary = await pass1_extractIngredients(imageContents, globalIngredients);
+
+    if (!ingredientLibrary || ingredientLibrary.length === 0) {
+      return res.status(500).json({ error: 'Could not extract ingredients from menu. Try a clearer image.' });
     }
 
-    // Log stop reason to server console for debugging
-    console.log('Stop reason:', response.stop_reason, '| Items recovered:', dishes.length);
+    console.log(`Pass 1 complete: ${ingredientLibrary.length} ingredients identified`);
 
-    const validated = dishes
+    // ── Pass 2: Build recipes using unified library ─────────────────────────
+    console.log('Pass 2: Building recipes...');
+    const { dishes: rawDishes, truncated } = await pass2_buildRecipes(imageContents, ingredientLibrary);
+
+    if (!rawDishes || !Array.isArray(rawDishes)) {
+      return res.status(500).json({ error: 'Failed to build recipes. The menu may be too large — try one section at a time.' });
+    }
+
+    console.log(`Pass 2 complete: ${rawDishes.length} dishes built`);
+
+    // ── Validate & compute costs ────────────────────────────────────────────
+    const validated = rawDishes
       .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
       .map(d => {
         const components = (d.components || []).map(c => {
-          const ingredients = (c.ingredients || []).map(i => ({
-            name: i.name || 'Unknown',
-            unit: i.unit || 'each',
-            quantity: typeof i.quantity === 'number' ? i.quantity : 0,
-            estimated_unit_cost: typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0,
-            estimated_total_cost:
-              typeof i.quantity === 'number' && typeof i.estimated_unit_cost === 'number'
-                ? Math.round(i.quantity * i.estimated_unit_cost * 10000) / 10000
-                : 0,
-          }));
+          const ingredients = (c.ingredients || []).map(i => {
+            const qty = typeof i.quantity === 'number' ? i.quantity : 0;
+            const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
+            return {
+              name: i.name || 'Unknown',
+              unit: i.unit || 'each',
+              quantity: qty,
+              estimated_unit_cost: cost,
+              estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
+            };
+          });
           const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
           return {
             name: c.name || 'Component',
@@ -251,11 +322,14 @@ Rules:
     try { fs.unlinkSync(file.filepath); } catch {}
 
     const withMargin = validated.filter(d => d.estimated_margin !== null);
+    const newIngredients = ingredientLibrary.filter(i => i.is_new);
 
     return res.status(200).json({
       dishes: validated,
       count: validated.length,
-      truncated: response.stop_reason === 'max_tokens',
+      truncated,
+      ingredient_library: ingredientLibrary,
+      new_ingredients_count: newIngredients.length,
       summary: {
         total_items: validated.length,
         categories: [...new Set(validated.map(d => d.category))].sort(),
@@ -271,7 +345,7 @@ Rules:
     });
 
   } catch (err) {
-    console.error('Menu parse test error:', err);
+    console.error('Menu parse error:', err);
     try { fs.unlinkSync(file.filepath); } catch {}
     return res.status(500).json({ error: err.message || 'Failed to parse menu' });
   }
