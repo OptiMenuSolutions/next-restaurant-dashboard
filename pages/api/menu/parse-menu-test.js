@@ -88,12 +88,39 @@ async function pass1_extractIngredients(imageContents, globalIngredients) {
           type: 'text',
           text: `Scan the entire menu. Identify every ingredient that would be needed across all dishes.
 
-For each ingredient:
+CRITICAL RULE — CULINARY INFERENCE:
+Menu descriptions are always incomplete. You must reason about what is actually on the plate, not just what is written.
+
+For every dish, ask: "What would a chef actually need to make this?" Then include ALL of those ingredients.
+
+Examples of required inference:
+- A dish named "Filet Mignon" with description "au gratin potatoes, peppercorn sauce, asparagus" MUST include the filet mignon itself
+- Any pizza dish MUST include dough ingredients: All-Purpose Flour, Olive Oil, Active Dry Yeast, Kosher Salt
+- A "Burger" MUST include the patty (ground beef or other protein) and a bun, even if only toppings are listed
+- A "Caesar Salad" MUST include romaine, dressing, parmesan, croutons — even if only some are mentioned
+- A "Pasta" dish MUST include the pasta itself, even if only the sauce is described
+- A "Sandwich" MUST include the bread, even if only fillings are listed
+- A "Risotto" MUST include arborio rice, even if only toppings are described
+- A "Soup" MUST include stock and aromatics (onion, garlic, butter)
+- A "Steak" dish MUST include the steak cut, even if only sides and sauces are listed
+
+Implied base ingredients by category (always include these even if not mentioned):
+- Pizza: All-Purpose Flour, Olive Oil, Active Dry Yeast, Kosher Salt
+- Burger: bun (Brioche Bun or Burger Bun), ground protein
+- Fresh Pasta: Fresh Pasta or Pasta (Dry), Kosher Salt
+- Risotto: Arborio Rice, Butter, White Wine, Chicken Stock, Parmesan
+- Sandwich/Sub: appropriate bread or roll
+- Soup/Bisque: appropriate stock, Butter, Yellow Onion, Garlic
+- Salad: appropriate greens, Olive Oil or dressing base
+- Taco/Burrito: Flour Tortilla or Corn Tortilla
+- Steak/Chop/Fillet: the named protein itself
+
+For each ingredient identified:
 - If it matches something in the global library, use that EXACT name and unit
 - If it is new (not in the global library), propose a clean canonical name and appropriate unit
 - Assign a realistic estimated wholesale unit cost in USD based on typical US restaurant purchasing prices
 
-Rules:
+Additional rules:
 - One entry per ingredient — do not duplicate
 - Be consistent: if mozzarella appears on multiple dishes, it gets ONE entry
 - Use the same name format as the global library where possible (title case, descriptive)
@@ -149,7 +176,20 @@ async function pass2_buildRecipes(imageContents, ingredientLibrary) {
         ...imageContents,
         {
           type: 'text',
-          text: `Extract every dish from this menu and build its recipe using ONLY the ingredients in the library above.
+          text: `Extract every dish from this menu and build its complete recipe using ONLY the ingredients in the library above.
+
+CRITICAL RULE — CULINARY INFERENCE:
+Menu descriptions are always incomplete. You must build recipes for what is actually on the plate, not just what is written in the description.
+
+For every dish, reason about the complete plate a chef would prepare:
+- A dish named "Filet Mignon" with description "peppercorn sauce, asparagus" MUST have the filet mignon as its primary ingredient
+- Any pizza MUST have a Dough component containing All-Purpose Flour, Olive Oil, Active Dry Yeast, and Kosher Salt
+- A burger MUST have the protein patty and bun, even if only toppings are listed
+- A pasta dish MUST include the pasta itself
+- A sandwich MUST include the bread
+- A steak, chop, or fillet dish MUST include the named protein as the first ingredient in the Protein component
+- A salad MUST include the greens, even if only toppings and dressing are described
+- A risotto MUST include Arborio Rice, Butter, White Wine, stock, and Parmesan
 
 Return ONLY a valid JSON array, nothing else. Each item must have exactly these fields:
 
@@ -179,9 +219,9 @@ Rules:
 - Include EVERY dish visible on the menu
 - Use ONLY ingredient names from the library — copy them exactly
 - Use the exact unit and estimated_unit_cost from the library for each ingredient
-- If a dish needs an ingredient not in the library, use the closest match
-- Components should reflect how the dish is plated (e.g. Dough, Sauce, Cheese, Toppings for pizza)
-- Aim for 2–4 components per dish, 2–5 ingredients per component
+- If a dish needs an ingredient not in the library, use the closest available match
+- Components should reflect how the dish is actually plated (e.g. Dough, Sauce, Cheese, Toppings for pizza; Protein, Sides, Sauce for an entree)
+- Aim for 2–4 components per dish, 2–6 ingredients per component
 - Return ONLY the JSON array, nothing else`,
         },
       ],
