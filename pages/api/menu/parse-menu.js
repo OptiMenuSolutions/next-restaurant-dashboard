@@ -1,0 +1,650 @@
+// pages/api/menu/parse-menu.js
+// Production two-pass menu parser.
+// Writes to: ingredients, menu_items, menu_item_components, component_ingredients, menu_categories
+// Estimated costs are flagged in last_price — real costs come from invoice uploads.
+
+import Anthropic from '@anthropic-ai/sdk';
+import { createClient } from '@supabase/supabase-js';
+import formidable from 'formidable';
+import fs from 'fs';
+import path from 'path';
+
+export const config = { api: { bodyParser: false } };
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// ─── Archetype component schema ───────────────────────────────────────────────
+
+const ARCHETYPES = {
+  'Pizza': [
+    { name: 'Dough',     optional: false },
+    { name: 'Sauce',     optional: false },
+    { name: 'Cheese',    optional: false },
+    { name: 'Toppings',  optional: true  },
+    { name: 'Finishing', optional: true  },
+  ],
+  'Burger': [
+    { name: 'Bun',        optional: false },
+    { name: 'Patty',      optional: false },
+    { name: 'Cheese',     optional: true  },
+    { name: 'Toppings',   optional: true  },
+    { name: 'Sauce',      optional: true  },
+  ],
+  'Sandwich / Sub': [
+    { name: 'Bread',      optional: false },
+    { name: 'Protein',    optional: false },
+    { name: 'Cheese',     optional: true  },
+    { name: 'Vegetables', optional: true  },
+    { name: 'Sauce',      optional: true  },
+  ],
+  'Pasta': [
+    { name: 'Pasta',      optional: false },
+    { name: 'Sauce',      optional: false },
+    { name: 'Protein',    optional: true  },
+    { name: 'Vegetables', optional: true  },
+    { name: 'Finishing',  optional: true  },
+  ],
+  'Risotto': [
+    { name: 'Rice Base',  optional: false },
+    { name: 'Protein',    optional: true  },
+    { name: 'Vegetables', optional: true  },
+    { name: 'Finishing',  optional: false },
+  ],
+  'Steak / Chop / Fillet': [
+    { name: 'Protein',    optional: false },
+    { name: 'Sauce',      optional: true  },
+    { name: 'Starch',     optional: true  },
+    { name: 'Vegetables', optional: true  },
+  ],
+  'Seafood Entree': [
+    { name: 'Protein',    optional: false },
+    { name: 'Sauce',      optional: true  },
+    { name: 'Starch',     optional: true  },
+    { name: 'Vegetables', optional: true  },
+  ],
+  'Chicken Entree': [
+    { name: 'Protein',    optional: false },
+    { name: 'Sauce',      optional: true  },
+    { name: 'Starch',     optional: true  },
+    { name: 'Vegetables', optional: true  },
+  ],
+  'Salad': [
+    { name: 'Greens',     optional: false },
+    { name: 'Protein',    optional: true  },
+    { name: 'Toppings',   optional: true  },
+    { name: 'Dressing',   optional: false },
+  ],
+  'Soup': [
+    { name: 'Base',       optional: false },
+    { name: 'Protein',    optional: true  },
+    { name: 'Vegetables', optional: true  },
+    { name: 'Finishing',  optional: true  },
+  ],
+  'Appetizer': [
+    { name: 'Main Element',  optional: false },
+    { name: 'Accompaniment', optional: true  },
+    { name: 'Sauce / Dip',   optional: true  },
+  ],
+  'Dessert': [
+    { name: 'Base',    optional: false },
+    { name: 'Sauce',   optional: true  },
+    { name: 'Garnish', optional: true  },
+  ],
+  'Beverage': [
+    { name: 'Base',     optional: false },
+    { name: 'Modifier', optional: true  },
+    { name: 'Garnish',  optional: true  },
+  ],
+  'Small Plate / Other': [
+    { name: 'Main Element',    optional: false },
+    { name: 'Accompaniment',   optional: true  },
+    { name: 'Sauce / Garnish', optional: true  },
+  ],
+};
+
+const ARCHETYPE_NAMES = Object.keys(ARCHETYPES).join(', ');
+const ARCHETYPE_SCHEMA_TEXT = Object.entries(ARCHETYPES)
+  .map(([name, components]) => {
+    const compList = components
+      .map(c => `    - ${c.name}${c.optional ? ' (optional)' : ' (always include)'}`)
+      .join('\n');
+    return `${name}:\n${compList}`;
+  })
+  .join('\n\n');
+
+// ─── PDF → base64 images ──────────────────────────────────────────────────────
+
+async function pdfToImages(filePath) {
+  const { fromPath } = await import('pdf2pic');
+  const convert = fromPath(filePath, {
+    density: 150,
+    saveFilename: 'page',
+    savePath: '/tmp',
+    format: 'png',
+    width: 1200,
+    height: 1600,
+  });
+  const images = [];
+  for (let i = 1; i <= 6; i++) {
+    try {
+      const result = await convert(i, { responseType: 'base64' });
+      if (result?.base64) images.push(result.base64);
+      else break;
+    } catch { break; }
+  }
+  return images;
+}
+
+// ─── Safe JSON parser ─────────────────────────────────────────────────────────
+
+function safeParseJSON(text) {
+  const cleaned = text.replace(/```json|```/g, '').trim();
+  try { return JSON.parse(cleaned); } catch {}
+  const lastComma = cleaned.lastIndexOf('},');
+  if (lastComma > 0) {
+    try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
+  }
+  const lastBrace = cleaned.lastIndexOf('}');
+  if (lastBrace > 0) {
+    try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
+  }
+  return null;
+}
+
+// ─── Pass 1: Ingredient library + dish manifest ───────────────────────────────
+
+async function pass1_extractAndClassify(imageContents, globalIngredients) {
+  const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 6000,
+    system: [
+      {
+        type: 'text',
+        text: `You are a restaurant menu analyst. In one pass you do two things:
+1. Build a unified ingredient library covering everything needed across all dishes
+2. Classify every dish into a named archetype and record its basic details
+
+You reason about what is actually on each plate — not just what is written in descriptions.`,
+      },
+      {
+        type: 'text',
+        text: `GLOBAL INGREDIENT LIBRARY — match against this wherever possible. Use EXACT name and unit.\n\n${globalList}`,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{
+      role: 'user',
+      content: [
+        ...imageContents,
+        {
+          type: 'text',
+          text: `Scan the entire menu. Return a JSON object with two keys: "ingredients" and "dishes".
+
+PART A — INGREDIENT LIBRARY
+Identify every ingredient needed across ALL dishes. For each:
+- Match to global library if possible — use EXACT name and unit
+- If new, propose a canonical name and appropriate unit
+- Assign a realistic US restaurant wholesale unit cost
+- One entry per ingredient — no duplicates
+- Units: lb, oz, each, bunch, slice, sheet, sprig only
+
+CULINARY INFERENCE:
+- Any pizza → include All-Purpose Flour, Olive Oil, Active Dry Yeast, Kosher Salt
+- Any burger → include the protein patty AND a bun
+- Any pasta → include the pasta itself
+- Any sandwich → include the bread
+- Any steak/chop/fillet → include that protein cut
+- Any salad → include the greens base
+- Any risotto → include Arborio Rice, Butter, White Wine, stock, Parmesan
+- Any soup → include appropriate stock, aromatics (onion, garlic, butter)
+
+PART B — DISH MANIFEST
+List every dish with archetype, price, category, and description.
+Available archetypes: ${ARCHETYPE_NAMES}
+
+Return ONLY valid JSON:
+{
+  "ingredients": [
+    { "name": "Mozzarella", "unit": "oz", "estimated_unit_cost": 0.25, "is_new": false }
+  ],
+  "dishes": [
+    { "name": "Red Pizza", "archetype": "Pizza", "price": 22.00, "category": "Pizza", "description": "Marinara, fresh mozzarella, fresh basil" }
+  ]
+}`,
+        },
+      ],
+    }],
+  });
+
+  const raw = response.content[0]?.text || '{}';
+  const parsed = safeParseJSON(raw);
+  return {
+    ingredients: parsed?.ingredients || [],
+    dishes: parsed?.dishes || [],
+  };
+}
+
+// ─── Pass 2: Build recipes ────────────────────────────────────────────────────
+
+async function pass2_buildRecipes(dishManifest, ingredientLibrary) {
+  const libraryRef = ingredientLibrary
+    .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
+    .join('\n');
+
+  const dishList = dishManifest
+    .map((d, idx) =>
+      `${idx + 1}. "${d.name}" | archetype: ${d.archetype} | price: ${d.price ?? 'unknown'} | category: ${d.category || 'unknown'} | description: ${d.description || 'none'}`
+    )
+    .join('\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 16000,
+    system: [
+      {
+        type: 'text',
+        text: `You are a restaurant recipe builder. Build complete recipes using only the provided ingredient library and archetype component schemas. Never invent ingredients or costs outside the library.`,
+      },
+      {
+        type: 'text',
+        text: `INGREDIENT LIBRARY — copy name, unit, and cost exactly:\n\n${libraryRef}\n\n${'━'.repeat(48)}\nARCHETYPE COMPONENT SCHEMAS\n${'━'.repeat(48)}\n\n${ARCHETYPE_SCHEMA_TEXT}`,
+        cache_control: { type: 'ephemeral' },
+      },
+    ],
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `Build a complete recipe for every dish. Use archetype schema for components.
+
+DISHES:
+${dishList}
+
+RULES:
+- Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
+- Include all required components; omit optional ones only if clearly not applicable
+- Estimate realistic per-serving quantities
+
+Return ONLY a valid JSON array:
+[
+  {
+    "name": string,
+    "price": number | null,
+    "category": string,
+    "archetype": string,
+    "description": string | null,
+    "components": [
+      {
+        "name": string,
+        "ingredients": [
+          { "name": string, "unit": string, "quantity": number, "estimated_unit_cost": number }
+        ]
+      }
+    ]
+  }
+]`,
+      }],
+    }],
+  });
+
+  const raw = response.content[0]?.text || '[]';
+  return {
+    dishes: safeParseJSON(raw),
+    truncated: response.stop_reason === 'max_tokens',
+  };
+}
+
+// ─── Supabase writes ──────────────────────────────────────────────────────────
+
+async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
+  const results = {
+    menu_items_created: 0,
+    ingredients_created: 0,
+    ingredients_reused: 0,
+    components_created: 0,
+    errors: [],
+  };
+
+  // 1. Upsert ingredients
+  // Costs stored in last_price are ESTIMATES from the AI parser.
+  // These will be overwritten with real values once the client uploads invoices.
+  // standard_unit and original_unit are both set to the parser unit until invoice
+  // processing runs unit standardization.
+  const ingredientIdMap = {}; // name → uuid
+
+  for (const ing of ingredientLibrary) {
+    const normalizedName = ing.name.trim().toLowerCase();
+
+    // Check if ingredient already exists for this restaurant
+    const { data: existing } = await supabase
+      .from('ingredients')
+      .select('id, last_price')
+      .eq('restaurant_id', restaurantId)
+      .ilike('name', ing.name.trim())
+      .maybeSingle();
+
+    if (existing) {
+      // Ingredient exists — don't overwrite last_price if it has a real value
+      // (real values come from invoices; estimated values are set only on creation)
+      ingredientIdMap[normalizedName] = existing.id;
+      results.ingredients_reused++;
+    } else {
+      // New ingredient — insert with estimated cost
+      const { data: created, error } = await supabase
+        .from('ingredients')
+        .insert({
+          restaurant_id: restaurantId,
+          name: ing.name.trim(),
+          unit: ing.unit,
+          standard_unit: ing.unit,   // will be updated by invoice processing
+          original_unit: ing.unit,   // will be updated by invoice processing
+          last_price: ing.estimated_unit_cost ?? null,
+          ingredient_category: 'weight', // default; updated by invoice processing
+          is_sample: false,
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        results.errors.push(`Ingredient "${ing.name}": ${error.message}`);
+        continue;
+      }
+
+      ingredientIdMap[normalizedName] = created.id;
+      results.ingredients_created++;
+    }
+  }
+
+  // 2. Resolve or create menu_categories
+  const categoryIdMap = {}; // category name → integer id
+
+  const uniqueCategories = [...new Set(parsedDishes.map(d => d.category).filter(Boolean))];
+
+  for (const catName of uniqueCategories) {
+    // Try to find existing category for this restaurant
+    const { data: existingCat } = await supabase
+      .from('menu_categories')
+      .select('id')
+      .eq('restaurant_id', restaurantId)
+      .ilike('name', catName)
+      .maybeSingle();
+
+    if (existingCat) {
+      categoryIdMap[catName] = existingCat.id;
+    } else {
+      const { data: newCat, error } = await supabase
+        .from('menu_categories')
+        .insert({ restaurant_id: restaurantId, name: catName })
+        .select('id')
+        .single();
+
+      if (error) {
+        results.errors.push(`Category "${catName}": ${error.message}`);
+      } else {
+        categoryIdMap[catName] = newCat.id;
+      }
+    }
+  }
+
+  // 3. Insert menu items + components + component_ingredients
+  for (const dish of parsedDishes) {
+    // Compute total cost from components
+    const totalCost = (dish.components || []).reduce((sum, comp) => {
+      const compCost = (comp.ingredients || []).reduce((s, i) => {
+        return s + (i.quantity ?? 0) * (i.estimated_unit_cost ?? 0);
+      }, 0);
+      return sum + compCost;
+    }, 0);
+
+    // Insert menu item
+    const { data: menuItem, error: menuError } = await supabase
+      .from('menu_items')
+      .insert({
+        restaurant_id: restaurantId,
+        name: dish.name,
+        price: dish.price ?? null,
+        cost: Math.round(totalCost * 100) / 100,
+        category: dish.category || 'uncategorized',
+        category_id: categoryIdMap[dish.category] ?? null,
+        description: dish.description ?? null,
+        is_sample: false,
+      })
+      .select('id')
+      .single();
+
+    if (menuError) {
+      results.errors.push(`Menu item "${dish.name}": ${menuError.message}`);
+      continue;
+    }
+
+    results.menu_items_created++;
+
+    // Insert components
+    for (const comp of dish.components || []) {
+      const compCost = (comp.ingredients || []).reduce((s, i) => {
+        return s + (i.quantity ?? 0) * (i.estimated_unit_cost ?? 0);
+      }, 0);
+
+      const { data: component, error: compError } = await supabase
+        .from('menu_item_components')
+        .insert({
+          menu_item_id: menuItem.id,
+          name: comp.name,
+          cost: Math.round(compCost * 10000) / 10000,
+        })
+        .select('id')
+        .single();
+
+      if (compError) {
+        results.errors.push(`Component "${comp.name}" on "${dish.name}": ${compError.message}`);
+        continue;
+      }
+
+      results.components_created++;
+
+      // Insert component_ingredients
+      for (const ing of comp.ingredients || []) {
+        const normalizedName = ing.name.trim().toLowerCase();
+        const ingredientId = ingredientIdMap[normalizedName];
+
+        if (!ingredientId) {
+          results.errors.push(`Could not find ingredient ID for "${ing.name}" on component "${comp.name}"`);
+          continue;
+        }
+
+        const { error: ciError } = await supabase
+          .from('component_ingredients')
+          .insert({
+            component_id: component.id,
+            ingredient_id: ingredientId,
+            quantity: ing.quantity ?? 0,
+            unit: ing.unit || 'each',
+          });
+
+        if (ciError) {
+          results.errors.push(`component_ingredient "${ing.name}": ${ciError.message}`);
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).end();
+
+  const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
+  let fields, files;
+  try {
+    [fields, files] = await form.parse(req);
+  } catch {
+    return res.status(400).json({ error: 'Failed to parse upload' });
+  }
+
+  const file = Array.isArray(files.file) ? files.file[0] : files.file;
+  if (!file) return res.status(400).json({ error: 'No file provided' });
+
+  // restaurant_id must be passed in the form body
+  const restaurantId = Array.isArray(fields.restaurant_id)
+    ? fields.restaurant_id[0]
+    : fields.restaurant_id;
+
+  if (!restaurantId) {
+    return res.status(400).json({ error: 'restaurant_id is required' });
+  }
+
+  const ext = path.extname(file.originalFilename || '').toLowerCase();
+  const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
+  const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!allowed.includes(file.mimetype) && !isPDF) {
+    return res.status(400).json({ error: 'Unsupported file type. Please upload a JPG, PNG, WEBP, or PDF.' });
+  }
+
+  try {
+    // Build image content blocks
+    let imageContents = [];
+    if (isPDF) {
+      const base64Pages = await pdfToImages(file.filepath);
+      if (base64Pages.length === 0) {
+        return res.status(500).json({ error: 'Could not extract pages from PDF.' });
+      }
+      imageContents = base64Pages.map(b64 => ({
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: b64 },
+      }));
+    } else {
+      const data = fs.readFileSync(file.filepath);
+      const base64 = data.toString('base64');
+      const mediaType =
+        ext === '.png'  ? 'image/png'  :
+        ext === '.webp' ? 'image/webp' :
+        'image/jpeg';
+      imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
+    }
+
+    // Fetch global ingredient library
+    const { data: globalIngredients, error: dbError } = await supabase
+      .from('global_ingredients')
+      .select('name, unit')
+      .order('name');
+
+    if (dbError) {
+      return res.status(500).json({ error: 'Failed to load ingredient library.' });
+    }
+
+    console.log(`[parse-menu] Restaurant: ${restaurantId}`);
+    console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
+
+    // Pass 1
+    console.log('[parse-menu] Pass 1: Extracting ingredients and classifying dishes...');
+    const { ingredients: ingredientLibrary, dishes: dishManifest } =
+      await pass1_extractAndClassify(imageContents, globalIngredients);
+
+    if (!ingredientLibrary?.length) {
+      return res.status(500).json({ error: 'Could not extract ingredients. Try a clearer image.' });
+    }
+    if (!dishManifest?.length) {
+      return res.status(500).json({ error: 'Could not identify dishes. Try a clearer image.' });
+    }
+
+    console.log(`[parse-menu] Pass 1 complete: ${ingredientLibrary.length} ingredients, ${dishManifest.length} dishes`);
+
+    // Pass 2
+    console.log('[parse-menu] Pass 2: Building recipes...');
+    const { dishes: rawDishes, truncated } = await pass2_buildRecipes(dishManifest, ingredientLibrary);
+
+    if (!rawDishes || !Array.isArray(rawDishes)) {
+      return res.status(500).json({ error: 'Failed to build recipes. Try uploading one section at a time.' });
+    }
+
+    console.log(`[parse-menu] Pass 2 complete: ${rawDishes.length} dishes`);
+
+    // Validate & compute costs
+    const validated = rawDishes
+      .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
+      .map(d => {
+        const components = (d.components || []).map(c => {
+          const ingredients = (c.ingredients || []).map(i => {
+            const qty = typeof i.quantity === 'number' ? i.quantity : 0;
+            const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
+            return {
+              name: i.name || 'Unknown',
+              unit: i.unit || 'each',
+              quantity: qty,
+              estimated_unit_cost: cost,
+              estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
+            };
+          });
+          const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
+          return {
+            name: c.name || 'Component',
+            ingredients,
+            component_cost: Math.round(componentCost * 10000) / 10000,
+          };
+        });
+
+        const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
+        const price = typeof d.price === 'number' && !isNaN(d.price)
+          ? Math.round(d.price * 100) / 100
+          : null;
+        const estimatedMargin = price && totalEstimatedCost > 0
+          ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
+          : null;
+
+        return {
+          name: d.name.trim(),
+          price,
+          category: typeof d.category === 'string' ? d.category.trim() : 'Other',
+          archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
+          description: typeof d.description === 'string' ? d.description.trim() : null,
+          components,
+          total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
+          estimated_margin: estimatedMargin,
+        };
+      });
+
+    // Write to Supabase
+    console.log(`[parse-menu] Writing ${validated.length} dishes to Supabase...`);
+    const saveResults = await saveToSupabase(restaurantId, validated, ingredientLibrary);
+    console.log('[parse-menu] Save complete:', saveResults);
+
+    try { fs.unlinkSync(file.filepath); } catch {}
+
+    const withMargin = validated.filter(d => d.estimated_margin !== null);
+
+    return res.status(200).json({
+      success: true,
+      dishes: validated,
+      count: validated.length,
+      truncated,
+      save_results: saveResults,
+      summary: {
+        total_items: validated.length,
+        categories: [...new Set(validated.map(d => d.category))].sort(),
+        archetypes_used: [...new Set(validated.map(d => d.archetype))].sort(),
+        avg_estimated_cost:
+          validated.length > 0
+            ? Math.round(validated.reduce((s, d) => s + d.total_estimated_cost, 0) / validated.length * 100) / 100
+            : 0,
+        avg_estimated_margin:
+          withMargin.length > 0
+            ? Math.round(withMargin.reduce((s, d) => s + d.estimated_margin, 0) / withMargin.length * 10) / 10
+            : null,
+      },
+    });
+
+  } catch (err) {
+    console.error('[parse-menu] Error:', err);
+    try { fs.unlinkSync(file.filepath); } catch {}
+    return res.status(500).json({ error: err.message || 'Failed to parse menu' });
+  }
+}
