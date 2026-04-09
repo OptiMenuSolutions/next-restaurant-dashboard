@@ -55,9 +55,7 @@ function NavIcon({ path }) {
   return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>;
 }
 
-// ── TrendLine ────────────────────────────────────────────────────────────────
-// Fixed: smaller viewBox (700×100), smaller font sizes (7.5–8px SVG units),
-// smarter x-label count (max 4), preserveAspectRatio keeps text proportional.
+// ── TrendLine ─────────────────────────────────────────────────────────────────
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const [tip, setTip] = useState(null);
 
@@ -66,90 +64,142 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const pts = data.filter(d => d.date >= cutoffStr && d[valueKey] >= 0);
 
   if (pts.length < 2) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, fontSize:11, color:'#4a453e' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, fontSize: 11, color: '#4a453e' }}>
       Not enough data — upload at least 2 days of sales
     </div>
   );
 
-  const W = 700, H = 100, PL = 48, PR = 8, PT = 6, PB = 20;
+  // Taller viewBox so SVG doesn't scale up aggressively when rendered tall
+  const W = 700, H = 160, PL = 52, PR = 10, PT = 8, PB = 24;
   const cW = W - PL - PR, cH = H - PT - PB;
 
   const vals = pts.map(d => d[valueKey]);
   const rawMax = Math.max(...vals, 1);
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const yMax = Math.ceil((rawMax * 1.15) / mag) * mag;
+
   const xOf = i => PL + (pts.length === 1 ? cW / 2 : (i / (pts.length - 1)) * cW);
   const yOf = v => PT + cH - (v / yMax) * cH;
 
-  const pth = pts.map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`).join(' ');
+  const pth = pts.map((d, i) =>
+    `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`
+  ).join(' ');
   const area = `${pth} L${xOf(pts.length - 1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
 
   const yTicks = [0, yMax / 2, yMax];
 
-  // Max ~4 x-axis labels regardless of point count
-  const xLabelIdxs = pts.length <= 4
+  // Max 5 x-axis labels
+  const xLabelIdxs = pts.length <= 5
     ? pts.map((_, i) => i)
     : [
         0,
-        Math.round((pts.length - 1) / 3),
-        Math.round((pts.length - 1) * 2 / 3),
+        Math.round((pts.length - 1) * 0.25),
+        Math.round((pts.length - 1) * 0.5),
+        Math.round((pts.length - 1) * 0.75),
         pts.length - 1,
       ].filter((v, i, arr) => arr.indexOf(v) === i);
 
   return (
-    <div style={{ position:'relative', flex:1, minHeight:0 }}>
+    <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        style={{ width:'100%', height:'100%', display:'block' }}
+        style={{ width: '100%', height: '100%', display: 'block' }}
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>
           <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.18"/>
-            <stop offset="100%" stopColor={color} stopOpacity="0"/>
+            <stop offset="0%" stopColor={color} stopOpacity="0.10" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
-          <clipPath id="tclip"><rect x={PL} y={PT} width={cW} height={cH}/></clipPath>
+          <clipPath id="tclip">
+            <rect x={PL} y={PT} width={cW} height={cH} />
+          </clipPath>
         </defs>
 
+        {/* Y-axis grid + labels */}
         {yTicks.map((t, i) => (
           <g key={i}>
-            <line x1={PL} y1={yOf(t).toFixed(1)} x2={W-PR} y2={yOf(t).toFixed(1)} stroke="#1e1c18" strokeWidth="0.5"/>
-            <text x={PL-4} y={yOf(t).toFixed(1)} textAnchor="end" dominantBaseline="middle"
-              fontSize="8" fill="#3a3630" style={{ fontFamily:"'Inter',sans-serif" }}>
+            <line
+              x1={PL} y1={yOf(t).toFixed(1)}
+              x2={W - PR} y2={yOf(t).toFixed(1)}
+              stroke="#1a1815" strokeWidth="0.5"
+            />
+            <text
+              x={PL - 5} y={yOf(t).toFixed(1)}
+              textAnchor="end" dominantBaseline="middle"
+              fontSize="10" fill="#2e2b26"
+              style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400 }}
+            >
               {valueKey === 'rev' ? formatCurrency(t) : Math.round(t)}
             </text>
           </g>
         ))}
 
-        <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)"/>
-        <path d={pth} fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" clipPath="url(#tclip)"/>
+        {/* Area fill */}
+        <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)" />
 
+        {/* Line */}
+        <path
+          d={pth} fill="none" stroke={color}
+          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+          clipPath="url(#tclip)"
+        />
+
+        {/* Dots when ≤14 points */}
         {pts.length <= 14 && pts.map((d, i) => (
-          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2" fill={color} style={{ cursor:'pointer' }}
-            onMouseEnter={e => setTip({ x:e.clientX, y:e.clientY, d })}
-            onMouseLeave={() => setTip(null)}/>
-        ))}
-        {pts.length > 14 && pts.map((d, i) => (
-          <rect key={i} x={xOf(i)-4} y={PT} width={8} height={cH} fill="transparent" style={{ cursor:'pointer' }}
-            onMouseEnter={e => setTip({ x:e.clientX, y:e.clientY, d })}
-            onMouseLeave={() => setTip(null)}/>
+          <circle
+            key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2.5"
+            fill={color} style={{ cursor: 'pointer' }}
+            onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
+            onMouseLeave={() => setTip(null)}
+          />
         ))}
 
+        {/* Invisible hover targets for dense charts */}
+        {pts.length > 14 && pts.map((d, i) => (
+          <rect
+            key={i} x={xOf(i) - 4} y={PT} width={8} height={cH}
+            fill="transparent" style={{ cursor: 'pointer' }}
+            onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
+            onMouseLeave={() => setTip(null)}
+          />
+        ))}
+
+        {/* X-axis labels */}
         {xLabelIdxs.map(i => (
-          <text key={i} x={xOf(i).toFixed(1)} y={H - 3}
+          <text
+            key={i}
+            x={xOf(i).toFixed(1)}
+            y={H - 6}
             textAnchor={i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
-            fontSize="7.5" fill="#3a3630" style={{ fontFamily:"'Inter',sans-serif" }}>
+            fontSize="10" fill="#2e2b26"
+            style={{ fontFamily: "'Inter', sans-serif" }}
+          >
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
 
-        <line x1={PL} y1={yOf(0).toFixed(1)} x2={W-PR} y2={yOf(0).toFixed(1)} stroke="#2a2620" strokeWidth="0.6"/>
+        {/* Baseline */}
+        <line
+          x1={PL} y1={yOf(0).toFixed(1)}
+          x2={W - PR} y2={yOf(0).toFixed(1)}
+          stroke="#2a2620" strokeWidth="0.6"
+        />
       </svg>
 
+      {/* Tooltip */}
       {tip && (
-        <div style={{ position:'fixed', left:tip.x+10, top:tip.y-44, background:'#1a1915', border:'1px solid #2a2620', borderRadius:5, padding:'5px 9px', fontSize:11, color:'#e8e2d8', pointerEvents:'none', whiteSpace:'nowrap', zIndex:999 }}>
-          <div style={{ fontWeight:600, color }}>{valueKey==='rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
-          <div style={{ color:'#4a453e', fontSize:10 }}>{formatDateLabel(tip.d.date)}</div>
+        <div style={{
+          position: 'fixed', left: tip.x + 12, top: tip.y - 48,
+          background: '#1a1915', border: '1px solid #2a2620', borderRadius: 6,
+          padding: '6px 10px', fontSize: 11, color: '#e8e2d8',
+          pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 999,
+          boxShadow: '0 2px 8px rgba(0,0,0,.4)',
+        }}>
+          <div style={{ fontWeight: 600, color, marginBottom: 2 }}>
+            {valueKey === 'rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}
+          </div>
+          <div style={{ color: '#4a453e', fontSize: 10 }}>{formatDateLabel(tip.d.date)}</div>
         </div>
       )}
     </div>
