@@ -88,8 +88,9 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const vals = pts.map(d => d[valueKey]);
   const rawMax = Math.max(...vals, 1);
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
-  const yMax = Math.ceil((rawMax * 1.12) / mag) * mag;
-  const yMin = 0;
+  const yMax = Math.ceil((rawMax * 1.08) / mag) * mag;
+  const rangePad = (rawMax - rawMin) * 0.15;
+  const yMin = Math.max(0, rawMin - rangePad);
 
   const xOf = useCallback(i =>
     PAD.left + (pts.length <= 1 ? cW / 2 : (i / (pts.length - 1)) * cW),
@@ -105,7 +106,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
     .join(' ');
 
   const areaPath = pts.length < 2 ? '' :
-    `${linePath} L${xOf(pts.length - 1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
+    `${linePath} L${xOf(pts.length - 1).toFixed(1)},${yOf(yMin).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(yMin).toFixed(1)} Z`;
 
   const yTicks = [0, yMax / 2, yMax];
 
