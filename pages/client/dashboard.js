@@ -828,12 +828,27 @@ export default function ClientDashboard() {
                   AI Recommendations
                   {aiLoading && <div style={{ width: 10, height: 10, border: '1.5px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite', marginLeft: 4 }} />}
                 </div>
-                {(data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
-                  <div key={i} className="mob-ai-item">
-                    <div className="mob-ai-title">{rec.title}</div>
-                    <div className="mob-ai-desc">{rec.description}</div>
-                  </div>
-                ))}
+                {(data.aiRecommendations || []).slice(0, 3).map((rec, i) => {
+                  const typeColor =
+                    rec.type === 'inventory' ? '#c04040' :
+                    rec.type === 'margin'    ? '#2a8a5a' :
+                    '#02a4ba';
+                  const typeLabel =
+                    rec.type === 'inventory' ? 'Move Stock' :
+                    rec.type === 'margin'    ? 'High Margin' :
+                    'Trending';
+                  return (
+                    <div key={i} className="mob-ai-item" style={{ borderLeftColor: typeColor }}>
+                      <div style={{
+                        fontSize: 9, fontWeight: 600, color: typeColor,
+                        textTransform: 'uppercase', letterSpacing: '.5px',
+                        marginBottom: 4,
+                      }}>{typeLabel}</div>
+                      <div className="mob-ai-title">{rec.title}</div>
+                      <div className="mob-ai-desc">{rec.description}</div>
+                    </div>
+                  );
+                })}
               </div>
 
               <div className="mob-card">
@@ -1055,15 +1070,33 @@ export default function ClientDashboard() {
                 )}
               </div>
               {(data.aiRecommendations || []).length > 0
-                ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
-                  <div key={i} className="db-ai-item">
-                    <div className="db-ai-dot" />
-                    <div>
-                      <div className="db-ai-title">{rec.title}</div>
-                      <div className="db-ai-desc">{rec.description}</div>
+                ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => {
+                  const typeColor =
+                    rec.type === 'inventory' ? '#c04040' :
+                    rec.type === 'margin'    ? '#2a8a5a' :
+                    '#02a4ba';
+                  const typeLabel =
+                    rec.type === 'inventory' ? 'Move Stock' :
+                    rec.type === 'margin'    ? 'High Margin' :
+                    'Trending';
+                  return (
+                    <div key={i} className="db-ai-item" style={{ borderLeftColor: typeColor, marginBottom: i < 2 ? 'clamp(6px,0.6vh,11px)' : 0 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                          <span style={{
+                            fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 600,
+                            padding: '1px 6px', borderRadius: 8,
+                            background: `${typeColor}18`, color: typeColor,
+                            textTransform: 'uppercase', letterSpacing: '.5px',
+                            flexShrink: 0,
+                          }}>{typeLabel}</span>
+                        </div>
+                        <div className="db-ai-title">{rec.title}</div>
+                        <div className="db-ai-desc">{rec.description}</div>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
                 : <div className="db-empty">Preparing recommendations...</div>
               }
             </div>
