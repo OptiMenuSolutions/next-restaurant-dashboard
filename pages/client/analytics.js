@@ -1,5 +1,5 @@
 // pages/client/analytics.js
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
@@ -56,145 +56,160 @@ function NavIcon({ path }) {
 }
 
 // ── TrendLine ─────────────────────────────────────────────────────────────────
+// ── TrendLine ─────────────────────────────────────────────────────────────────
+const PAD = { left: 52, right: 12, top: 10, bottom: 26 };
+const FONT_SIZE = 10;
+const DOT_RADIUS = 3;
+
 function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
+  const wrapRef = useRef(null);
+  const [dims, setDims] = useState({ width: 0, height: 0 });
   const [tip, setTip] = useState(null);
 
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setDims({ width: Math.floor(width), height: Math.floor(height) });
+    });
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
   const cutoffStr = cutoff.toISOString().split('T')[0];
   const pts = data.filter(d => d.date >= cutoffStr && d[valueKey] >= 0);
 
-  if (pts.length < 2) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, fontSize: 11, color: '#4a453e' }}>
-      Not enough data — upload at least 2 days of sales
-    </div>
-  );
-
-  // Taller viewBox so SVG doesn't scale up aggressively when rendered tall
-  const W = 700, H = 160, PL = 52, PR = 10, PT = 8, PB = 24;
-  const cW = W - PL - PR, cH = H - PT - PB;
+  const { width: W, height: H } = dims;
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
 
   const vals = pts.map(d => d[valueKey]);
   const rawMax = Math.max(...vals, 1);
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
-  const yMax = Math.ceil((rawMax * 1.15) / mag) * mag;
+  const yMax = Math.ceil((rawMax * 1.12) / mag) * mag;
+  const yMin = 0;
 
-  const xOf = i => PL + (pts.length === 1 ? cW / 2 : (i / (pts.length - 1)) * cW);
-  const yOf = v => PT + cH - (v / yMax) * cH;
+  const xOf = useCallback(i =>
+    PAD.left + (pts.length <= 1 ? cW / 2 : (i / (pts.length - 1)) * cW),
+    [pts.length, cW]
+  );
+  const yOf = useCallback(v =>
+    PAD.top + cH - ((v - yMin) / (yMax - yMin)) * cH,
+    [cH, yMin, yMax]
+  );
 
-  const pth = pts.map((d, i) =>
-    `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`
-  ).join(' ');
-  const area = `${pth} L${xOf(pts.length - 1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
+  const linePath = pts.length < 2 ? '' : pts
+    .map((d, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(d[valueKey]).toFixed(1)}`)
+    .join(' ');
+
+  const areaPath = pts.length < 2 ? '' :
+    `${linePath} L${xOf(pts.length - 1).toFixed(1)},${yOf(0).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(0).toFixed(1)} Z`;
 
   const yTicks = [0, yMax / 2, yMax];
 
-  // Max 5 x-axis labels
-  const xLabelIdxs = pts.length <= 5
-    ? pts.map((_, i) => i)
-    : [
-        0,
-        Math.round((pts.length - 1) * 0.25),
-        Math.round((pts.length - 1) * 0.5),
-        Math.round((pts.length - 1) * 0.75),
-        pts.length - 1,
-      ].filter((v, i, arr) => arr.indexOf(v) === i);
+  const xLabelIdxs = (() => {
+    if (pts.length <= 6) return pts.map((_, i) => i);
+    const step = Math.ceil((pts.length - 1) / 5);
+    const idxs = [];
+    for (let i = 0; i < pts.length; i += step) idxs.push(i);
+    if (idxs[idxs.length - 1] !== pts.length - 1) idxs.push(pts.length - 1);
+    return [...new Set(idxs)];
+  })();
+
+  const gradId = `tg_${valueKey}`;
+  const clipId = `tc_${valueKey}`;
+
+  if (!W || !H) {
+    return (
+      <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, color: '#4a453e' }}>
+          Loading chart...
+        </div>
+      </div>
+    );
+  }
+
+  if (pts.length < 2) {
+    return (
+      <div ref={wrapRef} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 11, color: '#4a453e', textAlign: 'center' }}>
+          Not enough data — upload at least 2 days of sales
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ position: 'relative', flex: 1, minHeight: 0 }}>
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        style={{ width: '100%', height: '100%', display: 'block' }}
-        preserveAspectRatio="xMidYMid meet"
-      >
+    <div ref={wrapRef} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      <svg width={W} height={H} style={{ display: 'block', overflow: 'visible' }}>
         <defs>
-          <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.10" />
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.12" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
-          <clipPath id="tclip">
-            <rect x={PL} y={PT} width={cW} height={cH} />
+          <clipPath id={clipId}>
+            <rect x={PAD.left} y={PAD.top} width={cW} height={cH} />
           </clipPath>
         </defs>
 
-        {/* Y-axis grid + labels */}
-        {yTicks.map((t, i) => (
-          <g key={i}>
-            <line
-              x1={PL} y1={yOf(t).toFixed(1)}
-              x2={W - PR} y2={yOf(t).toFixed(1)}
-              stroke="#1a1815" strokeWidth="0.5"
-            />
-            <text
-              x={PL - 5} y={yOf(t).toFixed(1)}
-              textAnchor="end" dominantBaseline="middle"
-              fontSize="10" fill="#2e2b26"
-              style={{ fontFamily: "'Inter', sans-serif", fontWeight: 400 }}
-            >
-              {valueKey === 'rev' ? formatCurrency(t) : Math.round(t)}
-            </text>
-          </g>
-        ))}
+        {yTicks.map((t, i) => {
+          const y = yOf(t);
+          return (
+            <g key={i}>
+              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#1a1815" strokeWidth={0.75} />
+              <text x={PAD.left - 6} y={y} textAnchor="end" dominantBaseline="middle"
+                fontSize={FONT_SIZE} fill="#3a3630" fontFamily="Inter, sans-serif">
+                {valueKey === 'rev' ? formatCurrency(t) : Math.round(t)}
+              </text>
+            </g>
+          );
+        })}
 
-        {/* Area fill */}
-        <path d={area} fill="url(#tgrad)" clipPath="url(#tclip)" />
+        <line x1={PAD.left} y1={yOf(0)} x2={W - PAD.right} y2={yOf(0)} stroke="#2a2620" strokeWidth={0.75} />
 
-        {/* Line */}
-        <path
-          d={pth} fill="none" stroke={color}
-          strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-          clipPath="url(#tclip)"
-        />
+        {areaPath && <path d={areaPath} fill={`url(#${gradId})`} clipPath={`url(#${clipId})`} />}
 
-        {/* Dots when ≤14 points */}
-        {pts.length <= 14 && pts.map((d, i) => (
-          <circle
-            key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r="2.5"
-            fill={color} style={{ cursor: 'pointer' }}
+        {linePath && (
+          <path d={linePath} fill="none" stroke={color} strokeWidth={1.75}
+            strokeLinecap="round" strokeLinejoin="round" clipPath={`url(#${clipId})`} />
+        )}
+
+        {pts.length <= 20 && pts.map((d, i) => (
+          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r={DOT_RADIUS} fill={color}
+            style={{ cursor: 'pointer' }}
             onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
-            onMouseLeave={() => setTip(null)}
-          />
+            onMouseLeave={() => setTip(null)} />
         ))}
 
-        {/* Invisible hover targets for dense charts */}
-        {pts.length > 14 && pts.map((d, i) => (
-          <rect
-            key={i} x={xOf(i) - 4} y={PT} width={8} height={cH}
-            fill="transparent" style={{ cursor: 'pointer' }}
-            onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
-            onMouseLeave={() => setTip(null)}
-          />
-        ))}
+        {pts.length > 20 && pts.map((d, i) => {
+          const x = xOf(i);
+          const halfGap = pts.length > 1 ? (xOf(1) - xOf(0)) / 2 : 6;
+          return (
+            <rect key={i} x={x - halfGap} y={PAD.top} width={halfGap * 2} height={cH}
+              fill="transparent" style={{ cursor: 'crosshair' }}
+              onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
+              onMouseLeave={() => setTip(null)} />
+          );
+        })}
 
-        {/* X-axis labels */}
         {xLabelIdxs.map(i => (
-          <text
-            key={i}
-            x={xOf(i).toFixed(1)}
-            y={H - 6}
+          <text key={i} x={xOf(i)} y={H - 6}
             textAnchor={i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
-            fontSize="10" fill="#2e2b26"
-            style={{ fontFamily: "'Inter', sans-serif" }}
-          >
+            fontSize={FONT_SIZE} fill="#3a3630" fontFamily="Inter, sans-serif">
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
-
-        {/* Baseline */}
-        <line
-          x1={PL} y1={yOf(0).toFixed(1)}
-          x2={W - PR} y2={yOf(0).toFixed(1)}
-          stroke="#2a2620" strokeWidth="0.6"
-        />
       </svg>
 
-      {/* Tooltip */}
       {tip && (
         <div style={{
-          position: 'fixed', left: tip.x + 12, top: tip.y - 48,
+          position: 'fixed', left: tip.x + 14, top: tip.y - 52,
           background: '#1a1915', border: '1px solid #2a2620', borderRadius: 6,
           padding: '6px 10px', fontSize: 11, color: '#e8e2d8',
           pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 999,
-          boxShadow: '0 2px 8px rgba(0,0,0,.4)',
+          boxShadow: '0 2px 8px rgba(0,0,0,.45)',
         }}>
           <div style={{ fontWeight: 600, color, marginBottom: 2 }}>
             {valueKey === 'rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}
