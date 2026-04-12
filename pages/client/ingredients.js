@@ -41,6 +41,7 @@ function isRecent(dateStr) {
 }
 
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display...');
   @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400&family=Inter:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: #0a0908; overflow: hidden; }
