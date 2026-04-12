@@ -86,7 +86,8 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   const cH = H - PAD.top - PAD.bottom;
 
   const vals = pts.map(d => d[valueKey]);
-  const rawMax = Math.max(...vals, 1);
+  const rawMax = pts.length > 0 ? Math.max(...vals, 1) : 1;
+  const rawMin = pts.length > 0 ? Math.min(...vals, 0) : 0;
   const mag = Math.pow(10, Math.floor(Math.log10(rawMax)));
   const yMax = Math.ceil((rawMax * 1.08) / mag) * mag;
   const rangePad = (rawMax - rawMin) * 0.15;
