@@ -558,7 +558,7 @@ export default function ClientDashboard() {
       const [{ data: invoices }, { data: ingredients }, { data: menuItems }] = await Promise.all([
         supabase.from("invoices").select("*").eq("restaurant_id", restId).order("created_at", { ascending: false }),
         supabase.from("ingredients").select("*").eq("restaurant_id", restId),
-        supabase.from("menu_items").select(`*, menu_item_components(id, name, cost, component_ingredients(quantity, ingredients(last_price)))`).eq("restaurant_id", restId),
+        supabase.from("menu_items").select(`*, menu_item_components(id, name, cost, component_ingredients(quantity, ingredients(last_price, is_estimated)))`).eq("restaurant_id", restId),
       ]);
       const processed = processDashboardData(invoices || [], ingredients || [], menuItems || []);
       setData(processed);
@@ -623,10 +623,13 @@ export default function ClientDashboard() {
       }
   
       const margin = price > 0 && cost > 0 ? ((price - cost) / price) * 100 : 0;
-      return { id: item.id, name: item.name, price, cost, margin, hasCompleteData };
+      const hasEstimated = item.menu_item_components?.some(c =>
+        (c.component_ingredients || []).some(ci => ci.ingredients?.is_estimated === true)
+      ) || false;
+      return { id: item.id, name: item.name, price, cost, margin, hasCompleteData, hasEstimated };
     });
   
-    const itemsWithMargins = menuItemAnalysis.filter(i => i.hasCompleteData && i.price > 0);
+    const itemsWithMargins = menuItemAnalysis.filter(i => i.hasCompleteData && i.price > 0 && !i.hasEstimated);
     const averageMargin = itemsWithMargins.length > 0
       ? itemsWithMargins.reduce((s, i) => s + i.margin, 0) / itemsWithMargins.length
       : 0;
@@ -1119,11 +1122,18 @@ export default function ClientDashboard() {
               {marginItems.length > 0
                 ? marginItems.map(item => (
                   <div key={item.id} className="db-margin-row">
-                    <div className="db-margin-name">{item.name}</div>
-                    <div className="db-margin-track">
-                      <div className="db-margin-fill" style={{ width: `${Math.max(0, Math.min(100, item.margin))}%`, background: getMarginColor(item.margin) }} />
+                    <div className="db-margin-name">
+                      {item.name}
+                      {item.hasEstimated && (
+                        <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: '#d4a020', fontWeight: 400 }}>~</span>
+                      )}
                     </div>
-                    <div className="db-margin-pct" style={{ color: getMarginColor(item.margin) }}>{item.margin.toFixed(1)}%</div>
+                    <div className="db-margin-track">
+                      <div className="db-margin-fill" style={{ width: `${Math.max(0, Math.min(100, item.margin))}%`, background: item.hasEstimated ? '#d4a020' : getMarginColor(item.margin), opacity: item.hasEstimated ? 0.5 : 1 }} />
+                    </div>
+                    <div className="db-margin-pct" style={{ color: item.hasEstimated ? '#d4a020' : getMarginColor(item.margin) }}>
+                      {item.margin.toFixed(1)}%{item.hasEstimated ? ' ~' : ''}
+                    </div>
                   </div>
                 ))
                 : <div className="db-empty">No menu data yet</div>

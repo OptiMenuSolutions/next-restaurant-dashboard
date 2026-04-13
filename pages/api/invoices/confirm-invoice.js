@@ -77,6 +77,7 @@ export default async function handler(req, res) {
             last_ordered_at: invoice.invoice_date || new Date().toISOString().split('T')[0],
             ingredient_category: 'weight',
             is_sample: false,
+            is_estimated: false,
           })
           .select('id')
           .single();
@@ -96,6 +97,7 @@ export default async function handler(req, res) {
           .update({
             last_price: item.unit_cost,
             last_ordered_at: invoice.invoice_date || new Date().toISOString().split('T')[0],
+            is_estimated: false
           })
           .eq('id', ingredientId)
           .eq('restaurant_id', restaurant_id);

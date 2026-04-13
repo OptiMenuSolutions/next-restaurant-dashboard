@@ -62,6 +62,18 @@ function hasIncompleteCosting(item) {
   );
 }
 
+function hasEstimatedCosts(item) {
+  if (item.menu_item_components?.length > 0) {
+    return item.menu_item_components.some(c =>
+      (c.component_ingredients || []).some(ci => ci.ingredients?.is_estimated === true)
+    );
+  }
+  if (item.menu_item_ingredients?.length > 0) {
+    return item.menu_item_ingredients.some(i => i.ingredients?.is_estimated === true);
+  }
+  return false;
+}
+
 function getIngredientCount(item) {
   if (item.menu_item_components && item.menu_item_components.length > 0) {
     const ids = new Set();
@@ -286,7 +298,7 @@ export default function ClientMenuItems() {
     const { data } = await supabase.from('menu_items').select(`
       *,
       menu_item_ingredients(quantity, ingredients(id, name, unit, last_price)),
-      menu_item_components(id, name, cost, component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, last_price, unit, last_ordered_at)))
+      menu_item_components(id, name, cost, component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, last_price, unit, last_ordered_at, is_estimated)))
     `).eq('restaurant_id', restaurantId).order('name');
     setMenuItems(data || []);
     setLoading(false);
@@ -310,7 +322,7 @@ export default function ClientMenuItems() {
           try { totalCost = typeof calculateStandardizedCost === 'function' ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name) : ci.quantity * unitCost; }
           catch { totalCost = ci.quantity * unitCost; }
         }
-        return { id: ci.id, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit, unitCost, standardUnit: ing?.unit || 'unit', totalCost, hasPrice: unitCost > 0 };
+        return { id: ci.id, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit, unitCost, standardUnit: ing?.unit || 'unit', totalCost, hasPrice: unitCost > 0, isEstimated: ing?.is_estimated === true };
       });
       return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: processedIngs.reduce((s, i) => s + i.totalCost, 0), ingredients: processedIngs, ingredientCount: processedIngs.length };
     });
@@ -552,6 +564,15 @@ export default function ClientMenuItems() {
                   return (
                     <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => selectItem(item.id)}>
                       <span className={`mi-card-status ${cls}`}>{label}</span>
+                      {hasEstimatedCosts(item) && (
+                        <span style={{
+                          position: 'absolute', top: 10, left: 10,
+                          fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600,
+                          padding: '1px 5px', borderRadius: 6,
+                          background: 'rgba(212,160,32,.12)', color: '#d4a020',
+                          border: '1px solid rgba(212,160,32,.2)',
+                        }}>est. costs</span>
+                      )}
                       <div className="mi-card-icon">
                         <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
                       </div>
@@ -696,10 +717,17 @@ export default function ClientMenuItems() {
                           <div className="mi-d-metric-lbl">Total Cost</div>
                           <div className="mi-d-metric-val">{formatCurrency(totalCost)}</div>
                         </div>
-                        <div className="mi-d-metric">
-                          <div className="mi-d-metric-lbl">Profit Margin</div>
-                          <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div>
+                      <div className="mi-d-metric">
+                        <div className="mi-d-metric-lbl">
+                          Profit Margin
+                          {selectedItemData && hasEstimatedCosts(selectedItemData.item) && (
+                            <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: '#d4a020' }}>~est</span>
+                          )}
                         </div>
+                        <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>
+                          {profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}
+                        </div>
+                      </div>
                         <div className="mi-d-metric">
                           <div className="mi-d-metric-lbl">Ingredients</div>
                           <div className="mi-d-metric-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div>
@@ -728,7 +756,9 @@ export default function ClientMenuItems() {
                                       <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? '#2a8a5a' : '#c04040' }} />
                                       <div className="mi-comp-ing-name">{ing.name}</div>
                                       <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
-                                      <div className="mi-comp-ing-cost">{formatCurrency(ing.totalCost)}</div>
+                                <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? '#d4a020' : '#9a9086' }}>
+                                  {formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}
+                                </div>
                                     </div>
                                   ))}
                                 </div>

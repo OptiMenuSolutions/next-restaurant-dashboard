@@ -347,6 +347,7 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
           last_price: ing.estimated_unit_cost ?? null,
           ingredient_category: 'weight', // default; updated by invoice processing
           is_sample: false,
+          is_estimated: true,
         })
         .select('id')
         .single();
