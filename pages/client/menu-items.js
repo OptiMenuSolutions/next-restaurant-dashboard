@@ -85,6 +85,24 @@ function getIngredientCount(item) {
   return item.menu_item_ingredients?.length || 0;
 }
 
+function getIncompleteIngredients(itemData) {
+  if (!itemData) return [];
+  const missing = [];
+  if (itemData.components?.length > 0) {
+    itemData.components.forEach(c => {
+      (c.ingredients || []).forEach(ing => {
+        if (!ing.hasPrice) missing.push({ name: ing.name, component: c.name, reason: 'No price on file' });
+      });
+    });
+  } else {
+    (itemData.ingredients || []).forEach(i => {
+      const price = parseFloat(i.ingredients?.last_price || 0);
+      if (price === 0) missing.push({ name: i.ingredients?.name || 'Unknown', component: null, reason: 'No price on file' });
+    });
+  }
+  return missing;
+}
+
 const CSS = `
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -317,14 +335,22 @@ export default function ClientMenuItems() {
       const processedIngs = (c.component_ingredients || []).map(ci => {
         const ing = ci.ingredients;
         const unitCost = ing?.last_price || 0;
-        let totalCost = 0;
-        if (unitCost > 0) {
-          try { totalCost = typeof calculateStandardizedCost === 'function' ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name) : ci.quantity * unitCost; }
-          catch { totalCost = ci.quantity * unitCost; }
-        }
+          let totalCost = 0;
+          if (unitCost > 0) {
+            try {
+              const calc = typeof calculateStandardizedCost === 'function'
+                ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name)
+                : null;
+              totalCost = (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : 0;
+            } catch {
+              totalCost = 0;
+            }
+          }
         return { id: ci.id, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit, unitCost, standardUnit: ing?.unit || 'unit', totalCost, hasPrice: unitCost > 0, isEstimated: ing?.is_estimated === true };
       });
-      return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: processedIngs.reduce((s, i) => s + i.totalCost, 0), ingredients: processedIngs, ingredientCount: processedIngs.length };
+      const calculatedCost = processedIngs.reduce((s, i) => s + i.totalCost, 0);
+      const effectiveCost = (c.cost > 0 && calculatedCost > c.cost * 3) ? c.cost : calculatedCost;
+      return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: effectiveCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
     });
 
     setSelectedItemData({ item, ingredients: ings || [], components: processedComps, costHistory: history || [] });
@@ -423,7 +449,11 @@ export default function ClientMenuItems() {
   // ── totalCost: use component calculatedCost, then ingredient sum, then stored flat cost ──
   const totalCost = selectedItemData
     ? selectedItemData.components.length > 0
-      ? selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0)
+      ? (() => {
+          const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0);
+          const stored = parseFloat(selectedItemData.item?.cost || 0);
+          return (stored > 0 && compSum > stored * 3) ? stored : compSum;
+        })()
       : selectedItemData.ingredients.length > 0
         ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
         : parseFloat(selectedItemData.item?.cost || 0)
@@ -563,16 +593,17 @@ export default function ClientMenuItems() {
                   const isSelected = selectedItem === item.id;
                   return (
                     <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => selectItem(item.id)}>
-                      <span className={`mi-card-status ${cls}`}>{label}</span>
-                      {hasEstimatedCosts(item) && (
-                        <span style={{
-                          position: 'absolute', top: 10, left: 10,
-                          fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600,
-                          padding: '1px 5px', borderRadius: 6,
-                          background: 'rgba(212,160,32,.12)', color: '#d4a020',
-                          border: '1px solid rgba(212,160,32,.2)',
-                        }}>est. costs</span>
-                      )}
+                      <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
+                        {hasEstimatedCosts(item) && (
+                          <span style={{
+                            fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600,
+                            padding: '1px 5px', borderRadius: 6,
+                            background: 'rgba(212,160,32,.12)', color: '#d4a020',
+                            border: '1px solid rgba(212,160,32,.2)',
+                          }}>est. costs</span>
+                        )}
+                        <span className={`mi-card-status ${cls}`} style={{ position: 'static' }}>{label}</span>
+                      </div>
                       <div className="mi-card-icon">
                         <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
                       </div>
@@ -808,6 +839,43 @@ export default function ClientMenuItems() {
                           })}
                         </div>
                       )}
+
+                      {(() => {
+                        const incomplete = getIncompleteIngredients(selectedItemData);
+                        const status = getStatus(menuItems.find(i => i.id === selectedItem) || {});
+                        if (incomplete.length === 0) return null;
+                        return (
+                          <div>
+                            <div className="mi-sect-title" style={{ color: '#c04040' }}>
+                              Why is this item Incomplete?
+                            </div>
+                            <div style={{
+                              background: 'rgba(192,64,64,.05)', border: '1px solid rgba(192,64,64,.15)',
+                              borderRadius: 6, padding: 'clamp(8px,.8vw,12px)',
+                            }}>
+                              <div style={{ fontSize: 'clamp(8px,.65vw,11px)', color: '#9a9086', marginBottom: 8 }}>
+                                {incomplete.length} ingredient{incomplete.length !== 1 ? 's are' : ' is'} missing a price — add them in the Ingredients page to mark this item Complete.
+                              </div>
+                              {incomplete.map((ing, idx) => (
+                                <div key={idx} style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: 'clamp(3px,.3vh,5px) 0', borderBottom: '1px solid #1a1915',
+                                }}>
+                                  <div>
+                                    <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#e8e2d8' }}>{ing.name}</div>
+                                    {ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e' }}>in {ing.component}</div>}
+                                  </div>
+                                  <span style={{
+                                    fontSize: 'clamp(7px,.58vw,9px)', padding: '1px 6px', borderRadius: 8,
+                                    background: 'rgba(192,64,64,.1)', color: '#c04040',
+                                  }}>{ing.reason}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                     </>
                   ) : selectedItemData && viewMode === 'optimize' ? (
                     <>
