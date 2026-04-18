@@ -307,6 +307,7 @@ export default function ClientMenuItems() {
   const [editSaveMsg, setEditSaveMsg] = useState(null);
   const [ingSearch, setIngSearch] = useState({});
   const [ingDropdownOpen, setIngDropdownOpen] = useState({});
+  const [editDirty, setEditDirty] = useState(false);
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
@@ -523,6 +524,7 @@ export default function ClientMenuItems() {
   }
 
   function initEditComponents(itemData) {
+    setEditDirty(true);
     if (!itemData) return;
     const comps = itemData.components.map(c => ({
       id: c.id,
@@ -546,6 +548,7 @@ export default function ClientMenuItems() {
   }
 
   function addEditComponent() {
+    setEditDirty(true);
     setEditComponents(prev => [...prev, {
       id: `new-${Date.now()}`,
       name: 'New Component',
@@ -555,14 +558,17 @@ export default function ClientMenuItems() {
   }
 
   function removeEditComponent(compIdx) {
+    setEditDirty(true);
     setEditComponents(prev => prev.filter((_, i) => i !== compIdx));
   }
 
   function updateEditComponentName(compIdx, name) {
+    setEditDirty(true);
     setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, name } : c));
   }
 
   function addEditIngredient(compIdx) {
+    setEditDirty(true);
     setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
       ...c,
       ingredients: [...c.ingredients, {
@@ -579,6 +585,7 @@ export default function ClientMenuItems() {
   }
 
   function removeEditIngredient(compIdx, ingIdx) {
+    setEditDirty(true);
     setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
       ...c,
       ingredients: c.ingredients.filter((_, j) => j !== ingIdx),
@@ -586,13 +593,26 @@ export default function ClientMenuItems() {
   }
 
   function updateEditIngredient(compIdx, ingIdx, field, value) {
+    setEditDirty(true);
     setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
       ...c,
       ingredients: c.ingredients.map((ing, j) => j === ingIdx ? { ...ing, [field]: value } : ing),
     } : c));
   }
 
+  function guardEditNavigation(callback) {
+    if (editDirty) {
+      if (window.confirm('You have unsaved changes. Leave without saving?')) {
+        setEditDirty(false);
+        callback();
+      }
+    } else {
+      callback();
+    }
+  }
+
   function selectLibraryIngredient(compIdx, ingIdx, libIng) {
+    setEditDirty(true);
     setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
       ...c,
       ingredients: c.ingredients.map((ing, j) => j === ingIdx ? {
@@ -673,6 +693,7 @@ export default function ClientMenuItems() {
       setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` });
     } else {
       setEditSaveMsg({ type: 'success', text: 'Saved successfully' });
+      setEditDirty(false);
       await fetchItemDetail(menuItemId);
       await fetchMenuItems();
     }
@@ -689,7 +710,7 @@ export default function ClientMenuItems() {
             <div style={{ display: 'flex', gap: 2 }}>
               {tabs.map(t => (
                 <button key={t} className={`mi-tab${t === 'Menu Items' ? ' active' : ''}`}
-                  onClick={() => router.push(t === 'Dashboard' ? '/client/dashboard' : `/client/${t.toLowerCase().replace(' ', '-')}`)}>
+                  onClick={() => guardEditNavigation(() => router.push(t === 'Dashboard' ? '/client/dashboard' : `/client/${t.toLowerCase().replace(' ', '-')}`))}>
                   {t}
                 </button>
               ))}
@@ -795,7 +816,7 @@ export default function ClientMenuItems() {
                   const ingCount = getIngredientCount(item);
                   const isSelected = selectedItem === item.id;
                   return (
-                    <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => selectItem(item.id)}>
+                    <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => guardEditNavigation(() => selectItem(item.id))}>
                       <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
                         {hasEstimatedCosts(item) && (
                           <span style={{
@@ -850,13 +871,20 @@ export default function ClientMenuItems() {
                 <div className="mi-view-tabs">
                   {selectedItem ? (
                     <>
-                      <button className={`mi-vtab${viewMode === 'details' ? ' active' : ''}`} onClick={() => setViewMode('details')}>Details</button>
-                        <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => setViewMode('optimize')}>Optimize</button>
+                      <button className={`mi-vtab${viewMode === 'details' ? ' active' : ''}`} onClick={() => guardEditNavigation(() => setViewMode('details'))}>Details</button>
+                        <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => guardEditNavigation(() => setViewMode('optimize'))}>Optimize</button>
                         <button className={`mi-vtab${viewMode === 'edit' ? ' active' : ''}`}
                           onClick={() => { setViewMode('edit'); initEditComponents(selectedItemData); fetchIngredientLibrary(); }}
                           style={{ color: viewMode === 'edit' ? '#e8e2d8' : '#d4a020' }}>
                           Edit
                         </button>
+                        <button className="mi-close-btn" onClick={() =>
+                          guardEditNavigation(() => {
+                            setSelectedItem(null);
+                            setSelectedItemData(null);
+                            setViewMode('overview');
+                          })
+                        }>✕ Close</button>
                     </>
                   ) : (
                     <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
