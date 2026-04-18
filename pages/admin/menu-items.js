@@ -1,15 +1,14 @@
-// pages/admin/menu-items.js (Complete version with dynamic categories)
+// pages/admin/menu-items.js
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/AdminLayout';
 import supabase from '../../lib/supabaseClient';
-import { 
-  calculateStandardizedCost, 
-  getUnitSuggestions, 
+import {
+  calculateStandardizedCost,
+  getUnitSuggestions,
   validateUnit,
   getStandardUnitForUnit,
   getUnitCategory,
-  normalizeUnit
 } from '../../lib/standardizedUnits';
 import {
   IconX,
@@ -24,1630 +23,828 @@ import {
   IconCurrencyDollar,
   IconPercentage,
   IconRefresh,
+  IconChevronRight,
 } from '@tabler/icons-react';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Restaurant selector (step 1)
+// ─────────────────────────────────────────────────────────────────────────────
+function RestaurantSelector({ restaurants, onSelect }) {
+  const [query, setQuery]     = useState('');
+  const [results, setResults] = useState([]);
+  const [chosen, setChosen]   = useState(null);
+  const [confirm, setConfirm] = useState('');
+  const [highlighted, setHighlighted] = useState(-1);
+
+  function search(val) {
+    setQuery(val);
+    setChosen(null);
+    setConfirm('');
+    if (val.length > 0) {
+      setResults(restaurants.filter(r => r.name.toLowerCase().includes(val.toLowerCase())));
+      setHighlighted(0);
+    } else {
+      setResults([]);
+      setHighlighted(-1);
+    }
+  }
+
+  function pick(restaurant) {
+    setChosen(restaurant);
+    setQuery(restaurant.name);
+    setResults([]);
+    setHighlighted(-1);
+    setConfirm('');
+  }
+
+  function handleKeyDown(e) {
+    if (!results.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlighted(h => Math.min(h + 1, results.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setHighlighted(h => Math.max(h - 1, 0)); }
+    if (e.key === 'Enter' && highlighted >= 0) { e.preventDefault(); pick(results[highlighted]); }
+    if (e.key === 'Escape')    { setResults([]); setHighlighted(-1); }
+  }
+
+  const canConfirm = chosen && confirm.trim() === chosen.name;
+
+  return (
+    <div style={{ maxWidth: 520, margin: '0 auto' }}>
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+          Select a Restaurant
+        </h2>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+          Choose a restaurant to manage its menu items
+        </p>
+      </div>
+
+      <div className="admin-card" style={{ padding: 24 }}>
+        {/* Search */}
+        <div style={{ marginBottom: 16 }}>
+          <label className="admin-label">Search Restaurant</label>
+          <div style={{ position: 'relative' }}>
+            <IconSearch size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+            <input
+              className="admin-input"
+              style={{ paddingLeft: 36 }}
+              placeholder="Type to search…"
+              value={query}
+              onChange={e => search(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            {results.length > 0 && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                borderRadius: 8, marginTop: 4, maxHeight: 200, overflowY: 'auto',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+              }}>
+                {results.map((r, i) => (
+                  <div
+                    key={r.id}
+                    onClick={() => pick(r)}
+                    style={{
+                      padding: '10px 14px', cursor: 'pointer', fontSize: '0.85rem',
+                      background: i === highlighted ? 'var(--accent-dim)' : 'transparent',
+                      color: i === highlighted ? 'var(--accent)' : 'var(--text-secondary)',
+                      transition: 'all 0.1s ease',
+                      borderBottom: i < results.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
+                    }}
+                    onMouseEnter={() => setHighlighted(i)}
+                  >
+                    {r.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Confirmation */}
+        {chosen && (
+          <>
+            <div style={{
+              padding: '12px 14px', borderRadius: 8, marginBottom: 14,
+              background: 'var(--accent-dim)', border: '1px solid rgba(2,164,186,0.2)',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(2,164,186,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0 }}>
+                <IconBuilding size={15} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{chosen.name}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--accent)' }}>Selected restaurant</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label className="admin-label">Type the restaurant name to confirm</label>
+              <input
+                className="admin-input"
+                placeholder={`Type "${chosen.name}" to confirm`}
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+              />
+            </div>
+
+            <button
+              className="admin-btn admin-btn-primary"
+              style={{ width: '100%', justifyContent: 'center', opacity: canConfirm ? 1 : 0.4 }}
+              disabled={!canConfirm}
+              onClick={() => canConfirm && onSelect(chosen)}
+            >
+              <IconCheck size={15} /> Confirm & Manage Menu
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Component ingredient row
+// ─────────────────────────────────────────────────────────────────────────────
+function IngredientRow({ ingredient, componentIndex, ingredientIndex, allIngredients, onChange, onRemove }) {
+  const [ingResults, setIngResults]   = useState([]);
+  const [unitResults, setUnitResults] = useState([]);
+  const [unitHighlight, setUnitHighlight] = useState(-1);
+
+  function searchIngredient(val) {
+    onChange('ingredient_search', val);
+    onChange('ingredient_id', null);
+    if (val.length > 1) setIngResults(allIngredients.filter(i => i.name.toLowerCase().includes(val.toLowerCase())));
+    else setIngResults([]);
+  }
+
+  function pickIngredient(ing) {
+    onChange('ingredient_id', ing.id);
+    onChange('ingredient_search', ing.name);
+    setIngResults([]);
+  }
+
+  function searchUnit(val) {
+    onChange('unit', val);
+    if (val.length > 0) {
+      setUnitResults(getUnitSuggestions(val, 6));
+      setUnitHighlight(0);
+    } else { setUnitResults([]); setUnitHighlight(-1); }
+  }
+
+  function pickUnit(u) {
+    onChange('unit', typeof u === 'string' ? u : u.unit);
+    setUnitResults([]);
+    setUnitHighlight(-1);
+  }
+
+  function handleUnitKey(e) {
+    if (!unitResults.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setUnitHighlight(h => Math.min(h + 1, unitResults.length - 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setUnitHighlight(h => Math.max(h - 1, 0)); }
+    if (e.key === 'Enter' && unitHighlight >= 0) { e.preventDefault(); pickUnit(unitResults[unitHighlight]); }
+    if (e.key === 'Escape') { setUnitResults([]); setUnitHighlight(-1); }
+  }
+
+  const baseInput = {
+    background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 6,
+    color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: '0.78rem',
+    padding: '6px 10px', outline: 'none', width: '100%', transition: 'border-color 0.15s ease',
+  };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 90px 28px', gap: 6, alignItems: 'center' }}>
+      {/* Ingredient search */}
+      <div style={{ position: 'relative' }}>
+        <input
+          style={baseInput}
+          placeholder="Ingredient name…"
+          value={ingredient.ingredient_search || ''}
+          onChange={e => searchIngredient(e.target.value)}
+        />
+        {ingResults.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, marginTop: 2, maxHeight: 140, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0,0,0,0.4)' }}>
+            {ingResults.map(ing => (
+              <div key={ing.id} onClick={() => pickIngredient(ing)} style={{ padding: '7px 10px', cursor: 'pointer', fontSize: '0.78rem', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+              >
+                <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{ing.name}</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>{ing.unit} · ${ing.last_price?.toFixed(2) || '0.00'}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Quantity */}
+      <input
+        style={baseInput}
+        type="number"
+        step="0.01"
+        placeholder="Qty"
+        value={ingredient.quantity || ''}
+        onChange={e => onChange('quantity', e.target.value)}
+      />
+
+      {/* Unit */}
+      <div style={{ position: 'relative' }}>
+        <input
+          style={baseInput}
+          placeholder="Unit"
+          value={ingredient.unit || ''}
+          onChange={e => searchUnit(e.target.value)}
+          onKeyDown={handleUnitKey}
+        />
+        {unitResults.length > 0 && (
+          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 30, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, marginTop: 2, maxHeight: 140, overflowY: 'auto', boxShadow: '0 8px 20px rgba(0,0,0,0.4)' }}>
+            {unitResults.map((u, i) => (
+              <div key={u.unit} onClick={() => pickUnit(u)} style={{ padding: '6px 10px', cursor: 'pointer', fontSize: '0.75rem', background: i === unitHighlight ? 'var(--accent-dim)' : 'transparent', color: i === unitHighlight ? 'var(--accent)' : 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                onMouseEnter={() => setUnitHighlight(i)}
+              >
+                <div style={{ fontWeight: 500 }}>{u.unit}</div>
+                <div style={{ fontSize: '0.68rem', opacity: 0.7 }}>{u.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Remove */}
+      <button onClick={onRemove} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#f43f5e'; e.currentTarget.style.background = 'rgba(244,63,94,0.1)'; }}
+        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'none'; }}
+      >
+        <IconX size={13} />
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Component card
+// ─────────────────────────────────────────────────────────────────────────────
+function ComponentCard({ component, index, allIngredients, onChange, onAddIngredient, onRemoveIngredient, onIngredientChange, onRemove }) {
+  return (
+    <div style={{
+      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: 16,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+          Component {index + 1}
+        </span>
+        <button onClick={onRemove} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+          onMouseEnter={e => e.currentTarget.style.color = '#f43f5e'}
+          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+        >
+          <IconTrash size={14} />
+        </button>
+      </div>
+
+      {/* Name */}
+      <input
+        style={{
+          background: 'var(--bg-base)', border: '1px solid var(--border)', borderRadius: 7,
+          color: 'var(--text-primary)', fontFamily: 'var(--font-body)', fontSize: '0.83rem',
+          padding: '8px 12px', outline: 'none', width: '100%', marginBottom: 12,
+          transition: 'border-color 0.15s ease',
+        }}
+        placeholder="Component name (e.g. Patty, Sauce, Bun)"
+        value={component.name}
+        onChange={e => onChange('name', e.target.value)}
+        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+        onBlur={e => e.target.style.borderColor = 'var(--border)'}
+      />
+
+      {/* Ingredients */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Ingredients
+          </span>
+          <button
+            onClick={onAddIngredient}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(2,164,186,0.1)', border: '1px solid rgba(2,164,186,0.2)', borderRadius: 5, color: 'var(--accent)', fontSize: '0.72rem', fontWeight: 600, padding: '3px 8px', cursor: 'pointer' }}
+          >
+            <IconPlus size={11} /> Add
+          </button>
+        </div>
+
+        {!component.ingredients?.length ? (
+          <div style={{ padding: '12px', borderRadius: 7, border: '1px dashed var(--border)', textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            No ingredients added
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Column headers */}
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 90px 28px', gap: 6 }}>
+              {['Ingredient', 'Qty', 'Unit', ''].map((h, i) => (
+                <div key={i} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', paddingLeft: 2 }}>{h}</div>
+              ))}
+            </div>
+            {component.ingredients.map((ing, ingIdx) => (
+              <IngredientRow
+                key={ing.id}
+                ingredient={ing}
+                componentIndex={index}
+                ingredientIndex={ingIdx}
+                allIngredients={allIngredients}
+                onChange={(field, val) => onIngredientChange(ingIdx, field, val)}
+                onRemove={() => onRemoveIngredient(ingIdx)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main page
+// ─────────────────────────────────────────────────────────────────────────────
 export default function MenuItemsManagement() {
   const router = useRouter();
-  const [restaurants, setRestaurants] = useState([]);
+  const [restaurants, setRestaurants]     = useState([]);
   const [selectedRestaurant, setSelectedRestaurant] = useState(null);
-  const [menuItems, setMenuItems] = useState([]);
-  const [ingredients, setIngredients] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [categories, setCategories] = useState([]);
-  const [creatingCategory, setCreatingCategory] = useState(false);
-  
-  // Restaurant selection state
-  const [restaurantSearchTerm, setRestaurantSearchTerm] = useState('');
-  const [filteredRestaurants, setFilteredRestaurants] = useState([]);
-  const [highlightedRestaurantIndex, setHighlightedRestaurantIndex] = useState(-1);
-  const [selectedRestaurantForConfirm, setSelectedRestaurantForConfirm] = useState(null);
-  const [confirmationText, setConfirmationText] = useState('');
-  
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    price: '',
-    category_id: null,
-    categorySearchTerm: ''
-  });
-  const [menuItemComponents, setMenuItemComponents] = useState([]);
-  const [filteredIngredients, setFilteredIngredients] = useState([]);
-  const [activeSearchComponentIndex, setActiveSearchComponentIndex] = useState(null);
-  const [activeSearchIngredientIndex, setActiveSearchIngredientIndex] = useState(null);
-  const [unitSuggestions, setUnitSuggestions] = useState([]);
-  const [activeUnitComponentIndex, setActiveUnitComponentIndex] = useState(null);
-  const [activeUnitIngredientIndex, setActiveUnitIngredientIndex] = useState(null);
-  const [highlightedUnitIndex, setHighlightedUnitIndex] = useState(-1);
-  const [saving, setSaving] = useState(false);
-  
-  // Category autocomplete state
-  const [filteredCategories, setFilteredCategories] = useState([]);
-  const [highlightedCategoryIndex, setHighlightedCategoryIndex] = useState(-1);
+  const [menuItems, setMenuItems]         = useState([]);
+  const [ingredients, setIngredients]     = useState([]);
+  const [categories, setCategories]       = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [showForm, setShowForm]           = useState(false);
+  const [editingItem, setEditingItem]     = useState(null);
+  const [saving, setSaving]               = useState(false);
 
-  const fetchCategories = useCallback(async () => {
-    if (!selectedRestaurant) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('menu_categories')
-        .select('*')
-        .eq('restaurant_id', selectedRestaurant.id)
-        .order('name');
+  // Category autocomplete
+  const [catQuery, setCatQuery]           = useState('');
+  const [catResults, setCatResults]       = useState([]);
+  const [catHighlight, setCatHighlight]   = useState(-1);
+  const [creatingCat, setCreatingCat]     = useState(false);
 
-      if (error) throw error;
-      setCategories(data || []);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-    }
-  }, [selectedRestaurant?.id]);
+  // Form
+  const [formData, setFormData] = useState({ name: '', price: '', category_id: null });
+  const [components, setComponents]       = useState([]);
 
-  // Define callback functions first
   const fetchMenuItems = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('menu_items')
-        .select(`
-          *,
-          menu_item_components (
-            id,
-            name,
-            cost
-          ),
-          menu_categories (
-            id,
-            name
-          )
-        `)
-        .eq('restaurant_id', selectedRestaurant.id)
-        .order('name');
-
-      if (error) throw error;
-      setMenuItems(data || []);
-    } catch (error) {
-      console.error('Error fetching menu items:', error);
-    }
+    if (!selectedRestaurant) return;
+    const { data } = await supabase.from('menu_items').select('*, menu_item_components(id, name, cost), menu_categories(id, name)').eq('restaurant_id', selectedRestaurant.id).order('name');
+    setMenuItems(data || []);
   }, [selectedRestaurant?.id]);
 
   const fetchIngredients = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('ingredients')
-        .select('*')
-        .eq('restaurant_id', selectedRestaurant.id)
-        .order('name');
+    if (!selectedRestaurant) return;
+    const { data } = await supabase.from('ingredients').select('*').eq('restaurant_id', selectedRestaurant.id).order('name');
+    setIngredients(data || []);
+  }, [selectedRestaurant?.id]);
 
-      if (error) throw error;
-      setIngredients(data || []);
-    } catch (error) {
-      console.error('Error fetching ingredients:', error);
-    }
+  const fetchCategories = useCallback(async () => {
+    if (!selectedRestaurant) return;
+    const { data } = await supabase.from('menu_categories').select('*').eq('restaurant_id', selectedRestaurant.id).order('name');
+    setCategories(data || []);
   }, [selectedRestaurant?.id]);
 
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-        return;
-      }
-      
-      fetchRestaurants();
+      if (!user) { router.push('/admin/login'); return; }
+      const { data } = await supabase.from('restaurants').select('*').order('name');
+      setRestaurants(data || []);
+      setLoading(false);
     };
     checkUser();
   }, [router]);
 
   useEffect(() => {
-    if (selectedRestaurant) {
-      fetchMenuItems();
-      fetchIngredients();
-      fetchCategories();
-    }
+    if (selectedRestaurant) { fetchMenuItems(); fetchIngredients(); fetchCategories(); }
   }, [selectedRestaurant, fetchMenuItems, fetchIngredients, fetchCategories]);
 
-  async function fetchRestaurants() {
-    try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setRestaurants(data || []);
-    } catch (error) {
-      console.error('Error fetching restaurants:', error);
-    } finally {
-      setLoading(false);
-    }
+  // ── Category autocomplete ──────────────────────────────────────────────
+  function searchCategory(val) {
+    setCatQuery(val);
+    setFormData(prev => ({ ...prev, category_id: null }));
+    if (val.length > 0) {
+      setCatResults(categories.filter(c => c.name.toLowerCase().includes(val.toLowerCase())));
+      setCatHighlight(0);
+    } else { setCatResults([]); setCatHighlight(-1); }
   }
 
-  function handleRestaurantSelect(restaurant) {
-    setSelectedRestaurant(restaurant);
-    setShowAddForm(false);
-    setEditingItem(null);
-  }
-
-  // Restaurant search functions
-  function handleRestaurantSearch(searchTerm) {
-    setRestaurantSearchTerm(searchTerm);
-    setSelectedRestaurantForConfirm(null);
-    setConfirmationText('');
-    
-    if (searchTerm.length > 0) {
-      const filtered = restaurants.filter(restaurant =>
-        restaurant.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredRestaurants(filtered);
-      setHighlightedRestaurantIndex(filtered.length > 0 ? 0 : -1);
-    } else {
-      setFilteredRestaurants([]);
-      setHighlightedRestaurantIndex(-1);
-    }
-  }
-
-  function selectRestaurantForConfirm(restaurant) {
-    setSelectedRestaurantForConfirm(restaurant);
-    setRestaurantSearchTerm(restaurant.name);
-    setFilteredRestaurants([]);
-    setHighlightedRestaurantIndex(-1);
-    setConfirmationText('');
-  }
-
-  function handleRestaurantKeyDown(e) {
-    if (filteredRestaurants.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setHighlightedRestaurantIndex(prev => 
-        prev < filteredRestaurants.length - 1 ? prev + 1 : 0
-      );
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedRestaurantIndex(prev => 
-        prev > 0 ? prev - 1 : filteredRestaurants.length - 1
-      );
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      if (highlightedRestaurantIndex >= 0 && highlightedRestaurantIndex < filteredRestaurants.length) {
-        selectRestaurantForConfirm(filteredRestaurants[highlightedRestaurantIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setFilteredRestaurants([]);
-      setHighlightedRestaurantIndex(-1);
-    }
-  }
-
-  function handleConfirmRestaurant() {
-    if (!selectedRestaurantForConfirm) {
-      alert('Please select a restaurant first');
-      return;
-    }
-    
-    if (confirmationText.trim() !== selectedRestaurantForConfirm.name) {
-      alert(`Please type the restaurant name exactly: "${selectedRestaurantForConfirm.name}"`);
-      return;
-    }
-    
-    handleRestaurantSelect(selectedRestaurantForConfirm);
-  }
-
-  function handleFormChange(e) {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  }
-
-  // Category autocomplete functions
-  function handleCategorySearch(searchTerm) {
-    setFormData(prev => ({
-      ...prev,
-      categorySearchTerm: searchTerm,
-      category_id: null // Clear selected category when typing
-    }));
-    
-    if (searchTerm.length > 0) {
-      const filtered = categories.filter(category =>
-        category.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredCategories(filtered);
-      setHighlightedCategoryIndex(filtered.length > 0 ? 0 : -1);
-    } else {
-      setFilteredCategories([]);
-      setHighlightedCategoryIndex(-1);
-    }
-  }
-
-  function selectCategory(category) {
-    setFormData(prev => ({
-      ...prev,
-      category_id: category.id,
-      categorySearchTerm: category.name
-    }));
-    setFilteredCategories([]);
-    setHighlightedCategoryIndex(-1);
+  function pickCategory(cat) {
+    setFormData(prev => ({ ...prev, category_id: cat.id }));
+    setCatQuery(cat.name);
+    setCatResults([]);
+    setCatHighlight(-1);
   }
 
   async function handleCategoryKeyDown(e) {
-    if (e.key === 'ArrowDown') {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setCatHighlight(h => Math.min(h + 1, catResults.length - 1)); return; }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setCatHighlight(h => Math.max(h - 1, 0)); return; }
+    if (e.key === 'Escape')    { setCatResults([]); setCatHighlight(-1); return; }
+    if (e.key === 'Enter') {
       e.preventDefault();
-      setHighlightedCategoryIndex(prev => 
-        prev < filteredCategories.length - 1 ? prev + 1 : 0
-      );
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setHighlightedCategoryIndex(prev => 
-        prev > 0 ? prev - 1 : filteredCategories.length - 1
-      );
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      
-      const searchTerm = formData.categorySearchTerm?.trim();
-      if (!searchTerm) return;
-
-      // Check if we have a highlighted category in the dropdown
-      if (highlightedCategoryIndex >= 0 && highlightedCategoryIndex < filteredCategories.length) {
-        selectCategory(filteredCategories[highlightedCategoryIndex]);
-        return;
-      }
-
-      // Check if category already exists (case-insensitive)
-      const existingCategory = categories.find(cat => 
-        cat.name.toLowerCase() === searchTerm.toLowerCase()
-      );
-
-      if (existingCategory) {
-        selectCategory(existingCategory);
-        return;
-      }
-
-      // Create new category
+      const trimmed = catQuery.trim();
+      if (!trimmed) return;
+      if (catHighlight >= 0 && catResults[catHighlight]) { pickCategory(catResults[catHighlight]); return; }
+      const existing = categories.find(c => c.name.toLowerCase() === trimmed.toLowerCase());
+      if (existing) { pickCategory(existing); return; }
       try {
-        setCreatingCategory(true);
-        
-        const { data: newCategory, error } = await supabase
-          .from('menu_categories')
-          .insert({
-            restaurant_id: selectedRestaurant.id,
-            name: searchTerm
-          })
-          .select()
-          .single();
-
-        if (error) {
-          if (error.code === '23505') {
-            alert('A category with this name already exists');
-            return;
-          }
-          throw error;
-        }
-
-        // Add to local state and select it
-        setCategories(prev => [...prev, newCategory].sort((a, b) => a.name.localeCompare(b.name)));
-        setFormData(prev => ({
-          ...prev,
-          category_id: newCategory.id,
-          categorySearchTerm: newCategory.name
-        }));
-        setFilteredCategories([]);
-        setHighlightedCategoryIndex(-1);
-        
-      } catch (error) {
-        console.error('Error creating category:', error);
-        alert('Failed to create category: ' + error.message);
-      } finally {
-        setCreatingCategory(false);
-      }
-    } else if (e.key === 'Escape') {
-      setFilteredCategories([]);
-      setHighlightedCategoryIndex(-1);
+        setCreatingCat(true);
+        const { data: newCat, error } = await supabase.from('menu_categories').insert({ restaurant_id: selectedRestaurant.id, name: trimmed }).select().single();
+        if (error) throw error;
+        setCategories(prev => [...prev, newCat].sort((a, b) => a.name.localeCompare(b.name)));
+        pickCategory(newCat);
+      } catch (err) { alert('Failed to create category: ' + err.message); }
+      finally { setCreatingCat(false); }
     }
   }
 
-  // Component management functions
-  function addComponentRow() {
-    const newComponent = {
-      id: `component-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      name: '',
-      ingredients: [],
-      isNew: true
-    };
-    setMenuItemComponents(prev => [...prev, newComponent]);
+  // ── Component management ───────────────────────────────────────────────
+  function addComponent() {
+    setComponents(prev => [...prev, { id: `c-${Date.now()}`, name: '', ingredients: [], isNew: true }]);
   }
 
-  function removeComponentRow(index) {
-    setMenuItemComponents(prev => prev.filter((_, i) => i !== index));
+  function removeComponent(i) {
+    setComponents(prev => prev.filter((_, idx) => idx !== i));
   }
 
-  function handleComponentChange(index, field, value) {
-    setMenuItemComponents(prev => {
-      const updated = [...prev];
-      updated[index] = { ...updated[index], [field]: value };
-      return updated;
-    });
+  function updateComponent(i, field, val) {
+    setComponents(prev => prev.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
   }
 
-  // Ingredient management functions within components
-  function addIngredientToComponent(componentIndex) {
-    const newIngredient = {
-      id: `ingredient-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      ingredient_id: null,
-      ingredient_search: '',
-      quantity: '',
-      unit: '',
-      isNew: true
-    };
-    
-    setMenuItemComponents(prev => {
-      const updated = prev.map((comp, index) => {
-        if (index === componentIndex) {
-          return {
-            ...comp,
-            ingredients: [...(comp.ingredients || []), newIngredient]
-          };
-        }
-        return comp;
-      });
-      return updated;
-    });
+  function addIngredient(compIdx) {
+    setComponents(prev => prev.map((c, i) => i === compIdx
+      ? { ...c, ingredients: [...(c.ingredients || []), { id: `ing-${Date.now()}`, ingredient_id: null, ingredient_search: '', quantity: '', unit: '', isNew: true }] }
+      : c
+    ));
   }
 
-  function removeIngredientFromComponent(componentIndex, ingredientIndex) {
-    setMenuItemComponents(prev => {
-      const updated = prev.map((comp, index) => {
-        if (index === componentIndex) {
-          return {
-            ...comp,
-            ingredients: comp.ingredients.filter((_, i) => i !== ingredientIndex)
-          };
-        }
-        return comp;
-      });
-      return updated;
-    });
+  function removeIngredient(compIdx, ingIdx) {
+    setComponents(prev => prev.map((c, i) => i === compIdx
+      ? { ...c, ingredients: c.ingredients.filter((_, j) => j !== ingIdx) }
+      : c
+    ));
   }
 
-  function handleIngredientChange(componentIndex, ingredientIndex, field, value) {
-    setMenuItemComponents(prev => {
-      const updated = [...prev];
-      updated[componentIndex].ingredients[ingredientIndex] = {
-        ...updated[componentIndex].ingredients[ingredientIndex],
-        [field]: value
-      };
-      return updated;
-    });
+  function updateIngredient(compIdx, ingIdx, field, val) {
+    setComponents(prev => prev.map((c, i) => i === compIdx
+      ? { ...c, ingredients: c.ingredients.map((ing, j) => j === ingIdx ? { ...ing, [field]: val } : ing) }
+      : c
+    ));
   }
 
-  function handleIngredientSearch(componentIndex, ingredientIndex, searchTerm) {
-    handleIngredientChange(componentIndex, ingredientIndex, 'ingredient_search', searchTerm);
-    setActiveSearchComponentIndex(componentIndex);
-    setActiveSearchIngredientIndex(ingredientIndex);
-    
-    if (searchTerm.length > 1) {
-      const filtered = ingredients.filter(ingredient =>
-        ingredient.name.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredIngredients(filtered);
-    } else {
-      setFilteredIngredients([]);
-      setActiveSearchComponentIndex(null);
-      setActiveSearchIngredientIndex(null);
-    }
-  }
-
-  function selectIngredient(componentIndex, ingredientIndex, ingredient) {
-    handleIngredientChange(componentIndex, ingredientIndex, 'ingredient_id', ingredient.id);
-    handleIngredientChange(componentIndex, ingredientIndex, 'ingredient_search', ingredient.name);
-    setFilteredIngredients([]);
-    setActiveSearchComponentIndex(null);
-    setActiveSearchIngredientIndex(null);
-  }
-
-  function handleUnitSearch(componentIndex, ingredientIndex, searchTerm) {
-    handleIngredientChange(componentIndex, ingredientIndex, 'unit', searchTerm);
-    setActiveUnitComponentIndex(componentIndex);
-    setActiveUnitIngredientIndex(ingredientIndex);
-    
-    if (searchTerm.length > 0) {
-      const suggestions = getUnitSuggestions(searchTerm, 8);
-      setUnitSuggestions(suggestions);
-      setHighlightedUnitIndex(suggestions.length > 0 ? 0 : -1);
-    } else {
-      setUnitSuggestions([]);
-      setHighlightedUnitIndex(-1);
-    }
-  }
-
-  function selectUnit(componentIndex, ingredientIndex, unitData) {
-    const unit = typeof unitData === 'string' ? unitData : unitData.unit;
-    handleIngredientChange(componentIndex, ingredientIndex, 'unit', unit);
-    setUnitSuggestions([]);
-    setActiveUnitComponentIndex(null);
-    setActiveUnitIngredientIndex(null);
-    setHighlightedUnitIndex(-1);
-  }
-
-  function handleUnitKeyDown(e, componentIndex, ingredientIndex) {
-    if (unitSuggestions.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setHighlightedUnitIndex(prev => 
-          prev < unitSuggestions.length - 1 ? prev + 1 : 0
-        );
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setHighlightedUnitIndex(prev => 
-          prev > 0 ? prev - 1 : unitSuggestions.length - 1
-        );
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (highlightedUnitIndex >= 0 && highlightedUnitIndex < unitSuggestions.length) {
-          selectUnit(componentIndex, ingredientIndex, unitSuggestions[highlightedUnitIndex]);
-        }
-        break;
-      case 'Escape':
-        setUnitSuggestions([]);
-        setHighlightedUnitIndex(-1);
-        break;
-      default:
-        break;
-    }
-  }
-
-  function startAddItem() {
-    setFormData({ name: '', price: '', category_id: null, categorySearchTerm: '' });
-    setMenuItemComponents([]);
-    setShowAddForm(true);
+  // ── Form open/close ────────────────────────────────────────────────────
+  function startAdd() {
+    setFormData({ name: '', price: '', category_id: null });
+    setCatQuery('');
+    setComponents([]);
     setEditingItem(null);
-    setFilteredCategories([]);
-    setHighlightedCategoryIndex(-1);
+    setShowForm(true);
   }
 
-  async function startEditItem(item) {
-    // Find the category name for the selected category_id
-    const selectedCategory = categories.find(cat => cat.id === item.category_id);
-    
-    setFormData({
-      name: item.name,
-      price: item.price.toString(),
-      category_id: item.category_id || null,
-      categorySearchTerm: selectedCategory?.name || ''
-    });
-
-    // Fetch existing components and their ingredients for this menu item
-    try {
-      const { data: existingComponents, error } = await supabase
-        .from('menu_item_components')
-        .select(`
-          *,
-          component_ingredients (
-            *,
-            ingredients:ingredient_id (
-              id,
-              name,
-              unit
-            )
-          )
-        `)
-        .eq('menu_item_id', item.id);
-
-      if (error) throw error;
-
-      const formattedComponents = existingComponents.map(comp => ({
-        id: comp.id,
-        name: comp.name,
-        isNew: false,
-        ingredients: comp.component_ingredients.map(ing => ({
-          id: ing.id,
-          ingredient_id: ing.ingredient_id,
-          ingredient_search: ing.ingredients?.name || '',
-          quantity: ing.quantity.toString(),
-          unit: ing.unit || 'each',
-          isNew: false
-        }))
-      }));
-
-      setMenuItemComponents(formattedComponents);
-    } catch (error) {
-      console.error('Error fetching menu item components:', error);
-      setMenuItemComponents([]);
-    }
-
+  async function startEdit(item) {
+    const selectedCat = categories.find(c => c.id === item.category_id);
+    setFormData({ name: item.name, price: item.price.toString(), category_id: item.category_id || null });
+    setCatQuery(selectedCat?.name || '');
     setEditingItem(item);
-    setShowAddForm(true);
+    setShowForm(true);
+
+    const { data: existingComps } = await supabase.from('menu_item_components').select('*, component_ingredients(*, ingredients:ingredient_id(id, name, unit))').eq('menu_item_id', item.id);
+    setComponents((existingComps || []).map(comp => ({
+      id: comp.id, name: comp.name, isNew: false,
+      ingredients: (comp.component_ingredients || []).map(ing => ({
+        id: ing.id, ingredient_id: ing.ingredient_id,
+        ingredient_search: ing.ingredients?.name || '',
+        quantity: ing.quantity.toString(), unit: ing.unit || 'each', isNew: false,
+      })),
+    })));
   }
 
   function cancelForm() {
-    setShowAddForm(false);
+    setShowForm(false);
     setEditingItem(null);
-    setFormData({ name: '', price: '', category_id: null, categorySearchTerm: '' });
-    setMenuItemComponents([]);
-    setFilteredIngredients([]);
-    setActiveSearchComponentIndex(null);
-    setActiveSearchIngredientIndex(null);
-    setUnitSuggestions([]);
-    setActiveUnitComponentIndex(null);
-    setActiveUnitIngredientIndex(null);
-    setHighlightedUnitIndex(-1);
-    setFilteredCategories([]);
-    setHighlightedCategoryIndex(-1);
+    setComponents([]);
+    setCatQuery('');
+    setCatResults([]);
   }
 
+  // ── Save ───────────────────────────────────────────────────────────────
   async function handleSubmit() {
+    if (!formData.name || !formData.price) { alert('Please fill in name and price'); return; }
+    if (!components.length) { alert('Please add at least one component'); return; }
+
+    setSaving(true);
     try {
-      setSaving(true);
-      console.log(`\n🍽️ Saving menu item: ${formData.name}`);
-
-      // Validate form
-      if (!formData.name || !formData.price) {
-        alert('Please fill in menu item name and price');
-        return;
-      }
-
-      if (menuItemComponents.length === 0) {
-        alert('Please add at least one component');
-        return;
-      }
-
-      // Validate components and units
-      for (let compIndex = 0; compIndex < menuItemComponents.length; compIndex++) {
-        const component = menuItemComponents[compIndex];
-        
-        if (!component.name) {
-          alert('Please name all components');
-          return;
-        }
-        
-        if (!component.ingredients || component.ingredients.length === 0) {
-          alert(`Please add ingredients to the "${component.name}" component`);
-          return;
-        }
-
-        console.log(`🧩 Validating component: ${component.name}`);
-
-        // Validate ingredients and their units
-        for (let ingIndex = 0; ingIndex < component.ingredients.length; ingIndex++) {
-          const ingredient = component.ingredients[ingIndex];
-          
-          if (!ingredient.quantity) {
-            alert(`Please enter quantity for all ingredients in "${component.name}"`);
-            return;
-          }
-
-          if (!ingredient.unit) {
-            alert(`Please enter unit for all ingredients in "${component.name}"`);
-            return;
-          }
-
-          // Validate that the unit is supported
-          const unitValidation = validateUnit(ingredient.unit);
-          if (!unitValidation.valid) {
-            alert(`Invalid unit "${ingredient.unit}" for ingredient in "${component.name}". ${unitValidation.message}\n\nSupported units include: oz, lbs, g, kg, fl oz, cups, tbsp, tsp, gallons, ml, l, each, etc.`);
-            return;
-          }
-
-          console.log(`  ✅ ${ingredient.ingredient_search}: ${ingredient.quantity} ${ingredient.unit} (${unitValidation.category})`);
-
-          // Handle ingredient creation/linking
-          if (!ingredient.ingredient_id && ingredient.ingredient_search) {
-            console.log(`🔍 Checking for existing ingredient: ${ingredient.ingredient_search}`);
-            
-            // First, check if this ingredient already exists for this restaurant
-            const { data: existingIngredient, error: checkError } = await supabase
-              .from('ingredients')
-              .select('id, name, unit, last_price')
-              .eq('restaurant_id', selectedRestaurant.id)
-              .ilike('name', ingredient.ingredient_search.trim())
-              .maybeSingle();
-
-            if (checkError) {
-              console.error('Error checking for existing ingredient:', checkError);
-              alert('Error checking ingredients: ' + checkError.message);
-              return;
-            }
-
-            if (existingIngredient) {
-              // Ingredient already exists, use it
-              console.log(`✅ Found existing ingredient: ${existingIngredient.name} (${existingIngredient.unit})`);
-              ingredient.ingredient_id = existingIngredient.id;
-              ingredient.ingredient_search = existingIngredient.name;
-            } else {
-              // Ingredient doesn't exist, create it with standardized unit
-              console.log(`🆕 Creating new ingredient: ${ingredient.ingredient_search}`);
-
-              // Determine what standard unit this ingredient should use based on the recipe unit
-              const standardUnit = getStandardUnitForUnit(ingredient.unit);
-              const category = getUnitCategory(ingredient.unit);
-
-              console.log(`   Creating with standard unit: ${standardUnit} (category: ${category})`);
-
-              const { data: newIngredient, error: createError } = await supabase
-                .from('ingredients')
-                .insert({
-                  restaurant_id: selectedRestaurant.id,
-                  name: ingredient.ingredient_search.trim(),
-                  unit: standardUnit, // Store in standard unit
-                  last_price: 0, // Will be updated when invoices are processed
-                  last_ordered_at: null
-                })
-                .select()
-                .single();
-
-              if (createError) {
-                console.error('Failed to create ingredient:', createError);
-                alert(`Failed to create ingredient "${ingredient.ingredient_search}": ${createError.message}`);
-                return;
-              }
-
-              console.log(`✅ Created ingredient: ${newIngredient.name} (ID: ${newIngredient.id})`);
-              ingredient.ingredient_id = newIngredient.id;
-              
-              // Add to local ingredients array so it shows up in future searches
-              setIngredients(prev => [...prev, newIngredient]);
+      // Validate & auto-create ingredients
+      for (const comp of components) {
+        if (!comp.name) { alert('Please name all components'); return; }
+        if (!comp.ingredients?.length) { alert(`Add ingredients to "${comp.name}"`); return; }
+        for (const ing of comp.ingredients) {
+          if (!ing.quantity || !ing.unit) { alert(`Complete all ingredient fields in "${comp.name}"`); return; }
+          const v = validateUnit(ing.unit);
+          if (!v.valid) { alert(`Invalid unit "${ing.unit}" — ${v.message}`); return; }
+          if (!ing.ingredient_id && ing.ingredient_search) {
+            const { data: existing } = await supabase.from('ingredients').select('id, name').eq('restaurant_id', selectedRestaurant.id).ilike('name', ing.ingredient_search.trim()).maybeSingle();
+            if (existing) { ing.ingredient_id = existing.id; }
+            else {
+              const { data: created } = await supabase.from('ingredients').insert({ restaurant_id: selectedRestaurant.id, name: ing.ingredient_search.trim(), unit: getStandardUnitForUnit(ing.unit), last_price: 0 }).select().single();
+              ing.ingredient_id = created.id;
+              setIngredients(prev => [...prev, created]);
             }
           }
-
-          if (!ingredient.ingredient_id || !ingredient.quantity) {
-            alert(`Please complete all ingredient fields in "${component.name}"`);
-            return;
-          }
+          if (!ing.ingredient_id) { alert(`Select or type an ingredient name in "${comp.name}"`); return; }
         }
       }
 
       let menuItemId;
-
       if (editingItem) {
-        // Update existing menu item
-        console.log('📝 Updating existing menu item:', editingItem.id);
-        
-        const { error: updateError } = await supabase
-          .from('menu_items')
-          .update({
-            name: formData.name,
-            price: parseFloat(formData.price),
-            category_id: formData.category_id || null
-          })
-          .eq('id', editingItem.id);
-
-        if (updateError) throw updateError;
+        await supabase.from('menu_items').update({ name: formData.name, price: parseFloat(formData.price), category_id: formData.category_id || null }).eq('id', editingItem.id);
+        await supabase.from('menu_item_components').delete().eq('menu_item_id', editingItem.id);
         menuItemId = editingItem.id;
-
-        // Delete existing components and their ingredients (cascade will handle component_ingredients)
-        console.log('🗑️ Deleting existing components for menu item:', menuItemId);
-        const { error: deleteError } = await supabase
-          .from('menu_item_components')
-          .delete()
-          .eq('menu_item_id', editingItem.id);
-
-        if (deleteError) throw deleteError;
       } else {
-        // Create new menu item
-        console.log('🆕 Creating new menu item:', formData.name);
-        
-        const { data: newMenuItem, error: insertError } = await supabase
-          .from('menu_items')
-          .insert({
-            restaurant_id: selectedRestaurant.id,
-            name: formData.name,
-            price: parseFloat(formData.price),
-            category_id: formData.category_id || null,
-            cost: 0 // Will be calculated
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        menuItemId = newMenuItem.id;
-        console.log('✅ Created menu item with ID:', menuItemId);
+        const { data: newItem } = await supabase.from('menu_items').insert({ restaurant_id: selectedRestaurant.id, name: formData.name, price: parseFloat(formData.price), category_id: formData.category_id || null, cost: 0 }).select().single();
+        menuItemId = newItem.id;
       }
 
-      // Insert components and their ingredients
-      for (let componentIndex = 0; componentIndex < menuItemComponents.length; componentIndex++) {
-        const component = menuItemComponents[componentIndex];
-        
-        console.log(`🧩 Creating component ${componentIndex + 1}: ${component.name}`);
-        
-        // Insert component
-        const { data: newComponent, error: componentError } = await supabase
-          .from('menu_item_components')
-          .insert({
-            menu_item_id: menuItemId,
-            name: component.name,
-            cost: 0 // Will be calculated
-          })
-          .select()
-          .single();
-
-        if (componentError) {
-          console.error('Component creation error:', componentError);
-          throw componentError;
-        }
-
-        console.log('✅ Created component with ID:', newComponent.id);
-
-        // Insert ingredients for this component
-        const ingredientsToInsert = component.ingredients.map(ing => ({
-          component_id: newComponent.id,
-          ingredient_id: ing.ingredient_id,
-          quantity: parseFloat(ing.quantity),
-          unit: ing.unit || 'each' // Keep the recipe unit as entered
-        }));
-
-        console.log(`📦 Inserting ${ingredientsToInsert.length} component ingredients:`, ingredientsToInsert);
-
-        const { error: ingredientsError } = await supabase
-          .from('component_ingredients')
-          .insert(ingredientsToInsert);
-
-        if (ingredientsError) {
-          console.error('Component ingredients creation error:', ingredientsError);
-          throw ingredientsError;
-        }
-
-        // Calculate and update component cost
-        await calculateComponentCost(newComponent.id);
+      // Insert components + ingredients
+      for (const comp of components) {
+        const { data: newComp } = await supabase.from('menu_item_components').insert({ menu_item_id: menuItemId, name: comp.name, cost: 0 }).select().single();
+        await supabase.from('component_ingredients').insert(
+          comp.ingredients.map(ing => ({ component_id: newComp.id, ingredient_id: ing.ingredient_id, quantity: parseFloat(ing.quantity), unit: ing.unit }))
+        );
+        await calculateComponentCost(newComp.id);
       }
-
-      // Calculate and update menu item cost
       await calculateMenuItemCost(menuItemId);
 
-      console.log('🎉 Menu item saved successfully');
-      alert(editingItem ? 'Menu item updated successfully!' : 'Menu item added successfully!');
       cancelForm();
       fetchMenuItems();
-
-    } catch (error) {
-      console.error('❌ Error saving menu item:', error);
-      alert('Failed to save menu item: ' + error.message);
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function calculateComponentCost(componentId) {
-    try {
-      console.log(`\n💰 Calculating cost for component: ${componentId}`);
-      
-      const { data: componentIngredients, error } = await supabase
-        .from('component_ingredients')
-        .select(`
-          quantity,
-          unit,
-          ingredients:ingredient_id (
-            id,
-            name,
-            last_price,
-            unit
-          )
-        `)
-        .eq('component_id', componentId);
-
-      if (error) throw error;
-
-      let totalCost = 0;
-      console.log(`🧮 Processing ${componentIngredients.length} ingredients:`);
-
-      componentIngredients.forEach(ing => {
-        const recipeQuantity = ing.quantity;
-        const recipeUnit = ing.unit;
-        const ingredient = ing.ingredients;
-        const ingredientCost = ingredient?.last_price || 0;
-        const ingredientName = ingredient?.name || 'Unknown';
-        const ingredientStandardUnit = ingredient?.unit || 'unknown';
-
-        console.log(`  🥬 ${ingredientName}:`);
-        console.log(`     Recipe needs: ${recipeQuantity} ${recipeUnit}`);
-        console.log(`     Ingredient cost: ${ingredientCost.toFixed(4)}/${ingredientStandardUnit}`);
-
-        if (ingredientCost > 0) {
-          try {
-            // Use the standardized cost calculation
-            const cost = calculateStandardizedCost(
-              recipeQuantity,
-              recipeUnit,
-              ingredientCost,
-              ingredientName
-            );
-            totalCost += cost;
-            
-            console.log(`     Calculated cost: ${cost.toFixed(4)}`);
-          } catch (error) {
-            console.warn(`     ⚠️ Cost calculation failed: ${error.message}`);
-            // Fallback to simple multiplication
-            const fallbackCost = recipeQuantity * ingredientCost;
-            totalCost += fallbackCost;
-            console.log(`     Fallback cost: ${fallbackCost.toFixed(4)}`);
-          }
-        } else {
-          console.log(`     ⚠️ No cost data available`);
-        }
-      });
-
-      console.log(`📊 Component total cost: ${totalCost.toFixed(4)}`);
-
-      const { error: updateError } = await supabase
-        .from('menu_item_components')
-        .update({ cost: totalCost })
-        .eq('id', componentId);
-
-      if (updateError) {
-        console.error('Failed to update component cost:', updateError);
+    const { data: items } = await supabase.from('component_ingredients').select('quantity, unit, ingredients:ingredient_id(name, last_price, unit)').eq('component_id', componentId);
+    let total = 0;
+    (items || []).forEach(item => {
+      if (item.ingredients?.last_price > 0) {
+        try { total += calculateStandardizedCost(item.quantity, item.unit, item.ingredients.last_price, item.ingredients.name); }
+        catch { total += item.quantity * item.ingredients.last_price; }
       }
-
-      return totalCost;
-
-    } catch (error) {
-      console.error('Error calculating component cost:', error);
-      return 0;
-    }
+    });
+    await supabase.from('menu_item_components').update({ cost: total }).eq('id', componentId);
+    return total;
   }
 
   async function calculateMenuItemCost(menuItemId) {
-    try {
-      console.log(`\n📊 Calculating total cost for menu item: ${menuItemId}`);
-      
-      const { data: components, error } = await supabase
-        .from('menu_item_components')
-        .select('id, name, cost')
-        .eq('menu_item_id', menuItemId);
-
-      if (error) throw error;
-
-      let totalCost = 0;
-      console.log(`🧩 Processing ${components.length} components:`);
-
-      components.forEach(comp => {
-        const componentCost = comp.cost || 0;
-        totalCost += componentCost;
-        console.log(`  ${comp.name}: ${componentCost.toFixed(4)}`);
-      });
-      
-      console.log(`🍽️ Menu item total cost: ${totalCost.toFixed(4)}`);
-
-      const { error: updateError } = await supabase
-        .from('menu_items')
-        .update({ cost: totalCost })
-        .eq('id', menuItemId);
-
-      if (updateError) {
-        console.error('Failed to update menu item cost:', updateError);
-      }
-
-      return totalCost;
-
-    } catch (error) {
-      console.error('Error calculating menu item cost:', error);
-      return 0;
-    }
+    const { data: comps } = await supabase.from('menu_item_components').select('cost').eq('menu_item_id', menuItemId);
+    const total = (comps || []).reduce((s, c) => s + (c.cost || 0), 0);
+    await supabase.from('menu_items').update({ cost: total }).eq('id', menuItemId);
   }
 
   async function deleteMenuItem(item) {
-    if (!window.confirm(`Are you sure you want to delete "${item.name}"?`)) return;
-
-    try {
-      console.log('🗑️ Deleting menu item:', item.id);
-      
-      // Components and their ingredients will be deleted by cascade
-      const { error } = await supabase
-        .from('menu_items')
-        .delete()
-        .eq('id', item.id);
-
-      if (error) throw error;
-
-      console.log('✅ Menu item deleted successfully');
-      alert('Menu item deleted successfully!');
-      fetchMenuItems();
-    } catch (error) {
-      console.error('❌ Error deleting menu item:', error);
-      alert('Failed to delete menu item');
-    }
+    if (!window.confirm(`Delete "${item.name}"?`)) return;
+    await supabase.from('menu_items').delete().eq('id', item.id);
+    fetchMenuItems();
   }
 
+  // ── Loading ────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <AdminLayout 
-        pageTitle="Menu Items Management" 
-        pageDescription="Manage menu items and their components"
-        pageIcon={IconSearch}
-      >
-        <div className="p-6 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 border-3 border-gray-300 border-t-[#ADD8E6] rounded-full animate-spin"></div>
-            <div className="text-gray-600">Loading restaurants...</div>
-          </div>
+      <AdminLayout pageTitle="Menu Items" pageDescription="Manage menu items and components" pageIcon={IconSearch}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+          <div className="admin-spinner" />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading…</p>
         </div>
       </AdminLayout>
     );
   }
 
   return (
-    <AdminLayout 
-      pageTitle="Menu Items Management" 
-      pageDescription="Manage menu items and their components"
-      pageIcon={IconSearch}
-    >
-      <div className="p-6">
-        {!selectedRestaurant ? (
-          /* Restaurant Selection */
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold text-gray-900 mb-4">Select a Restaurant</h2>
-              <p className="text-lg text-gray-600">Choose a restaurant to manage its menu items</p>
-            </div>
-            
-            {restaurants.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-6">
-                  <IconBuilding size={32} className="text-gray-400" />
+    <AdminLayout pageTitle="Menu Items" pageDescription="Manage menu items and their components" pageIcon={IconSearch}>
+
+      {/* ── Step 1: select restaurant ──────────────────────────────────── */}
+      {!selectedRestaurant ? (
+        <RestaurantSelector restaurants={restaurants} onSelect={setSelectedRestaurant} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── Restaurant header bar ─────────────────────────────────── */}
+          <div className="admin-card" style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid rgba(2,164,186,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                  <IconBuilding size={18} />
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-4">No restaurants found</h3>
-                <p className="text-gray-600 mb-6">There are no restaurants set up yet.</p>
-                <button 
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                  onClick={() => router.push('/admin/clients')}
-                >
-                  <IconPlus size={18} />
-                  Add Restaurant
+                <div>
+                  <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{selectedRestaurant.name}</h2>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>{menuItems.length} menu items</p>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="admin-btn admin-btn-ghost" onClick={() => { setSelectedRestaurant(null); setShowForm(false); }}>
+                  <IconChevronLeft size={15} /> Change
+                </button>
+                <button className="admin-btn admin-btn-primary" onClick={startAdd}>
+                  <IconPlus size={15} /> Add Item
                 </button>
               </div>
-            ) : (
-              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-                <div className="space-y-4">
-                  {/* Restaurant Search */}
+            </div>
+          </div>
+
+          {/* ── Add / Edit form ───────────────────────────────────────── */}
+          {showForm && (
+            <div className="admin-card">
+              <div className="admin-card-header">
+                <h2 className="admin-card-title">{editingItem ? 'Edit Menu Item' : 'New Menu Item'}</h2>
+                <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={cancelForm}>
+                  <IconX size={14} /> Cancel
+                </button>
+              </div>
+
+              <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {/* Basic info */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
                   <div>
-                    <label htmlFor="restaurant_search" className="block text-sm font-medium text-gray-700 mb-2">
-                      Search Restaurant
-                    </label>
-                    <div className="relative">
+                    <label className="admin-label">Item Name</label>
+                    <input className="admin-input" placeholder="e.g. Caesar Salad" value={formData.name} onChange={e => setFormData(p => ({ ...p, name: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="admin-label">Price ($)</label>
+                    <input className="admin-input" type="number" step="0.01" placeholder="0.00" value={formData.price} onChange={e => setFormData(p => ({ ...p, price: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="admin-label">Category {creatingCat && <span style={{ color: 'var(--accent)', fontStyle: 'italic' }}>Creating…</span>}</label>
+                    <div style={{ position: 'relative' }}>
                       <input
-                        id="restaurant_search"
-                        type="text"
-                        value={restaurantSearchTerm}
-                        onChange={(e) => handleRestaurantSearch(e.target.value)}
-                        onKeyDown={handleRestaurantKeyDown}
-                        placeholder="Type to search restaurants..."
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        className="admin-input"
+                        placeholder="Type to search or create…"
+                        value={catQuery}
+                        onChange={e => searchCategory(e.target.value)}
+                        onKeyDown={handleCategoryKeyDown}
                       />
-                      {filteredRestaurants.length > 0 && (
-                        <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-48 overflow-y-auto">
-                          {filteredRestaurants.map((restaurant, index) => (
-                            <div
-                              key={restaurant.id}
-                              className={`px-3 py-3 cursor-pointer text-sm border-b border-gray-100 last:border-b-0 ${
-                                index === highlightedRestaurantIndex ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
-                              }`}
-                              onClick={() => selectRestaurantForConfirm(restaurant)}
-                              onMouseEnter={() => setHighlightedRestaurantIndex(index)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className={`flex items-center justify-center w-8 h-8 rounded-lg ${
-                                  index === highlightedRestaurantIndex ? 'bg-blue-600' : 'bg-[#ADD8E6]'
-                                }`}>
-                                  <IconBuilding size={16} className={index === highlightedRestaurantIndex ? 'text-white' : 'text-gray-900'} />
-                                </div>
-                                <div>
-                                  <div className="font-medium">{restaurant.name}</div>
-                                  <div className={`text-xs ${index === highlightedRestaurantIndex ? 'text-blue-100' : 'text-gray-500'}`}>
-                                    Click to select
-                                  </div>
-                                </div>
-                              </div>
+                      {(catResults.length > 0 || (catQuery && !categories.find(c => c.name.toLowerCase() === catQuery.toLowerCase()))) && (
+                        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, marginTop: 4, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+                          {catResults.map((c, i) => (
+                            <div key={c.id} onClick={() => pickCategory(c)} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: '0.83rem', background: i === catHighlight ? 'var(--accent-dim)' : 'transparent', color: i === catHighlight ? 'var(--accent)' : 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                              onMouseEnter={() => setCatHighlight(i)}>
+                              {c.name}
                             </div>
                           ))}
+                          {catQuery && !categories.find(c => c.name.toLowerCase() === catQuery.toLowerCase()) && (
+                            <div style={{ padding: '8px 12px', fontSize: '0.78rem', color: 'var(--accent)', borderTop: catResults.length ? '1px solid var(--border)' : 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <IconPlus size={12} /> Press Enter to create "{catQuery}"
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
                   </div>
+                </div>
 
-                  {/* Selected Restaurant Display */}
-                  {selectedRestaurantForConfirm && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
-                          <IconBuilding size={20} className="text-blue-700" />
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-gray-900">{selectedRestaurantForConfirm.name}</h4>
-                          <p className="text-sm text-gray-600">Selected restaurant</p>
-                        </div>
-                      </div>
+                {/* Components */}
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Components</h3>
+                    <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={addComponent} style={{ color: 'var(--accent)' }}>
+                      <IconPlus size={13} /> Add Component
+                    </button>
+                  </div>
+
+                  {components.length === 0 ? (
+                    <div style={{ padding: 24, borderRadius: 10, border: '1px dashed var(--border)', textAlign: 'center' }}>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.83rem', margin: '0 0 10px' }}>No components yet</p>
+                      <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={addComponent}>
+                        <IconPlus size={13} /> Add First Component
+                      </button>
                     </div>
-                  )}
-
-                  {/* Confirmation Input */}
-                  {selectedRestaurantForConfirm && (
-                    <div>
-                      <label htmlFor="confirmation" className="block text-sm font-medium text-gray-700 mb-2">
-                        Type the restaurant name to confirm
-                      </label>
-                      <div className="space-y-3">
-                        <input
-                          id="confirmation"
-                          type="text"
-                          value={confirmationText}
-                          onChange={(e) => setConfirmationText(e.target.value)}
-                          placeholder={`Type "${selectedRestaurantForConfirm.name}" to confirm`}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+                      {components.map((comp, i) => (
+                        <ComponentCard
+                          key={comp.id}
+                          component={comp}
+                          index={i}
+                          allIngredients={ingredients}
+                          onChange={(field, val) => updateComponent(i, field, val)}
+                          onAddIngredient={() => addIngredient(i)}
+                          onRemoveIngredient={ingIdx => removeIngredient(i, ingIdx)}
+                          onIngredientChange={(ingIdx, field, val) => updateIngredient(i, ingIdx, field, val)}
+                          onRemove={() => removeComponent(i)}
                         />
-                        <button
-                          onClick={handleConfirmRestaurant}
-                          disabled={confirmationText.trim() !== selectedRestaurantForConfirm.name}
-                          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
-                        >
-                          <IconCheck size={16} />
-                          Confirm & Manage Menu Items
-                        </button>
-                      </div>
+                      ))}
                     </div>
                   )}
+                </div>
 
-                  {!selectedRestaurantForConfirm && restaurantSearchTerm && filteredRestaurants.length === 0 && (
-                    <div className="text-center py-4 text-gray-500 text-sm">
-                      No restaurants found matching "{restaurantSearchTerm}"
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Menu Items Management */
-          <div className="space-y-6">
-            {/* Restaurant Header */}
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center w-12 h-12 bg-[#ADD8E6] rounded-lg">
-                    <IconBuilding size={24} className="text-gray-900" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">{selectedRestaurant.name}</h2>
-                    <p className="text-gray-600">Manage menu items and their components</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button 
-                    className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                    onClick={() => setSelectedRestaurant(null)}
-                  >
-                    <IconChevronLeft size={18} />
-                    Change Restaurant
-                  </button>
-                  <button 
-                    className="flex items-center gap-2 px-4 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                    onClick={startAddItem}
-                  >
-                    <IconPlus size={18} />
-                    Add Menu Item
+                {/* Save */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                  <button className="admin-btn admin-btn-primary" onClick={handleSubmit} disabled={saving}>
+                    {saving ? 'Saving…' : editingItem ? 'Update Item' : 'Save Item'}
                   </button>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Add/Edit Form */}
-            {showAddForm && (
-              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                <div className="border-b border-gray-200 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900">
-                        {editingItem ? 'Edit Menu Item' : 'Add New Menu Item'}
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {editingItem ? 'Update the details and components' : 'Create a new menu item with its components'}
-                      </p>
-                    </div>
-                    <button 
-                      className="flex items-center gap-2 px-3 py-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors" 
-                      onClick={cancelForm}
-                    >
-                      <IconX size={18} />
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+          {/* ── Menu Items table ──────────────────────────────────────── */}
+          <div className="admin-card">
+            <div className="admin-card-header">
+              <h2 className="admin-card-title">Current Menu Items</h2>
+              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={fetchMenuItems}>
+                <IconRefresh size={13} />
+              </button>
+            </div>
 
-                <div className="p-6 space-y-6">
-                  {/* Basic Info Section */}
-                  <div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">Menu Item Name</label>
-                        <input
-                          id="name"
-                          name="name"
-                          type="text"
-                          value={formData.name}
-                          onChange={handleFormChange}
-                          placeholder="e.g., Caesar Salad"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-2">Price ($)</label>
-                        <input
-                          id="price"
-                          name="price"
-                          type="number"
-                          step="0.01"
-                          value={formData.price}
-                          onChange={handleFormChange}
-                          placeholder="0.00"
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="category_search" className="block text-sm font-medium text-gray-700 mb-2">
-                          Category
-                        </label>
-                        <div className="relative">
-                          <input
-                            id="category_search"
-                            type="text"
-                            value={formData.categorySearchTerm || ''}
-                            onChange={(e) => handleCategorySearch(e.target.value)}
-                            onKeyDown={handleCategoryKeyDown}
-                            placeholder="Type to search or create category..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                          />
-                          {filteredCategories.length > 0 && (
-                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-y-auto">
-                              {filteredCategories.map((category, index) => (
-                                <div
-                                  key={category.id}
-                                  className={`px-3 py-2 cursor-pointer text-sm ${
-                                    index === highlightedCategoryIndex ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
-                                  }`}
-                                  onClick={() => selectCategory(category)}
-                                  onMouseEnter={() => setHighlightedCategoryIndex(index)}
-                                >
-                                  {category.name}
-                                </div>
-                              ))}
+            {menuItems.length === 0 ? (
+              <div className="admin-empty">
+                <div className="admin-empty-icon"><IconSearch size={22} /></div>
+                <h3>No menu items yet</h3>
+                <p>Add your first menu item to start tracking costs and margins.</p>
+                <button className="admin-btn admin-btn-primary" style={{ marginTop: 8 }} onClick={startAdd}>
+                  <IconPlus size={15} /> Add First Item
+                </button>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Category</th>
+                      <th>Components</th>
+                      <th>Price</th>
+                      <th>Cost</th>
+                      <th>Margin</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {menuItems.map(item => {
+                      const margin = item.price > 0 ? ((item.price - item.cost) / item.price) * 100 : 0;
+                      const marginColor = margin > 30 ? '#10b981' : margin > 15 ? '#f59e0b' : '#f43f5e';
+                      const compCount = item.menu_item_components?.length || 0;
+                      return (
+                        <tr key={item.id}>
+                          <td className="primary">
+                            <div
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)}
+                            >
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{item.name}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--accent)', marginTop: 1 }}>View breakdown →</div>
                             </div>
-                          )}
-                          {formData.categorySearchTerm && 
-                           formData.categorySearchTerm.trim() && 
-                           !categories.find(cat => cat.name.toLowerCase() === formData.categorySearchTerm.toLowerCase().trim()) && (
-                            <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg">
-                              <div className="px-3 py-2 text-sm text-gray-600 border-b">
-                                <div className="flex items-center gap-2">
-                                  <IconPlus size={14} />
-                                  Press Enter to create "{formData.categorySearchTerm.trim()}"
-                                </div>
-                              </div>
+                          </td>
+                          <td>
+                            <span className="admin-badge neutral">
+                              {item.menu_categories?.name || 'Uncategorized'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="admin-badge teal">{compCount} {compCount === 1 ? 'component' : 'components'}</span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <IconCurrencyDollar size={13} style={{ color: 'var(--text-muted)' }} />
+                              <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-display)' }}>${item.price.toFixed(2)}</span>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Components Section */}
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="text-base font-medium text-gray-900">Menu Item Components</h4>
-                      <button 
-                        className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
-                        onClick={addComponentRow}
-                      >
-                        <IconPlus size={16} />
-                        Add Component
-                      </button>
-                    </div>
-
-                    {menuItemComponents.length === 0 ? (
-                      <div className="text-center py-8 bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg">
-                        <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-full mx-auto mb-3">
-                          <IconSearch size={24} className="text-gray-400" />
-                        </div>
-                        <h5 className="text-sm font-medium text-gray-900 mb-1">No components added yet</h5>
-                        <p className="text-xs text-gray-500">Click "Add Component" to start building your menu item</p>
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {menuItemComponents.map((component, componentIndex) => (
-                          <div key={component.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                            {/* Component Header */}
-                            <div className="flex items-center justify-between mb-3">
-                              <span className="text-xs font-medium text-gray-600 bg-white px-2 py-1 rounded">
-                                Component #{componentIndex + 1}
-                              </span>
-                              <button
-                                className="flex items-center justify-center w-6 h-6 text-gray-400 hover:text-red-600 hover:bg-white rounded transition-colors"
-                                onClick={() => removeComponentRow(componentIndex)}
-                                title="Remove component"
-                              >
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <IconCurrencyDollar size={13} style={{ color: 'var(--text-muted)' }} />
+                              <span>${item.cost.toFixed(2)}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <IconPercentage size={13} style={{ color: 'var(--text-muted)' }} />
+                              <span style={{ fontWeight: 600, color: marginColor }}>{margin.toFixed(1)}%</span>
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)} title="View breakdown">
+                                <IconEye size={14} />
+                              </button>
+                              <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => startEdit(item)} title="Edit" style={{ color: 'var(--accent)' }}>
+                                <IconPencil size={14} />
+                              </button>
+                              <button className="admin-btn admin-btn-danger admin-btn-sm" onClick={() => deleteMenuItem(item)} title="Delete">
                                 <IconTrash size={14} />
                               </button>
                             </div>
-
-                            {/* Component Name */}
-                            <div className="mb-3">
-                              <input
-                                type="text"
-                                value={component.name}
-                                onChange={(e) => handleComponentChange(componentIndex, 'name', e.target.value)}
-                                placeholder="Component Name"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-1 focus:ring-blue-500 focus:border-transparent bg-white"
-                              />
-                            </div>
-
-                            {/* Ingredients Header */}
-                            <div className="flex items-center justify-between mb-3">
-                              <h5 className="text-xs font-medium text-gray-700">Ingredients</h5>
-                              <button 
-                                className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-medium hover:bg-blue-100 transition-colors"
-                                onClick={() => addIngredientToComponent(componentIndex)}
-                              >
-                                <IconPlus size={12} />
-                                Add
-                              </button>
-                            </div>
-
-                            {/* Ingredients List */}
-                            <div className="space-y-2 min-h-[80px]">
-                              {(!component.ingredients || component.ingredients.length === 0) ? (
-                                <div className="text-center py-4 text-gray-500 text-xs bg-white border border-gray-200 rounded">
-                                  No ingredients added
-                                </div>
-                              ) : (
-                                <>
-                                  {/* Header Row */}
-                                  <div className="grid grid-cols-6 gap-1 text-xs font-medium text-gray-600 pb-1">
-                                    <div className="col-span-2">Ingredient</div>
-                                    <div>Qty</div>
-                                    <div>Unit</div>
-                                    <div></div>
-                                  </div>
-                                  
-                                  {/* Ingredient Rows */}
-                                  {component.ingredients.map((ingredient, ingredientIndex) => (
-                                    <div key={ingredient.id} className="grid grid-cols-6 gap-1 items-center bg-white border border-gray-200 rounded p-2">
-                                      {/* Ingredient Name */}
-                                      <div className="col-span-2 relative">
-                                        <input
-                                          type="text"
-                                          value={ingredient.ingredient_search}
-                                          onChange={(e) => handleIngredientSearch(componentIndex, ingredientIndex, e.target.value)}
-                                          placeholder="Ingredient name..."
-                                          className="w-full px-2 py-1 text-xs border-0 focus:ring-1 focus:ring-blue-500 rounded"
-                                        />
-                                        {filteredIngredients.length > 0 && 
-                                         activeSearchComponentIndex === componentIndex && 
-                                         activeSearchIngredientIndex === ingredientIndex && (
-                                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-y-auto">
-                                            {filteredIngredients.map(ing => (
-                                              <div
-                                                key={ing.id}
-                                                className="px-2 py-1.5 hover:bg-gray-100 cursor-pointer text-xs"
-                                                onClick={() => selectIngredient(componentIndex, ingredientIndex, ing)}
-                                              >
-                                                <div className="font-medium text-gray-900">{ing.name}</div>
-                                                <div className="text-xs text-gray-500">
-                                                  {ing.unit} • ${ing.last_price?.toFixed(2) || '0.00'}
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                      
-                                      {/* Quantity */}
-                                      <div>
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          value={ingredient.quantity}
-                                          onChange={(e) => handleIngredientChange(componentIndex, ingredientIndex, 'quantity', e.target.value)}
-                                          placeholder="0"
-                                          className="w-full px-2 py-1 text-xs border-0 focus:ring-1 focus:ring-blue-500 rounded"
-                                        />
-                                      </div>
-
-                                      {/* Unit */}
-                                      <div className="relative">
-                                        <input
-                                          type="text"
-                                          value={ingredient.unit || ''}
-                                          onChange={(e) => handleUnitSearch(componentIndex, ingredientIndex, e.target.value)}
-                                          onKeyDown={(e) => handleUnitKeyDown(e, componentIndex, ingredientIndex)}
-                                          placeholder="Unit"
-                                          className="w-full px-2 py-1 text-xs border-0 focus:ring-1 focus:ring-blue-500 rounded"
-                                        />
-                                        {unitSuggestions.length > 0 && 
-                                         activeUnitComponentIndex === componentIndex && 
-                                         activeUnitIngredientIndex === ingredientIndex && (
-                                          <div className="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-32 overflow-y-auto">
-                                            {unitSuggestions.map((suggestion, unitIndex) => (
-                                              <div
-                                                key={suggestion.unit}
-                                                className={`px-2 py-1.5 cursor-pointer text-xs ${
-                                                  unitIndex === highlightedUnitIndex ? 'bg-blue-500 text-white' : 'hover:bg-gray-100'
-                                                }`}
-                                                onClick={() => selectUnit(componentIndex, ingredientIndex, suggestion)}
-                                                onMouseEnter={() => setHighlightedUnitIndex(unitIndex)}
-                                              >
-                                                <div className="font-medium">{suggestion.unit}</div>
-                                                <div className={`text-xs ${unitIndex === highlightedUnitIndex ? 'text-blue-100' : 'text-gray-500'}`}>
-                                                  {suggestion.description}
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-
-                                      {/* Delete Button */}
-                                      <div className="flex justify-center">
-                                        <button
-                                          className="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                          onClick={() => removeIngredientFromComponent(componentIndex, ingredientIndex)}
-                                          title="Remove ingredient"
-                                        >
-                                          <IconX size={12} />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex justify-end pt-4 border-t border-gray-200">
-                      <button 
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                        onClick={handleSubmit}
-                        disabled={saving}
-                      >
-                        {saving ? (
-                          <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Saving...
-                          </>
-                        ) : (
-                          <>
-                            <IconCheck size={16} />
-                            {editingItem ? 'Update Menu Item' : 'Save Menu Item'}
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Menu Items Table */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Current Menu Items</h3>
-                    <p className="text-gray-600">{menuItems.length} items</p>
-                  </div>
-                  <button 
-                    className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-                    onClick={fetchMenuItems}
-                  >
-                    <IconRefresh size={18} />
-                    Refresh
-                  </button>
-                </div>
-              </div>
-              
-              {menuItems.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-6">
-                    <IconSearch size={32} className="text-gray-400" />
-                  </div>
-                  <h4 className="text-xl font-semibold text-gray-900 mb-4">No menu items yet</h4>
-                  <p className="text-gray-600 mb-6">Start building your menu by adding your first item!</p>
-                  <button 
-                    className="inline-flex items-center gap-2 px-6 py-3 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                    onClick={startAddItem}
-                  >
-                    <IconPlus size={18} />
-                    Add Your First Menu Item
-                  </button>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  {/* Desktop Table */}
-                  <div className="hidden lg:block">
-                    <table className="w-full">
-                      <thead className="bg-gray-50 border-b border-gray-200">
-                        <tr>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Name</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Category</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Components</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Price</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Cost</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Margin</th>
-                          <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Actions</th>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {menuItems.map(item => {
-                          const margin = item.price > 0 ? ((item.price - item.cost) / item.price * 100) : 0;
-                          const componentCount = item.menu_item_components?.length || 0;
-                          
-                          return (
-                            <tr key={item.id} className="hover:bg-gray-50">
-                              <td className="py-4 px-6">
-                                <div 
-                                  className="cursor-pointer hover:text-[#ADD8E6] transition-colors"
-                                  onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)}
-                                  title="Click to view detailed cost breakdown"
-                                >
-                                  <div className="font-medium text-gray-900">{item.name}</div>
-                                  <div className="text-sm text-gray-500">Click for cost breakdown →</div>
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                                  {item.menu_categories?.name || 'Uncategorized'}
-                                </span>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                    {componentCount} {componentCount === 1 ? 'component' : 'components'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center gap-1">
-                                  <IconCurrencyDollar size={16} className="text-gray-400" />
-                                  <span className="font-medium text-gray-900">${item.price.toFixed(2)}</span>
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center gap-1">
-                                  <IconCurrencyDollar size={16} className="text-gray-400" />
-                                  <span className="text-gray-900">${item.cost.toFixed(2)}</span>
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center gap-1">
-                                  <IconPercentage size={16} className="text-gray-400" />
-                                  <span className={`font-medium ${
-                                    margin > 30 ? 'text-green-600' : 
-                                    margin > 15 ? 'text-yellow-600' : 'text-red-600'
-                                  }`}>
-                                    {margin.toFixed(1)}%
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="py-4 px-6">
-                                <div className="flex items-center gap-2">
-                                  <button 
-                                    className="flex items-center gap-1 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
-                                    onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)}
-                                    title="View cost breakdown"
-                                  >
-                                    <IconEye size={16} />
-                                    View
-                                  </button>
-                                  <button 
-                                    className="flex items-center gap-1 px-3 py-1.5 text-[#ADD8E6] hover:text-[#9CC5D4] hover:bg-blue-50 rounded-md transition-colors text-sm"
-                                    onClick={() => startEditItem(item)}
-                                    title="Edit menu item"
-                                  >
-                                    <IconPencil size={16} />
-                                    Edit
-                                  </button>
-                                  <button 
-                                    className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors text-sm"
-                                    onClick={() => deleteMenuItem(item)}
-                                    title="Delete menu item"
-                                  >
-                                    <IconTrash size={16} />
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Mobile Cards */}
-                  <div className="lg:hidden">
-                    {menuItems.map(item => {
-                      const margin = item.price > 0 ? ((item.price - item.cost) / item.price * 100) : 0;
-                      const componentCount = item.menu_item_components?.length || 0;
-                      
-                      return (
-                        <div key={item.id} className="p-6 border-b border-gray-200 last:border-b-0">
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1">
-                              <h3 
-                                className="font-semibold text-gray-900 mb-2 cursor-pointer hover:text-[#ADD8E6] transition-colors"
-                                onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)}
-                              >
-                                {item.name}
-                              </h3>
-                              <div className="text-sm text-gray-500 mb-3">
-                                Click for cost breakdown →
-                              </div>
-                            </div>
-                            
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
-                              margin > 30 ? 'bg-green-100 text-green-800' : 
-                              margin > 15 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
-                            }`}>
-                              {margin.toFixed(1)}% margin
-                            </span>
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div>
-                              <div className="text-sm text-gray-500 mb-1">Category</div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {item.menu_categories?.name || 'Uncategorized'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm text-gray-500 mb-1">Components</div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {componentCount} {componentCount === 1 ? 'component' : 'components'}
-                              </div>
-                            </div>
-                            <div>
-                              <div className="text-sm text-gray-500 mb-1">Price / Cost</div>
-                              <div className="text-sm font-medium text-gray-900">
-                                ${item.price.toFixed(2)} / ${item.cost.toFixed(2)}
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <div className="flex gap-2">
-                            <button 
-                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-sm"
-                              onClick={() => router.push(`/admin/menu-item-cost-breakdown/${item.id}`)}
-                            >
-                              <IconEye size={16} />
-                              View
-                            </button>
-                            <button 
-                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-[#ADD8E6] hover:text-[#9CC5D4] hover:bg-blue-50 rounded-lg transition-colors text-sm"
-                              onClick={() => startEditItem(item)}
-                            >
-                              <IconPencil size={16} />
-                              Edit
-                            </button>
-                            <button 
-                              className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors text-sm"
-                              onClick={() => deleteMenuItem(item)}
-                            >
-                              <IconTrash size={16} />
-                              Delete
-                            </button>
-                          </div>
-                        </div>
                       );
                     })}
-                  </div>
-                </div>
-              )}
-            </div>
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </AdminLayout>
   );
 }

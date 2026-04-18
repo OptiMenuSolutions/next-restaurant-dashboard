@@ -14,15 +14,301 @@ import {
   IconPhone,
   IconRefresh,
   IconPlus,
-  IconEye,
   IconEdit,
   IconTrash,
   IconUserPlus,
   IconClock,
   IconNotes,
+  IconX,
+  IconMapPin,
 } from '@tabler/icons-react';
 import { logActivity, ACTIVITY_TYPES } from '../../lib/activityLogger';
 
+// ── Shared field component ────────────────────────────────────────────────
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="admin-label">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// ── Modal backdrop ────────────────────────────────────────────────────────
+function Modal({ onClose, children, width = 640 }) {
+  useEffect(() => {
+    const handler = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 100,
+        background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: 'var(--bg-surface)', border: '1px solid var(--border)',
+        borderRadius: 14, width: '100%', maxWidth: width,
+        maxHeight: '90vh', overflowY: 'auto',
+        boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Add / Edit modal ──────────────────────────────────────────────────────
+function ProspectModal({ prospect, onClose, onSave }) {
+  const [formData, setFormData] = useState({
+    restaurant_name:    prospect?.restaurant_name    || '',
+    contact_name:       prospect?.contact_name       || '',
+    phone_number:       prospect?.phone_number       || '',
+    email:              prospect?.email              || '',
+    street_address:     prospect?.street_address     || '',
+    city:               prospect?.city               || '',
+    state:              prospect?.state              || '',
+    zipcode:            prospect?.zipcode            || '',
+    last_contacted_date:prospect?.last_contacted_date|| '',
+    notes:              prospect?.notes              || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [notContacted, setNotContacted] = useState(!prospect?.last_contacted_date);
+
+  const set = (key, val) => setFormData(prev => ({ ...prev, [key]: val }));
+
+  function formatPhone(val) {
+    const d = val.replace(/\D/g, '').slice(0, 10);
+    if (d.length >= 6) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+    if (d.length >= 3) return `(${d.slice(0,3)}) ${d.slice(3)}`;
+    if (d.length > 0)  return `(${d}`;
+    return '';
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...formData, last_contacted_date: notContacted ? null : formData.last_contacted_date || null };
+
+      if (prospect) {
+        const { error } = await supabase.from('prospective_clients').update(payload).eq('id', prospect.id);
+        if (error) throw error;
+        await logActivity({
+          activityType: ACTIVITY_TYPES.PROSPECT_UPDATED,
+          title: `Prospect "${payload.restaurant_name}" updated`,
+          subtitle: `Contact: ${payload.contact_name || 'Not provided'}`,
+          metadata: { prospect_id: prospect.id },
+        });
+      } else {
+        const { data: newProspect, error } = await supabase.from('prospective_clients').insert([payload]).select().single();
+        if (error) throw error;
+        await logActivity({
+          activityType: ACTIVITY_TYPES.PROSPECT_CREATED,
+          title: `New prospect "${payload.restaurant_name}" added`,
+          subtitle: `Contact: ${payload.contact_name || 'Not provided'} · ${payload.phone_number || 'No phone'}`,
+          metadata: { prospect_id: newProspect.id },
+        });
+      }
+
+      onSave();
+      onClose();
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { marginBottom: 0 };
+
+  return (
+    <Modal onClose={onClose}>
+      {/* Header */}
+      <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+          {prospect ? 'Edit Prospect' : 'Add New Prospect'}
+        </h2>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
+          <IconX size={18} />
+        </button>
+      </div>
+
+      {/* Form */}
+      <form onSubmit={handleSubmit} style={{ padding: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <Field label="Restaurant Name *">
+            <input className="admin-input" required value={formData.restaurant_name} onChange={e => set('restaurant_name', e.target.value)} placeholder="e.g. The Rustic Table" style={inputStyle} />
+          </Field>
+          <Field label="Contact Name">
+            <input className="admin-input" value={formData.contact_name} onChange={e => set('contact_name', e.target.value)} placeholder="Owner / Manager" style={inputStyle} />
+          </Field>
+          <Field label="Phone Number">
+            <input className="admin-input" type="tel" value={formData.phone_number} onChange={e => set('phone_number', formatPhone(e.target.value))} placeholder="(555) 123-4567" style={inputStyle} />
+          </Field>
+          <Field label="Email">
+            <input className="admin-input" type="email" value={formData.email} onChange={e => set('email', e.target.value)} placeholder="owner@restaurant.com" style={inputStyle} />
+          </Field>
+        </div>
+
+        {/* Address */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Address</p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <Field label="Street Address">
+              <input className="admin-input" value={formData.street_address} onChange={e => set('street_address', e.target.value)} placeholder="123 Main Street" style={inputStyle} />
+            </Field>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 100px', gap: 12 }}>
+              <Field label="City">
+                <input className="admin-input" value={formData.city} onChange={e => set('city', e.target.value)} placeholder="New York" style={inputStyle} />
+              </Field>
+              <Field label="State">
+                <input className="admin-input" value={formData.state} onChange={e => set('state', e.target.value)} placeholder="NY" style={inputStyle} />
+              </Field>
+              <Field label="ZIP">
+                <input className="admin-input" value={formData.zipcode} onChange={e => set('zipcode', e.target.value)} placeholder="10001" style={inputStyle} />
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        {/* Last contacted */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 16 }}>
+          <p style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Contact History</p>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+            <Field label="Last Contacted Date">
+              <input
+                className="admin-input"
+                type="date"
+                value={formData.last_contacted_date}
+                onChange={e => { set('last_contacted_date', e.target.value); if (e.target.value) setNotContacted(false); }}
+                disabled={notContacted}
+                style={{ ...inputStyle, opacity: notContacted ? 0.4 : 1 }}
+              />
+            </Field>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', paddingBottom: 10, whiteSpace: 'nowrap' }}>
+              <input
+                type="checkbox"
+                checked={notContacted}
+                onChange={e => { setNotContacted(e.target.checked); if (e.target.checked) set('last_contacted_date', ''); }}
+                style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
+              />
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Not contacted yet</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Notes */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginBottom: 24 }}>
+          <Field label="Notes">
+            <textarea
+              className="admin-input"
+              rows={3}
+              value={formData.notes}
+              onChange={e => set('notes', e.target.value)}
+              placeholder="Any notes about this prospect…"
+              style={{ ...inputStyle, resize: 'vertical', minHeight: 80 }}
+            />
+          </Field>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" className="admin-btn admin-btn-ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="admin-btn admin-btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : prospect ? 'Update Prospect' : 'Add Prospect'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── View modal ────────────────────────────────────────────────────────────
+function ViewModal({ prospect, onClose, onEdit }) {
+  const needsFollowUp = !prospect.last_contacted_date ||
+    new Date(prospect.last_contacted_date) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+  const InfoRow = ({ icon: Icon, label, value }) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      <Icon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 2 }} />
+      <div>
+        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>{label}</div>
+        <div style={{ fontSize: '0.85rem', color: value ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: value ? 'normal' : 'italic' }}>
+          {value || 'Not provided'}
+        </div>
+      </div>
+    </div>
+  );
+
+  const address = [prospect.street_address, prospect.city && prospect.state ? `${prospect.city}, ${prospect.state}` : (prospect.city || prospect.state), prospect.zipcode].filter(Boolean).join('\n');
+
+  return (
+    <Modal onClose={onClose}>
+      {/* Header */}
+      <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--accent-dim)', border: '1px solid rgba(2,164,186,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+            <IconBuilding size={18} />
+          </div>
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              {prospect.restaurant_name}
+            </h2>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0 }}>Prospective Client</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {needsFollowUp && <span className="admin-badge amber"><IconClock size={11} /> Follow-up</span>}
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 4 }}>
+            <IconX size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ padding: '8px 24px 24px' }}>
+        <InfoRow icon={IconUsers}    label="Contact Name"    value={prospect.contact_name} />
+        <InfoRow icon={IconPhone}    label="Phone"           value={prospect.phone_number} />
+        <InfoRow icon={IconMail}     label="Email"           value={prospect.email} />
+        <InfoRow icon={IconMapPin}   label="Address"         value={address || null} />
+        <InfoRow icon={IconCalendar} label="Last Contacted"  value={
+          prospect.last_contacted_date
+            ? new Date(prospect.last_contacted_date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+            : null
+        } />
+        {prospect.notes && <InfoRow icon={IconNotes} label="Notes" value={prospect.notes} />}
+
+        {/* Timeline */}
+        <div style={{ marginTop: 16, padding: '12px 0', borderTop: '1px solid var(--border)' }}>
+          <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8 }}>Timeline</p>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div>Added: {new Date(prospect.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+            {prospect.updated_at !== prospect.created_at && (
+              <div>Updated: {new Date(prospect.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ padding: '14px 24px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <button className="admin-btn admin-btn-ghost" onClick={onClose}>Close</button>
+        <button className="admin-btn admin-btn-primary" onClick={onEdit}>
+          <IconEdit size={15} /> Edit Prospect
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────
 export default function ProspectiveClientManagement() {
   const router = useRouter();
   const [prospects, setProspects] = useState([]);
@@ -37,11 +323,7 @@ export default function ProspectiveClientManagement() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-        return;
-      }
-      
+      if (!user) { router.push('/admin/login'); return; }
       fetchProspects();
     };
     checkUser();
@@ -50,1032 +332,295 @@ export default function ProspectiveClientManagement() {
   async function fetchProspects() {
     try {
       setLoading(true);
-      
-      const { data, error } = await supabase
-        .from('prospective_clients')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      const { data, error } = await supabase.from('prospective_clients').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       setProspects(data || []);
-    } catch (error) {
-      console.error('Error fetching prospective clients:', error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
   async function handleDelete(id) {
-    if (!window.confirm('Are you sure you want to delete this prospective client?')) {
-      return;
-    }
-
+    if (!window.confirm('Delete this prospect?')) return;
     try {
-      // Get prospect info before deleting
       const prospect = prospects.find(p => p.id === id);
-      
-      const { error } = await supabase
-        .from('prospective_clients')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('prospective_clients').delete().eq('id', id);
       if (error) throw error;
-      
-      // Log activity
       await logActivity({
         activityType: ACTIVITY_TYPES.PROSPECT_DELETED,
         title: `Prospect "${prospect?.restaurant_name}" removed`,
         subtitle: `Contact: ${prospect?.contact_name || 'Not provided'}`,
-        details: `Removed from prospective clients pipeline`,
-        metadata: { prospect_id: id }
+        metadata: { prospect_id: id },
       });
-      
       setProspects(prev => prev.filter(p => p.id !== id));
-      alert('Prospective client deleted successfully');
-    } catch (error) {
-      console.error('Error deleting prospect:', error);
-      alert('Failed to delete prospective client: ' + error.message);
-    }
+    } catch (e) { alert('Failed to delete: ' + e.message); }
   }
 
   function handleSort(field) {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    if (sortField === field) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDirection('asc'); }
   }
 
-  const filteredAndSortedProspects = prospects
-    .filter(prospect => 
-      prospect.restaurant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (prospect.contact_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (prospect.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (prospect.phone_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (prospect.city || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (prospect.state || '').toLowerCase().includes(searchTerm.toLowerCase())
+  const thirtyDaysAgo   = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+
+  const filteredAndSorted = prospects
+    .filter(p =>
+      p.restaurant_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.contact_name   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.email          || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.phone_number   || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.city           || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.state          || '').toLowerCase().includes(searchTerm.toLowerCase())
     )
     .sort((a, b) => {
-      let aValue = a[sortField];
-      let bValue = b[sortField];
-      
-      if (sortField === 'last_contacted_date') {
-        aValue = aValue ? new Date(aValue) : new Date(0);
-        bValue = bValue ? new Date(bValue) : new Date(0);
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      let av = a[sortField], bv = b[sortField];
+      if (['last_contacted_date', 'created_at'].includes(sortField)) {
+        av = av ? new Date(av) : new Date(0);
+        bv = bv ? new Date(bv) : new Date(0);
+        return sortDirection === 'asc' ? av - bv : bv - av;
       }
-      
-      if (sortField === 'created_at') {
-        aValue = new Date(aValue || 0);
-        bValue = new Date(bValue || 0);
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
-      }
-      
-      aValue = (aValue || '').toString().toLowerCase();
-      bValue = (bValue || '').toString().toLowerCase();
-      
-      if (sortDirection === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
+      av = (av || '').toString().toLowerCase();
+      bv = (bv || '').toString().toLowerCase();
+      return sortDirection === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
 
-  const totalProspects = prospects.length;
-  const recentlyContacted = prospects.filter(prospect => 
-    prospect.last_contacted_date && 
-    new Date(prospect.last_contacted_date) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  ).length;
-  const needsFollowUp = prospects.filter(prospect => 
-    !prospect.last_contacted_date || 
-    new Date(prospect.last_contacted_date) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
-  ).length;
+  const recentlyContacted = prospects.filter(p => p.last_contacted_date && new Date(p.last_contacted_date) > thirtyDaysAgo).length;
+  const needsFollowUp     = prospects.filter(p => !p.last_contacted_date || new Date(p.last_contacted_date) < fourteenDaysAgo).length;
+
+  const SortIcon = ({ field }) => sortField === field
+    ? (sortDirection === 'asc' ? <IconSortAscending size={13} /> : <IconSortDescending size={13} />)
+    : null;
 
   if (loading) {
     return (
-      <AdminLayout 
-        pageTitle="Prospective Clients" 
-        pageDescription="Manage potential restaurant partners and leads"
-        pageIcon={IconUserPlus}
-      >
-        <div className="p-6 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 border-3 border-gray-300 border-t-[#ADD8E6] rounded-full animate-spin"></div>
-            <div className="text-gray-600">Loading prospects...</div>
-          </div>
+      <AdminLayout pageTitle="Prospective Clients" pageDescription="Manage potential restaurant partners" pageIcon={IconUserPlus}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+          <div className="admin-spinner" />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading prospects…</p>
         </div>
       </AdminLayout>
     );
   }
 
   return (
-    <AdminLayout 
-      pageTitle="Prospective Clients" 
-      pageDescription="Manage potential restaurant partners and leads"
-      pageIcon={IconUserPlus}
-    >
-      {/* Action Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button 
-              className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              onClick={fetchProspects}
-            >
-              <IconRefresh size={18} />
-              Refresh
+    <AdminLayout pageTitle="Prospective Clients" pageDescription="Manage potential restaurant partners and leads" pageIcon={IconUserPlus}>
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        <div className="admin-search-inline" style={{ flex: 1, minWidth: 220 }}>
+          <IconSearch size={15} />
+          <input
+            placeholder="Search by name, contact, email, city…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}>
+              <IconX size={14} />
             </button>
-            <button 
-              className="flex items-center gap-2 px-3 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-              onClick={() => router.push('/admin/clients')}
-            >
-              <IconUsers size={18} />
-              View Current Clients
-            </button>
-          </div>
-          <button 
-            className="flex items-center gap-2 px-4 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-            onClick={() => setShowAddModal(true)}
-          >
-            <IconPlus size={18} />
-            Add Prospect
-          </button>
-        </div>
-      </div>
-
-      {/* Search Controls */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center gap-4">
-          <div className="flex-1 relative">
-            <IconSearch size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by restaurant name, contact, email, phone, city, or state..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="p-6 space-y-6">
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                <IconUserPlus size={24} className="text-blue-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{totalProspects}</p>
-                <p className="text-gray-600">Total Prospects</p>
-                <p className="text-sm text-gray-500">Potential partners</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
-                <IconClock size={24} className="text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{recentlyContacted}</p>
-                <p className="text-gray-600">Recently Contacted</p>
-                <p className="text-sm text-gray-500">Within 30 days</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 bg-orange-100 rounded-lg">
-                <IconCalendar size={24} className="text-orange-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-gray-900">{needsFollowUp}</p>
-                <p className="text-gray-600">Needs Follow-up</p>
-                <p className="text-sm text-gray-500">14+ days since contact</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Prospects Table */}
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-          <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">🎯 Prospective Clients</h3>
-                <p className="text-gray-600">{filteredAndSortedProspects.length} prospects</p>
-              </div>
-            </div>
-          </div>
-
-          {filteredAndSortedProspects.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-6">
-                <IconUserPlus size={32} className="text-gray-400" />
-              </div>
-              <h3 className="text-xl font-semibold text-gray-900 mb-4">
-                {searchTerm ? 'No Prospects Found' : 'No Prospective Clients Yet'}
-              </h3>
-              <p className="text-gray-600 mb-6">
-                {searchTerm 
-                  ? `No prospects match "${searchTerm}"`
-                  : 'Start building your pipeline by adding potential restaurant partners.'
-                }
-              </p>
-              {!searchTerm && (
-                <button 
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                  onClick={() => setShowAddModal(true)}
-                >
-                  <IconPlus size={18} />
-                  Add Your First Prospect
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              {/* Desktop Table */}
-              <div className="hidden lg:block">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th 
-                        className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('restaurant_name')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Restaurant Name
-                          {sortField === 'restaurant_name' && (
-                            sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                          )}
-                        </div>
-                      </th>
-                      <th 
-                        className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('contact_name')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Contact Name
-                          {sortField === 'contact_name' && (
-                            sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                          )}
-                        </div>
-                      </th>
-                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Phone</th>
-                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Email</th>
-                      <th 
-                        className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('city')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Location
-                          {sortField === 'city' && (
-                            sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                          )}
-                        </div>
-                      </th>
-                      <th 
-                        className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleSort('last_contacted_date')}
-                      >
-                        <div className="flex items-center gap-2">
-                          Last Contacted
-                          {sortField === 'last_contacted_date' && (
-                            sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                          )}
-                        </div>
-                      </th>
-                      <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredAndSortedProspects.map(prospect => {
-                      const needsFollowUp = !prospect.last_contacted_date || 
-                        new Date(prospect.last_contacted_date) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-                      
-                      return (
-                        <tr 
-                          key={prospect.id} 
-                          className="hover:bg-gray-50 cursor-pointer"
-                          onClick={() => {
-                            console.log('Row clicked!', prospect.restaurant_name);
-                            setViewingProspect(prospect);
-                          }}
-                        >
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-lg">
-                                <IconBuilding size={18} className="text-blue-600" />
-                              </div>
-                              <div>
-                                <div className="font-medium text-gray-900">{prospect.restaurant_name}</div>
-                                {needsFollowUp && (
-                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                                    Needs Follow-up
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <span className="text-gray-900">
-                              {prospect.contact_name || <span className="text-gray-400 italic">Not provided</span>}
-                            </span>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-2">
-                              <IconPhone size={16} className="text-gray-400" />
-                              <span className="text-gray-900">
-                                {prospect.phone_number || <span className="text-gray-400 italic">Not provided</span>}
-                              </span>
-                            </div>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-2">
-                              <IconMail size={16} className="text-gray-400" />
-                              <span className="text-gray-900">
-                                {prospect.email || <span className="text-gray-400 italic">Not provided</span>}
-                              </span>
-                            </div>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <div className="text-gray-900">
-                              {prospect.city && prospect.state ? (
-                                <div>
-                                  <div className="font-medium">{prospect.city}, {prospect.state}</div>
-                                  {prospect.zipcode && (
-                                    <div className="text-sm text-gray-500">{prospect.zipcode}</div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-gray-400 italic">Not provided</span>
-                              )}
-                            </div>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-2">
-                              <IconCalendar size={16} className="text-gray-400" />
-                              <span className="text-gray-900">
-                                {prospect.last_contacted_date 
-                                  ? new Date(prospect.last_contacted_date).toLocaleDateString()
-                                  : <span className="text-gray-400 italic">Never</span>
-                                }
-                              </span>
-                            </div>
-                          </td>
-                          
-                          <td className="py-4 px-6">
-                            <div className="flex items-center gap-2">
-                              <button
-                                className="flex items-center gap-1 px-3 py-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-md transition-colors text-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingProspect(prospect);
-                                }}
-                              >
-                                <IconEdit size={16} />
-                                Edit
-                              </button>
-                              <button
-                                className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors text-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(prospect.id);
-                                }}
-                              >
-                                <IconTrash size={16} />
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Cards */}
-              <div className="lg:hidden">
-                {filteredAndSortedProspects.map(prospect => {
-                  const needsFollowUp = !prospect.last_contacted_date || 
-                    new Date(prospect.last_contacted_date) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-                  
-                  return (
-                    <div 
-                      key={prospect.id} 
-                      className="p-6 border-b border-gray-200 last:border-b-0 cursor-pointer hover:bg-gray-50"
-                      onClick={() => setViewingProspect(prospect)}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                            <IconBuilding size={20} className="text-blue-600" />
-                          </div>
-                          <div>
-                            <h3 className="font-semibold text-gray-900">{prospect.restaurant_name}</h3>
-                            <div className="text-sm text-gray-500">{prospect.contact_name || 'No contact name'}</div>
-                          </div>
-                        </div>
-                        
-                        {needsFollowUp && (
-                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            Follow-up
-                          </span>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-1 gap-3 mb-4">
-                        <div className="flex items-center gap-2 text-sm">
-                          <IconPhone size={14} className="text-gray-400" />
-                          <span className="text-gray-900">{prospect.phone_number || 'No phone'}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <IconMail size={14} className="text-gray-400" />
-                          <span className="text-gray-900">{prospect.email || 'No email'}</span>
-                        </div>
-                        {(prospect.city || prospect.state) && (
-                          <div className="flex items-center gap-2 text-sm">
-                            <IconBuilding size={14} className="text-gray-400" />
-                            <span className="text-gray-900">
-                              {[prospect.city, prospect.state].filter(Boolean).join(', ')}
-                              {prospect.zipcode && ` ${prospect.zipcode}`}
-                            </span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 text-sm">
-                          <IconCalendar size={14} className="text-gray-400" />
-                          <span className="text-gray-900">
-                            Last contacted: {prospect.last_contacted_date 
-                              ? new Date(prospect.last_contacted_date).toLocaleDateString()
-                              : 'Never'
-                            }
-                          </span>
-                        </div>
-                        {prospect.notes && (
-                          <div className="flex items-start gap-2 text-sm">
-                            <IconNotes size={14} className="text-gray-400 mt-0.5" />
-                            <span className="text-gray-600">{prospect.notes}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      <div className="flex gap-2">
-                        <button
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors text-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingProspect(prospect);
-                          }}
-                        >
-                          <IconEdit size={16} />
-                          Edit
-                        </button>
-                        <button
-                          className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors text-sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(prospect.id);
-                          }}
-                        >
-                          <IconTrash size={16} />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           )}
         </div>
+        <button className="admin-btn admin-btn-ghost" onClick={fetchProspects}>
+          <IconRefresh size={15} /> Refresh
+        </button>
+        <button className="admin-btn admin-btn-ghost" onClick={() => router.push('/admin/clients')}>
+          <IconUsers size={15} /> View Clients
+        </button>
+        <button className="admin-btn admin-btn-primary" onClick={() => setShowAddModal(true)}>
+          <IconPlus size={15} /> Add Prospect
+        </button>
       </div>
 
-      {/* Add/Edit Modal */}
+      {/* ── Stat Cards ───────────────────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon teal"><IconUserPlus size={20} /></div>
+          <div>
+            <div className="admin-stat-value">{prospects.length}</div>
+            <div className="admin-stat-label">Total Prospects</div>
+            <div className="admin-stat-sub">Potential partners</div>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon emerald"><IconClock size={20} /></div>
+          <div>
+            <div className="admin-stat-value">{recentlyContacted}</div>
+            <div className="admin-stat-label">Recently Contacted</div>
+            <div className="admin-stat-sub">Within 30 days</div>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon amber"><IconCalendar size={20} /></div>
+          <div>
+            <div className="admin-stat-value">{needsFollowUp}</div>
+            <div className="admin-stat-label">Needs Follow-up</div>
+            <div className="admin-stat-sub">14+ days since contact</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Table ────────────────────────────────────────────────────────── */}
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <h2 className="admin-card-title">Prospective Clients</h2>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {filteredAndSorted.length} prospect{filteredAndSorted.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {filteredAndSorted.length === 0 ? (
+          <div className="admin-empty">
+            <div className="admin-empty-icon"><IconUserPlus size={22} /></div>
+            <h3>{searchTerm ? 'No prospects found' : 'No prospective clients yet'}</h3>
+            <p>
+              {searchTerm
+                ? `No prospects match "${searchTerm}"`
+                : 'Start building your pipeline by adding potential restaurant partners.'
+              }
+            </p>
+            {!searchTerm && (
+              <button className="admin-btn admin-btn-primary" style={{ marginTop: 8 }} onClick={() => setShowAddModal(true)}>
+                <IconPlus size={15} /> Add First Prospect
+              </button>
+            )}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th className="sortable" onClick={() => handleSort('restaurant_name')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Restaurant <SortIcon field="restaurant_name" /></span>
+                  </th>
+                  <th className="sortable" onClick={() => handleSort('contact_name')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Contact <SortIcon field="contact_name" /></span>
+                  </th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th className="sortable" onClick={() => handleSort('city')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Location <SortIcon field="city" /></span>
+                  </th>
+                  <th className="sortable" onClick={() => handleSort('last_contacted_date')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Last Contacted <SortIcon field="last_contacted_date" /></span>
+                  </th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAndSorted.map(prospect => {
+                  const followUp = !prospect.last_contacted_date || new Date(prospect.last_contacted_date) < fourteenDaysAgo;
+                  return (
+                    <tr
+                      key={prospect.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setViewingProspect(prospect)}
+                    >
+                      {/* Restaurant */}
+                      <td className="primary">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 8, flexShrink: 0,
+                            background: 'rgba(2,164,186,0.1)', border: '1px solid rgba(2,164,186,0.2)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)',
+                          }}>
+                            <IconBuilding size={14} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                              {prospect.restaurant_name}
+                            </div>
+                            {followUp && <span className="admin-badge amber" style={{ marginTop: 2 }}>Follow-up</span>}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Contact */}
+                      <td>{prospect.contact_name || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>—</span>}</td>
+
+                      {/* Phone */}
+                      <td>
+                        {prospect.phone_number ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconPhone size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span style={{ fontSize: '0.83rem' }}>{prospect.phone_number}</span>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>—</span>}
+                      </td>
+
+                      {/* Email */}
+                      <td>
+                        {prospect.email ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconMail size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span style={{ fontSize: '0.83rem' }}>{prospect.email}</span>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>—</span>}
+                      </td>
+
+                      {/* Location */}
+                      <td>
+                        {prospect.city || prospect.state ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconMapPin size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span style={{ fontSize: '0.83rem' }}>{[prospect.city, prospect.state].filter(Boolean).join(', ')}</span>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>—</span>}
+                      </td>
+
+                      {/* Last contacted */}
+                      <td>
+                        {prospect.last_contacted_date ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <IconCalendar size={13} style={{ color: 'var(--text-muted)' }} />
+                            <span>{new Date(prospect.last_contacted_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </div>
+                        ) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>Never</span>}
+                      </td>
+
+                      {/* Actions */}
+                      <td onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <button
+                            className="admin-btn admin-btn-ghost admin-btn-sm"
+                            onClick={() => setEditingProspect(prospect)}
+                            title="Edit"
+                            style={{ color: 'var(--accent)' }}
+                          >
+                            <IconEdit size={14} />
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-danger admin-btn-sm"
+                            onClick={() => handleDelete(prospect.id)}
+                            title="Delete"
+                          >
+                            <IconTrash size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Modals ───────────────────────────────────────────────────────── */}
       {(showAddModal || editingProspect) && (
-        <ProspectModal 
+        <ProspectModal
           prospect={editingProspect}
-          onClose={() => {
-            setShowAddModal(false);
-            setEditingProspect(null);
-          }}
+          onClose={() => { setShowAddModal(false); setEditingProspect(null); }}
           onSave={fetchProspects}
         />
       )}
-
-      {/* View Modal */}
       {viewingProspect && (
-        <>
-          {console.log('Rendering modal for:', viewingProspect.restaurant_name)}
-          <ViewProspectModal 
-            prospect={viewingProspect}
-            onClose={() => setViewingProspect(null)}
-            onEdit={() => {
-              setEditingProspect(viewingProspect);
-              setViewingProspect(null);
-            }}
-          />
-        </>
+        <ViewModal
+          prospect={viewingProspect}
+          onClose={() => setViewingProspect(null)}
+          onEdit={() => { setEditingProspect(viewingProspect); setViewingProspect(null); }}
+        />
       )}
     </AdminLayout>
-  );
-}
-
-// Modal Component for Add/Edit
-function ProspectModal({ prospect, onClose, onSave }) {
-  const [formData, setFormData] = useState({
-    restaurant_name: prospect?.restaurant_name || '',
-    contact_name: prospect?.contact_name || '',
-    phone_number: prospect?.phone_number || '',
-    email: prospect?.email || '',
-    street_address: prospect?.street_address || '',
-    city: prospect?.city || '',
-    state: prospect?.state || '',
-    zipcode: prospect?.zipcode || '',
-    last_contacted_date: prospect?.last_contacted_date || '',
-    notes: prospect?.notes || ''
-  });
-  const [saving, setSaving] = useState(false);
-  const [notContactedYet, setNotContactedYet] = useState(!prospect?.last_contacted_date);
-
-  // Phone number formatting function
-  const formatPhoneNumber = (value) => {
-    // Remove all non-digits
-    const digits = value.replace(/\D/g, '');
-    
-    // Limit to 10 digits
-    const limitedDigits = digits.slice(0, 10);
-    
-    // Format based on length
-    if (limitedDigits.length >= 6) {
-      return `(${limitedDigits.slice(0, 3)}) ${limitedDigits.slice(3, 6)}-${limitedDigits.slice(6)}`;
-    } else if (limitedDigits.length >= 3) {
-      return `(${limitedDigits.slice(0, 3)}) ${limitedDigits.slice(3)}`;
-    } else if (limitedDigits.length > 0) {
-      return `(${limitedDigits}`;
-    }
-    return '';
-  };
-
-  const handlePhoneChange = (e) => {
-    const formatted = formatPhoneNumber(e.target.value);
-    setFormData(prev => ({...prev, phone_number: formatted}));
-  };
-
-  const handleContactedCheckbox = (checked) => {
-    setNotContactedYet(checked);
-    if (checked) {
-      setFormData(prev => ({...prev, last_contacted_date: ''}));
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-
-    try {
-      // Prepare data for submission
-      const submitData = {
-        ...formData,
-        last_contacted_date: notContactedYet ? null : formData.last_contacted_date || null
-      };
-
-      if (prospect) {
-        // Update existing prospect
-        const { error } = await supabase
-          .from('prospective_clients')
-          .update(submitData)
-          .eq('id', prospect.id);
-
-        if (error) throw error;
-
-        // Log activity
-        await logActivity({
-          activityType: ACTIVITY_TYPES.PROSPECT_UPDATED,
-          title: `Prospect "${submitData.restaurant_name}" updated`,
-          subtitle: `Contact: ${submitData.contact_name || 'Not provided'} • ${submitData.city || 'Location not set'}`,
-          details: `Updated prospect information including ${Object.keys(submitData).filter(key => submitData[key]).join(', ')}`,
-          metadata: { prospect_id: prospect.id }
-        });
-
-        alert('Prospect updated successfully');
-      } else {
-        // Create new prospect
-        const { data: newProspect, error } = await supabase
-          .from('prospective_clients')
-          .insert([submitData])
-          .select()
-          .single();
-
-        if (error) throw error;
-
-        // Log activity
-        await logActivity({
-          activityType: ACTIVITY_TYPES.PROSPECT_CREATED,
-          title: `New prospect "${submitData.restaurant_name}" added`,
-          subtitle: `Contact: ${submitData.contact_name || 'Not provided'} • ${submitData.phone_number || 'No phone'}`,
-          details: `Added to prospective clients pipeline with ${submitData.notes ? 'notes' : 'no notes'}`,
-          metadata: { prospect_id: newProspect.id }
-        });
-
-        alert('Prospect added successfully');
-      }
-
-      onSave();
-      onClose();
-    } catch (error) {
-      console.error('Error saving prospect:', error);
-      alert('Failed to save prospect: ' + error.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            {prospect ? 'Edit Prospect' : 'Add New Prospect'}
-          </h2>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Restaurant Name *
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.restaurant_name}
-                onChange={(e) => setFormData(prev => ({...prev, restaurant_name: e.target.value}))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Contact Name
-              </label>
-              <input
-                type="text"
-                value={formData.contact_name}
-                onChange={(e) => setFormData(prev => ({...prev, contact_name: e.target.value}))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number
-              </label>
-              <input
-                type="tel"
-                value={formData.phone_number}
-                onChange={handlePhoneChange}
-                placeholder="(555) 123-4567"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData(prev => ({...prev, email: e.target.value}))}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-              />
-            </div>
-          </div>
-          
-          {/* Address Section */}
-          <div className="border-t border-gray-200 pt-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Address Information</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Street Address
-                </label>
-                <input
-                  type="text"
-                  value={formData.street_address}
-                  onChange={(e) => setFormData(prev => ({...prev, street_address: e.target.value}))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-                  placeholder="123 Main Street"
-                />
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData(prev => ({...prev, city: e.target.value}))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-                    placeholder="New York"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.state}
-                    onChange={(e) => setFormData(prev => ({...prev, state: e.target.value}))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-                    placeholder="NY"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    ZIP Code
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.zipcode}
-                    onChange={(e) => setFormData(prev => ({...prev, zipcode: e.target.value}))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-                    placeholder="10001"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Contact Information */}
-          <div className="border-t border-gray-200 pt-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Contact Information</h3>
-            <div className="flex items-start gap-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Last Contacted Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.last_contacted_date}
-                  onChange={(e) => {
-                    setFormData(prev => ({...prev, last_contacted_date: e.target.value}));
-                    if (e.target.value) {
-                      setNotContactedYet(false);
-                    }
-                  }}
-                  disabled={notContactedYet}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
-                />
-              </div>
-              <div className="flex items-center mt-8">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={notContactedYet}
-                    onChange={(e) => handleContactedCheckbox(e.target.checked)}
-                    className="w-4 h-4 text-[#ADD8E6] border-gray-300 rounded focus:ring-[#ADD8E6]"
-                  />
-                  <span className="text-sm font-medium text-gray-700">Haven't contacted yet</span>
-                </label>
-              </div>
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes
-            </label>
-            <textarea
-              rows={4}
-              value={formData.notes}
-              onChange={(e) => setFormData(prev => ({...prev, notes: e.target.value}))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-              placeholder="Add any notes about this prospect..."
-            />
-          </div>
-          
-          <div className="flex items-center justify-end gap-4 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex items-center gap-2 px-6 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium disabled:opacity-50"
-            >
-              {saving ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></div>
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <IconPlus size={18} />
-                  {prospect ? 'Update Prospect' : 'Add Prospect'}
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// View-Only Modal Component
-function ViewProspectModal({ prospect, onClose, onEdit }) {
-  const needsFollowUp = !prospect.last_contacted_date || 
-    new Date(prospect.last_contacted_date) < new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                <IconBuilding size={24} className="text-blue-600" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900">{prospect.restaurant_name}</h2>
-                <p className="text-gray-600">Prospective Client Details</p>
-              </div>
-            </div>
-            {needsFollowUp && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">
-                <IconClock size={16} className="mr-1" />
-                Needs Follow-up
-              </span>
-            )}
-          </div>
-        </div>
-        
-        <div className="p-6 space-y-6">
-          {/* Contact Information */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-              <IconUsers size={20} className="text-gray-600" />
-              Contact Information
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-lg">
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Contact Name</label>
-                <p className="text-gray-900 font-medium">
-                  {prospect.contact_name || <span className="text-gray-400 italic">Not provided</span>}
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Phone Number</label>
-                <div className="flex items-center gap-2">
-                  <IconPhone size={16} className="text-gray-400" />
-                  <p className="text-gray-900">
-                    {prospect.phone_number || <span className="text-gray-400 italic">Not provided</span>}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Email</label>
-                <div className="flex items-center gap-2">
-                  <IconMail size={16} className="text-gray-400" />
-                  <p className="text-gray-900">
-                    {prospect.email || <span className="text-gray-400 italic">Not provided</span>}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-500 mb-1">Last Contacted</label>
-                <div className="flex items-center gap-2">
-                  <IconCalendar size={16} className="text-gray-400" />
-                  <p className="text-gray-900">
-                    {prospect.last_contacted_date 
-                      ? new Date(prospect.last_contacted_date).toLocaleDateString('en-US', {
-                          weekday: 'long',
-                          year: 'numeric',
-                          month: 'long',
-                          day: 'numeric'
-                        })
-                      : <span className="text-gray-400 italic">Never contacted</span>
-                    }
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Address Information */}
-          {(prospect.street_address || prospect.city || prospect.state || prospect.zipcode) && (
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-                <IconBuilding size={20} className="text-gray-600" />
-                Address
-              </h3>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="text-gray-900">
-                  {prospect.street_address && (
-                    <p className="font-medium">{prospect.street_address}</p>
-                  )}
-                  {(prospect.city || prospect.state || prospect.zipcode) && (
-                    <p>
-                      {[prospect.city, prospect.state].filter(Boolean).join(', ')}
-                      {prospect.zipcode && ` ${prospect.zipcode}`}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
-          {prospect.notes && (
-            <div>
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-                <IconNotes size={20} className="text-gray-600" />
-                Notes
-              </h3>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <p className="text-gray-900 whitespace-pre-wrap">{prospect.notes}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Timeline Info */}
-          <div>
-            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center gap-2">
-              <IconClock size={20} className="text-gray-600" />
-              Timeline
-            </h3>
-            <div className="bg-gray-50 p-4 rounded-lg space-y-2">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Added to system:</span>
-                <span className="text-gray-900 font-medium">
-                  {new Date(prospect.created_at).toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </span>
-              </div>
-              {prospect.updated_at !== prospect.created_at && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Last updated:</span>
-                  <span className="text-gray-900 font-medium">
-                    {new Date(prospect.updated_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center justify-between gap-4 p-6 border-t border-gray-200 bg-gray-50">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-6 py-2 text-gray-600 hover:text-gray-900 transition-colors"
-          >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="flex items-center gap-2 px-6 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-          >
-            <IconEdit size={18} />
-            Edit Prospect
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
