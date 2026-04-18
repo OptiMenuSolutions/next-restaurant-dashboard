@@ -145,7 +145,7 @@ export default function AdminDashboard() {
 
   if (stats.loading) {
     return (
-      <AdminLayout pageTitle="Dashboard" pageDescription="System overview" pageIcon={IconDashboard}>
+      <AdminLayout>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
           <div className="admin-spinner" />
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading dashboard…</p>
@@ -155,7 +155,35 @@ export default function AdminDashboard() {
   }
 
   return (
-    <AdminLayout pageTitle="Dashboard" pageDescription="System overview" pageIcon={IconDashboard}>
+    <AdminLayout>
+
+      {/* ── Page Title ─────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: 'var(--accent-dim)',
+            border: '1px solid rgba(2,164,186,0.2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--accent)', flexShrink: 0,
+          }}>
+            <IconDashboard size={18} />
+          </div>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+              Dashboard
+            </h1>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>System overview</p>
+          </div>
+        </div>
+
+        <button
+          className="admin-btn admin-btn-ghost admin-btn-sm"
+          onClick={() => { fetchDashboardStats(); fetchSystemHealth(); }}
+        >
+          <IconRefresh size={13} /> Refresh
+        </button>
+      </div>
 
       {/* ── Stat Cards ───────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 24 }}>
@@ -216,7 +244,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* ── Main grid: Activity feed + Right column ───────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, alignItems: 'start' }}>
 
         {/* Recent Activity */}
         <div className="admin-card">
@@ -269,7 +297,7 @@ export default function AdminDashboard() {
             <div className="admin-card-header">
               <h2 className="admin-card-title">Quick Actions</h2>
             </div>
-            <div style={{ padding: '8px 8px' }}>
+            <div style={{ padding: '8px' }}>
               {[
                 { label: 'Review Pending Invoices', href: '/admin/pending-invoices', warning: stats.pendingInvoices > 0, count: stats.pendingInvoices },
                 { label: 'All Invoices',            href: '/admin/total-invoices' },
@@ -312,12 +340,6 @@ export default function AdminDashboard() {
           <div className="admin-card">
             <div className="admin-card-header">
               <h2 className="admin-card-title">System Health</h2>
-              <button
-                className="admin-btn admin-btn-ghost admin-btn-sm"
-                onClick={() => { fetchDashboardStats(); fetchSystemHealth(); }}
-              >
-                <IconRefresh size={13} />
-              </button>
             </div>
             <div style={{ padding: '4px 0' }}>
               {[
