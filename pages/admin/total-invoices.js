@@ -18,6 +18,7 @@ import {
   IconSortDescending,
   IconFilter,
   IconArrowLeft,
+  IconX,
 } from '@tabler/icons-react';
 
 export default function TotalInvoices() {
@@ -36,57 +37,32 @@ export default function TotalInvoices() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-        return;
-      }
-      
+      if (!user) { router.push('/admin/login'); return; }
       fetchRestaurants();
     };
     checkUser();
   }, [router]);
 
-  useEffect(() => {
-    fetchInvoices();
-  }, [selectedRestaurant]);
+  useEffect(() => { fetchInvoices(); }, [selectedRestaurant]);
 
   async function fetchRestaurants() {
-    try {
-      const { data, error } = await supabase
-        .from('restaurants')
-        .select('id, name')
-        .order('name');
-
-      if (error) throw error;
-      setRestaurants(data || []);
-    } catch (error) {
-      console.error('Error fetching restaurants:', error);
-    }
+    const { data } = await supabase.from('restaurants').select('id, name').order('name');
+    setRestaurants(data || []);
   }
 
   async function fetchInvoices() {
     try {
       setLoading(true);
-      
       let query = supabase
         .from('invoices')
-        .select(`
-          *,
-          restaurants!inner(name),
-          invoice_items(count)
-        `)
+        .select('*, restaurants!inner(name), invoice_items(count)')
         .order('created_at', { ascending: false });
-
-      if (selectedRestaurant) {
-        query = query.eq('restaurant_id', selectedRestaurant);
-      }
-
+      if (selectedRestaurant) query = query.eq('restaurant_id', selectedRestaurant);
       const { data, error } = await query;
-
       if (error) throw error;
       setInvoices(data || []);
-    } catch (error) {
-      console.error('Error fetching invoices:', error);
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
@@ -97,601 +73,374 @@ export default function TotalInvoices() {
       setItemsLoading(true);
       const { data, error } = await supabase
         .from('invoice_items')
-        .select(`
-          *,
-          ingredients(name, unit, last_price)
-        `)
+        .select('*, ingredients(name, unit, last_price)')
         .eq('invoice_id', invoiceId)
         .order('item_name');
-
       if (error) throw error;
       setInvoiceItems(data || []);
-    } catch (error) {
-      console.error('Error fetching invoice items:', error);
-      setInvoiceItems([]);
-    } finally {
-      setItemsLoading(false);
-    }
+    } catch { setInvoiceItems([]); }
+    finally { setItemsLoading(false); }
   }
 
   async function handleDeleteInvoice(invoiceId) {
-    if (!window.confirm('Are you sure you want to delete this invoice? This action cannot be undone.')) {
-      return;
-    }
-
+    if (!window.confirm('Delete this invoice? This cannot be undone.')) return;
     try {
-      const { error: itemsError } = await supabase
-        .from('invoice_items')
-        .delete()
-        .eq('invoice_id', invoiceId);
-
-      if (itemsError) throw itemsError;
-
-      const { error: invoiceError } = await supabase
-        .from('invoices')
-        .delete()
-        .eq('id', invoiceId);
-
-      if (invoiceError) throw invoiceError;
-
+      await supabase.from('invoice_items').delete().eq('invoice_id', invoiceId);
+      await supabase.from('invoices').delete().eq('id', invoiceId);
       setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
-      
-      if (selectedInvoice && selectedInvoice.id === invoiceId) {
-        setSelectedInvoice(null);
-        setInvoiceItems([]);
-      }
-      
-      alert('Invoice deleted successfully');
-    } catch (error) {
-      console.error('Error deleting invoice:', error);
-      alert('Failed to delete invoice: ' + error.message);
-    }
-  }
-
-  function handleInvoiceClick(invoice) {
-    setSelectedInvoice(invoice);
-    fetchInvoiceItems(invoice.id);
-  }
-
-  function handleCloseDetails() {
-    setSelectedInvoice(null);
-    setInvoiceItems([]);
-  }
-
-  function handleEditInvoice(invoiceId) {
-    router.push(`/admin/invoices/edit/${invoiceId}`);
+      if (selectedInvoice?.id === invoiceId) { setSelectedInvoice(null); setInvoiceItems([]); }
+    } catch (e) { alert('Failed to delete invoice: ' + e.message); }
   }
 
   function handleSort(field) {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    if (sortField === field) setSortDirection(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDirection('asc'); }
   }
-
-  const filteredAndSortedInvoices = invoices
-    .filter(invoice => {
-      const searchLower = searchTerm.toLowerCase();
-      return (
-        (invoice.number || '').toLowerCase().includes(searchLower) ||
-        (invoice.supplier || '').toLowerCase().includes(searchLower) ||
-        (invoice.restaurants?.name || '').toLowerCase().includes(searchLower)
-      );
-    })
-    .sort((a, b) => {
-      let aValue = a[sortField];
-      let bValue = b[sortField];
-      
-      if (sortField === 'amount') {
-        aValue = parseFloat(aValue) || 0;
-        bValue = parseFloat(bValue) || 0;
-      } else if (sortField === 'date' || sortField === 'created_at') {
-        aValue = new Date(aValue || 0);
-        bValue = new Date(bValue || 0);
-      } else {
-        aValue = (aValue || '').toString().toLowerCase();
-        bValue = (bValue || '').toString().toLowerCase();
-      }
-      
-      if (sortDirection === 'asc') {
-        return aValue > bValue ? 1 : -1;
-      } else {
-        return aValue < bValue ? 1 : -1;
-      }
-    });
 
   function getInvoiceStatus(invoice) {
-    const hasAllFields = invoice.number && invoice.date && invoice.supplier && invoice.amount;
-    const hasItems = invoice.invoice_items && invoice.invoice_items.length > 0;
-    
-    if (!hasAllFields) return { status: 'pending', label: 'Pending', color: 'bg-orange-100 text-orange-800' };
-    if (!hasItems) return { status: 'incomplete', label: 'No Items', color: 'bg-red-100 text-red-800' };
-    return { status: 'complete', label: 'Complete', color: 'bg-green-100 text-green-800' };
+    const hasAll  = invoice.number && invoice.date && invoice.supplier && invoice.amount;
+    const hasItems = invoice.invoice_items?.length > 0;
+    if (!hasAll)   return { label: 'Pending',    color: 'amber' };
+    if (!hasItems) return { label: 'No Items',   color: 'rose' };
+    return          { label: 'Complete',          color: 'emerald' };
   }
 
-  const selectedRestaurantName = selectedRestaurant 
-    ? restaurants.find(r => r.id === selectedRestaurant)?.name || ''
-    : 'All Restaurants';
-  
-  const allInvoicesCount = invoices.length;
-  const completeInvoicesCount = invoices.filter(inv => getInvoiceStatus(inv).status === 'complete').length;
-  const totalValue = invoices.reduce((sum, inv) => sum + (inv.amount || 0), 0);
+  const filteredAndSorted = invoices
+    .filter(inv => {
+      const s = searchTerm.toLowerCase();
+      return (inv.number || '').toLowerCase().includes(s)
+          || (inv.supplier || '').toLowerCase().includes(s)
+          || (inv.restaurants?.name || '').toLowerCase().includes(s);
+    })
+    .sort((a, b) => {
+      let av = a[sortField], bv = b[sortField];
+      if (sortField === 'amount') { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+      else if (['date', 'created_at'].includes(sortField)) { av = new Date(av || 0); bv = new Date(bv || 0); }
+      else { av = (av || '').toString().toLowerCase(); bv = (bv || '').toString().toLowerCase(); }
+      return sortDirection === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
 
-  // Invoice Details View
+  const totalValue       = invoices.reduce((s, inv) => s + (inv.amount || 0), 0);
+  const completeCount    = invoices.filter(inv => getInvoiceStatus(inv).label === 'Complete').length;
+  const selectedName     = selectedRestaurant ? restaurants.find(r => r.id === selectedRestaurant)?.name : 'All Restaurants';
+
+  const SortIcon = ({ field }) => sortField === field
+    ? (sortDirection === 'asc' ? <IconSortAscending size={13} /> : <IconSortDescending size={13} />)
+    : null;
+
+  // ── Detail view ──────────────────────────────────────────────────────────
   if (selectedInvoice) {
+    const status = getInvoiceStatus(selectedInvoice);
     return (
-      <AdminLayout 
-        pageTitle={`Invoice Details - ${selectedInvoice.number || 'Untitled'}`} 
+      <AdminLayout
+        pageTitle={`Invoice ${selectedInvoice.number || '—'}`}
         pageDescription={selectedInvoice.restaurants?.name}
         pageIcon={IconFileText}
       >
-        {/* Back Button and Edit Action */}
-        <div className="bg-white border-b border-gray-200 px-6 py-4">
-          <div className="flex items-center justify-between">
-            <button 
-              onClick={handleCloseDetails}
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <IconArrowLeft size={20} />
-              <span>Back to Invoice List</span>
-            </button>
-            
-            <button
-              onClick={() => handleEditInvoice(selectedInvoice.id)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-            >
-              <IconEdit size={18} />
-              Edit Invoice
-            </button>
+        {/* Back bar */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+          <button className="admin-btn admin-btn-ghost" onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); }}>
+            <IconArrowLeft size={15} /> Back to Invoices
+          </button>
+          <button className="admin-btn admin-btn-primary" onClick={() => router.push(`/admin/invoices/edit/${selectedInvoice.id}`)}>
+            <IconEdit size={15} /> Edit Invoice
+          </button>
+        </div>
+
+        {/* Summary card */}
+        <div className="admin-card" style={{ marginBottom: 16 }}>
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Invoice Summary</h2>
+            <span className={`admin-badge ${status.color}`}>{status.label}</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 0 }}>
+            {[
+              { label: 'Invoice Number', value: selectedInvoice.number || '—' },
+              { label: 'Supplier',       value: selectedInvoice.supplier || '—' },
+              { label: 'Date',           value: selectedInvoice.date ? new Date(selectedInvoice.date).toLocaleDateString() : '—' },
+              { label: 'Restaurant',     value: selectedInvoice.restaurants?.name || '—' },
+              { label: 'Total Amount',   value: selectedInvoice.amount ? `$${selectedInvoice.amount.toFixed(2)}` : '—', large: true },
+            ].map((item, i) => (
+              <div key={i} style={{ padding: '18px 24px', borderRight: i < 4 ? '1px solid var(--border)' : 'none' }}>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600, marginBottom: 6 }}>
+                  {item.label}
+                </div>
+                <div style={{ fontSize: item.large ? '1.4rem' : '0.9rem', fontWeight: item.large ? 700 : 500, color: 'var(--text-primary)', fontFamily: item.large ? 'var(--font-display)' : 'var(--font-body)' }}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="p-6 max-w-6xl mx-auto space-y-6">
-          {/* Invoice Summary */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Invoice Summary</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-4">
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Invoice Number</span>
-                  <p className="text-lg text-gray-900">{selectedInvoice.number || 'Not set'}</p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Supplier</span>
-                  <p className="text-lg text-gray-900">{selectedInvoice.supplier || 'Not set'}</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Date</span>
-                  <p className="text-lg text-gray-900">
-                    {selectedInvoice.date 
-                      ? new Date(selectedInvoice.date).toLocaleDateString()
-                      : 'Not set'
-                    }
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Restaurant</span>
-                  <p className="text-lg text-gray-900">{selectedInvoice.restaurants?.name || 'Unknown'}</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Total Amount</span>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {selectedInvoice.amount 
-                      ? `$${selectedInvoice.amount.toFixed(2)}`
-                      : 'Not set'
-                    }
-                  </p>
-                </div>
-                <div>
-                  <span className="text-sm font-medium text-gray-500">Status</span>
-                  <div className="mt-1">
-                    <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getInvoiceStatus(selectedInvoice).color}`}>
-                      {getInvoiceStatus(selectedInvoice).label}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Invoice Items */}
-          <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Invoice Items</h2>
-            {itemsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-8 h-8 border-2 border-gray-300 border-t-[#ADD8E6] rounded-full animate-spin"></div>
-                <span className="ml-3 text-gray-600">Loading items...</span>
-              </div>
-            ) : invoiceItems.length === 0 ? (
-              <div className="text-center py-8">
-                <IconFileText size={48} className="mx-auto mb-4 text-gray-300" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
-                <p className="text-gray-600 mb-4">This invoice doesn't have any items yet.</p>
-                <button
-                  onClick={() => handleEditInvoice(selectedInvoice.id)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                >
-                  <IconEdit size={18} />
-                  Add Items
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Desktop Table */}
-                <div className="hidden lg:block overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-200">
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Item Name</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Quantity</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Unit</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Amount</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Unit Cost</th>
-                        <th className="text-left py-3 px-4 text-sm font-medium text-gray-900">Linked Ingredient</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {invoiceItems.map((item, index) => (
-                        <tr key={item.id || index} className="hover:bg-gray-50">
-                          <td className="py-4 px-4 font-medium text-gray-900">{item.item_name}</td>
-                          <td className="py-4 px-4 text-gray-900">{item.quantity}</td>
-                          <td className="py-4 px-4 text-gray-900">{item.unit}</td>
-                          <td className="py-4 px-4 text-gray-900">${item.amount?.toFixed(2) || '0.00'}</td>
-                          <td className="py-4 px-4 text-gray-900">${item.unit_cost?.toFixed(4) || '0.0000'}</td>
-                          <td className="py-4 px-4">
-                            {item.ingredients?.name ? (
-                              <div className="text-gray-900">
-                                <div className="font-medium">{item.ingredients.name}</div>
-                                <div className="text-xs text-gray-500">
-                                  ${item.ingredients.last_price?.toFixed(4) || '0.0000'}/{item.ingredients.unit}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-gray-500 italic">Not linked</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Mobile Cards */}
-                <div className="lg:hidden space-y-4">
-                  {invoiceItems.map((item, index) => (
-                    <div key={item.id || index} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                      <h3 className="font-medium text-gray-900 mb-3">{item.item_name}</h3>
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <span className="text-gray-500">Quantity:</span>
-                          <span className="ml-2 text-gray-900">{item.quantity} {item.unit}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Amount:</span>
-                          <span className="ml-2 text-gray-900">${item.amount?.toFixed(2) || '0.00'}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Unit Cost:</span>
-                          <span className="ml-2 text-gray-900">${item.unit_cost?.toFixed(4) || '0.0000'}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Ingredient:</span>
-                          <span className="ml-2 text-gray-900">
-                            {item.ingredients?.name || 'Not linked'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Items Summary */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-500">Total Items:</span>
-                      <span className="ml-2 font-medium text-gray-900">{invoiceItems.length}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Items Total:</span>
-                      <span className="ml-2 font-medium text-gray-900">
-                        ${invoiceItems.reduce((sum, item) => sum + (item.amount || 0), 0).toFixed(2)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500">Linked Ingredients:</span>
-                      <span className="ml-2 font-medium text-gray-900">
-                        {invoiceItems.filter(item => item.ingredients?.name).length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+        {/* Items card */}
+        <div className="admin-card">
+          <div className="admin-card-header">
+            <h2 className="admin-card-title">Invoice Items</h2>
+            {!itemsLoading && (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                {invoiceItems.length} {invoiceItems.length === 1 ? 'item' : 'items'}
+              </span>
             )}
           </div>
+
+          {itemsLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 }}>
+              <div className="admin-spinner" />
+            </div>
+          ) : invoiceItems.length === 0 ? (
+            <div className="admin-empty">
+              <div className="admin-empty-icon"><IconFileText size={22} /></div>
+              <h3>No items yet</h3>
+              <p>This invoice doesn't have any line items.</p>
+              <button className="admin-btn admin-btn-primary" style={{ marginTop: 8 }} onClick={() => router.push(`/admin/invoices/edit/${selectedInvoice.id}`)}>
+                <IconEdit size={15} /> Add Items
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Item Name</th>
+                      <th>Quantity</th>
+                      <th>Unit</th>
+                      <th>Amount</th>
+                      <th>Unit Cost</th>
+                      <th>Linked Ingredient</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoiceItems.map((item, i) => (
+                      <tr key={item.id || i}>
+                        <td className="primary">{item.item_name}</td>
+                        <td>{item.quantity}</td>
+                        <td>{item.unit}</td>
+                        <td>${item.amount?.toFixed(2) || '0.00'}</td>
+                        <td>${item.unit_cost?.toFixed(4) || '0.0000'}</td>
+                        <td>
+                          {item.ingredients?.name ? (
+                            <div>
+                              <div style={{ color: 'var(--text-primary)', fontWeight: 500, fontSize: '0.83rem' }}>{item.ingredients.name}</div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                                ${item.ingredients.last_price?.toFixed(4) || '0.0000'} / {item.ingredients.unit}
+                              </div>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>Not linked</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Summary row */}
+              <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 32 }}>
+                {[
+                  { label: 'Total Items',          value: invoiceItems.length },
+                  { label: 'Items Total',           value: `$${invoiceItems.reduce((s, i) => s + (i.amount || 0), 0).toFixed(2)}` },
+                  { label: 'Linked Ingredients',    value: invoiceItems.filter(i => i.ingredients?.name).length },
+                ].map((s, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginBottom: 2 }}>{s.label}</div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{s.value}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </AdminLayout>
     );
   }
 
-  // Main Invoice List View
+  // ── List view ────────────────────────────────────────────────────────────
   return (
-    <AdminLayout 
-      pageTitle="All Invoices" 
-      pageDescription="View and manage all invoices"
-      pageIcon={IconFileText}
-    >
-      {/* Controls */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex items-center gap-3">
-            <IconFilter size={20} className="text-gray-400" />
-            <select 
-              value={selectedRestaurant} 
-              onChange={(e) => setSelectedRestaurant(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-            >
-              <option value="">All Restaurants</option>
-              {restaurants.map(restaurant => (
-                <option key={restaurant.id} value={restaurant.id}>
-                  {restaurant.name}
-                </option>
-              ))}
-            </select>
-          </div>
+    <AdminLayout pageTitle="All Invoices" pageDescription="View and manage all invoices" pageIcon={IconFileText}>
 
-          <div className="flex-1 relative">
-            <IconSearch size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search by invoice number, supplier, or restaurant..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#ADD8E6] focus:border-transparent"
-            />
+      {/* ── Filters ──────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
+        {/* Restaurant filter */}
+        <div style={{ position: 'relative' }}>
+          <IconFilter size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }} />
+          <select
+            className="admin-select"
+            value={selectedRestaurant}
+            onChange={e => setSelectedRestaurant(e.target.value)}
+            style={{ paddingLeft: 34, minWidth: 200 }}
+          >
+            <option value="">All Restaurants</option>
+            {restaurants.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </div>
+
+        {/* Search */}
+        <div className="admin-search-inline" style={{ flex: 1, minWidth: 220 }}>
+          <IconSearch size={15} />
+          <input
+            placeholder="Search by invoice #, supplier, or restaurant…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm('')} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 2 }}>
+              <IconX size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Stat Cards ────────────────────────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon teal"><IconFileText size={20} /></div>
+          <div>
+            <div className="admin-stat-value">{invoices.length}</div>
+            <div className="admin-stat-label">Total Invoices</div>
+            <div className="admin-stat-sub">{selectedName}</div>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon emerald"><IconCheck size={20} /></div>
+          <div>
+            <div className="admin-stat-value">{completeCount}</div>
+            <div className="admin-stat-label">Complete</div>
+            <div className="admin-stat-sub">{invoices.length > 0 ? Math.round((completeCount / invoices.length) * 100) : 0}% processed</div>
+          </div>
+        </div>
+        <div className="admin-stat-card">
+          <div className="admin-stat-icon violet">
+            <IconCurrencyDollar size={20} />
+          </div>
+          <div>
+            <div className="admin-stat-value">${totalValue.toLocaleString('en-US', { maximumFractionDigits: 0 })}</div>
+            <div className="admin-stat-label">Total Value</div>
+            <div className="admin-stat-sub">Combined invoice amount</div>
           </div>
         </div>
       </div>
 
-      <div className="p-6">
+      {/* ── Table ─────────────────────────────────────────────────────── */}
+      <div className="admin-card">
+        <div className="admin-card-header">
+          <h2 className="admin-card-title">Invoices</h2>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            {filteredAndSorted.length} {filteredAndSorted.length === 1 ? 'invoice' : 'invoices'}
+            {searchTerm && ` matching "${searchTerm}"`}
+          </span>
+        </div>
+
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-10 h-10 border-3 border-gray-300 border-t-[#ADD8E6] rounded-full animate-spin"></div>
-            <span className="ml-3 text-gray-600">Loading invoices...</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 64 }}>
+            <div className="admin-spinner" />
+          </div>
+        ) : filteredAndSorted.length === 0 ? (
+          <div className="admin-empty">
+            <div className="admin-empty-icon"><IconFileText size={22} /></div>
+            <h3>No invoices found</h3>
+            <p>{searchTerm ? `No results for "${searchTerm}"` : selectedRestaurant ? `${selectedName} has no invoices yet.` : 'No invoices have been uploaded yet.'}</p>
           </div>
         ) : (
-          <div className="space-y-6">
-            {/* Summary Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
-                    <IconFileText size={24} className="text-blue-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">{allInvoicesCount}</p>
-                    <p className="text-gray-600">Total Invoices</p>
-                    <p className="text-sm text-gray-500">{selectedRestaurantName}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
-                    <IconCheck size={24} className="text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">{completeInvoicesCount}</p>
-                    <p className="text-gray-600">Complete</p>
-                    <p className="text-sm text-gray-500">
-                      {allInvoicesCount > 0 ? Math.round((completeInvoicesCount / allInvoicesCount) * 100) : 0}% processed
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center justify-center w-12 h-12 bg-emerald-100 rounded-lg">
-                    <IconCurrencyDollar size={24} className="text-emerald-600" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold text-gray-900">${totalValue.toFixed(2)}</p>
-                    <p className="text-gray-600">Total Value</p>
-                    <p className="text-sm text-gray-500">Combined invoice amount</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Invoices Table */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              {filteredAndSortedInvoices.length === 0 ? (
-                <div className="text-center py-12">
-                  <IconFileText size={48} className="mx-auto mb-4 text-gray-300" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">No Invoices Found</h3>
-                  <p className="text-gray-600">
-                    {searchTerm 
-                      ? `No invoices match "${searchTerm}"`
-                      : selectedRestaurant 
-                        ? `${selectedRestaurantName} has no invoices yet.`
-                        : 'No invoices have been uploaded yet.'
-                    }
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th 
-                          className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort('number')}
-                        >
-                          <div className="flex items-center gap-2">
-                            Invoice #
-                            {sortField === 'number' && (
-                              sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                            )}
-                          </div>
-                        </th>
-                        <th 
-                          className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort('date')}
-                        >
-                          <div className="flex items-center gap-2">
-                            Date
-                            {sortField === 'date' && (
-                              sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                            )}
-                          </div>
-                        </th>
-                        <th 
-                          className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort('supplier')}
-                        >
-                          <div className="flex items-center gap-2">
-                            Supplier
-                            {sortField === 'supplier' && (
-                              sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                            )}
-                          </div>
-                        </th>
-                        <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Restaurant</th>
-                        <th 
-                          className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort('amount')}
-                        >
-                          <div className="flex items-center gap-2">
-                            Amount
-                            {sortField === 'amount' && (
-                              sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                            )}
-                          </div>
-                        </th>
-                        <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Status</th>
-                        <th 
-                          className="text-left py-4 px-6 text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort('created_at')}
-                        >
-                          <div className="flex items-center gap-2">
-                            Uploaded
-                            {sortField === 'created_at' && (
-                              sortDirection === 'asc' ? <IconSortAscending size={16} /> : <IconSortDescending size={16} />
-                            )}
-                          </div>
-                        </th>
-                        <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {filteredAndSortedInvoices.map(invoice => {
-                        const status = getInvoiceStatus(invoice);
-                        
-                        return (
-                          <tr 
-                            key={invoice.id} 
-                            className="hover:bg-gray-50 cursor-pointer"
-                            onClick={() => handleInvoiceClick(invoice)}
+          <div style={{ overflowX: 'auto' }}>
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th className="sortable" onClick={() => handleSort('number')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Invoice # <SortIcon field="number" /></span>
+                  </th>
+                  <th className="sortable" onClick={() => handleSort('date')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Date <SortIcon field="date" /></span>
+                  </th>
+                  <th className="sortable" onClick={() => handleSort('supplier')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Supplier <SortIcon field="supplier" /></span>
+                  </th>
+                  <th>Restaurant</th>
+                  <th className="sortable" onClick={() => handleSort('amount')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Amount <SortIcon field="amount" /></span>
+                  </th>
+                  <th>Status</th>
+                  <th className="sortable" onClick={() => handleSort('created_at')}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>Uploaded <SortIcon field="created_at" /></span>
+                  </th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAndSorted.map(invoice => {
+                  const status = getInvoiceStatus(invoice);
+                  return (
+                    <tr
+                      key={invoice.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => { setSelectedInvoice(invoice); fetchInvoiceItems(invoice.id); }}
+                    >
+                      <td className="primary">
+                        {invoice.number || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not set</span>}
+                      </td>
+                      <td>
+                        {invoice.date
+                          ? new Date(invoice.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                          : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not set</span>
+                        }
+                      </td>
+                      <td>
+                        {invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not set</span>}
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <IconBuilding size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                          {invoice.restaurants?.name || '—'}
+                        </div>
+                      </td>
+                      <td className="primary">
+                        {invoice.amount
+                          ? `$${invoice.amount.toFixed(2)}`
+                          : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not set</span>
+                        }
+                      </td>
+                      <td>
+                        <span className={`admin-badge ${status.color}`}>{status.label}</span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <IconCalendar size={13} style={{ color: 'var(--text-muted)' }} />
+                          {new Date(invoice.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }} onClick={e => e.stopPropagation()}>
+                          <button
+                            className="admin-btn admin-btn-ghost admin-btn-sm"
+                            onClick={() => { setSelectedInvoice(invoice); fetchInvoiceItems(invoice.id); }}
+                            title="View details"
                           >
-                            <td className="py-4 px-6">
-                              <div className="font-medium text-gray-900">
-                                {invoice.number || <span className="text-gray-400 italic">Not set</span>}
-                              </div>
-                            </td>
-                            
-                            <td className="py-4 px-6 text-gray-900">
-                              {invoice.date 
-                                ? new Date(invoice.date).toLocaleDateString()
-                                : <span className="text-gray-400 italic">Not set</span>
-                              }
-                            </td>
-                            
-                            <td className="py-4 px-6 text-gray-900">
-                              {invoice.supplier || <span className="text-gray-400 italic">Not set</span>}
-                            </td>
-                            
-                            <td className="py-4 px-6">
-                              <div className="flex items-center gap-2">
-                                <IconBuilding size={16} className="text-gray-400" />
-                                <span className="text-gray-900">{invoice.restaurants?.name || 'Unknown'}</span>
-                              </div>
-                            </td>
-                            
-                            <td className="py-4 px-6">
-                              <div className="font-medium text-gray-900">
-                                {invoice.amount 
-                                  ? `$${invoice.amount.toFixed(2)}`
-                                  : <span className="text-gray-400 italic">Not set</span>
-                                }
-                              </div>
-                            </td>
-                            
-                            <td className="py-4 px-6">
-                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${status.color}`}>
-                                {status.label}
-                              </span>
-                            </td>
-                            
-                            <td className="py-4 px-6 text-gray-900">
-                              <div className="flex items-center gap-2">
-                                <IconCalendar size={16} className="text-gray-400" />
-                                {new Date(invoice.created_at).toLocaleDateString()}
-                              </div>
-                            </td>
-                            
-                            <td className="py-4 px-6">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleInvoiceClick(invoice);
-                                  }}
-                                  className="flex items-center gap-1 px-3 py-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors text-sm"
-                                  title="View Details"
-                                >
-                                  <IconEye size={16} />
-                                  View
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleEditInvoice(invoice.id);
-                                  }}
-                                  className="flex items-center gap-1 px-3 py-1.5 text-[#ADD8E6] hover:text-[#9CC5D4] hover:bg-blue-50 rounded-md transition-colors text-sm"
-                                  title="Edit Invoice"
-                                >
-                                  <IconEdit size={16} />
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteInvoice(invoice.id);
-                                  }}
-                                  className="flex items-center gap-1 px-3 py-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors text-sm"
-                                  title="Delete Invoice"
-                                >
-                                  <IconTrash size={16} />
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                            <IconEye size={14} />
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-ghost admin-btn-sm"
+                            onClick={() => router.push(`/admin/invoices/edit/${invoice.id}`)}
+                            title="Edit invoice"
+                            style={{ color: 'var(--accent)' }}
+                          >
+                            <IconEdit size={14} />
+                          </button>
+                          <button
+                            className="admin-btn admin-btn-danger admin-btn-sm"
+                            onClick={() => handleDeleteInvoice(invoice.id)}
+                            title="Delete invoice"
+                          >
+                            <IconTrash size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

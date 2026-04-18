@@ -4,7 +4,6 @@ import { useRouter } from 'next/router';
 import AdminLayout from '../../components/AdminLayout';
 import supabase from '../../lib/supabaseClient';
 import {
-  IconFileText,
   IconClock,
   IconEye,
   IconCalendar,
@@ -14,6 +13,7 @@ import {
   IconFile,
   IconPhoto,
   IconRefresh,
+  IconFileText,
 } from '@tabler/icons-react';
 
 export default function PendingInvoices() {
@@ -26,11 +26,7 @@ export default function PendingInvoices() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/admin/login');
-        return;
-      }
-      
+      if (!user) { router.push('/admin/login'); return; }
       fetchPendingInvoices();
     };
     checkUser();
@@ -39,8 +35,7 @@ export default function PendingInvoices() {
   async function fetchPendingInvoices() {
     try {
       setRefreshing(true);
-      
-      // Get pending invoices (where required fields are null)
+
       const { data: pendingInvoices, error: invoicesError } = await supabase
         .from('invoices')
         .select('*')
@@ -49,22 +44,15 @@ export default function PendingInvoices() {
 
       if (invoicesError) throw invoicesError;
 
-      // Get restaurant names
-      const restaurantIds = [...new Set(pendingInvoices?.map(inv => inv.restaurant_id).filter(Boolean))];
-      
+      const restaurantIds = [...new Set((pendingInvoices || []).map(inv => inv.restaurant_id).filter(Boolean))];
       if (restaurantIds.length > 0) {
-        const { data: restaurantData, error: restaurantError } = await supabase
+        const { data: restaurantData } = await supabase
           .from('restaurants')
           .select('id, name')
           .in('id', restaurantIds);
-
-        if (restaurantError) throw restaurantError;
-
-        const restaurantMap = {};
-        restaurantData.forEach(restaurant => {
-          restaurantMap[restaurant.id] = restaurant.name;
-        });
-        setRestaurants(restaurantMap);
+        const map = {};
+        (restaurantData || []).forEach(r => { map[r.id] = r.name; });
+        setRestaurants(map);
       }
 
       setInvoices(pendingInvoices || []);
@@ -78,290 +66,241 @@ export default function PendingInvoices() {
 
   function getFileType(url) {
     if (!url) return 'Unknown';
-    const extension = url.split('.').pop().toLowerCase();
-    if (extension === 'pdf') return 'PDF';
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension)) return 'Image';
+    const ext = url.split('.').pop().toLowerCase();
+    if (ext === 'pdf') return 'PDF';
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'Image';
     return 'File';
   }
 
   function getFileIcon(url) {
-    const fileType = getFileType(url);
-    if (fileType === 'PDF') return IconFile;
-    if (fileType === 'Image') return IconPhoto;
+    const t = getFileType(url);
+    if (t === 'PDF')   return IconFile;
+    if (t === 'Image') return IconPhoto;
     return IconFileText;
   }
 
   function getMissingFields(invoice) {
     const missing = [];
-    if (!invoice.number) missing.push('Number');
-    if (!invoice.date) missing.push('Date');
+    if (!invoice.number)   missing.push('Number');
+    if (!invoice.date)     missing.push('Date');
     if (!invoice.supplier) missing.push('Supplier');
-    if (!invoice.amount) missing.push('Amount');
+    if (!invoice.amount)   missing.push('Amount');
     return missing;
+  }
+
+  function formatDate(dateString) {
+    const d = new Date(dateString);
+    return {
+      date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+    };
   }
 
   if (loading) {
     return (
-      <AdminLayout 
-        pageTitle="Pending Invoices" 
-        pageDescription="Review and process uploaded invoices"
-        pageIcon={IconClock}
-      >
-        <div className="p-6 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-10 h-10 border-3 border-gray-300 border-t-[#ADD8E6] rounded-full animate-spin"></div>
-            <p className="text-gray-600">Loading pending invoices...</p>
-          </div>
+      <AdminLayout pageTitle="Pending Review" pageDescription="Review and process uploaded invoices" pageIcon={IconClock}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
+          <div className="admin-spinner" />
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading pending invoices…</p>
         </div>
       </AdminLayout>
     );
   }
 
   return (
-    <AdminLayout 
-      pageTitle="Pending Invoices" 
-      pageDescription="Review and process uploaded invoices"
-      pageIcon={IconClock}
-    >
-      {/* Action Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 px-3 py-2 bg-orange-100 text-orange-800 rounded-lg">
-            <IconAlertTriangle size={16} />
-            <span className="font-medium">{invoices.length} pending</span>
-          </div>
-          <button 
-            onClick={fetchPendingInvoices}
-            disabled={refreshing}
-            className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <IconRefresh size={18} className={refreshing ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+    <AdminLayout pageTitle="Pending Review" pageDescription="Review and process uploaded invoices" pageIcon={IconClock}>
+
+      {/* ── Toolbar ──────────────────────────────────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {invoices.length > 0 ? (
+            <span className="admin-badge rose" style={{ padding: '5px 12px', fontSize: '0.78rem' }}>
+              <IconAlertTriangle size={13} />
+              {invoices.length} pending
+            </span>
+          ) : (
+            <span className="admin-badge emerald" style={{ padding: '5px 12px', fontSize: '0.78rem' }}>
+              <IconCheck size={13} />
+              All clear
+            </span>
+          )}
         </div>
+        <button
+          className="admin-btn admin-btn-ghost"
+          onClick={fetchPendingInvoices}
+          disabled={refreshing}
+        >
+          <IconRefresh size={15} style={refreshing ? { animation: 'spin 0.7s linear infinite' } : {}} />
+          Refresh
+        </button>
       </div>
 
-      {/* Main Content */}
-      <div className="p-6">
-        {invoices.length === 0 ? (
-          // Empty State
-          <div className="max-w-md mx-auto text-center py-12">
-            <div className="flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mx-auto mb-6">
-              <IconCheck size={32} className="text-green-600" />
+      {/* ── Empty State ──────────────────────────────────────────────── */}
+      {invoices.length === 0 ? (
+        <div className="admin-card">
+          <div className="admin-empty">
+            <div className="admin-empty-icon" style={{ background: 'rgba(16,185,129,0.1)', borderColor: 'rgba(16,185,129,0.2)', color: '#10b981' }}>
+              <IconCheck size={24} />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">All caught up!</h2>
-            <p className="text-gray-600 mb-6">
-              There are no pending invoices to review at this time. 
-              All uploaded invoices have been processed.
-            </p>
-            <button 
-              onClick={() => router.push('/admin')}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-            >
+            <h3>All caught up!</h3>
+            <p>There are no pending invoices to review. All uploaded invoices have been processed.</p>
+            <button className="admin-btn admin-btn-ghost" style={{ marginTop: 8 }} onClick={() => router.push('/admin')}>
               Back to Dashboard
             </button>
           </div>
-        ) : (
-          // Invoice Table
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            {/* Desktop Table View */}
-            <div className="hidden lg:block overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Restaurant</th>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Upload Date</th>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">File Type</th>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Status</th>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Missing Fields</th>
-                    <th className="text-left py-4 px-6 text-sm font-semibold text-gray-900">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {invoices.map((invoice) => {
-                    const missingFields = getMissingFields(invoice);
-                    const FileIcon = getFileIcon(invoice.file_url);
-                    
-                    return (
-                      <tr 
-                        key={invoice.id} 
-                        className="hover:bg-gray-50 cursor-pointer transition-colors"
-                        onClick={() => router.push(`/admin/invoices/edit/${invoice.id}`)}
-                      >
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            <div className="flex items-center justify-center w-10 h-10 bg-[#ADD8E6] rounded-lg">
-                              <IconBuilding size={18} className="text-gray-900" />
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">
-                                {restaurants[invoice.restaurant_id] || 'Unknown Restaurant'}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                ID: {invoice.restaurant_id}
-                              </div>
-                            </div>
+        </div>
+      ) : (
+        <>
+          {/* ── Desktop Table ─────────────────────────────────────────── */}
+          <div className="admin-card" style={{ display: 'none' }} id="desktop-table">
+            <table className="admin-table" style={{ display: 'table' }}>
+              <thead>
+                <tr>
+                  <th>Restaurant</th>
+                  <th>Uploaded</th>
+                  <th>File Type</th>
+                  <th>Missing Fields</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoices.map((invoice) => {
+                  const missing = getMissingFields(invoice);
+                  const FileIcon = getFileIcon(invoice.file_url);
+                  const { date, time } = formatDate(invoice.created_at);
+                  return (
+                    <tr
+                      key={invoice.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => router.push(`/admin/invoices/edit/${invoice.id}`)}
+                    >
+                      <td className="primary">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{
+                            width: 32, height: 32, borderRadius: 8,
+                            background: 'var(--accent-dim)', border: '1px solid rgba(2,164,186,0.2)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--accent)', flexShrink: 0,
+                          }}>
+                            <IconBuilding size={15} />
                           </div>
-                        </td>
-                        
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2 text-gray-900">
-                            <IconCalendar size={16} className="text-gray-400" />
-                            <div>
-                              <div className="font-medium">
-                                {new Date(invoice.created_at).toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {new Date(invoice.created_at).toLocaleTimeString('en-US', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </div>
+                          <div>
+                            <div style={{ fontWeight: 500, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+                              {restaurants[invoice.restaurant_id] || 'Unknown Restaurant'}
                             </div>
                           </div>
-                        </td>
-                        
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            <FileIcon size={16} className="text-gray-400" />
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                              {getFileType(invoice.file_url)}
-                            </span>
-                          </div>
-                        </td>
-                        
-                        <td className="py-4 px-6">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                            <IconAlertTriangle size={12} />
-                            Pending Review
-                          </span>
-                        </td>
-                        
-                        <td className="py-4 px-6">
-                          <div className="flex flex-wrap gap-1">
-                            {missingFields.map((field) => (
-                              <span 
-                                key={field} 
-                                className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800"
-                              >
-                                {field}
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        
-                        <td className="py-4 px-6">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/admin/invoices/edit/${invoice.id}`);
-                            }}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
-                          >
-                            <IconEye size={16} />
-                            Review
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontSize: '0.83rem', color: 'var(--text-secondary)' }}>{date}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{time}</div>
+                      </td>
+                      <td>
+                        <span className="admin-badge neutral" style={{ gap: 5 }}>
+                          <FileIcon size={11} />
+                          {getFileType(invoice.file_url)}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {missing.map(f => (
+                            <span key={f} className="admin-badge rose">{f}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        <button
+                          className="admin-btn admin-btn-primary admin-btn-sm"
+                          onClick={e => { e.stopPropagation(); router.push(`/admin/invoices/edit/${invoice.id}`); }}
+                        >
+                          <IconEye size={14} />
+                          Review
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
-            {/* Mobile Card View */}
-            <div className="lg:hidden">
-              {invoices.map((invoice) => {
-                const missingFields = getMissingFields(invoice);
-                const FileIcon = getFileIcon(invoice.file_url);
-                
-                return (
-                  <div 
-                    key={invoice.id}
-                    className="p-6 border-b border-gray-200 last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => router.push(`/admin/invoices/edit/${invoice.id}`)}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center w-12 h-12 bg-[#ADD8E6] rounded-lg">
-                          <IconBuilding size={20} className="text-gray-900" />
+          {/* ── Responsive Card List ──────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {invoices.map((invoice) => {
+              const missing = getMissingFields(invoice);
+              const FileIcon = getFileIcon(invoice.file_url);
+              const { date, time } = formatDate(invoice.created_at);
+              return (
+                <div
+                  key={invoice.id}
+                  className="admin-card"
+                  style={{ cursor: 'pointer', transition: 'border-color 0.15s ease' }}
+                  onClick={() => router.push(`/admin/invoices/edit/${invoice.id}`)}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--border-strong)'}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+                >
+                  <div style={{ padding: '18px 20px' }}>
+                    {/* Top row */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 40, height: 40, borderRadius: 10,
+                          background: 'var(--accent-dim)', border: '1px solid rgba(2,164,186,0.2)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: 'var(--accent)', flexShrink: 0,
+                        }}>
+                          <IconBuilding size={18} />
                         </div>
                         <div>
-                          <div className="font-semibold text-gray-900">
+                          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: 2 }}>
                             {restaurants[invoice.restaurant_id] || 'Unknown Restaurant'}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            ID: {invoice.restaurant_id}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span className="admin-badge neutral" style={{ gap: 4 }}>
+                              <FileIcon size={10} />
+                              {getFileType(invoice.file_url)}
+                            </span>
+                            <span className="admin-badge amber">
+                              <IconAlertTriangle size={10} />
+                              Pending
+                            </span>
                           </div>
                         </div>
                       </div>
-                      
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                        <IconAlertTriangle size={12} />
-                        Pending
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{date}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{time}</div>
+                      </div>
+                    </div>
+
+                    {/* Missing fields */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
+                        Missing:
                       </span>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div>
-                        <div className="text-sm text-gray-500 mb-1">Upload Date</div>
-                        <div className="flex items-center gap-2 text-sm text-gray-900">
-                          <IconCalendar size={14} className="text-gray-400" />
-                          {new Date(invoice.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </div>
-                      </div>
-                      
-                      <div>
-                        <div className="text-sm text-gray-500 mb-1">File Type</div>
-                        <div className="flex items-center gap-2">
-                          <FileIcon size={14} className="text-gray-400" />
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {getFileType(invoice.file_url)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <div className="text-sm text-gray-500 mb-2">Missing Fields</div>
-                      <div className="flex flex-wrap gap-1">
-                        {missingFields.map((field) => (
-                          <span 
-                            key={field} 
-                            className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-red-100 text-red-800"
-                          >
-                            {field}
-                          </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {missing.map(f => (
+                          <span key={f} className="admin-badge rose">{f}</span>
                         ))}
                       </div>
                     </div>
-                    
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/admin/invoices/edit/${invoice.id}`);
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#ADD8E6] text-gray-900 rounded-lg hover:bg-[#9CC5D4] transition-colors font-medium"
+
+                    {/* Action */}
+                    <button
+                      className="admin-btn admin-btn-primary"
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={e => { e.stopPropagation(); router.push(`/admin/invoices/edit/${invoice.id}`); }}
                     >
-                      <IconEye size={16} />
+                      <IconEye size={15} />
                       Review Invoice
                     </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </AdminLayout>
   );
 }
