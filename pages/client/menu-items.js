@@ -254,6 +254,31 @@ const CSS = `
   .mi-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed #2a2620; border-radius: 6px; }
   .mi-back-btn { background: none; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; align-self: flex-start; transition: all .15s; }
   .mi-back-btn:hover { border-color: #3a3630; color: #9a9086; }
+
+  .mi-edit-comp { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .mi-edit-comp-hd { background: #13120f; padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #2a2620; }
+  .mi-edit-comp-name { flex: 1; background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #e8e2d8; font-family: 'Inter', sans-serif; outline: none; }
+  .mi-edit-comp-name:focus { border-color: #02a4ba; }
+  .mi-edit-ing-grid { display: grid; grid-template-columns: 1fr 72px 72px auto; gap: 5px; align-items: center; padding: clamp(4px,.4vh,6px) clamp(8px,.8vw,12px); border-bottom: 1px solid #1a1915; }
+  .mi-edit-ing-grid:last-child { border-bottom: none; }
+  .mi-edit-input { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: 3px 6px; font-size: clamp(9px,.68vw,11px); color: #e8e2d8; width: 100%; outline: none; font-family: 'Inter', sans-serif; }
+  .mi-edit-input:focus { border-color: #02a4ba; }
+  .mi-edit-ing-cost { font-size: clamp(8px,.62vw,10px); color: #4a453e; text-align: right; }
+  .mi-edit-del { background: none; border: none; color: #4a453e; cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; transition: color .15s; }
+  .mi-edit-del:hover { color: #c04040; }
+  .mi-edit-add-ing { background: none; border: 1px dashed #2a2620; border-radius: 4px; padding: 4px 10px; font-size: clamp(8px,.62vw,10px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin: 6px 0 4px; transition: all .15s; }
+  .mi-edit-add-ing:hover { border-color: #02a4ba; color: #02a4ba; }
+  .mi-edit-add-comp { background: none; border: 1px dashed #2a2620; border-radius: 6px; padding: 8px; font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; transition: all .15s; text-align: center; }
+  .mi-edit-add-comp:hover { border-color: #02a4ba; color: #02a4ba; }
+  .mi-edit-save { background: #02a4ba; border: none; border-radius: 5px; padding: clamp(6px,.6vh,9px) clamp(12px,1.1vw,18px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; width: 100%; }
+  .mi-edit-save:hover { background: #01bcd4; }
+  .mi-edit-save:disabled { background: #2a2620; color: #4a453e; cursor: not-allowed; }
+  .mi-ing-search-wrap { position: relative; }
+  .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: #1a1915; border: 1px solid #3a3630; border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
+  .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: #e8e2d8; cursor: pointer; border-bottom: 1px solid #2a2620; }
+  .mi-ing-option:last-child { border-bottom: none; }
+  .mi-ing-option:hover { background: #2a2620; }
+  .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: #4a453e; margin-top: 1px; }
 `;
 
 export default function ClientMenuItems() {
@@ -276,6 +301,12 @@ export default function ClientMenuItems() {
   const [multipliers, setMultipliers] = useState({});
   const [optimizedPrice, setOptimizedPrice] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [ingredientLibrary, setIngredientLibrary] = useState([]);
+  const [editComponents, setEditComponents] = useState([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editSaveMsg, setEditSaveMsg] = useState(null);
+  const [ingSearch, setIngSearch] = useState({});
+  const [ingDropdownOpen, setIngDropdownOpen] = useState({});
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
@@ -300,6 +331,12 @@ export default function ClientMenuItems() {
       if (sample) { setMenuItems(sample.menuItems); setLoading(false); }
     });
   }, [router.isReady, isTour]);
+
+  useEffect(() => {
+    if (selectedItemData && viewMode === 'edit') {
+      initEditComponents(selectedItemData);
+    }
+  }, [selectedItemData]);
 
   async function init() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -409,7 +446,7 @@ export default function ClientMenuItems() {
       return;
     }
 
-    fetchItemDetail(id);
+    fetchItemDetail(id).then(() => fetchIngredientLibrary());
   }
 
   function handleSortChange(e) {
@@ -474,6 +511,172 @@ export default function ClientMenuItems() {
   function toggleComp(id) {
     setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   }
+
+  async function fetchIngredientLibrary() {
+    if (!restaurantId || ingredientLibrary.length > 0) return;
+    const { data } = await supabase
+      .from('ingredients')
+      .select('id, name, unit, last_price, is_estimated')
+      .eq('restaurant_id', restaurantId)
+      .order('name');
+    setIngredientLibrary(data || []);
+  }
+
+  function initEditComponents(itemData) {
+    if (!itemData) return;
+    const comps = itemData.components.map(c => ({
+      id: c.id,
+      name: c.name,
+      isNew: false,
+      ingredients: c.ingredients.map(ing => ({
+        ciId: ing.id,
+        ingredientId: ing.ingredientId,
+        name: ing.name,
+        quantity: ing.quantity,
+        unit: ing.unit,
+        unitCost: ing.unitCost,
+        isEstimated: ing.isEstimated,
+        isNew: false,
+      })),
+    }));
+    setEditComponents(comps);
+    setIngSearch({});
+    setIngDropdownOpen({});
+    setEditSaveMsg(null);
+  }
+
+  function addEditComponent() {
+    setEditComponents(prev => [...prev, {
+      id: `new-${Date.now()}`,
+      name: 'New Component',
+      isNew: true,
+      ingredients: [],
+    }]);
+  }
+
+  function removeEditComponent(compIdx) {
+    setEditComponents(prev => prev.filter((_, i) => i !== compIdx));
+  }
+
+  function updateEditComponentName(compIdx, name) {
+    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, name } : c));
+  }
+
+  function addEditIngredient(compIdx) {
+    setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
+      ...c,
+      ingredients: [...c.ingredients, {
+        ciId: `new-${Date.now()}`,
+        ingredientId: null,
+        name: '',
+        quantity: 1,
+        unit: 'oz',
+        unitCost: 0,
+        isEstimated: true,
+        isNew: true,
+      }],
+    } : c));
+  }
+
+  function removeEditIngredient(compIdx, ingIdx) {
+    setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
+      ...c,
+      ingredients: c.ingredients.filter((_, j) => j !== ingIdx),
+    } : c));
+  }
+
+  function updateEditIngredient(compIdx, ingIdx, field, value) {
+    setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
+      ...c,
+      ingredients: c.ingredients.map((ing, j) => j === ingIdx ? { ...ing, [field]: value } : ing),
+    } : c));
+  }
+
+  function selectLibraryIngredient(compIdx, ingIdx, libIng) {
+    setEditComponents(prev => prev.map((c, i) => i === compIdx ? {
+      ...c,
+      ingredients: c.ingredients.map((ing, j) => j === ingIdx ? {
+        ...ing,
+        ingredientId: libIng.id,
+        name: libIng.name,
+        unit: libIng.unit,
+        unitCost: libIng.last_price || 0,
+        isEstimated: libIng.is_estimated === true,
+      } : ing),
+    } : c));
+    const key = `${compIdx}-${ingIdx}`;
+    setIngDropdownOpen(prev => ({ ...prev, [key]: false }));
+    setIngSearch(prev => ({ ...prev, [key]: '' }));
+  }
+
+  async function saveItemEdits() {
+    if (!selectedItemData) return;
+    setEditSaving(true);
+    setEditSaveMsg(null);
+    const menuItemId = selectedItemData.item.id;
+    const errors = [];
+
+    for (const comp of editComponents) {
+      let componentId = comp.id;
+
+      // Create new component if needed
+      if (comp.isNew) {
+        const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+        const { data: newComp, error } = await supabase
+          .from('menu_item_components')
+          .insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 })
+          .select('id').single();
+        if (error) { errors.push(`Failed to create component "${comp.name}"`); continue; }
+        componentId = newComp.id;
+      } else {
+        // Update existing component name and cost
+        const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+        await supabase.from('menu_item_components')
+          .update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 })
+          .eq('id', componentId);
+      }
+
+      for (const ing of comp.ingredients) {
+        if (!ing.ingredientId) { errors.push(`"${ing.name}" has no ingredient selected`); continue; }
+
+        // If user confirmed a price, clear is_estimated on the ingredient
+        if (!ing.isEstimated && ing.unitCost > 0) {
+          await supabase.from('ingredients')
+            .update({ last_price: ing.unitCost, is_estimated: false })
+            .eq('id', ing.ingredientId);
+        }
+
+        if (ing.isNew) {
+          await supabase.from('component_ingredients').insert({
+            component_id: componentId,
+            ingredient_id: ing.ingredientId,
+            quantity: parseFloat(ing.quantity || 0),
+            unit: ing.unit,
+          });
+        } else {
+          await supabase.from('component_ingredients')
+            .update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit })
+            .eq('id', ing.ciId);
+        }
+      }
+    }
+
+    // Recompute and update menu item cost
+    const newTotalCost = editComponents.reduce((s, c) =>
+      s + c.ingredients.reduce((ss, i) => ss + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0), 0);
+    await supabase.from('menu_items')
+      .update({ cost: Math.round(newTotalCost * 100) / 100 })
+      .eq('id', menuItemId);
+
+    setEditSaving(false);
+    if (errors.length > 0) {
+      setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` });
+    } else {
+      setEditSaveMsg({ type: 'success', text: 'Saved successfully' });
+      await fetchItemDetail(menuItemId);
+      await fetchMenuItems();
+    }
+  }  
 
   return (
     <>
@@ -648,7 +851,12 @@ export default function ClientMenuItems() {
                   {selectedItem ? (
                     <>
                       <button className={`mi-vtab${viewMode === 'details' ? ' active' : ''}`} onClick={() => setViewMode('details')}>Details</button>
-                      <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => setViewMode('optimize')}>Optimize</button>
+                        <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => setViewMode('optimize')}>Optimize</button>
+                        <button className={`mi-vtab${viewMode === 'edit' ? ' active' : ''}`}
+                          onClick={() => { setViewMode('edit'); initEditComponents(selectedItemData); fetchIngredientLibrary(); }}
+                          style={{ color: viewMode === 'edit' ? '#e8e2d8' : '#d4a020' }}>
+                          Edit
+                        </button>
                     </>
                   ) : (
                     <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
@@ -942,6 +1150,129 @@ export default function ClientMenuItems() {
                         )}
                       </div>
                     </>
+                    ) : selectedItemData && viewMode === 'edit' ? (
+                      <>
+                        <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', marginBottom: 4 }}>
+                          Edit components and ingredients. Confirming a price clears the estimated flag.
+                        </div>
+
+                        {editComponents.map((comp, compIdx) => {
+                          const compCost = comp.ingredients.reduce((s, i) =>
+                            s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+                          return (
+                            <div key={comp.id} className="mi-edit-comp">
+                              <div className="mi-edit-comp-hd">
+                                <input
+                                  className="mi-edit-comp-name"
+                                  value={comp.name}
+                                  onChange={e => updateEditComponentName(compIdx, e.target.value)}
+                                />
+                                <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#02a4ba', whiteSpace: 'nowrap' }}>
+                                  {formatCurrency(compCost)}
+                                </span>
+                                <button className="mi-edit-del" onClick={() => removeEditComponent(compIdx)} title="Remove component">✕</button>
+                              </div>
+
+                              {/* Column headers */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 72px auto', gap: 5, padding: '4px clamp(8px,.8vw,12px)', borderBottom: '1px solid #1a1915' }}>
+                                {['Ingredient', 'Qty', 'Unit', ''].map(h => (
+                                  <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</div>
+                                ))}
+                              </div>
+
+                              {comp.ingredients.map((ing, ingIdx) => {
+                                const key = `${compIdx}-${ingIdx}`;
+                                const searchVal = ingSearch[key] ?? ing.name;
+                                const isOpen = ingDropdownOpen[key] || false;
+                                const filtered = ingredientLibrary.filter(lib =>
+                                  lib.name.toLowerCase().includes((ingSearch[key] || '').toLowerCase())
+                                ).slice(0, 8);
+                                const ingCost = parseFloat(ing.quantity || 0) * parseFloat(ing.unitCost || 0);
+
+                                return (
+                                  <div key={ing.ciId} className="mi-edit-ing-grid">
+                                    {/* Ingredient search */}
+                                    <div className="mi-ing-search-wrap">
+                                      <input
+                                        className="mi-edit-input"
+                                        value={searchVal}
+                                        style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : '#2a2620' }}
+                                        placeholder="Search ingredient..."
+                                        onChange={e => {
+                                          setIngSearch(prev => ({ ...prev, [key]: e.target.value }));
+                                          setIngDropdownOpen(prev => ({ ...prev, [key]: true }));
+                                        }}
+                                        onFocus={() => setIngDropdownOpen(prev => ({ ...prev, [key]: true }))}
+                                        onBlur={() => setTimeout(() => setIngDropdownOpen(prev => ({ ...prev, [key]: false })), 150)}
+                                      />
+                                      {isOpen && filtered.length > 0 && (
+                                        <div className="mi-ing-dropdown">
+                                          {filtered.map(lib => (
+                                            <div key={lib.id} className="mi-ing-option"
+                                              onMouseDown={() => selectLibraryIngredient(compIdx, ingIdx, lib)}>
+                                              {lib.name}
+                                              <div className="mi-ing-option-sub">
+                                                {lib.unit} · {lib.last_price ? formatCurrency(lib.last_price) : 'no price'}
+                                                {lib.is_estimated ? ' ~est' : ''}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Quantity */}
+                                    <input
+                                      className="mi-edit-input"
+                                      type="number" min="0" step="0.01"
+                                      value={ing.quantity}
+                                      onChange={e => updateEditIngredient(compIdx, ingIdx, 'quantity', e.target.value)}
+                                    />
+
+                                    {/* Unit */}
+                                    <input
+                                      className="mi-edit-input"
+                                      value={ing.unit}
+                                      onChange={e => updateEditIngredient(compIdx, ingIdx, 'unit', e.target.value)}
+                                    />
+
+                                    {/* Cost + delete */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                                      <div className="mi-edit-ing-cost">{formatCurrency(ingCost)}</div>
+                                      <button className="mi-edit-del" onClick={() => removeEditIngredient(compIdx, ingIdx)}>✕</button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+
+                              <div style={{ padding: '0 clamp(8px,.8vw,12px) 6px' }}>
+                                <button className="mi-edit-add-ing" onClick={() => addEditIngredient(compIdx)}>
+                                  + Add Ingredient
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        <button className="mi-edit-add-comp" onClick={addEditComponent}>
+                          + Add Component
+                        </button>
+
+                        {editSaveMsg && (
+                          <div style={{
+                            fontSize: 'clamp(9px,.68vw,11px)', padding: '6px 10px', borderRadius: 5, textAlign: 'center',
+                            background: editSaveMsg.type === 'success' ? 'rgba(42,138,90,.1)' : 'rgba(192,64,64,.1)',
+                            color: editSaveMsg.type === 'success' ? '#2a8a5a' : '#c04040',
+                            border: `1px solid ${editSaveMsg.type === 'success' ? 'rgba(42,138,90,.2)' : 'rgba(192,64,64,.2)'}`,
+                          }}>
+                            {editSaveMsg.text}
+                          </div>
+                        )}
+
+                        <button className="mi-edit-save" onClick={saveItemEdits} disabled={editSaving}>
+                          {editSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </>
                   ) : null}
                 </div>
               )}
