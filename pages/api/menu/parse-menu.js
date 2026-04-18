@@ -194,7 +194,7 @@ Identify every ingredient needed across ALL dishes. For each:
 - One entry per ingredient — no duplicates
 - Units: lb, oz, each, bunch, slice, sheet, sprig only
 
-CULINARY INFERENCE:
+CULINARY INFERENCE — you must infer ingredients not explicitly listed:
 - Any pizza → include All-Purpose Flour, Olive Oil, Active Dry Yeast, Kosher Salt
 - Any burger → include the protein patty AND a bun
 - Any pasta → include the pasta itself
@@ -203,6 +203,14 @@ CULINARY INFERENCE:
 - Any salad → include the greens base
 - Any risotto → include Arborio Rice, Butter, White Wine, stock, Parmesan
 - Any soup → include appropriate stock, aromatics (onion, garlic, butter)
+
+CRITICAL RULES FOR INGREDIENTS:
+- You MUST include every ingredient mentioned in the dish description, no exceptions
+- You MUST include every inferred ingredient based on the dish type above
+- For house-made or proprietary sauces (e.g. "echo bbq sauce", "addams sauce"), break them down into their likely base ingredients — do not skip them
+- For vague descriptors (e.g. "light pink sauce"), infer the most likely components (e.g. tomato sauce, heavy cream) and include those
+- If you are uncertain about a cost, still include the ingredient with your best estimate — never omit an ingredient due to uncertainty
+- Every ingredient must have a non-null estimated_unit_cost, even if it is a rough guess
 
 PART B — DISH MANIFEST
 List every dish with archetype, price, category, and description.
@@ -270,6 +278,9 @@ RULES:
 - Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
 - Include all required components; omit optional ones only if clearly not applicable
 - Estimate realistic per-serving quantities
+- CRITICAL: Every ingredient mentioned in the dish description MUST appear somewhere in that dish's components — do not drop any described ingredient
+- CRITICAL: Every component marked "always include" in the archetype schema MUST have at least one ingredient
+- If a dish description mentions an ingredient that is not in the library, flag it by using the closest library match and noting the discrepancy in a comment field — do not silently omit it
 
 Return ONLY a valid JSON array:
 [
