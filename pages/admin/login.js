@@ -43,7 +43,7 @@ export default function AdminLogin() {
 
     // Small delay to ensure session cookie is set before middleware checks
     await new Promise(resolve => setTimeout(resolve, 500));
-    window.location.href = '/admin';
+    router.replace('/admin');
   };
 
   return (

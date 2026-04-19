@@ -6,6 +6,8 @@
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import { useRouter } from 'next/router';
+import supabase from '../../lib/supabaseClient';
 
 // ── Small reusable components ─────────────────────────────────────────────────
 
@@ -71,6 +73,21 @@ export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const router = useRouter();
+
+    useEffect(() => {
+    async function checkAuth() {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { router.replace('/admin/login'); return; }
+        const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single();
+        if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
+    }
+    checkAuth();
+    }, [router]);
 
   useEffect(() => {
     async function load() {
