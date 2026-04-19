@@ -41,7 +41,9 @@ export default function AdminLogin() {
       return;
     }
 
-    router.push('/admin');
+    // Small delay to ensure session cookie is set before middleware checks
+    await new Promise(resolve => setTimeout(resolve, 500));
+    window.location.href = '/admin';
   };
 
   return (
