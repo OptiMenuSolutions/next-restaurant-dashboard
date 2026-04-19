@@ -4,6 +4,7 @@
   "private": true,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.60.0",
+    "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.52.1",
     "@tabler/icons-react": "^3.21.0",
     "@testing-library/dom": "^10.4.0",
