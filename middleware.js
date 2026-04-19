@@ -2,7 +2,7 @@
 // Protects all /admin/* routes. Runs on the edge before any page loads.
 // Checks Supabase session + role === 'admin'. Redirects everyone else.
 
-import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { createMiddlewareSupabaseClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 
 export async function middleware(req) {
@@ -16,7 +16,7 @@ export async function middleware(req) {
   if (pathname === '/admin/login') return res;
 
   try {
-    const supabase = createMiddlewareClient({ req, res });
+    const supabase = createMiddlewareSupabaseClient({ req, res });
 
     // Refresh session if expired
     const { data: { session } } = await supabase.auth.getSession();

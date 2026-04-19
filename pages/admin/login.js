@@ -5,11 +5,10 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import supabase from '../../lib/supabaseClient';
 
 export default function AdminLogin() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);

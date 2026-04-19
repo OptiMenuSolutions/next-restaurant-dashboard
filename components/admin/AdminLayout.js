@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import supabase from '../../lib/supabaseClient';
 
 const NAV = [
   {
@@ -92,7 +92,6 @@ function Icon({ name, size = 14 }) {
 
 export default function AdminLayout({ children, title = 'Admin' }) {
   const router = useRouter();
-  const supabase = createClientComponentClient();
   const [signingOut, setSigningOut] = useState(false);
 
   const handleSignOut = async () => {
