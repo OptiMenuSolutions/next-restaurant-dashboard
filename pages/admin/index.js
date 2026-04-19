@@ -1,409 +1,254 @@
 // pages/admin/index.js
-import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import AdminLayout from '../../components/AdminLayout';
-import supabase from '../../lib/supabaseClient';
-import {
-  IconDashboard,
-  IconClock,
-  IconFileText,
-  IconUsers,
-  IconBell,
-  IconActivity,
-  IconWifi,
-  IconRefresh,
-  IconArrowUpRight,
-  IconChevronRight,
-} from '@tabler/icons-react';
-import { ACTIVITY_TYPES } from '../../lib/activityLogger';
+// Main admin dashboard. Pulls live data from Supabase (restaurants, invoices,
+// parse stats) and Stripe (MRR, failed payments). Uses service role key
+// via server-side API routes to bypass RLS.
+
+import { useEffect, useState } from 'react';
+import AdminLayout from '../../components/admin/AdminLayout';
+import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+
+// ── Small reusable components ─────────────────────────────────────────────────
+
+function KpiCard({ label, value, delta, deltaDir, mono }) {
+  const deltaColor = deltaDir === 'up' ? '#3de8a0' : deltaDir === 'down' ? '#e85454' : '#5a6080';
+  return (
+    <div style={s.kpiCard}>
+      <div style={s.kpiLabel}>{label}</div>
+      <div style={{ ...s.kpiValue, fontFamily: mono ? "'DM Mono', monospace" : undefined }}>
+        {value ?? <span style={{ color: '#3a3e50' }}>—</span>}
+      </div>
+      {delta && <div style={{ ...s.kpiDelta, color: deltaColor }}>{delta}</div>}
+    </div>
+  );
+}
+
+function SectionCard({ title, action, onAction, children }) {
+  return (
+    <div style={s.card}>
+      <div style={s.cardHeader}>
+        <span style={s.cardTitle}>{title}</span>
+        {action && <button onClick={onAction} style={s.cardAction}>{action}</button>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Pill({ color, children }) {
+  const colors = {
+    green:  { bg: 'rgba(61,232,160,0.1)',  border: 'rgba(61,232,160,0.25)',  text: '#3de8a0' },
+    amber:  { bg: 'rgba(245,166,35,0.1)',  border: 'rgba(245,166,35,0.25)', text: '#f5a623' },
+    red:    { bg: 'rgba(232,84,84,0.1)',   border: 'rgba(232,84,84,0.25)',  text: '#e85454' },
+    teal:   { bg: 'rgba(2,164,186,0.1)',   border: 'rgba(2,164,186,0.25)', text: '#02a4ba' },
+    dim:    { bg: 'rgba(255,255,255,0.04)', border: '#1e2028',              text: '#5a6080' },
+  };
+  const c = colors[color] || colors.dim;
+  return (
+    <span style={{ display:'inline-block', fontSize:8, fontWeight:700, padding:'2px 7px',
+      borderRadius:20, textTransform:'uppercase', letterSpacing:'0.5px',
+      background:c.bg, border:`1px solid ${c.border}`, color:c.text }}>
+      {children}
+    </span>
+  );
+}
+
+function BarRow({ label, pct, color }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:7 }}>
+      <span style={{ fontSize:10, color:'#5a6080', width:110, flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{label}</span>
+      <div style={{ flex:1, background:'#1a1c23', borderRadius:3, height:4 }}>
+        <div style={{ width:`${pct}%`, height:4, borderRadius:3, background: color || '#02a4ba', transition:'width 0.6s' }} />
+      </div>
+      <span style={{ fontFamily:"'DM Mono',monospace", fontSize:9, color: color || '#02a4ba', width:30, textAlign:'right' }}>{pct}%</span>
+    </div>
+  );
+}
+
+// ── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
-  const router = useRouter();
-  const [stats, setStats] = useState({
-    clientCount: 0,
-    pendingInvoices: 0,
-    totalInvoices: 0,
-    totalRevenue: 0,
-    recentActivity: [],
-    loading: true,
-  });
-  const [systemHealth, setSystemHealth] = useState({
-    recentActivity:   { count: 0,      status: 'excellent',   loading: true },
-    clientEngagement: { percentage: 0, status: 'excellent',   loading: true },
-    systemResponse:   { status: 'operational',                loading: true },
-  });
+  const { adminFetch } = useAdminFetch();
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/admin/login'); return; }
-      fetchDashboardStats();
-      fetchSystemHealth();
-    };
-    checkUser();
-  }, [router]);
-
-  async function fetchRecentActivity() {
-    try {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(4);
-      if (error) throw error;
-      return data || [];
-    } catch { return []; }
-  }
-
-  async function fetchDashboardStats() {
-    try {
-      const { data: restaurants } = await supabase.from('restaurants').select('id');
-      const { data: allInvoices } = await supabase.from('invoices').select('id, number, date, supplier, amount');
-      const pending = (allInvoices || []).filter(inv => !inv.number || !inv.date || !inv.supplier || !inv.amount);
-      const totalRevenue = (allInvoices || []).reduce((s, inv) => s + (inv.amount || 0), 0);
-      const recentActivity = await fetchRecentActivity();
-      setStats({
-        clientCount:     restaurants?.length || 0,
-        pendingInvoices: pending.length,
-        totalInvoices:   allInvoices?.length || 0,
-        totalRevenue,
-        recentActivity,
-        loading: false,
-      });
-    } catch {
-      setStats(prev => ({ ...prev, loading: false }));
+    async function load() {
+      try {
+        const res = await adminFetch('/api/admin/dashboard');
+        const json = await res.json();
+        setData(json);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
+    load();
+  }, [adminFetch]);
 
-  async function fetchSystemHealth() {
-    const [recentActivity, clientEngagement, systemResponse] = await Promise.all([
-      fetchRecentActivityHealth(),
-      fetchClientEngagementHealth(),
-      fetchSystemResponseHealth(),
-    ]);
-    setSystemHealth({ recentActivity, clientEngagement, systemResponse });
-  }
+  if (loading) return (
+    <AdminLayout title="Dashboard">
+      <div style={s.center}><div style={s.spinner} /><span style={{ color:'#3a3e50', fontSize:12 }}>Loading dashboard…</span></div>
+    </AdminLayout>
+  );
 
-  async function fetchRecentActivityHealth() {
-    try {
-      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-      const { data } = await supabase.from('activity_logs').select('id').gte('created_at', yesterday.toISOString());
-      const count = data?.length || 0;
-      return { count, status: count > 5 ? 'excellent' : count >= 2 ? 'good' : 'poor', loading: false };
-    } catch { return { count: 0, status: 'error', loading: false }; }
-  }
+  if (error) return (
+    <AdminLayout title="Dashboard">
+      <div style={s.center}><div style={{ color:'#e85454', fontSize:12 }}>Error: {error}</div></div>
+    </AdminLayout>
+  );
 
-  async function fetchClientEngagementHealth() {
-    try {
-      const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const { data: allR } = await supabase.from('restaurants').select('id');
-      const { data: active } = await supabase.from('invoices').select('restaurant_id').gte('created_at', thirtyDaysAgo.toISOString());
-      const total = allR?.length || 0;
-      const unique = new Set(active?.map(i => i.restaurant_id)).size;
-      const percentage = total > 0 ? Math.round((unique / total) * 100) : 0;
-      return { percentage, status: percentage > 70 ? 'excellent' : percentage >= 40 ? 'good' : 'poor', loading: false };
-    } catch { return { percentage: 0, status: 'error', loading: false }; }
-  }
-
-  async function fetchSystemResponseHealth() {
-    try {
-      const t0 = Date.now();
-      await supabase.from('activity_logs').select('id').limit(1);
-      const ms = Date.now() - t0;
-      return { status: ms > 3000 ? 'slow' : ms > 1000 ? 'minor-issues' : 'operational', responseTime: ms, loading: false };
-    } catch { return { status: 'error', loading: false }; }
-  }
-
-  const getActivityIcon = (type) => {
-    if ([ACTIVITY_TYPES.PROSPECT_CREATED, ACTIVITY_TYPES.PROSPECT_UPDATED, ACTIVITY_TYPES.PROSPECT_DELETED].includes(type)) return IconUsers;
-    return IconFileText;
-  };
-
-  const formatRelativeTime = (dateString) => {
-    const diff = (Date.now() - new Date(dateString)) / 1000;
-    if (diff < 60)    return 'Just now';
-    if (diff < 3600)  return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return new Date(dateString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const healthDot = (status) => {
-    if (['excellent', 'operational'].includes(status)) return 'green';
-    if (['good', 'minor-issues'].includes(status))    return 'amber';
-    if (['poor', 'slow'].includes(status))             return 'amber';
-    return 'red';
-  };
-
-  const healthLabel = (metric, status) => {
-    const maps = {
-      recentActivity:   { excellent: 'Very Active', good: 'Active',    poor: 'Quiet',         error: 'Error' },
-      clientEngagement: { excellent: 'High',        good: 'Moderate',  poor: 'Low',           error: 'Error' },
-      systemResponse:   { operational: 'Nominal',   'minor-issues': 'Degraded', slow: 'Slow', error: 'Error' },
-    };
-    return maps[metric]?.[status] ?? status;
-  };
-
-  if (stats.loading) {
-    return (
-      <AdminLayout>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', gap: 16 }}>
-          <div className="admin-spinner" />
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>Loading dashboard…</p>
-        </div>
-      </AdminLayout>
-    );
-  }
+  const d = data || {};
 
   return (
-    <AdminLayout>
+    <AdminLayout title="Dashboard">
+      <div style={s.page}>
 
-      {/* ── Page Title ─────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{
-            width: 40, height: 40, borderRadius: 10,
-            background: 'var(--accent-dim)',
-            border: '1px solid rgba(2,164,186,0.2)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--accent)', flexShrink: 0,
-          }}>
-            <IconDashboard size={18} />
-          </div>
+        {/* ── Page header ── */}
+        <div style={s.pageHeader}>
           <div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-              Dashboard
-            </h1>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: 0 }}>System overview</p>
+            <h1 style={s.pageTitle}>Operations Dashboard</h1>
+            <p style={s.pageSubtitle}>{new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' })} · All times UTC</p>
           </div>
+          <button style={s.refreshBtn} onClick={() => window.location.reload()}>↻ Refresh</button>
         </div>
 
-        <button
-          className="admin-btn admin-btn-ghost admin-btn-sm"
-          onClick={() => { fetchDashboardStats(); fetchSystemHealth(); }}
-        >
-          <IconRefresh size={13} /> Refresh
-        </button>
-      </div>
-
-      {/* ── Stat Cards ───────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 16, marginBottom: 24 }}>
-
-        <div className="admin-stat-card clickable" onClick={() => router.push('/admin/total-invoices')}>
-          <div className="admin-stat-icon teal"><IconFileText size={20} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="admin-stat-value">{stats.totalInvoices}</div>
-            <div className="admin-stat-label">Total Invoices</div>
-            <div className="admin-stat-sub">All processed invoices</div>
-          </div>
-          <IconArrowUpRight size={15} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 4 }} />
+        {/* ── KPI Row ── */}
+        <div style={s.kpiGrid}>
+          <KpiCard label="MRR" value={d.mrr ? `$${d.mrr.toLocaleString()}` : '—'} delta={d.mrrDelta} deltaDir="up" mono />
+          <KpiCard label="Active Restaurants" value={d.activeCount ?? '—'} delta={d.newThisMonth ? `+${d.newThisMonth} this month` : null} deltaDir="up" />
+          <KpiCard label="Avg Profit Score" value={d.avgProfitScore ?? '—'} delta={d.profitScoreDelta} deltaDir="down" />
+          <KpiCard label="Invoices Parsed" value={d.invoiceCount?.toLocaleString() ?? '—'} delta={d.invoiceDelta} deltaDir="up" />
+          <KpiCard label="AI API Spend" value={d.aiSpend ? `$${d.aiSpend}` : '—'} delta={d.aiSpendStatus} deltaDir={d.aiSpendOver ? 'down' : 'up'} mono />
         </div>
 
-        <div
-          className="admin-stat-card clickable"
-          onClick={() => router.push('/admin/pending-invoices')}
-          style={stats.pendingInvoices > 0 ? { borderColor: 'rgba(244,63,94,0.3)', background: 'rgba(244,63,94,0.04)' } : {}}
-        >
-          <div className={`admin-stat-icon ${stats.pendingInvoices > 0 ? 'rose' : 'teal'}`}>
-            <IconClock size={20} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="admin-stat-value" style={stats.pendingInvoices > 0 ? { color: '#f43f5e' } : {}}>
-              {stats.pendingInvoices}
+        {/* ── Row 2: MRR chart + At-Risk alerts ── */}
+        <div style={s.row2}>
+          <SectionCard title="MRR Growth (6 months)">
+            <MiniBarChart data={d.mrrHistory || []} />
+            <div style={s.mrrMeta}>
+              <MetaItem label="Rate" value={`$59 × ${d.activeCount || 0}`} />
+              <MetaItem label="ARR run-rate" value={d.arr ? `$${d.arr.toLocaleString()}` : '—'} accent />
+              <MetaItem label="Failed payments" value={d.failedPayments ?? 0} danger={d.failedPayments > 0} />
+              <MetaItem label="Churn risk" value={d.churnRisk ?? 0} danger={d.churnRisk > 2} />
             </div>
-            <div className="admin-stat-label">Pending Review</div>
-            <div className="admin-stat-sub">{stats.pendingInvoices > 0 ? 'Requires attention' : 'All caught up'}</div>
-          </div>
-          {stats.pendingInvoices > 0 && <span className="admin-badge rose">!</span>}
-        </div>
+          </SectionCard>
 
-        <div className="admin-stat-card clickable" onClick={() => router.push('/admin/clients')}>
-          <div className="admin-stat-icon emerald"><IconUsers size={20} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="admin-stat-value">{stats.clientCount}</div>
-            <div className="admin-stat-label">Active Clients</div>
-            <div className="admin-stat-sub">Restaurant partners</div>
-          </div>
-          <IconArrowUpRight size={15} style={{ color: 'var(--text-muted)', flexShrink: 0, marginTop: 4 }} />
-        </div>
-
-        <div className="admin-stat-card">
-          <div className="admin-stat-icon violet">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="1" x2="12" y2="23"/>
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-            </svg>
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="admin-stat-value">
-              ${stats.totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-            </div>
-            <div className="admin-stat-label">Total Analyzed</div>
-            <div className="admin-stat-sub">Invoice value processed</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Main grid: Activity feed + Right column ───────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, alignItems: 'start' }}>
-
-        {/* Recent Activity */}
-        <div className="admin-card">
-          <div className="admin-card-header">
-            <h2 className="admin-card-title">Recent Activity</h2>
-            <button className="admin-btn admin-btn-ghost admin-btn-sm" onClick={() => router.push('/admin/activity')}>
-              View all <IconChevronRight size={13} />
-            </button>
-          </div>
-
-          {stats.recentActivity.length === 0 ? (
-            <div className="admin-empty">
-              <div className="admin-empty-icon"><IconBell size={22} /></div>
-              <h3>No recent activity</h3>
-              <p>Logs will appear here as actions are performed.</p>
-            </div>
-          ) : (
-            <div>
-              {stats.recentActivity.map((activity, i) => {
-                const Icon = getActivityIcon(activity.activity_type);
-                return (
-                  <div
-                    key={activity.id}
-                    className="admin-activity-item"
-                    style={{ borderBottom: i < stats.recentActivity.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
-                  >
-                    <div className="admin-activity-icon"><Icon size={15} /></div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p className="admin-activity-title">{activity.title}</p>
-                      {activity.subtitle && <p className="admin-activity-sub">{activity.subtitle}</p>}
-                      {activity.restaurant_name && (
-                        <span className="admin-badge teal" style={{ marginTop: 6, display: 'inline-flex' }}>
-                          {activity.restaurant_name}
-                        </span>
-                      )}
-                    </div>
-                    <span className="admin-activity-time">{formatRelativeTime(activity.created_at)}</span>
+          <SectionCard title="At-Risk Restaurants" action="View all →">
+            {(d.atRisk || []).length === 0
+              ? <p style={{ fontSize:11, color:'#3a3e50', padding:'8px 0' }}>No at-risk restaurants 🎉</p>
+              : (d.atRisk || []).slice(0, 3).map(r => (
+                <div key={r.id} style={{ ...s.alertRow, borderColor: r.severity === 'high' ? 'rgba(232,84,84,0.2)' : 'rgba(245,166,35,0.2)', background: r.severity === 'high' ? 'rgba(232,84,84,0.06)' : 'rgba(245,166,35,0.06)' }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:11, fontWeight:700, color:'#e4e6f0', marginBottom:2 }}>{r.restaurant_name}</div>
+                    <div style={{ fontSize:9, color:'#5a6080' }}>{r.reason}</div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <Pill color={r.severity === 'high' ? 'red' : 'amber'}>{r.severity}</Pill>
+                </div>
+              ))
+            }
+          </SectionCard>
         </div>
 
-        {/* Right column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* ── Row 3: Feature adoption + AI spend + Live activity ── */}
+        <div style={s.row3}>
+          <SectionCard title="Feature Adoption">
+            <BarRow label="Invoice parse" pct={d.adoption?.invoice || 0} color="#02a4ba" />
+            <BarRow label="Menu import" pct={d.adoption?.menu || 0} color="#02a4ba" />
+            <BarRow label="POS upload" pct={d.adoption?.pos || 0} color="#f5a623" />
+            <BarRow label="AI recs used" pct={d.adoption?.ai || 0} color="#e85454" />
+          </SectionCard>
 
-          {/* Quick Actions */}
-          <div className="admin-card">
-            <div className="admin-card-header">
-              <h2 className="admin-card-title">Quick Actions</h2>
+          <SectionCard title="AI Spend Breakdown">
+            <BarRow label="Invoice parse" pct={d.aiBreakdown?.invoice || 0} />
+            <BarRow label="Menu parser" pct={d.aiBreakdown?.menu || 0} color="rgba(2,164,186,0.6)" />
+            <BarRow label="Dish recs" pct={d.aiBreakdown?.recs || 0} color="rgba(2,164,186,0.35)" />
+            <div style={s.aiSpendRow}>
+              <span style={{ fontSize:9, color:'#3a3e50' }}>Monthly budget</span>
+              <span style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color: d.aiSpendOver ? '#e85454' : '#3de8a0' }}>
+                ${d.aiSpend || 0} / $180
+              </span>
             </div>
-            <div style={{ padding: '8px' }}>
-              {[
-                { label: 'Review Pending Invoices', href: '/admin/pending-invoices', warning: stats.pendingInvoices > 0, count: stats.pendingInvoices },
-                { label: 'All Invoices',            href: '/admin/total-invoices' },
-                { label: 'Client Management',       href: '/admin/clients' },
-                { label: 'Prospective Clients',     href: '/admin/prospective-clients' },
-                { label: 'Analytics',               href: '/admin/analytics' },
-              ].map((action, i) => (
-                <button
-                  key={i}
-                  onClick={() => router.push(action.href)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    width: '100%', padding: '9px 12px', borderRadius: 8,
-                    border: 'none', cursor: 'pointer',
-                    background: action.warning ? 'rgba(244,63,94,0.07)' : 'transparent',
-                    color: action.warning ? '#f43f5e' : 'var(--text-secondary)',
-                    fontSize: '0.83rem', fontWeight: 500, fontFamily: 'var(--font-body)',
-                    transition: 'all 0.15s ease', textAlign: 'left',
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.background = action.warning ? 'rgba(244,63,94,0.13)' : 'var(--bg-elevated)';
-                    e.currentTarget.style.color = action.warning ? '#f43f5e' : 'var(--text-primary)';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.background = action.warning ? 'rgba(244,63,94,0.07)' : 'transparent';
-                    e.currentTarget.style.color = action.warning ? '#f43f5e' : 'var(--text-secondary)';
-                  }}
-                >
-                  <span>{action.label}</span>
-                  {action.warning
-                    ? <span className="admin-badge rose">{action.count}</span>
-                    : <IconChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
-                  }
-                </button>
-              ))}
-            </div>
-          </div>
+          </SectionCard>
 
-          {/* System Health */}
-          <div className="admin-card">
-            <div className="admin-card-header">
-              <h2 className="admin-card-title">System Health</h2>
-            </div>
-            <div style={{ padding: '4px 0' }}>
-              {[
-                {
-                  icon: IconActivity,
-                  label: 'Recent Activity',
-                  metric: 'recentActivity',
-                  detail: systemHealth.recentActivity.loading
-                    ? 'Checking…'
-                    : `${systemHealth.recentActivity.count} events / 24h`,
-                },
-                {
-                  icon: IconUsers,
-                  label: 'Client Engagement',
-                  metric: 'clientEngagement',
-                  detail: systemHealth.clientEngagement.loading
-                    ? 'Analyzing…'
-                    : `${systemHealth.clientEngagement.percentage}% active this month`,
-                },
-                {
-                  icon: IconWifi,
-                  label: 'System Response',
-                  metric: 'systemResponse',
-                  detail: systemHealth.systemResponse.loading
-                    ? 'Testing…'
-                    : systemHealth.systemResponse.status === 'operational'
-                      ? 'All systems nominal'
-                      : `${systemHealth.systemResponse.responseTime}ms`,
-                },
-              ].map((item, i) => {
-                const Icon = item.icon;
-                const health = systemHealth[item.metric];
-                const dot = healthDot(health.status);
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '12px 20px',
-                      borderBottom: i < 2 ? '1px solid rgba(255,255,255,0.04)' : 'none',
-                    }}
-                  >
-                    <Icon size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 1 }}>
-                        {item.label}
-                      </div>
-                      <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)' }}>{item.detail}</div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                      <div className={`admin-status-dot ${dot}`} />
-                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                        {healthLabel(item.metric, health.status)}
-                      </span>
-                    </div>
+          <SectionCard title="Live Activity">
+            {(d.recentActivity || []).length === 0
+              ? <p style={{ fontSize:11, color:'#3a3e50' }}>No recent activity</p>
+              : (d.recentActivity || []).slice(0, 5).map((act, i) => (
+                <div key={i} style={s.actRow}>
+                  <div style={{ ...s.actDot, background: actColor(act.type) }} />
+                  <div style={{ flex:1, fontSize:10, color:'#5a6080', lineHeight:1.4 }}>
+                    <strong style={{ color:'#e4e6f0' }}>{act.restaurant}</strong> {act.description}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
+                  <span style={{ fontSize:8, color:'#3a3e50', flexShrink:0 }}>{act.time_ago}</span>
+                </div>
+              ))
+            }
+          </SectionCard>
         </div>
-      </div>
 
+      </div>
     </AdminLayout>
   );
 }
+
+// ── Mini components ───────────────────────────────────────────────────────────
+
+function MiniBarChart({ data }) {
+  if (!data.length) return <div style={{ height:52, display:'flex', alignItems:'center', justifyContent:'center', color:'#3a3e50', fontSize:10 }}>No data yet</div>;
+  const max = Math.max(...data.map(d => d.value));
+  return (
+    <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:52 }}>
+      {data.map((d, i) => (
+        <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, height:'100%' }}>
+          <div style={{ flex:1, width:'100%', display:'flex', alignItems:'flex-end' }}>
+            <div style={{ width:'100%', borderRadius:'2px 2px 0 0', background: i === data.length - 1 ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`, height: `${(d.value / max) * 100}%`, transition:'height 0.6s' }} />
+          </div>
+          <span style={{ fontSize:7, color:'#3a3e50' }}>{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MetaItem({ label, value, accent, danger }) {
+  return (
+    <div>
+      <div style={{ fontSize:8, color:'#3a3e50', marginBottom:1 }}>{label}</div>
+      <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color: danger ? '#e85454' : accent ? '#02a4ba' : '#7880a0' }}>{value}</div>
+    </div>
+  );
+}
+
+function actColor(type) {
+  const map = { invoice:'#02a4ba', menu:'#3de8a0', error:'#e85454', pos:'#f5a623', login:'#7880a0' };
+  return map[type] || '#3a3e50';
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
+const s = {
+  page: { padding: '20px 24px', display:'flex', flexDirection:'column', gap:14, fontFamily:"'Inter',sans-serif" },
+  pageHeader: { display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexShrink:0 },
+  pageTitle: { fontSize:22, fontWeight:700, color:'#e4e6f0', letterSpacing:'-0.5px', fontFamily:"'Playfair Display',serif", margin:0 },
+  pageSubtitle: { fontSize:10, color:'#3a3e50', marginTop:3 },
+  refreshBtn: { background:'none', border:'1px solid #1e2028', borderRadius:6, color:'#5a6080', fontSize:10, fontWeight:600, padding:'6px 12px', cursor:'pointer', fontFamily:"'Inter',sans-serif" },
+  kpiGrid: { display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8 },
+  kpiCard: { background:'#111318', border:'1px solid #1e2028', borderRadius:8, padding:'12px 14px' },
+  kpiLabel: { fontSize:8, fontWeight:700, color:'#3a3e50', textTransform:'uppercase', letterSpacing:'0.8px', marginBottom:5 },
+  kpiValue: { fontSize:22, fontWeight:600, color:'#e4e6f0', lineHeight:1, marginBottom:3, fontFamily:"'DM Mono',monospace" },
+  kpiDelta: { fontSize:9 },
+  row2: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 },
+  row3: { display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 },
+  card: { background:'#111318', border:'1px solid #1e2028', borderRadius:8, padding:'14px' },
+  cardHeader: { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 },
+  cardTitle: { fontSize:9, fontWeight:700, color:'#5a6080', textTransform:'uppercase', letterSpacing:'0.8px' },
+  cardAction: { fontSize:10, color:'#02a4ba', fontWeight:600, background:'none', border:'none', cursor:'pointer', fontFamily:"'Inter',sans-serif" },
+  mrrMeta: { marginTop:10, paddingTop:10, borderTop:'1px solid #1e2028', display:'flex', gap:16 },
+  alertRow: { display:'flex', alignItems:'center', gap:8, padding:'7px 10px', borderRadius:6, marginBottom:5, border:'1px solid' },
+  aiSpendRow: { marginTop:10, paddingTop:8, borderTop:'1px solid #1e2028', display:'flex', justifyContent:'space-between', alignItems:'center' },
+  actRow: { display:'flex', alignItems:'flex-start', gap:8, paddingBottom:7, marginBottom:7, borderBottom:'1px solid #1e2028' },
+  actDot: { width:6, height:6, borderRadius:'50%', flexShrink:0, marginTop:3 },
+  center: { flex:1, display:'flex', alignItems:'center', justifyContent:'center', gap:10 },
+  spinner: { width:16, height:16, border:'2px solid #1e2028', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin 0.8s linear infinite' },
+};
