@@ -1,6 +1,7 @@
 // pages/api/dish-recommendations.js
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
+import { logAiUsage } from '../../lib/logAiUsage';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -17,7 +18,6 @@ export default async function handler(req, res) {
     const { restaurantId } = req.body;
     if (!restaurantId) return res.status(400).json({ message: 'Missing restaurantId' });
 
-    // Get today's date EST
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const today = estDate.toISOString().split('T')[0];
@@ -36,7 +36,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ recommendations: cached.recommendations, cached: true });
     }
 
-    // Fetch last 14 days of sales data
     const fourteenDaysAgo = new Date(estDate);
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
     const fromDate = fourteenDaysAgo.toISOString().split('T')[0];
@@ -48,14 +47,12 @@ export default async function handler(req, res) {
       .gte('sale_date', fromDate)
       .order('sale_date', { ascending: false });
 
-    // Fetch last 7 days separately for recency
     const sevenDaysAgo = new Date(estDate);
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const fromDateRecent = sevenDaysAgo.toISOString().split('T')[0];
 
     const recentSales = (salesData || []).filter(s => s.sale_date >= fromDateRecent);
 
-    // Aggregate sales by item
     const itemMap = {};
     for (const sale of salesData || []) {
       if (!itemMap[sale.item_name]) {
@@ -70,7 +67,6 @@ export default async function handler(req, res) {
 
     const items = Object.values(itemMap).sort((a, b) => b.qty14 - a.qty14);
 
-    // Fetch menu items with margin data
     const { data: menuItems } = await supabase
       .from('menu_items')
       .select(`
@@ -82,7 +78,6 @@ export default async function handler(req, res) {
       `)
       .eq('restaurant_id', restaurantId);
 
-    // Calculate margins
     const menuMargins = {};
     for (const item of menuItems || []) {
       const cost = (item.menu_item_components || []).reduce((t, c) => t + parseFloat(c.cost || 0), 0);
@@ -91,7 +86,6 @@ export default async function handler(req, res) {
       menuMargins[item.name.toLowerCase()] = { price, cost, margin };
     }
 
-    // Fetch recent ingredients from invoices to identify at-risk inventory
     const { data: ingredients } = await supabase
       .from('ingredients')
       .select('name, last_price, last_ordered_at, unit')
@@ -100,14 +94,12 @@ export default async function handler(req, res) {
       .order('last_ordered_at', { ascending: false })
       .limit(50);
 
-    // Flag ingredients ordered recently (last 7 days) — these are in stock
     const recentlyOrdered = (ingredients || []).filter(ing => {
       if (!ing.last_ordered_at) return false;
       const orderDate = new Date(ing.last_ordered_at);
       return orderDate >= sevenDaysAgo;
     }).map(i => i.name.toLowerCase());
 
-    // Build context for Claude
     const topSellers = items.slice(0, 10).map(i => {
       const m = menuMargins[i.name.toLowerCase()];
       return `- ${i.name}: ${i.qty14} sold (14d), ${i.qty7} sold (7d), $${i.rev14.toFixed(0)} revenue${m?.margin ? `, ${m.margin.toFixed(1)}% margin` : ''}`;
@@ -191,6 +183,13 @@ talking_point: natural, conversational language a server would actually say — 
       messages: [{ role: 'user', content: prompt }],
     });
 
+    await logAiUsage({
+      feature: 'dish_recs',
+      model: 'claude-sonnet-4-5',
+      usage: message.usage,
+      restaurantId,
+    });
+
     const responseText = message.content[0].text;
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('No JSON in Claude response');
@@ -198,7 +197,6 @@ talking_point: natural, conversational language a server would actually say — 
     const aiResponse = JSON.parse(jsonMatch[0]);
     const recommendations = aiResponse.recommendations;
 
-    // Cache with type = dish_push to differentiate from general recommendations
     await supabase
       .from('ai_recommendations')
       .upsert({

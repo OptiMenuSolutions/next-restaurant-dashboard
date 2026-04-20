@@ -21,30 +21,37 @@ export default withAdminAuth(async function handler(req, res) {
 
   try {
     // ── Supabase queries (run in parallel) ───────────────────────────────────
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
     const [
       { data: restaurants },
       { data: invoices },
       { data: menuItems },
       { data: ingredients },
       { data: recentActivity },
+      { data: aiUsageRows },
     ] = await Promise.all([
       supabase.from('restaurants').select('id, name, created_at, subscription_status').order('created_at', { ascending: false }),
       supabase.from('invoices').select('id, restaurant_id, created_at, parse_status, confidence_score, total_amount').order('created_at', { ascending: false }),
       supabase.from('menu_items').select('id, restaurant_id, food_cost_pct').not('food_cost_pct', 'is', null),
       supabase.from('ingredients').select('id, restaurant_id, is_estimated'),
       supabase.from('invoices').select('id, restaurant_id, created_at, parse_status').order('created_at', { ascending: false }).limit(20),
+      // Pull this month's AI usage
+      supabase
+        .from('ai_usage')
+        .select('feature, cost')
+        .gte('created_at', monthStart.toISOString()),
     ]);
 
     const activeRestaurants = (restaurants || []).filter(r => r.subscription_status === 'active');
     const activeCount = activeRestaurants.length;
 
     // New this month
-    const startOfMonth = new Date();
-    startOfMonth.setDate(1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    const newThisMonth = (restaurants || []).filter(r => new Date(r.created_at) >= startOfMonth).length;
+    const newThisMonth = (restaurants || []).filter(r => new Date(r.created_at) >= monthStart).length;
 
-    // Avg profit score (derived from food_cost_pct → margin)
+    // Avg profit score
     const avgProfitScore = menuItems?.length
       ? Math.round((menuItems || []).reduce((sum, m) => sum + (100 - (m.food_cost_pct || 0)), 0) / menuItems.length)
       : null;
@@ -55,15 +62,15 @@ export default withAdminAuth(async function handler(req, res) {
     thisWeekStart.setDate(thisWeekStart.getDate() - 7);
     const invoicesThisWeek = (invoices || []).filter(i => new Date(i.created_at) >= thisWeekStart).length;
 
-    // Feature adoption (% of active restaurants using each feature)
+    // Feature adoption
     const restaurantIds = activeRestaurants.map(r => r.id);
     const withInvoices = new Set((invoices || []).map(i => i.restaurant_id));
     const withMenu = new Set((menuItems || []).map(m => m.restaurant_id));
     const adoption = {
       invoice: activeCount ? Math.round((restaurantIds.filter(id => withInvoices.has(id)).length / activeCount) * 100) : 0,
       menu: activeCount ? Math.round((restaurantIds.filter(id => withMenu.has(id)).length / activeCount) * 100) : 0,
-      pos: 41, // TODO: wire to actual POS upload table when available
-      ai: 28,  // TODO: wire to AI recs usage log when available
+      pos: 41,  // TODO: wire to actual POS upload table
+      ai: 28,   // TODO: wire to AI recs usage log
     };
 
     // At-risk detection
@@ -83,13 +90,39 @@ export default withAdminAuth(async function handler(req, res) {
       .filter(Boolean)
       .slice(0, 5);
 
-    // MRR history (6 months — from Stripe or estimated)
+    // ── AI spend aggregation from ai_usage table ──────────────────────────────
+    const usageRows = aiUsageRows || [];
+
+    const spendByFeature = { invoice_parse: 0, menu_import: 0, dish_recs: 0, profit_score: 0 };
+    let totalAiSpend = 0;
+
+    for (const row of usageRows) {
+      const cost = parseFloat(row.cost || 0);
+      totalAiSpend += cost;
+      if (spendByFeature[row.feature] !== undefined) {
+        spendByFeature[row.feature] += cost;
+      }
+    }
+
+    totalAiSpend = Math.round(totalAiSpend * 100) / 100;
+
+    // Convert to percentages for the breakdown bars
+    const aiBreakdown = totalAiSpend > 0
+      ? {
+          invoice: Math.round((spendByFeature.invoice_parse / totalAiSpend) * 100),
+          menu:    Math.round((spendByFeature.menu_import   / totalAiSpend) * 100),
+          recs:    Math.round((spendByFeature.dish_recs     / totalAiSpend) * 100),
+        }
+      : { invoice: 0, menu: 0, recs: 0 };
+
+    const aiSpendOver = totalAiSpend > 180;
+
+    // ── Stripe ────────────────────────────────────────────────────────────────
     let mrrHistory = [];
     let mrr = 0;
     let failedPayments = 0;
 
     try {
-      // Pull active subscriptions from Stripe
       const subscriptions = await stripe.subscriptions.list({ status: 'active', limit: 100 });
       mrr = subscriptions.data.reduce((sum, sub) => {
         return sum + (sub.items.data[0]?.price?.unit_amount || 0) / 100;
@@ -98,16 +131,14 @@ export default withAdminAuth(async function handler(req, res) {
       const failedInvoicesList = await stripe.invoices.list({ status: 'open', limit: 100 });
       failedPayments = failedInvoicesList.data.filter(inv => inv.attempt_count > 0).length;
 
-      // Build 6-month MRR history (simplified — count active subs at each month)
       const months = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
       mrrHistory = months.map((label, i) => ({
         label,
-        value: Math.round(mrr * (0.45 + i * 0.11)), // TODO: replace with actual historical Stripe data
+        value: Math.round(mrr * (0.45 + i * 0.11)),
       }));
 
     } catch (stripeErr) {
       console.error('[dashboard] Stripe error:', stripeErr.message);
-      // Fall back to Supabase-based MRR estimate
       mrr = activeCount * 59;
       mrrHistory = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'].map((label, i) => ({
         label,
@@ -115,20 +146,16 @@ export default withAdminAuth(async function handler(req, res) {
       }));
     }
 
-    // Recent activity feed (from latest invoices as a proxy)
+    // ── Recent activity feed ──────────────────────────────────────────────────
     const activity = (recentActivity || []).slice(0, 5).map(inv => {
       const rest = (restaurants || []).find(r => r.id === inv.restaurant_id);
       return {
         type: inv.parse_status === 'failed' ? 'error' : 'invoice',
         restaurant: rest?.name || 'Unknown',
-        description: inv.parse_status === 'failed' ? 'invoice parse failed' : `invoice parsed`,
+        description: inv.parse_status === 'failed' ? 'invoice parse failed' : 'invoice parsed',
         time_ago: timeAgo(inv.created_at),
       };
     });
-
-    // AI spend (placeholder — wire to actual Anthropic usage API when available)
-    const aiSpend = 214;
-    const aiSpendOver = aiSpend > 180;
 
     return res.status(200).json({
       // KPIs
@@ -140,7 +167,7 @@ export default withAdminAuth(async function handler(req, res) {
       profitScoreDelta: '↓ 3pts vs last mo.',
       invoiceCount,
       invoiceDelta: `+${invoicesThisWeek} this week`,
-      aiSpend,
+      aiSpend: totalAiSpend,
       aiSpendOver,
       aiSpendStatus: aiSpendOver ? '18% over budget' : 'Under budget',
       // Charts
@@ -151,7 +178,7 @@ export default withAdminAuth(async function handler(req, res) {
       // Sections
       atRisk,
       adoption,
-      aiBreakdown: { invoice: 62, menu: 28, recs: 10 },
+      aiBreakdown,
       recentActivity: activity,
     });
 

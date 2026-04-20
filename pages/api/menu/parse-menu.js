@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js';
 import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
+import { logAiUsage } from '../../../lib/logAiUsage';
 
 export const config = { api: { bodyParser: false } };
 
@@ -157,7 +158,7 @@ function safeParseJSON(text) {
 
 // ─── Pass 1: Ingredient library + dish manifest ───────────────────────────────
 
-async function pass1_extractAndClassify(imageContents, globalIngredients) {
+async function pass1_extractAndClassify(imageContents, globalIngredients, restaurantId) {
   const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
 
   const response = await anthropic.messages.create({
@@ -230,6 +231,13 @@ Return ONLY valid JSON:
     }],
   });
 
+  await logAiUsage({
+    feature: 'menu_import',
+    model: 'claude-haiku-4-5-20251001',
+    usage: response.usage,
+    restaurantId,
+  });
+
   const raw = response.content[0]?.text || '{}';
   const parsed = safeParseJSON(raw);
   return {
@@ -240,7 +248,7 @@ Return ONLY valid JSON:
 
 // ─── Pass 2: Build recipes ────────────────────────────────────────────────────
 
-async function pass2_buildRecipes(dishManifest, ingredientLibrary) {
+async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId) {
   const libraryRef = ingredientLibrary
     .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
     .join('\n');
@@ -304,6 +312,13 @@ Return ONLY a valid JSON array:
     }],
   });
 
+  await logAiUsage({
+    feature: 'menu_import',
+    model: 'claude-haiku-4-5-20251001',
+    usage: response.usage,
+    restaurantId,
+  });
+
   const raw = response.content[0]?.text || '[]';
   return {
     dishes: safeParseJSON(raw),
@@ -322,17 +337,11 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
     errors: [],
   };
 
-  // 1. Upsert ingredients
-  // Costs stored in last_price are ESTIMATES from the AI parser.
-  // These will be overwritten with real values once the client uploads invoices.
-  // standard_unit and original_unit are both set to the parser unit until invoice
-  // processing runs unit standardization.
-  const ingredientIdMap = {}; // name → uuid
+  const ingredientIdMap = {};
 
   for (const ing of ingredientLibrary) {
     const normalizedName = ing.name.trim().toLowerCase();
 
-    // Check if ingredient already exists for this restaurant
     const { data: existing } = await supabase
       .from('ingredients')
       .select('id, last_price')
@@ -341,22 +350,19 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
       .maybeSingle();
 
     if (existing) {
-      // Ingredient exists — don't overwrite last_price if it has a real value
-      // (real values come from invoices; estimated values are set only on creation)
       ingredientIdMap[normalizedName] = existing.id;
       results.ingredients_reused++;
     } else {
-      // New ingredient — insert with estimated cost
       const { data: created, error } = await supabase
         .from('ingredients')
         .insert({
           restaurant_id: restaurantId,
           name: ing.name.trim(),
           unit: ing.unit,
-          standard_unit: ing.unit,   // will be updated by invoice processing
-          original_unit: ing.unit,   // will be updated by invoice processing
+          standard_unit: ing.unit,
+          original_unit: ing.unit,
           last_price: ing.estimated_unit_cost ?? null,
-          ingredient_category: 'weight', // default; updated by invoice processing
+          ingredient_category: 'weight',
           is_sample: false,
           is_estimated: true,
         })
@@ -373,13 +379,10 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
     }
   }
 
-  // 2. Resolve or create menu_categories
-  const categoryIdMap = {}; // category name → integer id
-
+  const categoryIdMap = {};
   const uniqueCategories = [...new Set(parsedDishes.map(d => d.category).filter(Boolean))];
 
   for (const catName of uniqueCategories) {
-    // Try to find existing category for this restaurant
     const { data: existingCat } = await supabase
       .from('menu_categories')
       .select('id')
@@ -404,9 +407,7 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
     }
   }
 
-  // 3. Insert menu items + components + component_ingredients
   for (const dish of parsedDishes) {
-    // Compute total cost from components
     const totalCost = (dish.components || []).reduce((sum, comp) => {
       const compCost = (comp.ingredients || []).reduce((s, i) => {
         return s + (i.quantity ?? 0) * (i.estimated_unit_cost ?? 0);
@@ -414,7 +415,6 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
       return sum + compCost;
     }, 0);
 
-    // Insert menu item
     const { data: menuItem, error: menuError } = await supabase
       .from('menu_items')
       .insert({
@@ -437,7 +437,6 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
     results.menu_items_created++;
 
-    // Insert components
     for (const comp of dish.components || []) {
       const compCost = (comp.ingredients || []).reduce((s, i) => {
         return s + (i.quantity ?? 0) * (i.estimated_unit_cost ?? 0);
@@ -460,7 +459,6 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
       results.components_created++;
 
-      // Insert component_ingredients
       for (const ing of comp.ingredients || []) {
         const normalizedName = ing.name.trim().toLowerCase();
         const ingredientId = ingredientIdMap[normalizedName];
@@ -505,7 +503,6 @@ export default async function handler(req, res) {
   const file = Array.isArray(files.file) ? files.file[0] : files.file;
   if (!file) return res.status(400).json({ error: 'No file provided' });
 
-  // restaurant_id must be passed in the form body
   const restaurantId = Array.isArray(fields.restaurant_id)
     ? fields.restaurant_id[0]
     : fields.restaurant_id;
@@ -522,7 +519,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Build image content blocks
     let imageContents = [];
     if (isPDF) {
       const base64Pages = await pdfToImages(file.filepath);
@@ -543,7 +539,6 @@ export default async function handler(req, res) {
       imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
     }
 
-    // Fetch global ingredient library
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
       .select('name, unit')
@@ -556,10 +551,9 @@ export default async function handler(req, res) {
     console.log(`[parse-menu] Restaurant: ${restaurantId}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
 
-    // Pass 1
     console.log('[parse-menu] Pass 1: Extracting ingredients and classifying dishes...');
     const { ingredients: ingredientLibrary, dishes: dishManifest } =
-      await pass1_extractAndClassify(imageContents, globalIngredients);
+      await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
 
     if (!ingredientLibrary?.length) {
       return res.status(500).json({ error: 'Could not extract ingredients. Try a clearer image.' });
@@ -570,9 +564,9 @@ export default async function handler(req, res) {
 
     console.log(`[parse-menu] Pass 1 complete: ${ingredientLibrary.length} ingredients, ${dishManifest.length} dishes`);
 
-    // Pass 2
     console.log('[parse-menu] Pass 2: Building recipes...');
-    const { dishes: rawDishes, truncated } = await pass2_buildRecipes(dishManifest, ingredientLibrary);
+    const { dishes: rawDishes, truncated } =
+      await pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId);
 
     if (!rawDishes || !Array.isArray(rawDishes)) {
       return res.status(500).json({ error: 'Failed to build recipes. Try uploading one section at a time.' });
@@ -580,7 +574,6 @@ export default async function handler(req, res) {
 
     console.log(`[parse-menu] Pass 2 complete: ${rawDishes.length} dishes`);
 
-    // Validate & compute costs
     const validated = rawDishes
       .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
       .map(d => {
@@ -624,7 +617,6 @@ export default async function handler(req, res) {
         };
       });
 
-    // Write to Supabase
     console.log(`[parse-menu] Writing ${validated.length} dishes to Supabase...`);
     const saveResults = await saveToSupabase(restaurantId, validated, ingredientLibrary);
     console.log('[parse-menu] Save complete:', saveResults);

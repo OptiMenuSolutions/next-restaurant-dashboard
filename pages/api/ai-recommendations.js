@@ -5,6 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
+import { logAiUsage } from '../../lib/logAiUsage';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -28,9 +29,7 @@ async function loadRestaurantContext(restaurantId) {
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split('T')[0];
 
-  // Run all queries in parallel
   const [menuResult, salesResult, ingredientResult] = await Promise.all([
-    // Menu items with cost data
     supabase
       .from('menu_items')
       .select(`
@@ -48,7 +47,6 @@ async function loadRestaurantContext(restaurantId) {
       .eq('restaurant_id', restaurantId)
       .not('price', 'is', null),
 
-    // POS sales for last 14 days
     supabase
       .from('pos_sales')
       .select('item_name, quantity_sold, revenue, sale_date')
@@ -56,7 +54,6 @@ async function loadRestaurantContext(restaurantId) {
       .gte('sale_date', fourteenDaysAgoStr)
       .order('sale_date', { ascending: false }),
 
-    // Ingredients ordered in last 30 days (potential food waste risk)
     supabase
       .from('ingredients')
       .select('id, name, unit, last_ordered_at, last_price')
@@ -69,12 +66,10 @@ async function loadRestaurantContext(restaurantId) {
   const sales = salesResult.data || [];
   const recentIngredients = ingredientResult.data || [];
 
-  // ── Process menu items: compute real margins ──────────────────────────────
   const menuWithMargins = menuItems.map(item => {
     const price = parseFloat(item.price || 0);
     let cost = parseFloat(item.cost || 0);
 
-    // Use component-calculated cost if available
     if (item.menu_item_components?.length > 0) {
       const compCost = item.menu_item_components.reduce((s, c) => s + parseFloat(c.cost || 0), 0);
       if (compCost > 0) cost = compCost;
@@ -82,7 +77,6 @@ async function loadRestaurantContext(restaurantId) {
 
     const margin = price > 0 && cost > 0 ? ((price - cost) / price) * 100 : null;
 
-    // Collect ingredient IDs used in this item
     const ingredientIds = new Set();
     (item.menu_item_components || []).forEach(c =>
       (c.component_ingredients || []).forEach(ci => {
@@ -101,7 +95,6 @@ async function loadRestaurantContext(restaurantId) {
     };
   }).filter(i => i.margin !== null);
 
-  // ── Process POS sales: qty and revenue per item last 7d and 14d ──────────
   const salesLast7 = {};
   const salesLast14 = {};
   for (const s of sales) {
@@ -117,9 +110,6 @@ async function loadRestaurantContext(restaurantId) {
     salesLast14[s.item_name].rev += rev;
   }
 
-  // ── Identify ingredients at food waste risk ───────────────────────────────
-  // An ingredient is at risk if it was ordered recently but its linked menu
-  // items have been selling slowly in the last 7 days
   const slowItemNames = new Set(
     Object.entries(salesLast7)
       .filter(([, v]) => v.qty < 5)
@@ -129,14 +119,12 @@ async function loadRestaurantContext(restaurantId) {
   const atRiskIngredientIds = new Set(
     recentIngredients
       .filter(ing => {
-        // Check if this ingredient's name loosely matches a slow-selling item
         const ingLower = ing.name.toLowerCase().split(' ')[0];
         return [...slowItemNames].some(item => item.includes(ingLower) || ingLower.includes(item.split(' ')[0]));
       })
       .map(ing => ing.id)
   );
 
-  // ── Build enriched menu item list for the prompt ──────────────────────────
   const enriched = menuWithMargins.map(item => {
     const posName = Object.keys(salesLast7).find(
       k => k.toLowerCase().includes(item.name.toLowerCase().split(' ')[0]) ||
@@ -145,7 +133,6 @@ async function loadRestaurantContext(restaurantId) {
 
     const last7 = posName ? salesLast7[posName] : null;
     const last14 = posName ? salesLast14[posName] : null;
-
     const hasWasteRisk = item.ingredient_ids.some(id => atRiskIngredientIds.has(id));
 
     return {
@@ -171,7 +158,7 @@ function buildPrompt(menuData, currentDate, dayOfWeek) {
 
   const menuLines = menuData
     .sort((a, b) => b.margin - a.margin)
-    .slice(0, 20) // top 20 by margin to keep prompt tight
+    .slice(0, 20)
     .map(item => {
       const parts = [
         `${item.name} (${item.category})`,
@@ -238,13 +225,12 @@ export default async function handler(req, res) {
     const { restaurantId } = req.body;
     if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
 
-    // Get current date in EST
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const currentDate = estDate.toISOString().split('T')[0];
     const dayOfWeek = estDate.toLocaleDateString('en-US', { weekday: 'long' });
 
-    // Check cache first
+    // Check cache first — skip Anthropic call if we already generated today
     const { data: cached, error: cacheError } = await supabase
       .from('ai_recommendations')
       .select('recommendations')
@@ -260,16 +246,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // Load fresh context from Supabase
     let menuData = [];
     try {
       menuData = await loadRestaurantContext(restaurantId);
     } catch (ctxErr) {
       console.error('[ai-recommendations] Context load error:', ctxErr.message);
-      // Continue with empty data — Claude will give generic recommendations
     }
 
-    // Generate recommendations
     const prompt = buildPrompt(menuData, currentDate, dayOfWeek);
 
     const message = await anthropic.messages.create({
@@ -278,20 +261,25 @@ export default async function handler(req, res) {
       messages: [{ role: 'user', content: prompt }],
     });
 
+    await logAiUsage({
+      feature: 'dish_recs',
+      model: 'claude-sonnet-4-20250514',
+      usage: message.usage,
+      restaurantId,
+    });
+
     const raw = message.content[0]?.text || '{}';
     const cleaned = raw.replace(/```json|```/g, '').trim();
     let aiResponse;
     try {
       aiResponse = JSON.parse(cleaned);
     } catch {
-      // Try to extract JSON if there's surrounding text
       const match = cleaned.match(/\{[\s\S]*\}/);
       aiResponse = match ? JSON.parse(match[0]) : { recommendations: [] };
     }
 
     const recommendations = (aiResponse.recommendations || []).slice(0, 3);
 
-    // Cache the result
     try {
       await supabase
         .from('ai_recommendations')
@@ -313,7 +301,6 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('[ai-recommendations] Error:', err);
 
-    // Fallback — return generic recommendations rather than erroring
     return res.status(200).json({
       recommendations: [
         { title: 'Check High Margin Items', description: 'Review your highest margin dishes and ask staff to suggest them today.', type: 'margin', priority: 1 },
