@@ -17,17 +17,21 @@ export default withAdminAuth(async function handler(req, res) {
     const thirtyDaysAgo = new Date(now - 30 * 86400000).toISOString().split('T')[0];
     const sixtyDaysAgo  = new Date(now - 60 * 86400000).toISOString().split('T')[0];
 
-    const [
-      { data: sales },
-      { data: restaurants },
-    ] = await Promise.all([
-      supabase
-        .from('pos_sales')
-        .select('id, restaurant_id, item_name, quantity_sold, revenue, sale_date, category')
-        .gte('sale_date', sixtyDaysAgo)
-        .order('sale_date', { ascending: false }),
-      supabase.from('restaurants').select('id, name'),
-    ]);
+    const TOUR_RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+
+        const [
+          { data: sales },
+          { data: restaurants },
+        ] = await Promise.all([
+          supabase
+            .from('pos_sales')
+            .select('id, restaurant_id, item_name, quantity_sold, revenue, sale_date, category')
+            .gte('sale_date', sixtyDaysAgo)
+            .neq('restaurant_id', TOUR_RESTAURANT_ID)
+            .order('sale_date', { ascending: false }),
+          supabase.from('restaurants').select('id, name')
+            .neq('id', TOUR_RESTAURANT_ID),
+        ]);
 
     const restaurantMap = {};
     for (const r of restaurants || []) restaurantMap[r.id] = r.name;
