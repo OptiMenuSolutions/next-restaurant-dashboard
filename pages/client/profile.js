@@ -404,14 +404,21 @@ export default function ProfilePage() {
 
   async function sendFeedback() {
     if (!feedbackText.trim()) return;
-    await supabase.from('feedback').insert([{
-      user_id: userId,
-      message: feedbackText.trim(),
-      created_at: new Date().toISOString(),
-    }]).catch(() => {});
-    setFeedbackText('');
-    setFeedbackSent(true);
-    setTimeout(() => setFeedbackSent(false), 3000);
+    try {
+      const { error } = await supabase.from('feedback').insert([{
+        user_id: userId,
+        restaurant_id: restaurantId,
+        message: feedbackText.trim(),
+        type: 'general',
+      }]);
+      if (error) throw error;
+      setFeedbackText('');
+      setFeedbackSent(true);
+      setTimeout(() => setFeedbackSent(false), 3000);
+    } catch (err) {
+      console.error('Feedback error:', err);
+      flash('Failed to send feedback — please try again', true);
+    }
   }
 
   // ── Nav ──────────────────────────────────────────────────────────────────────
