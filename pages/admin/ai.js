@@ -43,26 +43,40 @@ function BarRow({ label, value, max, color }) {
   );
 }
 
+// Monthly spend bar chart with dollar value labels on EVERY bar
 function MiniChart({ data }) {
   if (!data?.length) return null;
-  const max = Math.max(...data.map(d => d.value), 0.01);
+  const max = Math.max(...data.map(d => d.value), 0.0001);
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 60 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
-          <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
-            <div style={{
-              width: '100%',
-              borderRadius: '2px 2px 0 0',
-              background: i === data.length - 1 ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`,
-              height: `${(d.value / max) * 100}%`,
-              minHeight: d.value > 0 ? 3 : 0,
-              transition: 'height 0.6s',
-            }} />
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 72, paddingTop: 20 }}>
+      {data.map((d, i) => {
+        const isLatest = i === data.length - 1;
+        return (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
+            <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
+              {/* Dollar label above every bar */}
+              <div style={{
+                fontSize: 7,
+                color: isLatest ? '#02a4ba' : '#3a3e50',
+                fontFamily: "'DM Mono', monospace",
+                marginBottom: 2,
+                whiteSpace: 'nowrap',
+              }}>
+                ${d.value > 0 ? d.value.toFixed(2) : '0'}
+              </div>
+              <div style={{
+                width: '100%',
+                borderRadius: '2px 2px 0 0',
+                background: isLatest ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`,
+                height: d.value > 0 ? `${(d.value / max) * 100}%` : '2px',
+                minHeight: 2,
+                transition: 'height 0.6s',
+              }} />
+            </div>
+            <span style={{ fontSize: 7, color: '#3a3e50' }}>{d.label}</span>
           </div>
-          <span style={{ fontSize: 7, color: '#3a3e50' }}>{d.label}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -78,13 +92,13 @@ function Card({ title, children, style }) {
 
 export default function AiUsagePage() {
   const { adminFetch } = useAdminFetch();
-  const [data, setData] = useState(null);
+  const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await adminFetch('/api/admin/ai');
+        const res  = await adminFetch('/api/admin/ai');
         const json = await res.json();
         setData(json);
       } catch (err) {
@@ -102,13 +116,16 @@ export default function AiUsagePage() {
     </AdminLayout>
   );
 
-  const d = data || {};
-  const tm = d.thisMonth || {};
-  const lm = d.lastMonth || {};
-  const at = d.allTime || {};
-  const budgetPct = d.budgetUsedPct || 0;
+  const d   = data || {};
+  const tm  = d.thisMonth || {};
+  const lm  = d.lastMonth || {};
+  const at  = d.allTime   || {};
+  const budgetPct   = d.budgetUsedPct || 0;
   const budgetColor = budgetPct >= 100 ? '#e85454' : budgetPct >= 80 ? '#f5a623' : '#3de8a0';
   const maxFeatureCost = Math.max(tm.invoice_parse || 0, tm.menu_import || 0, tm.dish_recs || 0, 0.0001);
+
+  // Top restaurants — show even if only 1 restaurant has data
+  const topRestaurants = d.topRestaurants || [];
 
   return (
     <AdminLayout title="AI Usage & Costs">
@@ -175,9 +192,10 @@ export default function AiUsagePage() {
         {/* ── Row 3: Top Restaurants + Recent Calls ── */}
         <div style={s.row2}>
           <Card title="Top Restaurants by Spend (This Month)">
-            {(d.topRestaurants || []).length === 0
-              ? <p style={s.empty}>No data yet</p>
-              : (d.topRestaurants || []).map((r, i) => (
+            {topRestaurants.length === 0 ? (
+              <p style={s.empty}>No AI calls this month yet</p>
+            ) : (
+              topRestaurants.map((r, i) => (
                 <div key={r.id} style={s.listRow}>
                   <span style={{ fontSize: 9, color: '#3a3e50', width: 16 }}>{i + 1}</span>
                   <div style={{ flex: 1 }}>
@@ -187,7 +205,7 @@ export default function AiUsagePage() {
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#02a4ba' }}>${r.cost.toFixed(4)}</span>
                 </div>
               ))
-            }
+            )}
           </Card>
 
           <Card title="Recent API Calls">

@@ -1,7 +1,5 @@
 // pages/admin/index.js
-// Main admin dashboard. Pulls live data from Supabase (restaurants, invoices,
-// parse stats) and Stripe (MRR, failed payments). Uses service role key
-// via server-side API routes to bypass RLS.
+// Main admin dashboard.
 
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
@@ -9,7 +7,7 @@ import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 
-// ── Small reusable components ─────────────────────────────────────────────────
+const TOUR_RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
 
 function KpiCard({ label, value, delta, deltaDir, mono }) {
   const deltaColor = deltaDir === 'up' ? '#3de8a0' : deltaDir === 'down' ? '#e85454' : '#5a6080';
@@ -66,8 +64,6 @@ function BarRow({ label, pct, color }) {
   );
 }
 
-// ── Main dashboard ────────────────────────────────────────────────────────────
-
 export default function AdminDashboard() {
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
@@ -75,19 +71,19 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
   const router = useRouter();
 
-    useEffect(() => {
+  useEffect(() => {
     async function checkAuth() {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { router.replace('/admin/login'); return; }
-        const { data: profile } = await supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace('/admin/login'); return; }
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', session.user.id)
         .single();
-        if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
+      if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
     }
     checkAuth();
-    }, [router]);
+  }, [router]);
 
   useEffect(() => {
     async function load() {
@@ -118,6 +114,9 @@ export default function AdminDashboard() {
 
   const d = data || {};
 
+  // Active count excludes tour sample restaurant
+  const realActiveCount = (d.activeCount ?? 0) - (d.tourIncluded ? 1 : 0);
+
   return (
     <AdminLayout title="Dashboard">
       <div style={s.page}>
@@ -133,11 +132,24 @@ export default function AdminDashboard() {
 
         {/* ── KPI Row ── */}
         <div style={s.kpiGrid}>
-          <KpiCard label="MRR" value={d.mrr ? `$${d.mrr.toLocaleString()}` : '—'} delta={d.mrrDelta} deltaDir="up" mono />
-          <KpiCard label="Active Restaurants" value={d.activeCount ?? '—'} delta={d.newThisMonth ? `+${d.newThisMonth} this month` : null} deltaDir="up" />
-          <KpiCard label="Avg Profit Score" value={d.avgProfitScore ?? '—'} delta={d.profitScoreDelta} deltaDir="down" />
+          {/* MRR — no delta shown since revenue only started this month */}
+          <KpiCard label="MRR" value={d.mrr ? `$${d.mrr.toLocaleString()}` : '—'} mono />
+          {/* Active Restaurants — excludes tour sample data */}
+          <KpiCard
+            label="Active Restaurants"
+            value={realActiveCount}
+            delta={d.newThisMonth ? `+${d.newThisMonth} this month` : null}
+            deltaDir="up"
+          />
+          {/* Avg Profit Score — pulled correctly from menu items */}
+          <KpiCard
+            label="Avg Profit Score"
+            value={d.avgProfitScore != null ? d.avgProfitScore : '—'}
+            delta={d.profitScoreDelta}
+            deltaDir="down"
+          />
           <KpiCard label="Invoices Parsed" value={d.invoiceCount?.toLocaleString() ?? '—'} delta={d.invoiceDelta} deltaDir="up" />
-          <KpiCard label="AI API Spend" value={d.aiSpend ? `$${d.aiSpend}` : '—'} delta={d.aiSpendStatus} deltaDir={d.aiSpendOver ? 'down' : 'up'} mono />
+          <KpiCard label="AI API Spend" value={d.aiSpend != null ? `$${d.aiSpend}` : '—'} delta={d.aiSpendStatus} deltaDir={d.aiSpendOver ? 'down' : 'up'} mono />
         </div>
 
         {/* ── Row 2: MRR chart + At-Risk alerts ── */}
@@ -145,7 +157,7 @@ export default function AdminDashboard() {
           <SectionCard title="MRR Growth (6 months)">
             <MiniBarChart data={d.mrrHistory || []} />
             <div style={s.mrrMeta}>
-              <MetaItem label="Rate" value={`$59 × ${d.activeCount || 0}`} />
+              <MetaItem label="Rate" value={`$59 × ${realActiveCount}`} />
               <MetaItem label="ARR run-rate" value={d.arr ? `$${d.arr.toLocaleString()}` : '—'} accent />
               <MetaItem label="Failed payments" value={d.failedPayments ?? 0} danger={d.failedPayments > 0} />
               <MetaItem label="Churn risk" value={d.churnRisk ?? 0} danger={d.churnRisk > 2} />
@@ -210,21 +222,47 @@ export default function AdminDashboard() {
   );
 }
 
-// ── Mini components ───────────────────────────────────────────────────────────
-
+// ── MRR Bar Chart — shows value labels on every bar ───────────────────────────
 function MiniBarChart({ data }) {
-  if (!data.length) return <div style={{ height:52, display:'flex', alignItems:'center', justifyContent:'center', color:'#3a3e50', fontSize:10 }}>No data yet</div>;
-  const max = Math.max(...data.map(d => d.value));
+  if (!data.length) return (
+    <div style={{ height:68, display:'flex', alignItems:'center', justifyContent:'center', color:'#3a3e50', fontSize:10 }}>
+      No data yet
+    </div>
+  );
+  const max = Math.max(...data.map(d => d.value), 1);
   return (
-    <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:52 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, height:'100%' }}>
-          <div style={{ flex:1, width:'100%', display:'flex', alignItems:'flex-end' }}>
-            <div style={{ width:'100%', borderRadius:'2px 2px 0 0', background: i === data.length - 1 ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`, height: `${(d.value / max) * 100}%`, transition:'height 0.6s' }} />
+    <div style={{ display:'flex', alignItems:'flex-end', gap:4, height:68, paddingTop:20 }}>
+      {data.map((d, i) => {
+        const heightPct = max > 0 ? (d.value / max) * 100 : 0;
+        const isLatest  = i === data.length - 1;
+        return (
+          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:2, height:'100%' }}>
+            <div style={{ flex:1, width:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-end' }}>
+              {/* Value label above bar */}
+              {d.value > 0 && (
+                <div style={{
+                  fontSize: 7,
+                  color: isLatest ? '#02a4ba' : '#3a3e50',
+                  fontFamily: "'DM Mono', monospace",
+                  marginBottom: 2,
+                  whiteSpace: 'nowrap',
+                }}>
+                  ${d.value > 0 ? d.value.toLocaleString() : '0'}
+                </div>
+              )}
+              <div style={{
+                width: '100%',
+                borderRadius: '2px 2px 0 0',
+                background: isLatest ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`,
+                height: d.value > 0 ? `${heightPct}%` : '2px',
+                minHeight: 2,
+                transition: 'height 0.6s',
+              }} />
+            </div>
+            <span style={{ fontSize:7, color:'#3a3e50' }}>{d.label}</span>
           </div>
-          <span style={{ fontSize:7, color:'#3a3e50' }}>{d.label}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -243,7 +281,6 @@ function actColor(type) {
   return map[type] || '#3a3e50';
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
 const s = {
   page: { padding: '20px 24px', display:'flex', flexDirection:'column', gap:14, fontFamily:"'Inter',sans-serif" },
   pageHeader: { display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexShrink:0 },

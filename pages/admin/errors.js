@@ -1,10 +1,11 @@
 // pages/admin/errors.js
-// Error queue — view and triage application errors.
+// Error queue — view and triage application errors, with fixed focus-ring buttons.
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import { FilterButton } from '../../lib/admin/usePagination';
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -74,9 +75,7 @@ export default function ErrorsPage() {
     }
   }
 
-  const filtered = errors.filter(e =>
-    statusFilter === 'all' || e.status === statusFilter
-  );
+  const filtered = errors.filter(e => statusFilter === 'all' || e.status === statusFilter);
 
   return (
     <AdminLayout title="Error Queue">
@@ -100,14 +99,13 @@ export default function ErrorsPage() {
           </div>
         )}
 
-        {/* ── Filters ── */}
+        {/* ── Filters — FilterButton fixes the persistent white border bug ── */}
         <div style={s.filterGroup}>
           {['all', 'open', 'investigating', 'resolved'].map(f => (
-            <button key={f} onClick={() => setStatusFilter(f)}
-              style={{ ...s.filterBtn, ...(statusFilter === f ? s.filterBtnActive : {}) }}>
+            <FilterButton key={f} active={statusFilter === f} onClick={() => setStatusFilter(f)}>
               {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
               {f !== 'all' && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, marginLeft: 4 }}>{stats[f] || 0}</span>}
-            </button>
+            </FilterButton>
           ))}
         </div>
 
@@ -131,10 +129,7 @@ export default function ErrorsPage() {
                         {err.feature}
                       </span>
                       {err.restaurant_name && (
-                        <span
-                          style={{ fontSize: 10, color: '#5a6080', cursor: 'pointer' }}
-                          onClick={() => router.push(`/admin/restaurants/${err.restaurant_id}`)}
-                        >
+                        <span style={{ fontSize: 10, color: '#5a6080', cursor: 'pointer' }} onClick={() => router.push(`/admin/restaurants/${err.restaurant_id}`)}>
                           {err.restaurant_name} →
                         </span>
                       )}
@@ -147,7 +142,7 @@ export default function ErrorsPage() {
                       <>
                         <button
                           onClick={() => setExpanded(expanded === err.id ? null : err.id)}
-                          style={{ fontSize: 9, color: '#3a3e50', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: "'Inter', sans-serif" }}
+                          style={{ fontSize: 9, color: '#3a3e50', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: "'Inter', sans-serif", outline: 'none' }}
                         >
                           {expanded === err.id ? '▲ Hide stack trace' : '▼ Show stack trace'}
                         </button>
@@ -159,6 +154,7 @@ export default function ErrorsPage() {
                       </>
                     )}
                   </div>
+                  {/* Status action buttons — outline:none fixes persistent border bug */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
                     {['open', 'investigating', 'resolved'].map(status => (
                       <button
@@ -172,6 +168,7 @@ export default function ErrorsPage() {
                           borderColor: err.status === status ? 'rgba(2,164,186,0.3)' : '#1e2028',
                           color: err.status === status ? '#02a4ba' : '#5a6080',
                           cursor: err.status === status ? 'default' : 'pointer',
+                          outline: 'none',
                         }}
                       >
                         {status}
@@ -195,8 +192,6 @@ const s = {
   chipRow: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   chip: { fontSize: 9, fontWeight: 500, padding: '3px 8px', borderRadius: 10, background: '#1a1c23', border: '1px solid #1e2028', color: '#5a6080', display: 'flex', alignItems: 'center', gap: 4 },
   filterGroup: { display: 'flex', gap: 4 },
-  filterBtn: { padding: '6px 10px', fontSize: 10, fontWeight: 500, borderRadius: 6, border: '1px solid #1e2028', background: 'none', color: '#5a6080', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize' },
-  filterBtnActive: { background: 'rgba(2,164,186,0.1)', borderColor: 'rgba(2,164,186,0.3)', color: '#02a4ba' },
   card: { background: '#111318', border: '1px solid #1e2028', borderRadius: 8, padding: 14 },
   statusBtn: { padding: '4px 10px', fontSize: 9, fontWeight: 600, borderRadius: 5, border: '1px solid', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize' },
   center: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },

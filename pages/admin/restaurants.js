@@ -1,10 +1,13 @@
 // pages/admin/restaurants.js
-// All restaurants list with health scores, stats, and search.
+// All restaurants list with health scores, stats, search, and pagination.
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import { usePagination, Pagination, FilterButton } from '../../lib/admin/usePagination';
+
+const PAGE_SIZE = 12;
 
 function healthColor(score) {
   if (score >= 80) return '#3de8a0';
@@ -37,15 +40,15 @@ export default function RestaurantsPage() {
   const { adminFetch } = useAdminFetch();
   const router = useRouter();
   const [restaurants, setRestaurants] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('created_at');
+  const [sortBy, setSortBy]           = useState('created_at');
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await adminFetch('/api/admin/restaurants');
+        const res  = await adminFetch('/api/admin/restaurants');
         const json = await res.json();
         setRestaurants(json.restaurants || []);
       } catch (err) {
@@ -65,13 +68,18 @@ export default function RestaurantsPage() {
       return true;
     })
     .sort((a, b) => {
-      if (sortBy === 'health') return a.health - b.health;
-      if (sortBy === 'mrr') return b.mrr - a.mrr;
+      if (sortBy === 'health')   return a.health - b.health;
+      if (sortBy === 'mrr')      return b.mrr - a.mrr;
       if (sortBy === 'invoices') return b.invoice_count - a.invoice_count;
       return new Date(b.created_at) - new Date(a.created_at);
     });
 
-  const totalMRR = restaurants.filter(r => r.subscription_status === 'active').reduce((s, r) => s + r.mrr, 0);
+  const { page, setPage, pageItems, totalPages, reset } = usePagination(filtered, PAGE_SIZE);
+
+  function handleFilter(val) { setStatusFilter(val); reset(); }
+  function handleSearch(val) { setSearch(val); reset(); }
+
+  const totalMRR    = restaurants.filter(r => r.subscription_status === 'active').reduce((s, r) => s + r.mrr, 0);
   const atRiskCount = restaurants.filter(r => r.health < 50).length;
 
   return (
@@ -92,20 +100,25 @@ export default function RestaurantsPage() {
             style={s.search}
             placeholder="Search by name or email…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => handleSearch(e.target.value)}
           />
           <div style={s.filterGroup}>
             {['all', 'active', 'trialing', 'past_due', 'canceled'].map(status => (
-              <button
+              <FilterButton
                 key={status}
-                onClick={() => setStatusFilter(status)}
-                style={{ ...s.filterBtn, ...(statusFilter === status ? s.filterBtnActive : {}) }}
+                active={statusFilter === status}
+                onClick={() => handleFilter(status)}
+                style={{ textTransform: 'capitalize' }}
               >
                 {status === 'all' ? 'All' : status.replace('_', ' ')}
-              </button>
+              </FilterButton>
             ))}
           </div>
-          <select style={s.sortSelect} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+          <select
+            style={s.sortSelect}
+            value={sortBy}
+            onChange={e => { setSortBy(e.target.value); reset(); }}
+          >
             <option value="created_at">Newest first</option>
             <option value="health">Health ↑</option>
             <option value="mrr">MRR ↓</option>
@@ -127,17 +140,13 @@ export default function RestaurantsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {pageItems.length === 0 ? (
                   <tr><td colSpan={8} style={{ ...s.td, textAlign: 'center', color: '#3a3e50', padding: 32 }}>No restaurants found</td></tr>
-                ) : filtered.map(r => {
+                ) : pageItems.map(r => {
                   const sc = statusColor(r.subscription_status);
                   const hc = healthColor(r.health);
                   return (
-                    <tr
-                      key={r.id}
-                      style={s.row}
-                      onClick={() => router.push(`/admin/restaurants/${r.id}`)}
-                    >
+                    <tr key={r.id} style={s.row} onClick={() => router.push(`/admin/restaurants/${r.id}`)}>
                       <td style={s.td}>
                         <div style={{ fontWeight: 600, color: '#e4e6f0', fontSize: 12 }}>{r.name}</div>
                         {r.failed_invoices > 0 && (
@@ -164,14 +173,13 @@ export default function RestaurantsPage() {
                       <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#7880a0' }}>{r.invoice_count}</td>
                       <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#7880a0' }}>{r.menu_item_count}</td>
                       <td style={{ ...s.td, fontSize: 10, color: '#5a6080' }}>{timeAgo(r.created_at)}</td>
-                      <td style={s.td}>
-                        <span style={{ fontSize: 10, color: '#02a4ba' }}>View →</span>
-                      </td>
+                      <td style={s.td}><span style={{ fontSize: 10, color: '#02a4ba' }}>View →</span></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
+            <Pagination page={page} totalPages={totalPages} setPage={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
           </div>
         )}
       </div>
@@ -185,30 +193,12 @@ const s = {
   title: { fontSize: 22, fontWeight: 700, color: '#e4e6f0', letterSpacing: '-0.5px', fontFamily: "'Playfair Display', serif", margin: 0 },
   subtitle: { fontSize: 10, color: '#3a3e50', marginTop: 3 },
   filterRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  search: {
-    flex: 1, minWidth: 200, padding: '7px 12px', fontSize: 11,
-    background: '#111318', border: '1px solid #1e2028', borderRadius: 6,
-    color: '#e4e6f0', fontFamily: "'Inter', sans-serif", outline: 'none',
-  },
+  search: { flex: 1, minWidth: 200, padding: '7px 12px', fontSize: 11, background: '#111318', border: '1px solid #1e2028', borderRadius: 6, color: '#e4e6f0', fontFamily: "'Inter', sans-serif", outline: 'none' },
   filterGroup: { display: 'flex', gap: 4 },
-  filterBtn: {
-    padding: '6px 10px', fontSize: 10, fontWeight: 500, borderRadius: 6,
-    border: '1px solid #1e2028', background: 'none', color: '#5a6080',
-    cursor: 'pointer', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize',
-  },
-  filterBtnActive: { background: 'rgba(2,164,186,0.1)', borderColor: 'rgba(2,164,186,0.3)', color: '#02a4ba' },
-  sortSelect: {
-    padding: '6px 10px', fontSize: 10, background: '#111318',
-    border: '1px solid #1e2028', borderRadius: 6, color: '#5a6080',
-    fontFamily: "'Inter', sans-serif", cursor: 'pointer', outline: 'none',
-  },
+  sortSelect: { padding: '6px 10px', fontSize: 10, background: '#111318', border: '1px solid #1e2028', borderRadius: 6, color: '#5a6080', fontFamily: "'Inter', sans-serif", cursor: 'pointer', outline: 'none' },
   tableWrap: { background: '#111318', border: '1px solid #1e2028', borderRadius: 8, overflow: 'hidden' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: {
-    fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase',
-    letterSpacing: '0.8px', padding: '10px 14px', textAlign: 'left',
-    borderBottom: '1px solid #1e2028', background: '#0f1115',
-  },
+  th: { fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '10px 14px', textAlign: 'left', borderBottom: '1px solid #1e2028', background: '#0f1115' },
   td: { padding: '11px 14px', borderBottom: '1px solid #0f1115', verticalAlign: 'middle' },
   row: { cursor: 'pointer', transition: 'background 0.1s' },
   pill: { fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 20, textTransform: 'capitalize', letterSpacing: '0.3px' },

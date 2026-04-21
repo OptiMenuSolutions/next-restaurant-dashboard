@@ -1,9 +1,10 @@
 // pages/admin/feedback.js
-// User feedback submissions.
+// User feedback submissions — with fixed filter button focus ring.
 
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import { FilterButton } from '../../lib/admin/usePagination';
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -35,13 +36,13 @@ function TypePill({ type }) {
 
 export default function FeedbackPage() {
   const { adminFetch } = useAdminFetch();
-  const [feedback, setFeedback]   = useState([]);
-  const [stats, setStats]         = useState({});
-  const [loading, setLoading]     = useState(true);
+  const [feedback, setFeedback]         = useState([]);
+  const [stats, setStats]               = useState({});
+  const [loading, setLoading]           = useState(true);
   const [statusFilter, setStatusFilter] = useState('new');
   const [typeFilter, setTypeFilter]     = useState('all');
-  const [updating, setUpdating]   = useState({});
-  const [expanded, setExpanded]   = useState(null);
+  const [updating, setUpdating]         = useState({});
+  const [expanded, setExpanded]         = useState(null);
 
   async function load() {
     try {
@@ -90,23 +91,21 @@ export default function FeedbackPage() {
           <p style={s.subtitle}>{stats.new || 0} new · {stats.reviewed || 0} reviewed · {stats.resolved || 0} resolved</p>
         </div>
 
-        {/* ── Filters ── */}
+        {/* ── Filters — FilterButton fixes the white focus-border bug ── */}
         <div style={s.filterRow}>
           <div style={s.filterGroup}>
             {['all', 'new', 'reviewed', 'resolved'].map(f => (
-              <button key={f} onClick={() => setStatusFilter(f)}
-                style={{ ...s.filterBtn, ...(statusFilter === f ? s.filterBtnActive : {}) }}>
+              <FilterButton key={f} active={statusFilter === f} onClick={() => setStatusFilter(f)}>
                 {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
                 {f !== 'all' && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, marginLeft: 4 }}>{stats[f] || 0}</span>}
-              </button>
+              </FilterButton>
             ))}
           </div>
           <div style={s.filterGroup}>
             {['all', 'bug', 'feature', 'invoice', 'general', 'other'].map(t => (
-              <button key={t} onClick={() => setTypeFilter(t)}
-                style={{ ...s.filterBtn, ...(typeFilter === t ? s.filterBtnActive : {}) }}>
+              <FilterButton key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>
                 {t === 'all' ? 'All Types' : t}
-              </button>
+              </FilterButton>
             ))}
           </div>
         </div>
@@ -124,27 +123,25 @@ export default function FeedbackPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <TypePill type={f.type} />
-                      {f.restaurant_name && (
-                        <span style={{ fontSize: 10, color: '#5a6080' }}>{f.restaurant_name}</span>
-                      )}
+                      {f.restaurant_name && <span style={{ fontSize: 10, color: '#5a6080' }}>{f.restaurant_name}</span>}
                       <span style={{ fontSize: 9, color: '#3a3e50', marginLeft: 'auto' }}>{timeAgo(f.created_at)}</span>
                     </div>
-                    <p
-                      style={{ fontSize: 12, color: '#e4e6f0', margin: 0, lineHeight: 1.5,
-                        ...(expanded !== f.id ? { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } : {})
-                      }}
-                    >
+                    <p style={{
+                      fontSize: 12, color: '#e4e6f0', margin: 0, lineHeight: 1.5,
+                      ...(expanded !== f.id ? { overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } : {})
+                    }}>
                       {f.message}
                     </p>
                     {f.message.length > 120 && (
                       <button
                         onClick={() => setExpanded(expanded === f.id ? null : f.id)}
-                        style={{ fontSize: 10, color: '#02a4ba', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0 0', fontFamily: "'Inter', sans-serif" }}
+                        style={{ fontSize: 10, color: '#02a4ba', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0 0', fontFamily: "'Inter', sans-serif", outline: 'none' }}
                       >
                         {expanded === f.id ? 'Show less' : 'Show more'}
                       </button>
                     )}
                   </div>
+                  {/* Status buttons — outline:none fixes the persistent border bug */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
                     {['new', 'reviewed', 'resolved'].map(status => (
                       <button
@@ -158,6 +155,7 @@ export default function FeedbackPage() {
                           borderColor: f.status === status ? 'rgba(2,164,186,0.3)' : '#1e2028',
                           color: f.status === status ? '#02a4ba' : '#5a6080',
                           cursor: f.status === status ? 'default' : 'pointer',
+                          outline: 'none',
                         }}
                       >
                         {status}
@@ -180,8 +178,6 @@ const s = {
   subtitle: { fontSize: 10, color: '#3a3e50', marginTop: 3 },
   filterRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
   filterGroup: { display: 'flex', gap: 4 },
-  filterBtn: { padding: '6px 10px', fontSize: 10, fontWeight: 500, borderRadius: 6, border: '1px solid #1e2028', background: 'none', color: '#5a6080', cursor: 'pointer', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize' },
-  filterBtnActive: { background: 'rgba(2,164,186,0.1)', borderColor: 'rgba(2,164,186,0.3)', color: '#02a4ba' },
   card: { background: '#111318', border: '1px solid #1e2028', borderRadius: 8, padding: 14 },
   statusBtn: { padding: '4px 10px', fontSize: 9, fontWeight: 600, borderRadius: 5, border: '1px solid', fontFamily: "'Inter', sans-serif", textTransform: 'capitalize' },
   center: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 40 },

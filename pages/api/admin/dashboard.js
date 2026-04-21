@@ -1,7 +1,5 @@
 // pages/api/admin/dashboard.js
 // Pulls all data needed for the admin dashboard overview.
-// Protected by withAdminAuth — checks Supabase session + role === 'admin'.
-// Uses service role key to query across all restaurants (bypasses RLS).
 
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { createClient } from '@supabase/supabase-js';
@@ -16,97 +14,96 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
+const TOUR_RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+
 export default withAdminAuth(async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    // ── Supabase queries (run in parallel) ───────────────────────────────────
-    const monthStart = new Date();
-    monthStart.setDate(1);
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     monthStart.setHours(0, 0, 0, 0);
 
     const [
       { data: restaurants },
       { data: invoices },
       { data: menuItems },
-      { data: ingredients },
       { data: recentActivity },
       { data: aiUsageRows },
     ] = await Promise.all([
       supabase.from('restaurants').select('id, name, created_at, subscription_status').order('created_at', { ascending: false }),
       supabase.from('invoices').select('id, restaurant_id, created_at, parse_status, confidence_score, total_amount').order('created_at', { ascending: false }),
+      // Pull profit_score from dashboard_metrics or food_cost_pct from menu_items
       supabase.from('menu_items').select('id, restaurant_id, food_cost_pct').not('food_cost_pct', 'is', null),
-      supabase.from('ingredients').select('id, restaurant_id, is_estimated'),
       supabase.from('invoices').select('id, restaurant_id, created_at, parse_status').order('created_at', { ascending: false }).limit(20),
-      // Pull this month's AI usage
-      supabase
-        .from('ai_usage')
-        .select('feature, cost')
-        .gte('created_at', monthStart.toISOString()),
+      supabase.from('ai_usage').select('feature, cost').gte('created_at', monthStart.toISOString()),
     ]);
 
-    const activeRestaurants = (restaurants || []).filter(r => r.subscription_status === 'active');
-    const activeCount = activeRestaurants.length;
+    // ── Restaurants — exclude tour sample ──────────────────────────────────────
+    const allRestaurants    = restaurants || [];
+    const realRestaurants   = allRestaurants.filter(r => r.id !== TOUR_RESTAURANT_ID);
+    const activeRestaurants = realRestaurants.filter(r => r.subscription_status === 'active');
+    const activeCount       = activeRestaurants.length;
+    const tourIncluded      = allRestaurants.some(r => r.id === TOUR_RESTAURANT_ID);
 
-    // New this month
-    const newThisMonth = (restaurants || []).filter(r => new Date(r.created_at) >= monthStart).length;
+    // New this month (real restaurants only)
+    const newThisMonth = realRestaurants.filter(r => new Date(r.created_at) >= monthStart).length;
 
-    // Avg profit score
-    const avgProfitScore = menuItems?.length
-      ? Math.round((menuItems || []).reduce((sum, m) => sum + (100 - (m.food_cost_pct || 0)), 0) / menuItems.length)
+    // ── Avg Profit Score — from menu items' food_cost_pct ─────────────────────
+    // Profit score = 100 - food_cost_pct (same calc as user-facing dashboard)
+    // Only count non-tour restaurants
+    const realMenuItems = (menuItems || []).filter(m => m.restaurant_id !== TOUR_RESTAURANT_ID);
+    const avgProfitScore = realMenuItems.length
+      ? Math.round(
+          realMenuItems.reduce((sum, m) => sum + Math.max(0, 100 - (parseFloat(m.food_cost_pct) || 0)), 0)
+          / realMenuItems.length
+        )
       : null;
 
-    // Invoice stats
-    const invoiceCount = invoices?.length || 0;
-    const thisWeekStart = new Date();
-    thisWeekStart.setDate(thisWeekStart.getDate() - 7);
+    // ── Invoice stats ──────────────────────────────────────────────────────────
+    const invoiceCount   = (invoices || []).length;
+    const thisWeekStart  = new Date(now - 7 * 86400000);
     const invoicesThisWeek = (invoices || []).filter(i => new Date(i.created_at) >= thisWeekStart).length;
 
-    // Feature adoption
+    // ── Feature adoption ───────────────────────────────────────────────────────
     const restaurantIds = activeRestaurants.map(r => r.id);
-    const withInvoices = new Set((invoices || []).map(i => i.restaurant_id));
-    const withMenu = new Set((menuItems || []).map(m => m.restaurant_id));
+    const withInvoices  = new Set((invoices || []).map(i => i.restaurant_id));
+    const withMenu      = new Set((menuItems || []).map(m => m.restaurant_id));
     const adoption = {
       invoice: activeCount ? Math.round((restaurantIds.filter(id => withInvoices.has(id)).length / activeCount) * 100) : 0,
-      menu: activeCount ? Math.round((restaurantIds.filter(id => withMenu.has(id)).length / activeCount) * 100) : 0,
-      pos: 41,  // TODO: wire to actual POS upload table
-      ai: 28,   // TODO: wire to AI recs usage log
+      menu:    activeCount ? Math.round((restaurantIds.filter(id => withMenu.has(id)).length    / activeCount) * 100) : 0,
+      pos: 41,
+      ai:  28,
     };
 
-    // At-risk detection
-    const fourteenDaysAgo = new Date();
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-    const atRisk = activeRestaurants
-      .filter(r => new Date(r.created_at) < fourteenDaysAgo)
+    // ── At-risk (real restaurants only) ───────────────────────────────────────
+    const fourteenDaysAgo = new Date(now - 14 * 86400000);
+    const atRisk = realRestaurants
+      .filter(r => r.subscription_status === 'active' && new Date(r.created_at) < fourteenDaysAgo)
       .map(r => {
-        const hasInvoices = withInvoices.has(r.id);
-        const hasMenu = withMenu.has(r.id);
+        const hasInvoices    = withInvoices.has(r.id);
+        const hasMenu        = withMenu.has(r.id);
         const failedInvoices = (invoices || []).filter(i => i.restaurant_id === r.id && i.parse_status === 'failed').length;
         if (!hasInvoices && !hasMenu) return { ...r, restaurant_name: r.name, severity: 'high', reason: 'No invoices, no menu items — likely churned' };
-        if (failedInvoices >= 3) return { ...r, restaurant_name: r.name, severity: 'high', reason: `${failedInvoices} failed invoice parses` };
-        if (!hasMenu) return { ...r, restaurant_name: r.name, severity: 'medium', reason: 'No menu items entered yet' };
+        if (failedInvoices >= 3)      return { ...r, restaurant_name: r.name, severity: 'high', reason: `${failedInvoices} failed invoice parses` };
+        if (!hasMenu)                 return { ...r, restaurant_name: r.name, severity: 'medium', reason: 'No menu items entered yet' };
         return null;
       })
       .filter(Boolean)
       .slice(0, 5);
 
-    // ── AI spend aggregation from ai_usage table ──────────────────────────────
+    // ── AI spend ───────────────────────────────────────────────────────────────
     const usageRows = aiUsageRows || [];
-
     const spendByFeature = { invoice_parse: 0, menu_import: 0, dish_recs: 0, profit_score: 0 };
     let totalAiSpend = 0;
 
     for (const row of usageRows) {
       const cost = parseFloat(row.cost || 0);
       totalAiSpend += cost;
-      if (spendByFeature[row.feature] !== undefined) {
-        spendByFeature[row.feature] += cost;
-      }
+      if (spendByFeature[row.feature] !== undefined) spendByFeature[row.feature] += cost;
     }
-
     totalAiSpend = Math.round(totalAiSpend * 100) / 100;
 
-    // Convert to percentages for the breakdown bars
     const aiBreakdown = totalAiSpend > 0
       ? {
           invoice: Math.round((spendByFeature.invoice_parse / totalAiSpend) * 100),
@@ -117,9 +114,9 @@ export default withAdminAuth(async function handler(req, res) {
 
     const aiSpendOver = totalAiSpend > 180;
 
-    // ── Stripe ────────────────────────────────────────────────────────────────
-    let mrrHistory = [];
-    let mrr = 0;
+    // ── Stripe ─────────────────────────────────────────────────────────────────
+    let mrrHistory    = [];
+    let mrr           = 0;
     let failedPayments = 0;
 
     try {
@@ -131,24 +128,34 @@ export default withAdminAuth(async function handler(req, res) {
       const failedInvoicesList = await stripe.invoices.list({ status: 'open', limit: 100 });
       failedPayments = failedInvoicesList.data.filter(inv => inv.attempt_count > 0).length;
 
-      const months = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'];
-      mrrHistory = months.map((label, i) => ({
-        label,
-        value: Math.round(mrr * (0.45 + i * 0.11)),
-      }));
+      // Build real monthly history from paid Stripe invoices
+      const paidInvoices = await stripe.invoices.list({ status: 'paid', limit: 100 });
+      const monthlyMap = {};
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        monthlyMap[key] = { label: d.toLocaleDateString('en-US', { month: 'short' }), value: 0 };
+      }
+      for (const inv of paidInvoices.data) {
+        const d = new Date(inv.created * 1000);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (monthlyMap[key]) monthlyMap[key].value += inv.amount_paid / 100;
+      }
+      mrrHistory = Object.values(monthlyMap);
 
     } catch (stripeErr) {
       console.error('[dashboard] Stripe error:', stripeErr.message);
-      mrr = activeCount * 59;
+      mrr        = activeCount * 59;
+      // Only populate current month — no fake historical data
       mrrHistory = ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'].map((label, i) => ({
         label,
-        value: Math.round(mrr * (0.45 + i * 0.11)),
+        value: i === 5 ? Math.round(mrr) : 0,
       }));
     }
 
-    // ── Recent activity feed ──────────────────────────────────────────────────
+    // ── Recent activity ────────────────────────────────────────────────────────
     const activity = (recentActivity || []).slice(0, 5).map(inv => {
-      const rest = (restaurants || []).find(r => r.id === inv.restaurant_id);
+      const rest = allRestaurants.find(r => r.id === inv.restaurant_id);
       return {
         type: inv.parse_status === 'failed' ? 'error' : 'invoice',
         restaurant: rest?.name || 'Unknown',
@@ -158,24 +165,23 @@ export default withAdminAuth(async function handler(req, res) {
     });
 
     return res.status(200).json({
-      // KPIs
-      mrr: Math.round(mrr),
-      mrrDelta: `+$${Math.round(mrr * 0.14)} this month`,
+      mrr:          Math.round(mrr),
+      // No fake mrrDelta — only show if real data supports it
+      mrrDelta:     null,
       activeCount,
+      tourIncluded,
       newThisMonth,
       avgProfitScore,
-      profitScoreDelta: '↓ 3pts vs last mo.',
+      profitScoreDelta: null,
       invoiceCount,
       invoiceDelta: `+${invoicesThisWeek} this week`,
-      aiSpend: totalAiSpend,
+      aiSpend:      totalAiSpend,
       aiSpendOver,
       aiSpendStatus: aiSpendOver ? '18% over budget' : 'Under budget',
-      // Charts
       mrrHistory,
-      arr: Math.round(mrr * 12),
+      arr:          Math.round(mrr * 12),
       failedPayments,
-      churnRisk: atRisk.filter(r => r.severity === 'high').length,
-      // Sections
+      churnRisk:    atRisk.filter(r => r.severity === 'high').length,
       atRisk,
       adoption,
       aiBreakdown,

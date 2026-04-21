@@ -1,10 +1,13 @@
 // pages/admin/data/ingredients.js
-// All ingredients across all restaurants.
+// All ingredients across all restaurants — with pagination and fixed filter buttons.
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
+import { usePagination, Pagination, FilterButton } from '../../../lib/admin/usePagination';
+
+const PAGE_SIZE = 12;
 
 function timeAgo(dateStr) {
   if (!dateStr) return '—';
@@ -28,18 +31,18 @@ function staleColor(dateStr) {
 export default function IngredientsDataPage() {
   const { adminFetch } = useAdminFetch();
   const router = useRouter();
-  const [ingredients, setIngredients] = useState([]);
-  const [stats, setStats] = useState({});
+  const [ingredients, setIngredients]       = useState([]);
+  const [stats, setStats]                   = useState({});
   const [categoryBreakdown, setCategoryBreakdown] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [loading, setLoading]               = useState(true);
+  const [search, setSearch]                 = useState('');
   const [estimatedFilter, setEstimatedFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('created_at');
+  const [sortBy, setSortBy]                 = useState('created_at');
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await adminFetch('/api/admin/data/ingredients');
+        const res  = await adminFetch('/api/admin/data/ingredients');
         const json = await res.json();
         setIngredients(json.ingredients || []);
         setStats(json.stats || {});
@@ -61,8 +64,8 @@ export default function IngredientsDataPage() {
         (ing.restaurant_name || '').toLowerCase().includes(q) ||
         (ing.unit || '').toLowerCase().includes(q)
       )) return false;
-      if (estimatedFilter === 'estimated' && !ing.is_estimated) return false;
-      if (estimatedFilter === 'real' && ing.is_estimated) return false;
+      if (estimatedFilter === 'estimated' && !ing.is_estimated)  return false;
+      if (estimatedFilter === 'real'      &&  ing.is_estimated)  return false;
       return true;
     })
     .sort((a, b) => {
@@ -72,6 +75,11 @@ export default function IngredientsDataPage() {
       if (sortBy === 'ordered')    return new Date(b.last_ordered_at || 0) - new Date(a.last_ordered_at || 0);
       return new Date(b.created_at) - new Date(a.created_at);
     });
+
+  const { page, setPage, pageItems, totalPages, reset } = usePagination(filtered, PAGE_SIZE);
+
+  function handleFilter(val) { setEstimatedFilter(val); reset(); }
+  function handleSearch(val) { setSearch(val); reset(); }
 
   return (
     <AdminLayout title="Ingredients">
@@ -118,24 +126,21 @@ export default function IngredientsDataPage() {
             style={s.search}
             placeholder="Search by ingredient, restaurant, or unit…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => handleSearch(e.target.value)}
           />
+          {/* FilterButton fixes the focus-ring white border bug */}
           <div style={s.filterGroup}>
             {[
               { label: 'All',       value: 'all' },
               { label: 'Real',      value: 'real' },
               { label: 'Estimated', value: 'estimated' },
             ].map(f => (
-              <button
-                key={f.value}
-                onClick={() => setEstimatedFilter(f.value)}
-                style={{ ...s.filterBtn, ...(estimatedFilter === f.value ? s.filterBtnActive : {}) }}
-              >
+              <FilterButton key={f.value} active={estimatedFilter === f.value} onClick={() => handleFilter(f.value)}>
                 {f.label}
-              </button>
+              </FilterButton>
             ))}
           </div>
-          <select style={s.sortSelect} value={sortBy} onChange={e => setSortBy(e.target.value)}>
+          <select style={s.sortSelect} value={sortBy} onChange={e => { setSortBy(e.target.value); reset(); }}>
             <option value="created_at">Newest first</option>
             <option value="ordered">Last ordered</option>
             <option value="price">Highest price</option>
@@ -158,27 +163,19 @@ export default function IngredientsDataPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {pageItems.length === 0 ? (
                   <tr><td colSpan={7} style={{ ...s.td, textAlign: 'center', color: '#3a3e50', padding: 32 }}>No ingredients found</td></tr>
-                ) : filtered.map(ing => (
-                  <tr
-                    key={ing.id}
-                    style={s.row}
-                    onClick={() => router.push(`/admin/restaurants/${ing.restaurant_id}`)}
-                  >
+                ) : pageItems.map(ing => (
+                  <tr key={ing.id} style={s.row} onClick={() => router.push(`/admin/restaurants/${ing.restaurant_id}`)}>
                     <td style={s.td}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: '#e4e6f0' }}>{ing.name}</div>
                     </td>
                     <td style={{ ...s.td, fontSize: 11, color: '#7880a0' }}>{ing.restaurant_name}</td>
-                    <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#5a6080' }}>
-                      {ing.unit || '—'}
-                    </td>
+                    <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#5a6080' }}>{ing.unit || '—'}</td>
                     <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#3de8a0' }}>
                       {ing.last_price ? `$${parseFloat(ing.last_price).toFixed(2)}` : '—'}
                     </td>
-                    <td style={{ ...s.td, fontSize: 10, color: staleColor(ing.last_ordered_at) }}>
-                      {timeAgo(ing.last_ordered_at)}
-                    </td>
+                    <td style={{ ...s.td, fontSize: 10, color: staleColor(ing.last_ordered_at) }}>{timeAgo(ing.last_ordered_at)}</td>
                     <td style={s.td}>
                       <span style={{ fontSize: 9, color: '#5a6080', background: '#1a1c23', borderRadius: 4, padding: '2px 6px' }}>
                         {ing.ingredient_category || '—'}
@@ -194,6 +191,7 @@ export default function IngredientsDataPage() {
                 ))}
               </tbody>
             </table>
+            <Pagination page={page} totalPages={totalPages} setPage={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
           </div>
         )}
 
@@ -213,30 +211,12 @@ const s = {
   catRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   catChip: { fontSize: 9, fontWeight: 500, padding: '3px 8px', borderRadius: 10, background: '#1a1c23', border: '1px solid #1e2028', color: '#5a6080', display: 'flex', alignItems: 'center', gap: 5 },
   filterRow: { display: 'flex', alignItems: 'center', gap: 8 },
-  search: {
-    flex: 1, padding: '7px 12px', fontSize: 11,
-    background: '#111318', border: '1px solid #1e2028', borderRadius: 6,
-    color: '#e4e6f0', fontFamily: "'Inter', sans-serif", outline: 'none',
-  },
+  search: { flex: 1, padding: '7px 12px', fontSize: 11, background: '#111318', border: '1px solid #1e2028', borderRadius: 6, color: '#e4e6f0', fontFamily: "'Inter', sans-serif", outline: 'none' },
   filterGroup: { display: 'flex', gap: 4 },
-  filterBtn: {
-    padding: '6px 10px', fontSize: 10, fontWeight: 500, borderRadius: 6,
-    border: '1px solid #1e2028', background: 'none', color: '#5a6080',
-    cursor: 'pointer', fontFamily: "'Inter', sans-serif",
-  },
-  filterBtnActive: { background: 'rgba(2,164,186,0.1)', borderColor: 'rgba(2,164,186,0.3)', color: '#02a4ba' },
-  sortSelect: {
-    padding: '6px 10px', fontSize: 10, background: '#111318',
-    border: '1px solid #1e2028', borderRadius: 6, color: '#5a6080',
-    fontFamily: "'Inter', sans-serif", cursor: 'pointer', outline: 'none',
-  },
+  sortSelect: { padding: '6px 10px', fontSize: 10, background: '#111318', border: '1px solid #1e2028', borderRadius: 6, color: '#5a6080', fontFamily: "'Inter', sans-serif", cursor: 'pointer', outline: 'none' },
   tableWrap: { background: '#111318', border: '1px solid #1e2028', borderRadius: 8, overflow: 'hidden' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: {
-    fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase',
-    letterSpacing: '0.8px', padding: '10px 14px', textAlign: 'left',
-    borderBottom: '1px solid #1e2028', background: '#0f1115',
-  },
+  th: { fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '10px 14px', textAlign: 'left', borderBottom: '1px solid #1e2028', background: '#0f1115' },
   td: { padding: '11px 14px', borderBottom: '1px solid #0f1115', verticalAlign: 'middle' },
   row: { cursor: 'pointer', transition: 'background 0.1s' },
   center: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 60 },

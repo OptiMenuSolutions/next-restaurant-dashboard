@@ -1,5 +1,5 @@
 // pages/admin/data/analytics.js
-// POS analytics across all restaurants.
+// POS analytics — aggregate view with optional per-restaurant drill-down.
 
 import { useEffect, useState } from 'react';
 import AdminLayout from '../../../components/admin/AdminLayout';
@@ -8,7 +8,6 @@ import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 function RevenueChart({ data }) {
   if (!data?.length) return null;
   const max = Math.max(...data.map(d => d.value), 1);
-  // Show every 5th label to avoid crowding
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 80 }}>
       {data.map((d, i) => (
@@ -47,15 +46,21 @@ function Card({ title, children, style }) {
 
 export default function AnalyticsDataPage() {
   const { adminFetch } = useAdminFetch();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData]           = useState(null);
+  const [restaurants, setRestaurants] = useState([]);
+  const [selectedRestaurant, setSelectedRestaurant] = useState('all');
+  const [loading, setLoading]     = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await adminFetch('/api/admin/data/analytics');
+        const res  = await adminFetch('/api/admin/data/analytics');
         const json = await res.json();
         setData(json);
+        // Build restaurant list from breakdown data
+        if (json.restaurantBreakdown?.length) {
+          setRestaurants(json.restaurantBreakdown.map(r => ({ id: r.id, name: r.name })));
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -73,24 +78,82 @@ export default function AnalyticsDataPage() {
 
   const d = data || {};
   const stats = d.stats || {};
-  const maxRestaurantRevenue = Math.max(...(d.restaurantBreakdown || []).map(r => r.revenue), 1);
+
+  // Filter data by selected restaurant
+  const filteredRestaurantBreakdown = selectedRestaurant === 'all'
+    ? (d.restaurantBreakdown || [])
+    : (d.restaurantBreakdown || []).filter(r => r.id === selectedRestaurant);
+
+  const filteredTopItems = selectedRestaurant === 'all'
+    ? (d.topItems || [])
+    : (d.topItems || []).filter(item => item.restaurant_id === selectedRestaurant || item.restaurants !== undefined);
+
+  const maxRestaurantRevenue = Math.max(...filteredRestaurantBreakdown.map(r => r.revenue), 1);
   const maxCategoryRevenue   = Math.max(...(d.categoryBreakdown || []).map(c => c.revenue), 1);
+
+  // Recompute stats for selected restaurant if filtered
+  const displayStats = selectedRestaurant === 'all'
+    ? stats
+    : {
+        ...stats,
+        totalRevenue: filteredRestaurantBreakdown.reduce((s, r) => s + r.revenue, 0),
+        totalQty:     filteredRestaurantBreakdown.reduce((s, r) => s + r.qty, 0),
+      };
+
+  const selectedName = selectedRestaurant === 'all'
+    ? null
+    : restaurants.find(r => r.id === selectedRestaurant)?.name;
 
   return (
     <AdminLayout title="POS Analytics">
       <div style={s.page}>
 
-        {/* ── Header ── */}
-        <div>
-          <h1 style={s.title}>POS Analytics</h1>
-          <p style={s.subtitle}>Aggregated sales data across all restaurants · last 30 days</p>
+        {/* ── Header with restaurant selector ── */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <div>
+            <h1 style={s.title}>POS Analytics</h1>
+            <p style={s.subtitle}>
+              {selectedName ? `Viewing: ${selectedName}` : 'Aggregated sales data across all restaurants'} · last 30 days
+            </p>
+          </div>
+
+          {/* Restaurant Selector */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {selectedRestaurant !== 'all' && (
+              <button
+                onClick={() => setSelectedRestaurant('all')}
+                style={{ fontSize: 10, color: '#5a6080', background: 'none', border: '1px solid #1e2028', borderRadius: 6, padding: '6px 10px', cursor: 'pointer', fontFamily: "'Inter', sans-serif", outline: 'none' }}
+              >
+                ← All Restaurants
+              </button>
+            )}
+            <select
+              value={selectedRestaurant}
+              onChange={e => setSelectedRestaurant(e.target.value)}
+              style={{
+                padding: '7px 12px', fontSize: 11,
+                background: selectedRestaurant !== 'all' ? 'rgba(2,164,186,0.1)' : '#111318',
+                border: `1px solid ${selectedRestaurant !== 'all' ? 'rgba(2,164,186,0.3)' : '#1e2028'}`,
+                borderRadius: 6,
+                color: selectedRestaurant !== 'all' ? '#02a4ba' : '#5a6080',
+                fontFamily: "'Inter', sans-serif",
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="all">All Restaurants</option>
+              {restaurants.map(r => (
+                <option key={r.id} value={r.id}>{r.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* ── KPI Row ── */}
         <div style={s.statGrid}>
           {[
-            { label: 'Total Revenue',     value: `$${(stats.totalRevenue || 0).toLocaleString()}`, color: '#3de8a0' },
-            { label: 'Total Items Sold',  value: (stats.totalQty || 0).toLocaleString(),           color: '#e4e6f0' },
+            { label: 'Total Revenue',     value: `$${(displayStats.totalRevenue || 0).toLocaleString()}`, color: '#3de8a0' },
+            { label: 'Total Items Sold',  value: (displayStats.totalQty || 0).toLocaleString(),           color: '#e4e6f0' },
             { label: 'Restaurants w/ POS', value: `${stats.restaurantsWithPOS || 0} / ${stats.totalRestaurants || 0}`, color: '#02a4ba' },
             { label: 'Avg Rev / Restaurant', value: `$${(stats.avgRevenuePerRestaurant || 0).toLocaleString()}`, color: '#f5a623' },
             { label: 'vs Last 30 Days',   value: stats.revenueChange != null ? `${stats.revenueChange > 0 ? '+' : ''}${stats.revenueChange}%` : '—', color: stats.revenueChange > 0 ? '#3de8a0' : stats.revenueChange < 0 ? '#e85454' : '#5a6080' },
@@ -110,9 +173,9 @@ export default function AnalyticsDataPage() {
         {/* ── Row 2: Top Items + Category Breakdown ── */}
         <div style={s.row2}>
           <Card title="Top Items by Revenue (Last 30 Days)">
-            {(d.topItems || []).length === 0
+            {filteredTopItems.length === 0
               ? <p style={s.empty}>No POS data yet</p>
-              : (d.topItems || []).map((item, i) => (
+              : filteredTopItems.map((item, i) => (
                 <div key={item.name} style={s.listRow}>
                   <span style={{ fontSize: 9, color: '#3a3e50', width: 16, flexShrink: 0 }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -146,28 +209,38 @@ export default function AnalyticsDataPage() {
         </div>
 
         {/* ── Restaurant Breakdown ── */}
-        <Card title="Revenue by Restaurant (Last 30 Days)">
-          {(d.restaurantBreakdown || []).length === 0
-            ? <p style={s.empty}>No POS data yet</p>
-            : (d.restaurantBreakdown || []).map((r, i) => (
-              <div key={r.id} style={{ ...s.listRow, alignItems: 'center' }}>
-                <span style={{ fontSize: 9, color: '#3a3e50', width: 20, flexShrink: 0 }}>{i + 1}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: '#e4e6f0' }}>{r.name}</span>
-                      <span style={{ fontSize: 9, color: '#5a6080', marginLeft: 8 }}>{Math.round(r.qty)} sold · {r.items} unique items</span>
+        {selectedRestaurant === 'all' && (
+          <Card title="Revenue by Restaurant (Last 30 Days)">
+            {filteredRestaurantBreakdown.length === 0
+              ? <p style={s.empty}>No POS data yet</p>
+              : filteredRestaurantBreakdown.map((r, i) => (
+                <div
+                  key={r.id}
+                  style={{ ...s.listRow, alignItems: 'center', cursor: 'pointer' }}
+                  onClick={() => setSelectedRestaurant(r.id)}
+                  title={`View ${r.name} only`}
+                >
+                  <span style={{ fontSize: 9, color: '#3a3e50', width: 20, flexShrink: 0 }}>{i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#e4e6f0' }}>{r.name}</span>
+                        <span style={{ fontSize: 9, color: '#5a6080', marginLeft: 8 }}>{Math.round(r.qty)} sold · {r.items} unique items</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 9, color: '#3a3e50' }}>View →</span>
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#3de8a0' }}>${r.revenue.toLocaleString()}</span>
+                      </div>
                     </div>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#3de8a0' }}>${r.revenue.toLocaleString()}</span>
-                  </div>
-                  <div style={{ background: '#1a1c23', borderRadius: 3, height: 4 }}>
-                    <div style={{ width: `${(r.revenue / maxRestaurantRevenue) * 100}%`, height: 4, borderRadius: 3, background: `rgba(2,164,186,${0.4 + (1 - i / (d.restaurantBreakdown.length || 1)) * 0.6})`, transition: 'width 0.6s' }} />
+                    <div style={{ background: '#1a1c23', borderRadius: 3, height: 4 }}>
+                      <div style={{ width: `${(r.revenue / maxRestaurantRevenue) * 100}%`, height: 4, borderRadius: 3, background: `rgba(2,164,186,${0.4 + (1 - i / (filteredRestaurantBreakdown.length || 1)) * 0.6})`, transition: 'width 0.6s' }} />
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          }
-        </Card>
+              ))
+            }
+          </Card>
+        )}
 
       </div>
     </AdminLayout>
