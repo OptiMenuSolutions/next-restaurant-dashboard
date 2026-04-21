@@ -440,9 +440,9 @@ export default function AnalyticsPage() {
   const [mobileSection, setMobileSection] = useState('recs');
 
   const { tourProps } = useTour('analytics', restaurantId);
-  const isTour = router.query.tour === 'true';
+  const isTour = router.isReady && router.query.tour === 'true';
 
-  useEffect(() => { init(); }, []);
+  useEffect(() => { if (router.isReady) init(); }, [router.isReady]);
   useEffect(() => { if (allSales.length) computeAnalytics(allSales); }, [allSales, dateRange]);
 
   useEffect(() => {
@@ -462,9 +462,11 @@ export default function AnalyticsPage() {
     setUserEmail(user.email || '');
     const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
     if (!profile?.restaurant_id) { setLoading(false); return; }
-    setRestaurantId(profile.restaurant_id);
+    if (!isTour) {
+      setRestaurantId(profile.restaurant_id);
+      await loadSalesData(profile.restaurant_id);
+    }
     setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
-    if (!isTour) { await loadSalesData(profile.restaurant_id); }
     setLoading(false);
   }
 
@@ -583,8 +585,8 @@ export default function AnalyticsPage() {
     reader.readAsText(file);
   }
 
-  async function handleUploadConfirm() {
-    if (!restaurantId) return;
+    async function handleUploadConfirm() {
+      if (!restaurantId || isTour) return;
     setUploadStep('uploading'); setUploadProgress(0);
     try {
       const normalized = normalizeRows(csvRows, columnMapping, restaurantId, selectedPOS);
