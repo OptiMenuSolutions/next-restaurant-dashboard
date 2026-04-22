@@ -48,6 +48,14 @@ const NAV = [
       { label: 'Audit Log',       href: '/admin/audit',          icon: 'clipboard' },
     ],
   },
+  {
+    group: 'Tools',
+    items: [
+      { label: 'Messaging',     href: '/admin/messaging', icon: 'message-square' },
+      { label: 'View As',       href: '/admin/view-as',   icon: 'user-plus' },
+      { label: 'Stripe',        href: '/admin/stripe',    icon: 'trending-up' },
+    ],
+  },
 ];
 
 // ── Notification config ────────────────────────────────────────────────────────
