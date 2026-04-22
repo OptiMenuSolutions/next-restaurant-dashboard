@@ -5,12 +5,22 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/admin/AdminLayout';
-import { createClient } from '@supabase/supabase-js';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+const supabase = createClientComponentClient();
+
+async function adminFetch(url, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No active session');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      ...(options.headers || {}),
+    },
+  });
+}
 
 const VIEWS = [
   { id: 'overview',     label: 'Overview' },
@@ -205,15 +215,11 @@ export default function ViewAsPage() {
   async function fetchRestaurants() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/restaurants?action=list');
+      const res = await adminFetch('/api/admin/restaurants?action=list');
       const data = await res.json();
       setRestaurants(data.restaurants || []);
-    } catch {
-      const { data } = await supabaseAdmin
-        .from('restaurants')
-        .select('id, name, owner_email, target_food_cost, created_at')
-        .order('created_at', { ascending: false });
-      setRestaurants(data || []);
+    } catch (err) {
+      console.error('[view-as] fetchRestaurants error:', err);
     }
     setLoading(false);
   }
@@ -221,9 +227,9 @@ export default function ViewAsPage() {
   async function fetchRestaurantData(restaurantId) {
     setDataLoading(true);
     const [inv, ing, menu] = await Promise.all([
-      supabaseAdmin.from('invoices').select('*').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }),
-      supabaseAdmin.from('ingredients').select('*').eq('restaurant_id', restaurantId).order('name'),
-      supabaseAdmin.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('name'),
+      supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('created_at', { ascending: false }),
+      supabase.from('ingredients').select('*').eq('restaurant_id', restaurantId).order('name'),
+      supabase.from('menu_items').select('*').eq('restaurant_id', restaurantId).order('name'),
     ]);
     setInvoices(inv.data || []);
     setIngredients(ing.data || []);
@@ -244,15 +250,13 @@ export default function ViewAsPage() {
 
   async function handleReparse(invoiceId) {
     try {
-      const res = await fetch('/api/admin/reparse-invoice', {
+      const res = await adminFetch('/api/admin/reparse-invoice', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       showToast('Invoice re-parsed successfully');
-      // Refresh invoice list
       if (selected) fetchRestaurantData(selected.id);
     } catch (err) {
       showToast(err.message || 'Re-parse failed', 'error');

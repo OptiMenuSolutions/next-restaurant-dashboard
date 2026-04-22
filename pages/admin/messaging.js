@@ -1,15 +1,26 @@
 // pages/admin/messaging.js
 // Direct message UI — compose and send emails to any customer via Resend.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import AdminLayout from '../../components/admin/AdminLayout';
-import { createClient } from '@supabase/supabase-js';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+const supabase = createClientComponentClient();
+
+// Attaches the current session's Bearer token to every admin API call
+async function adminFetch(url, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No active session');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      ...(options.headers || {}),
+    },
+  });
+}
 
 const TEMPLATES = [
   {
@@ -67,16 +78,11 @@ export default function MessagingPage() {
   async function fetchRestaurants() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/restaurants?action=list');
+      const res = await adminFetch('/api/admin/restaurants?action=list');
       const data = await res.json();
       setRestaurants(data.restaurants || []);
-    } catch {
-      // fallback: query directly
-      const { data } = await supabase
-        .from('restaurants')
-        .select('id, name, owner_email, owner_name')
-        .order('created_at', { ascending: false });
-      setRestaurants(data || []);
+    } catch (err) {
+      console.error('[messaging] fetchRestaurants error:', err);
     }
     setLoading(false);
   }
@@ -99,9 +105,8 @@ export default function MessagingPage() {
     setResult(null);
 
     try {
-      const res = await fetch('/api/admin/send-message', {
+      const res = await adminFetch('/api/admin/send-message', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to: toEmail, toName, subject, message }),
       });
       const data = await res.json();

@@ -3,6 +3,22 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+
+const supabase = createClientComponentClient();
+
+async function adminFetch(url, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('No active session');
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      ...(options.headers || {}),
+    },
+  });
+}
 
 function StatusBadge({ status, cancelAtPeriodEnd }) {
   const display = cancelAtPeriodEnd ? 'cancels soon' : status;
@@ -53,7 +69,7 @@ export default function StripePage() {
   async function fetchData() {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/stripe-management?action=list');
+      const res = await adminFetch('/api/admin/stripe-management?action=list');
       const data = await res.json();
       setSubs(data.subscriptions || []);
       setMrr(data.mrr || 0);
@@ -71,9 +87,8 @@ export default function StripePage() {
   async function handleAction(action, body) {
     setActionLoading(action + (body.subscriptionId || body.chargeId));
     try {
-      const res = await fetch(`/api/admin/stripe-management?action=${action}`, {
+      const res = await adminFetch(`/api/admin/stripe-management?action=${action}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json();
