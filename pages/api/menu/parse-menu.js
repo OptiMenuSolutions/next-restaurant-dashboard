@@ -1,7 +1,8 @@
 // pages/api/menu/parse-menu.js
 // Production two-pass menu parser.
+// Accepts one or more files (images + PDFs) in a single request.
+// All files are merged into one imageContents array before the two-pass parse.
 // Writes to: ingredients, menu_items, menu_item_components, component_ingredients, menu_categories
-// Estimated costs are flagged in last_price — real costs come from invoice uploads.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
@@ -138,6 +139,29 @@ async function pdfToImages(filePath) {
     } catch { break; }
   }
   return images;
+}
+
+// ─── Single file → imageContents array ───────────────────────────────────────
+
+async function fileToImageContents(file) {
+  const ext = path.extname(file.originalFilename || '').toLowerCase();
+  const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
+
+  if (isPDF) {
+    const base64Pages = await pdfToImages(file.filepath);
+    return base64Pages.map(b64 => ({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: b64 },
+    }));
+  }
+
+  const data = fs.readFileSync(file.filepath);
+  const base64 = data.toString('base64');
+  const mediaType =
+    ext === '.png'  ? 'image/png'  :
+    ext === '.webp' ? 'image/webp' :
+    'image/jpeg';
+  return [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
 }
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
@@ -492,7 +516,8 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
+  // Allow multiple files under the same field name "file"
+  const form = formidable({ maxFileSize: 20 * 1024 * 1024, multiples: true });
   let fields, files;
   try {
     [fields, files] = await form.parse(req);
@@ -500,8 +525,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Failed to parse upload' });
   }
 
-  const file = Array.isArray(files.file) ? files.file[0] : files.file;
-  if (!file) return res.status(400).json({ error: 'No file provided' });
+  // Normalize: formidable returns array or single depending on multiples flag
+  const rawFiles = files.file;
+  const fileList = Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [];
+  if (fileList.length === 0) return res.status(400).json({ error: 'No files provided' });
 
   const restaurantId = Array.isArray(fields.restaurant_id)
     ? fields.restaurant_id[0]
@@ -511,32 +538,24 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'restaurant_id is required' });
   }
 
-  const ext = path.extname(file.originalFilename || '').toLowerCase();
-  const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  if (!allowed.includes(file.mimetype) && !isPDF) {
-    return res.status(400).json({ error: 'Unsupported file type. Please upload a JPG, PNG, WEBP, or PDF.' });
+  for (const file of fileList) {
+    const ext = path.extname(file.originalFilename || '').toLowerCase();
+    const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
+    if (!allowed.includes(file.mimetype) && !isPDF) {
+      return res.status(400).json({
+        error: `"${file.originalFilename}" is an unsupported type. Please upload JPG, PNG, WEBP, or PDF files.`,
+      });
+    }
   }
 
   try {
-    let imageContents = [];
-    if (isPDF) {
-      const base64Pages = await pdfToImages(file.filepath);
-      if (base64Pages.length === 0) {
-        return res.status(500).json({ error: 'Could not extract pages from PDF.' });
-      }
-      imageContents = base64Pages.map(b64 => ({
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/png', data: b64 },
-      }));
-    } else {
-      const data = fs.readFileSync(file.filepath);
-      const base64 = data.toString('base64');
-      const mediaType =
-        ext === '.png'  ? 'image/png'  :
-        ext === '.webp' ? 'image/webp' :
-        'image/jpeg';
-      imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
+    // Build one combined imageContents array from all uploaded files
+    const imageContentsArrays = await Promise.all(fileList.map(fileToImageContents));
+    const imageContents = imageContentsArrays.flat();
+
+    if (imageContents.length === 0) {
+      return res.status(500).json({ error: 'Could not extract images from the uploaded files.' });
     }
 
     const { data: globalIngredients, error: dbError } = await supabase
@@ -549,6 +568,7 @@ export default async function handler(req, res) {
     }
 
     console.log(`[parse-menu] Restaurant: ${restaurantId}`);
+    console.log(`[parse-menu] Files received: ${fileList.length} | Total images/pages: ${imageContents.length}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
 
     console.log('[parse-menu] Pass 1: Extracting ingredients and classifying dishes...');
@@ -556,10 +576,10 @@ export default async function handler(req, res) {
       await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
 
     if (!ingredientLibrary?.length) {
-      return res.status(500).json({ error: 'Could not extract ingredients. Try a clearer image.' });
+      return res.status(500).json({ error: 'Could not extract ingredients. Try clearer images.' });
     }
     if (!dishManifest?.length) {
-      return res.status(500).json({ error: 'Could not identify dishes. Try a clearer image.' });
+      return res.status(500).json({ error: 'Could not identify dishes. Try clearer images.' });
     }
 
     console.log(`[parse-menu] Pass 1 complete: ${ingredientLibrary.length} ingredients, ${dishManifest.length} dishes`);
@@ -621,7 +641,10 @@ export default async function handler(req, res) {
     const saveResults = await saveToSupabase(restaurantId, validated, ingredientLibrary);
     console.log('[parse-menu] Save complete:', saveResults);
 
-    try { fs.unlinkSync(file.filepath); } catch {}
+    // Clean up all temp files
+    for (const file of fileList) {
+      try { fs.unlinkSync(file.filepath); } catch {}
+    }
 
     const withMargin = validated.filter(d => d.estimated_margin !== null);
 
@@ -630,6 +653,7 @@ export default async function handler(req, res) {
       dishes: validated,
       count: validated.length,
       truncated,
+      files_processed: fileList.length,
       save_results: saveResults,
       summary: {
         total_items: validated.length,
@@ -648,7 +672,10 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[parse-menu] Error:', err);
-    try { fs.unlinkSync(file.filepath); } catch {}
+    // Clean up on error too
+    for (const file of fileList) {
+      try { fs.unlinkSync(file.filepath); } catch {}
+    }
     return res.status(500).json({ error: err.message || 'Failed to parse menu' });
   }
 }

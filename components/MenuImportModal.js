@@ -26,7 +26,7 @@ const MODAL_CSS = `
 
   /* DROP ZONE */
   .mim-drop {
-    border: 2px dashed #2a2620; border-radius: 10px; padding: 40px 20px;
+    border: 2px dashed #2a2620; border-radius: 10px; padding: 32px 20px;
     text-align: center; cursor: pointer; transition: all .2s;
   }
   .mim-drop:hover, .mim-drop.drag { border-color: #02a4ba; background: rgba(2,164,186,.04); }
@@ -44,6 +44,30 @@ const MODAL_CSS = `
     font-family: 'Inter', sans-serif; transition: background .2s;
   }
   .mim-drop-btn:hover { background: #01bcd4; }
+
+  /* FILE LIST */
+  .mim-file-list { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .mim-file-row {
+    display: flex; align-items: center; gap: 10px;
+    background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px;
+    padding: 9px 12px;
+  }
+  .mim-file-icon { flex-shrink: 0; }
+  .mim-file-icon svg { width: 14px; height: 14px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mim-file-name { flex: 1; font-size: 12px; color: #e8e2d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mim-file-size { font-size: 11px; color: #4a453e; flex-shrink: 0; }
+  .mim-file-remove {
+    background: none; border: none; color: #3a3630; cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 3px;
+    transition: color .15s; flex-shrink: 0;
+  }
+  .mim-file-remove:hover { color: #c04040; }
+  .mim-add-more {
+    margin-top: 10px; background: none; border: 1px dashed #2a2620; border-radius: 7px;
+    padding: 8px; width: 100%; font-size: 12px; color: #4a453e; cursor: pointer;
+    font-family: 'Inter', sans-serif; transition: all .15s; text-align: center;
+  }
+  .mim-add-more:hover { border-color: #02a4ba; color: #02a4ba; }
 
   /* PROGRESS */
   .mim-progress { text-align: center; padding: 32px 0; }
@@ -95,10 +119,6 @@ const MODAL_CSS = `
   .mim-save-errors-title { font-size: 11px; font-weight: 600; color: #c04040; margin-bottom: 6px; }
   .mim-save-errors li { font-size: 11px; color: #9a4040; margin-left: 14px; margin-bottom: 3px; }
 
-  /* SUCCESS */
-  .mim-success { text-align: center; padding: 32px 0; }
-  .mim-success-icon { font-size: 36px; margin-bottom: 14px; }
-
   /* ERROR */
   .mim-error {
     font-size: 12px; color: #c04040; margin-top: 12px; padding: 10px 14px;
@@ -125,7 +145,17 @@ const MODAL_CSS = `
     font-family: 'Inter', sans-serif; transition: background .2s;
   }
   .mim-btn-primary:hover { background: #01bcd4; }
+  .mim-btn-primary:disabled { background: #2a2620; color: #4a453e; cursor: not-allowed; }
 `;
+
+const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatCurrency(n) {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -140,7 +170,15 @@ function getMarginColor(margin) {
   return '#c04040';
 }
 
-// Parse step state: 'pending' | 'active' | 'done'
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+    </svg>
+  );
+}
+
 function StepIndicator({ steps, currentStep }) {
   return (
     <div className="mim-progress-steps">
@@ -166,20 +204,66 @@ const PARSE_STEPS = [
 ];
 
 export default function MenuImportModal({ restaurantId, onClose, onImported }) {
-  const [stage, setStage] = useState('upload'); // upload | parsing | results | done
+  const [stage, setStage] = useState('upload'); // upload | parsing | results
   const [dragging, setDragging] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState([]); // Array of File objects
   const [parseStep, setParseStep] = useState(0);
   const [results, setResults] = useState(null);
   const [error, setError] = useState('');
   const fileRef = useRef();
   const stepTimerRef = useRef(null);
 
-  function startStepAnimation() {
+  // ── File management ──────────────────────────────────────────────────────────
+
+  function validateAndAddFiles(incoming) {
+    const newFiles = [];
+    const errors = [];
+
+    for (const file of incoming) {
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        errors.push(`"${file.name}" is not a supported type (JPG, PNG, WEBP, or PDF).`);
+        continue;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        errors.push(`"${file.name}" exceeds the 20MB limit.`);
+        continue;
+      }
+      // Deduplicate by name + size
+      const isDupe = selectedFiles.some(f => f.name === file.name && f.size === file.size);
+      if (!isDupe) newFiles.push(file);
+    }
+
+    if (errors.length > 0) setError(errors.join(' '));
+    else setError('');
+
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+  }
+
+  function removeFile(idx) {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== idx));
+    setError('');
+  }
+
+  function handleInputChange(e) {
+    validateAndAddFiles(Array.from(e.target.files));
+    // Reset input so the same file can be re-added after removal
+    e.target.value = '';
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragging(false);
+    validateAndAddFiles(Array.from(e.dataTransfer.files));
+  }
+
+  // ── Step animation ───────────────────────────────────────────────────────────
+
+  function startStepAnimation(fileCount) {
     setParseStep(0);
     let step = 0;
-    // Advance through steps on a rough timer — actual completion ends the animation
-    // Steps 0–3 are AI work (~10s each), step 4 is Supabase writes (~2s)
-    const delays = [8000, 10000, 10000, 8000];
+    // Scale delay slightly for multiple files since there's more image data to process
+    const base = fileCount > 1 ? 10000 : 8000;
+    const delays = [base, base + 2000, base + 2000, base, 2000];
     function advance() {
       step++;
       if (step < PARSE_STEPS.length) {
@@ -196,11 +280,11 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
     if (stepTimerRef.current) clearTimeout(stepTimerRef.current);
   }
 
-  async function handleFile(file) {
-    if (!file) return;
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!allowed.includes(file.type)) {
-      setError('Please upload a JPG, PNG, WEBP, or PDF file.');
+  // ── Submit ───────────────────────────────────────────────────────────────────
+
+  async function handleSubmit() {
+    if (selectedFiles.length === 0) {
+      setError('Please add at least one file.');
       return;
     }
     if (!restaurantId) {
@@ -211,10 +295,12 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
     setError('');
     setResults(null);
     setStage('parsing');
-    startStepAnimation();
+    startStepAnimation(selectedFiles.length);
 
     const formData = new FormData();
-    formData.append('file', file);
+    for (const file of selectedFiles) {
+      formData.append('file', file); // multiple values under the same key
+    }
     formData.append('restaurant_id', restaurantId);
 
     try {
@@ -222,11 +308,11 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
       const data = await res.json();
 
       clearStepAnimation();
-      setParseStep(PARSE_STEPS.length - 1); // show all done
+      setParseStep(PARSE_STEPS.length - 1);
 
       if (!res.ok) throw new Error(data.error || 'Parse failed');
       if (!data.dishes || data.dishes.length === 0) {
-        setError('No menu items found. Try a clearer photo or a different page.');
+        setError('No menu items found. Try clearer photos or a different page.');
         setStage('upload');
         return;
       }
@@ -240,17 +326,22 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
     }
   }
 
+  // ── Reset / done ─────────────────────────────────────────────────────────────
+
   function reset() {
     clearStepAnimation();
     setStage('upload');
     setResults(null);
     setError('');
     setParseStep(0);
+    setSelectedFiles([]);
   }
 
   function handleDone() {
     onImported(results?.count || 0);
   }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -270,28 +361,52 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
             {/* ── UPLOAD ── */}
             {stage === 'upload' && (
               <>
+                {/* Drop zone — always visible so more files can be added */}
                 <div
                   className={`mim-drop${dragging ? ' drag' : ''}`}
                   onDragOver={e => { e.preventDefault(); setDragging(true); }}
                   onDragLeave={() => setDragging(false)}
-                  onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
+                  onDrop={handleDrop}
                   onClick={() => fileRef.current?.click()}
                 >
                   <div className="mim-drop-icon">
                     <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </div>
-                  <div className="mim-drop-title">Upload your menu</div>
+                  <div className="mim-drop-title">
+                    {selectedFiles.length === 0 ? 'Upload your menu' : 'Drop more files to add them'}
+                  </div>
                   <div className="mim-drop-sub">
-                    Take a photo of your printed menu, or export a PDF from your POS.<br />
-                    Supports JPG, PNG, WEBP, and PDF (up to 20MB, multiple pages).<br />
-                    Claude will extract every dish and build a full ingredient cost breakdown.
+                    Upload one file per menu section, or your full menu at once.<br />
+                    Supports JPG, PNG, WEBP, and PDF — up to 20MB each.<br />
+                    All files are merged and parsed together into one menu.
                   </div>
                   <button className="mim-drop-btn" onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
-                    Choose File
+                    {selectedFiles.length === 0 ? 'Choose Files' : 'Add More Files'}
                   </button>
-                  <input ref={fileRef} type="file" accept=".jpg,.jpeg,.png,.webp,.pdf"
-                    style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.pdf"
+                    multiple
+                    style={{ display: 'none' }}
+                    onChange={handleInputChange}
+                  />
                 </div>
+
+                {/* Selected file list */}
+                {selectedFiles.length > 0 && (
+                  <div className="mim-file-list">
+                    {selectedFiles.map((file, idx) => (
+                      <div key={`${file.name}-${file.size}-${idx}`} className="mim-file-row">
+                        <div className="mim-file-icon"><FileIcon /></div>
+                        <div className="mim-file-name">{file.name}</div>
+                        <div className="mim-file-size">{formatBytes(file.size)}</div>
+                        <button className="mim-file-remove" onClick={() => removeFile(idx)} title="Remove">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {error && <div className="mim-error">⚠ {error}</div>}
               </>
             )}
@@ -300,10 +415,12 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
             {stage === 'parsing' && (
               <div className="mim-progress">
                 <div className="mim-spinner" />
-                <div className="mim-progress-label">Claude is reading your menu...</div>
+                <div className="mim-progress-label">
+                  Claude is reading your menu{selectedFiles.length > 1 ? ` (${selectedFiles.length} files)` : ''}...
+                </div>
                 <div className="mim-progress-sub">
                   Extracting dishes, building ingredient library, and estimating recipe costs.<br />
-                  Large menus can take 45–60 seconds.
+                  Large menus can take 45–90 seconds.
                 </div>
                 <StepIndicator steps={PARSE_STEPS} currentStep={parseStep} />
               </div>
@@ -312,7 +429,6 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
             {/* ── RESULTS ── */}
             {stage === 'results' && results && (
               <>
-                {/* Estimated cost notice */}
                 <div className="mim-est-notice">
                   <div className="mim-est-notice-icon">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d4a020" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -321,11 +437,10 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
                     </svg>
                   </div>
                   <div>
-                    <strong>Ingredient costs are estimates.</strong> Claude has built a full recipe breakdown using typical wholesale prices. These will be automatically updated with your real costs once you upload invoices.
+                    <strong>Ingredient costs are estimates.</strong> Claude built a full recipe breakdown using typical wholesale prices. These will update automatically once you upload invoices.
                   </div>
                 </div>
 
-                {/* Stats */}
                 <div className="mim-results-grid">
                   <div className="mim-result-stat">
                     <div className="mim-result-val" style={{ color: '#02a4ba' }}>{results.count}</div>
@@ -341,7 +456,6 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
                   </div>
                 </div>
 
-                {/* Dish list */}
                 <div className="mim-dish-list">
                   {results.dishes.map((dish, i) => {
                     const margin = dish.estimated_margin;
@@ -365,7 +479,6 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
                   })}
                 </div>
 
-                {/* Save errors (non-fatal) */}
                 {results.save_results?.errors?.length > 0 && (
                   <div className="mim-save-errors">
                     <div className="mim-save-errors-title">
@@ -387,7 +500,19 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
           </div>
 
           {/* FOOTER */}
-          {stage === 'upload' && null}
+          {stage === 'upload' && selectedFiles.length > 0 && (
+            <div className="mim-ft">
+              <div className="mim-ft-left">
+                {selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected
+              </div>
+              <div className="mim-ft-right">
+                <button className="mim-btn-ghost" onClick={reset}>Clear All</button>
+                <button className="mim-btn-primary" onClick={handleSubmit}>
+                  Parse {selectedFiles.length} File{selectedFiles.length !== 1 ? 's' : ''}
+                </button>
+              </div>
+            </div>
+          )}
 
           {stage === 'results' && results && (
             <div className="mim-ft">
