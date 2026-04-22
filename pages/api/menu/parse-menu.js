@@ -572,10 +572,58 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
+// ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
+
+function validateDishes(rawDishes) {
+  return rawDishes
+    .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
+    .map(d => {
+      const components = (d.components || []).map(c => {
+        const ingredients = (c.ingredients || []).map(i => {
+          const qty = typeof i.quantity === 'number' ? i.quantity : 0;
+          const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
+          return {
+            name: i.name || 'Unknown',
+            unit: i.unit || 'each',
+            quantity: qty,
+            estimated_unit_cost: cost,
+            estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
+          };
+        });
+        const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
+        return {
+          name: c.name || 'Component',
+          ingredients,
+          component_cost: Math.round(componentCost * 10000) / 10000,
+        };
+      });
+
+      const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
+      const price = typeof d.price === 'number' && !isNaN(d.price)
+        ? Math.round(d.price * 100) / 100
+        : null;
+      const estimatedMargin = price && totalEstimatedCost > 0
+        ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
+        : null;
+
+      return {
+        name: d.name.trim(),
+        price,
+        category: typeof d.category === 'string' ? d.category.trim() : 'Other',
+        archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
+        description: typeof d.description === 'string' ? d.description.trim() : null,
+        components,
+        total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
+        estimated_margin: estimatedMargin,
+      };
+    });
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  // Allow multiple files under the same field name "file"
   const form = formidable({ maxFileSize: 20 * 1024 * 1024, multiples: true });
   let fields, files;
   try {
@@ -584,7 +632,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Failed to parse upload' });
   }
 
-  // Normalize: formidable returns array or single depending on multiples flag
   const rawFiles = files.file;
   const fileList = Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [];
   if (fileList.length === 0) return res.status(400).json({ error: 'No files provided' });
@@ -609,14 +656,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Build one combined imageContents array from all uploaded files
-    const imageContentsArrays = await Promise.all(fileList.map(fileToImageContents));
-    const imageContents = imageContentsArrays.flat();
-
-    if (imageContents.length === 0) {
-      return res.status(500).json({ error: 'Could not extract images from the uploaded files.' });
-    }
-
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
       .select('name, unit')
@@ -626,101 +665,98 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to load ingredient library.' });
     }
 
-    console.log(`[parse-menu] Restaurant: ${restaurantId}`);
-    console.log(`[parse-menu] Files received: ${fileList.length} | Total images/pages: ${imageContents.length}`);
+    console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
 
-    console.log('[parse-menu] Pass 1: Extracting ingredients and classifying dishes...');
-    const { ingredients: ingredientLibrary, dishes: dishManifest } =
-      await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
+    // ── Process each file sequentially through its own Pass 1 + Pass 2 ──────
+    // This avoids the 10-minute streaming limit by keeping each API call short.
+    // Results are merged before the single Supabase write at the end.
 
-    if (!ingredientLibrary?.length) {
-      return res.status(500).json({ error: 'Could not extract ingredients. Try clearer images.' });
+    const allDishes = [];         // validated dish objects from every file
+    const ingredientMap = {};     // name.toLowerCase() → ingredient object (deduped across files)
+    let anyTruncated = false;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
+
+      console.log(`[parse-menu] ${fileLabel} Converting to images...`);
+      const imageContents = await fileToImageContents(file);
+
+      if (imageContents.length === 0) {
+        console.warn(`[parse-menu] ${fileLabel} No images extracted, skipping`);
+        continue;
+      }
+
+      console.log(`[parse-menu] ${fileLabel} Pass 1 — extracting ingredients + dishes...`);
+      const { ingredients: fileIngredients, dishes: fileDishManifest } =
+        await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
+
+      if (!fileIngredients?.length) {
+        console.warn(`[parse-menu] ${fileLabel} No ingredients extracted, skipping`);
+        continue;
+      }
+      if (!fileDishManifest?.length) {
+        console.warn(`[parse-menu] ${fileLabel} No dishes found, skipping`);
+        continue;
+      }
+
+      console.log(`[parse-menu] ${fileLabel} Pass 1 complete: ${fileIngredients.length} ingredients, ${fileDishManifest.length} dishes`);
+
+      // Merge ingredients — last writer wins on cost (fine for estimates)
+      for (const ing of fileIngredients) {
+        const key = ing.name.trim().toLowerCase();
+        if (!ingredientMap[key]) ingredientMap[key] = ing;
+      }
+
+      console.log(`[parse-menu] ${fileLabel} Pass 2 — building recipes...`);
+      const { dishes: rawDishes, truncated } =
+        await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId);
+
+      if (truncated) anyTruncated = true;
+
+      if (!rawDishes || !Array.isArray(rawDishes)) {
+        console.warn(`[parse-menu] ${fileLabel} Pass 2 returned no dishes, skipping`);
+        continue;
+      }
+
+      console.log(`[parse-menu] ${fileLabel} Pass 2 complete: ${rawDishes.length} dishes`);
+      allDishes.push(...validateDishes(rawDishes));
     }
-    if (!dishManifest?.length) {
-      return res.status(500).json({ error: 'Could not identify dishes. Try clearer images.' });
-    }
 
-    console.log(`[parse-menu] Pass 1 complete: ${ingredientLibrary.length} ingredients, ${dishManifest.length} dishes`);
-
-    console.log('[parse-menu] Pass 2: Building recipes...');
-    const { dishes: rawDishes, truncated } =
-      await pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId);
-
-    if (!rawDishes || !Array.isArray(rawDishes)) {
-      return res.status(500).json({ error: 'Failed to build recipes. Try uploading one section at a time.' });
-    }
-
-    console.log(`[parse-menu] Pass 2 complete: ${rawDishes.length} dishes`);
-
-    const validated = rawDishes
-      .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
-      .map(d => {
-        const components = (d.components || []).map(c => {
-          const ingredients = (c.ingredients || []).map(i => {
-            const qty = typeof i.quantity === 'number' ? i.quantity : 0;
-            const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
-            return {
-              name: i.name || 'Unknown',
-              unit: i.unit || 'each',
-              quantity: qty,
-              estimated_unit_cost: cost,
-              estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
-            };
-          });
-          const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
-          return {
-            name: c.name || 'Component',
-            ingredients,
-            component_cost: Math.round(componentCost * 10000) / 10000,
-          };
-        });
-
-        const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
-        const price = typeof d.price === 'number' && !isNaN(d.price)
-          ? Math.round(d.price * 100) / 100
-          : null;
-        const estimatedMargin = price && totalEstimatedCost > 0
-          ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
-          : null;
-
-        return {
-          name: d.name.trim(),
-          price,
-          category: typeof d.category === 'string' ? d.category.trim() : 'Other',
-          archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
-          description: typeof d.description === 'string' ? d.description.trim() : null,
-          components,
-          total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
-          estimated_margin: estimatedMargin,
-        };
-      });
-
-    console.log(`[parse-menu] Writing ${validated.length} dishes to Supabase...`);
-    const saveResults = await saveToSupabase(restaurantId, validated, ingredientLibrary);
-    console.log('[parse-menu] Save complete:', saveResults);
-
-    // Clean up all temp files
+    // Clean up temp files
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
 
-    const withMargin = validated.filter(d => d.estimated_margin !== null);
+    if (allDishes.length === 0) {
+      return res.status(500).json({ error: 'No menu items found across all uploaded files. Try clearer images.' });
+    }
+
+    const mergedIngredientLibrary = Object.values(ingredientMap);
+
+    console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients`);
+    console.log(`[parse-menu] Writing to Supabase...`);
+
+    const saveResults = await saveToSupabase(restaurantId, allDishes, mergedIngredientLibrary);
+    console.log('[parse-menu] Save complete:', saveResults);
+
+    const withMargin = allDishes.filter(d => d.estimated_margin !== null);
 
     return res.status(200).json({
       success: true,
-      dishes: validated,
-      count: validated.length,
-      truncated,
+      dishes: allDishes,
+      count: allDishes.length,
+      truncated: anyTruncated,
       files_processed: fileList.length,
       save_results: saveResults,
       summary: {
-        total_items: validated.length,
-        categories: [...new Set(validated.map(d => d.category))].sort(),
-        archetypes_used: [...new Set(validated.map(d => d.archetype))].sort(),
+        total_items: allDishes.length,
+        categories: [...new Set(allDishes.map(d => d.category))].sort(),
+        archetypes_used: [...new Set(allDishes.map(d => d.archetype))].sort(),
         avg_estimated_cost:
-          validated.length > 0
-            ? Math.round(validated.reduce((s, d) => s + d.total_estimated_cost, 0) / validated.length * 100) / 100
+          allDishes.length > 0
+            ? Math.round(allDishes.reduce((s, d) => s + d.total_estimated_cost, 0) / allDishes.length * 100) / 100
             : 0,
         avg_estimated_margin:
           withMargin.length > 0
@@ -731,7 +767,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[parse-menu] Error:', err);
-    // Clean up on error too
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
