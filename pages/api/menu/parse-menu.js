@@ -168,7 +168,11 @@ async function fileToImageContents(file) {
 
 function safeParseJSON(text) {
   const cleaned = text.replace(/```json|```/g, '').trim();
+
+  // 1. Happy path
   try { return JSON.parse(cleaned); } catch {}
+
+  // 2. Truncated array — close at last complete object
   const lastComma = cleaned.lastIndexOf('},');
   if (lastComma > 0) {
     try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
@@ -177,6 +181,39 @@ function safeParseJSON(text) {
   if (lastBrace > 0) {
     try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
   }
+
+  // 3. Truncated pass1 object — salvage complete ingredient/dish entries individually
+  function extractObjects(str, arrayKey) {
+    const keyIdx = str.indexOf(JSON.stringify(arrayKey));
+    if (keyIdx === -1) return [];
+    const arrOpen = str.indexOf('[', keyIdx);
+    if (arrOpen === -1) return [];
+    const entries = [];
+    let i = arrOpen + 1;
+    let depth = 0;
+    let start = -1;
+    while (i < str.length) {
+      const ch = str[i];
+      if (ch === '{') { if (depth === 0) start = i; depth++; }
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0 && start !== -1) {
+          try { entries.push(JSON.parse(str.slice(start, i + 1))); } catch {}
+          start = -1;
+        }
+      }
+      i++;
+    }
+    return entries;
+  }
+
+  const ingredients = extractObjects(cleaned, 'ingredients');
+  if (ingredients.length > 0) {
+    const dishes = extractObjects(cleaned, 'dishes');
+    console.warn('[safeParseJSON] Salvaged ' + ingredients.length + ' ingredients, ' + dishes.length + ' dishes from truncated response');
+    return { ingredients, dishes };
+  }
+
   return null;
 }
 
@@ -187,7 +224,7 @@ async function pass1_extractAndClassify(imageContents, globalIngredients, restau
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 8000,
+    max_tokens: 16000,
     system: [
       {
         type: 'text',
