@@ -89,7 +89,7 @@ export default function MessagingPage() {
         name: p.restaurants?.name || '',
         owner_email: p.email || '',
         owner_name: p.full_name || '',
-      })).filter((r) => r.id);
+      })).filter((r) => r.id && r.owner_email && r.name !== 'ADMIN' && r.name !== 'Chick-fil-A (Sample)');
 
       setRestaurants(mapped);
     } catch (err) {
