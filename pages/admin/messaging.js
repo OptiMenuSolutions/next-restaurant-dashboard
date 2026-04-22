@@ -76,9 +76,22 @@ export default function MessagingPage() {
   async function fetchRestaurants() {
     setLoading(true);
     try {
-      const res = await adminFetch('/api/admin/restaurants?action=list');
-      const data = await res.json();
-      setRestaurants(data.restaurants || []);
+      // Join restaurants → profiles to get owner email
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, restaurant_id, restaurants(id, name)')
+        .not('restaurant_id', 'is', null);
+
+      if (error) throw error;
+
+      const mapped = (data || []).map((p) => ({
+        id: p.restaurants?.id || p.restaurant_id,
+        name: p.restaurants?.name || '',
+        owner_email: p.email || '',
+        owner_name: p.full_name || '',
+      })).filter((r) => r.id);
+
+      setRestaurants(mapped);
     } catch (err) {
       console.error('[messaging] fetchRestaurants error:', err);
     }

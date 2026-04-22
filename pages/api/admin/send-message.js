@@ -31,13 +31,13 @@ export default withAdminAuth(async function handler(req, res) {
             ${toName ? `<p style="color: #374151; font-size: 15px; margin: 0 0 20px;">Hi ${toName},</p>` : ''}
             <div style="color: #374151; font-size: 15px; line-height: 1.65; white-space: pre-wrap;">${message}</div>
             <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #f3f4f6;">
-              <p style="color: #6b7280; font-size: 13px; margin: 0;">Nick Perrotta</p>
+              <p style="color: #6b7280; font-size: 13px; margin: 0;">Nick Lavin</p>
               <p style="color: #9ca3af; font-size: 12px; margin: 4px 0 0;">OptiMenu · <a href="https://opti-menu.com" style="color: #02a4ba; text-decoration: none;">opti-menu.com</a></p>
             </div>
           </div>
         </div>
       `,
-      text: `${toName ? `Hi ${toName},\n\n` : ''}${message}\n\n---\nNick Perrotta\nOptiMenu · opti-menu.com`,
+      text: `${toName ? `Hi ${toName},\n\n` : ''}${message}\n\n---\nNick Lavin\nOptiMenu · opti-menu.com`,
     });
 
     if (error) throw error;
