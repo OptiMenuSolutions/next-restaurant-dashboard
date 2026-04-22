@@ -3,9 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-
-const supabase = createClientComponentClient();
+import supabase from '../../lib/supabaseClient';
 
 async function adminFetch(url, options = {}) {
   const { data: { session } } = await supabase.auth.getSession();
