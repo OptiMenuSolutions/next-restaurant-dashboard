@@ -241,6 +241,12 @@ PART B — DISH MANIFEST
 List every dish with archetype, price, category, and description.
 Available archetypes: ${ARCHETYPE_NAMES}
 
+DISH NAME FORMATTING — apply to every dish name:
+- Use title case: capitalize the first letter of each word, lowercase the rest
+- Exception: preserve all-caps sequences that are clearly acronyms or initialisms (e.g. BLT, BBQ, NYC, PEI, BLTA)
+- If the menu uses ALL CAPS or all lowercase for a name, reformat it — do not copy the raw casing
+- Examples: "GRILLED CHICKEN SANDWICH" → "Grilled Chicken Sandwich", "b.l.t. club" → "BLT Club", "NYC strip steak" → "NYC Strip Steak"
+
 Return ONLY valid JSON:
 {
   "ingredients": [
