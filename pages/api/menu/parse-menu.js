@@ -224,7 +224,7 @@ async function pass1_extractAndClassify(imageContents, globalIngredients, restau
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 16000,
+    max_tokens: 64000,
     system: [
       {
         type: 'text',
@@ -344,7 +344,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId)
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 16000,
+    max_tokens: 64000,
     system: [
       {
         type: 'text',
