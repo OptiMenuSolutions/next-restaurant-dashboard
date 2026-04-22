@@ -73,31 +73,32 @@ export default function MessagingPage() {
 
   useEffect(() => { fetchRestaurants(); }, []);
 
-    async function fetchRestaurants() {
+  async function fetchRestaurants() {
     setLoading(true);
     try {
-        const { data, error } = await supabase
-        .from('profiles')
-        .select('id, full_name, email, restaurant_id, restaurants(id, name)')
-        .not('restaurant_id', 'is', null);
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('id, name, profiles(id, full_name, email)')
+        .not('name', 'in', '("ADMIN","Chick-fil-A (Sample)")');
 
-        console.log('profiles raw:', JSON.stringify(data, null, 2));
-        console.log('error:', error);
+      if (error) throw error;
 
-        const mapped = (data || []).map((p) => ({
-        id: p.restaurants?.id || p.restaurant_id,
-        name: p.restaurants?.name || '',
-        owner_email: p.email || '',
-        owner_name: p.full_name || '',
-        }));
+      const mapped = (data || []).map((r) => {
+        const profile = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles;
+        return {
+          id: r.id,
+          name: r.name || '',
+          owner_email: profile?.email || '',
+          owner_name: profile?.full_name || '',
+        };
+      }).filter((r) => r.owner_email);
 
-        console.log('mapped:', JSON.stringify(mapped, null, 2));
-        setRestaurants(mapped);
+      setRestaurants(mapped);
     } catch (err) {
-        console.error('[messaging] fetchRestaurants error:', err);
+      console.error('[messaging] fetchRestaurants error:', err);
     }
     setLoading(false);
-    }
+  }
 
   function selectRestaurant(r) {
     setSelectedRestaurant(r);
