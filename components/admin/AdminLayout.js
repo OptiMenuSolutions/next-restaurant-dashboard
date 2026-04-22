@@ -1,8 +1,6 @@
 // components/admin/AdminLayout.js
-// Wraps every admin page. Includes topbar, sidebar navigation, and main content area.
-// Matches OptiMenu's dark design system: #0a0908 bg, #02a4ba teal, Playfair + Inter.
 
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import supabase from '../../lib/supabaseClient';
@@ -52,7 +50,82 @@ const NAV = [
   },
 ];
 
-// Feather-style SVG icons (inline, no external dependency)
+// ── Notification config ────────────────────────────────────────────────────────
+// Each source defines how to query Supabase and where to navigate on click.
+const NOTIF_SOURCES = [
+  {
+    key: 'feedback',
+    label: 'New Feedback',
+    icon: 'message-square',
+    color: '#f5a623',
+    href: '/admin/feedback',
+    query: () =>
+      supabase
+        .from('feedback')
+        .select('id, message, created_at')
+        .eq('status', 'new')
+        .order('created_at', { ascending: false })
+        .limit(5),
+    describe: (row) => row.message?.slice(0, 60) + (row.message?.length > 60 ? '…' : ''),
+  },
+  {
+    key: 'errors',
+    label: 'Error Queue',
+    icon: 'alert-circle',
+    color: '#e85454',
+    href: '/admin/errors',
+    query: () =>
+      supabase
+        .from('error_queue')
+        .select('id, feature, error_message, created_at')
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(5),
+    describe: (row) => `${row.feature}: ${row.error_message?.slice(0, 50)}`,
+  },
+  {
+    key: 'signups',
+    label: 'New Signup',
+    icon: 'user-plus',
+    color: '#02a4ba',
+    href: '/admin/restaurants',
+    query: () =>
+      supabase
+        .from('restaurants')
+        .select('id, name, created_at')
+        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(5),
+    describe: (row) => `${row.name} joined`,
+  },
+  {
+    key: 'parse_failures',
+    label: 'Parse Failure',
+    icon: 'alert-triangle',
+    color: '#e85454',
+    href: '/admin/parse-quality',
+    query: () =>
+      supabase
+        .from('invoices')
+        .select('id, created_at, restaurant_id')
+        .eq('parse_status', 'failed')
+        .order('created_at', { ascending: false })
+        .limit(5),
+    describe: (row) => `Invoice parse failed`,
+  },
+];
+
+function timeAgo(ts) {
+  const diff = Date.now() - new Date(ts).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// ── Icon ──────────────────────────────────────────────────────────────────────
 function Icon({ name, size = 14 }) {
   const icons = {
     'grid':           <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></>,
@@ -68,28 +141,183 @@ function Icon({ name, size = 14 }) {
     'list':           <><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></>,
     'check-circle':   <><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>,
     'flag':           <><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></>,
-    'message-square': <><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></>,
+    'message-square': <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>,
     'alert-circle':   <><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></>,
     'clipboard':      <><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></>,
     'log-out':        <><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>,
-    'refresh-cw':     <><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></>,
+    'bell':           <><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>,
+    'x':              <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
   };
   return (
-    <svg
-      width={size} height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      style={{ flexShrink: 0 }}
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
       {icons[name] || null}
     </svg>
   );
 }
 
+// ── Notification Bell ─────────────────────────────────────────────────────────
+function NotificationBell({ router }) {
+  const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [seenIds, setSeenIds] = useState(new Set());
+  const dropdownRef = useRef(null);
+
+  const fetchNotifications = useCallback(async () => {
+    setLoading(true);
+    const results = [];
+
+    await Promise.all(
+      NOTIF_SOURCES.map(async (source) => {
+        try {
+          const { data, error } = await source.query();
+          if (error || !data) return;
+          data.forEach((row) => {
+            results.push({
+              id: `${source.key}-${row.id}`,
+              sourceKey: source.key,
+              label: source.label,
+              icon: source.icon,
+              color: source.color,
+              href: source.href,
+              description: source.describe(row),
+              timestamp: row.created_at,
+            });
+          });
+        } catch (_) {}
+      })
+    );
+
+    // Sort newest first
+    results.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    setNotifications(results);
+
+    // Unread = any id not in seenIds
+    const unseen = results.filter((n) => !seenIds.has(n.id));
+    setUnreadCount(unseen.length);
+    setLoading(false);
+  }, [seenIds]);
+
+  // Fetch on mount + every 60s
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  function handleOpen() {
+    setOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        // Mark all current as seen
+        setSeenIds(new Set(notifications.map((n) => n.id)));
+        setUnreadCount(0);
+      }
+      return next;
+    });
+  }
+
+  function handleNotifClick(href) {
+    setOpen(false);
+    router.push(href);
+  }
+
+  // Group by sourceKey for display
+  const grouped = NOTIF_SOURCES.map((source) => ({
+    ...source,
+    items: notifications.filter((n) => n.sourceKey === source.key),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative' }}>
+      {/* Bell button */}
+      <button onClick={handleOpen} style={styles.bellBtn} title="Notifications">
+        <Icon name="bell" size={15} />
+        {unreadCount > 0 && (
+          <span style={styles.bellBadge}>
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={styles.dropdown}>
+          <div style={styles.dropdownHeader}>
+            <span style={styles.dropdownTitle}>Notifications</span>
+            <button onClick={() => setOpen(false)} style={styles.dropdownClose}>
+              <Icon name="x" size={12} />
+            </button>
+          </div>
+
+          <div style={styles.dropdownBody}>
+            {loading && notifications.length === 0 ? (
+              <div style={styles.emptyState}>Loading…</div>
+            ) : grouped.length === 0 ? (
+              <div style={styles.emptyState}>All clear — nothing needs attention.</div>
+            ) : (
+              grouped.map((group) => (
+                <div key={group.key}>
+                  {/* Group header */}
+                  <div style={styles.groupHeader}>
+                    <span style={{ color: group.color }}>
+                      <Icon name={group.icon} size={11} />
+                    </span>
+                    <span style={{ ...styles.groupLabel, color: group.color }}>{group.label}</span>
+                    <span style={{ ...styles.groupCount, background: group.color + '22', color: group.color }}>
+                      {group.items.length}
+                    </span>
+                  </div>
+
+                  {/* Notification rows */}
+                  {group.items.map((notif) => (
+                    <button
+                      key={notif.id}
+                      onClick={() => handleNotifClick(notif.href)}
+                      style={styles.notifRow}
+                      onMouseEnter={e => e.currentTarget.style.background = '#1a1d24'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <div style={styles.notifDesc}>{notif.description}</div>
+                      <div style={styles.notifTime}>{timeAgo(notif.timestamp)}</div>
+                    </button>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer */}
+          {grouped.length > 0 && (
+            <div style={styles.dropdownFooter}>
+              <button
+                onClick={() => { setOpen(false); router.push('/admin/feedback'); }}
+                style={styles.viewAllBtn}
+              >
+                View all support pages →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Layout ───────────────────────────────────────────────────────────────
 export default function AdminLayout({ children, title = 'Admin' }) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
@@ -114,7 +342,7 @@ export default function AdminLayout({ children, title = 'Admin' }) {
       </Head>
 
       <div style={styles.shell}>
-        {/* ── TOPBAR ────────────────────────────────────────────────────── */}
+        {/* ── TOPBAR ── */}
         <header style={styles.topbar}>
           <div style={styles.topbarLeft}>
             <span style={styles.logo}>
@@ -127,6 +355,7 @@ export default function AdminLayout({ children, title = 'Admin' }) {
             </div>
           </div>
           <div style={styles.topbarRight}>
+            <NotificationBell router={router} />
             <span style={styles.adminBadge}>Super Admin</span>
             <div style={styles.avatar}>NP</div>
             <button
@@ -140,7 +369,7 @@ export default function AdminLayout({ children, title = 'Admin' }) {
           </div>
         </header>
 
-        {/* ── SIDEBAR ───────────────────────────────────────────────────── */}
+        {/* ── SIDEBAR ── */}
         <aside style={styles.sidebar}>
           {NAV.map((section) => (
             <div key={section.group} style={styles.navGroup}>
@@ -151,16 +380,13 @@ export default function AdminLayout({ children, title = 'Admin' }) {
                   <button
                     key={item.href}
                     onClick={() => router.push(item.href)}
-                    style={{
-                      ...styles.navItem,
-                      ...(active ? styles.navItemActive : {}),
-                    }}
+                    style={{ ...styles.navItem, ...(active ? styles.navItemActive : {}) }}
                   >
                     <span style={{ color: active ? '#02a4ba' : '#5a6080', transition: 'color 0.15s' }}>
                       <Icon name={item.icon} size={13} />
                     </span>
                     <span style={styles.navLabel}>{item.label}</span>
-                    {item.badge === 'red' && <span style={styles.badgeRed}>!</span>}
+                    {item.badge === 'red'   && <span style={styles.badgeRed}>!</span>}
                     {item.badge === 'amber' && <span style={styles.badgeAmber}>!</span>}
                   </button>
                 );
@@ -169,15 +395,14 @@ export default function AdminLayout({ children, title = 'Admin' }) {
           ))}
         </aside>
 
-        {/* ── MAIN CONTENT ──────────────────────────────────────────────── */}
-        <main style={styles.main}>
-          {children}
-        </main>
+        {/* ── MAIN CONTENT ── */}
+        <main style={styles.main}>{children}</main>
       </div>
     </>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = {
   shell: {
     display: 'grid',
@@ -200,141 +425,123 @@ const styles = {
     zIndex: 10,
   },
   topbarLeft: { display: 'flex', alignItems: 'center', gap: 14 },
-  logo: {
-    fontFamily: "'Playfair Display', serif",
-    fontSize: 17,
-    fontWeight: 700,
-    color: '#e4e6f0',
-    letterSpacing: '-0.3px',
-  },
+  logo: { fontFamily: "'Playfair Display', serif", fontSize: 17, fontWeight: 700, color: '#e4e6f0', letterSpacing: '-0.3px' },
   logoAccent: { color: '#02a4ba' },
-  logoSub: {
-    fontFamily: "'DM Mono', monospace",
-    fontSize: 9,
-    fontWeight: 400,
-    color: '#4a5068',
-    marginLeft: 8,
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-  },
-  liveChip: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 5,
-    fontSize: 9,
-    fontWeight: 600,
-    color: '#02a4ba',
-    textTransform: 'uppercase',
-    letterSpacing: '0.8px',
-    background: 'rgba(2,164,186,0.1)',
-    border: '1px solid rgba(2,164,186,0.25)',
-    borderRadius: 20,
-    padding: '2px 8px',
-  },
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: '50%',
-    background: '#02a4ba',
-    animation: 'pulse 2s infinite',
-  },
+  logoSub: { fontFamily: "'DM Mono', monospace", fontSize: 9, fontWeight: 400, color: '#4a5068', marginLeft: 8, textTransform: 'uppercase', letterSpacing: '1px' },
+  liveChip: { display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: '#02a4ba', textTransform: 'uppercase', letterSpacing: '0.8px', background: 'rgba(2,164,186,0.1)', border: '1px solid rgba(2,164,186,0.25)', borderRadius: 20, padding: '2px 8px' },
+  liveDot: { width: 5, height: 5, borderRadius: '50%', background: '#02a4ba' },
   topbarRight: { display: 'flex', alignItems: 'center', gap: 10 },
-  adminBadge: {
-    fontSize: 9,
-    fontWeight: 700,
-    color: '#02a4ba',
-    background: 'rgba(2,164,186,0.1)',
-    border: '1px solid rgba(2,164,186,0.2)',
-    borderRadius: 20,
-    padding: '2px 8px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.6px',
-  },
-  avatar: {
-    width: 28,
-    height: 28,
-    borderRadius: '50%',
-    background: 'rgba(2,164,186,0.15)',
-    border: '1px solid rgba(2,164,186,0.3)',
+  adminBadge: { fontSize: 9, fontWeight: 700, color: '#02a4ba', background: 'rgba(2,164,186,0.1)', border: '1px solid rgba(2,164,186,0.2)', borderRadius: 20, padding: '2px 8px', textTransform: 'uppercase', letterSpacing: '0.6px' },
+  avatar: { width: 28, height: 28, borderRadius: '50%', background: 'rgba(2,164,186,0.15)', border: '1px solid rgba(2,164,186,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#02a4ba' },
+  signOutBtn: { background: 'none', border: 'none', cursor: 'pointer', color: '#4a5068', display: 'flex', alignItems: 'center', padding: 4, borderRadius: 4 },
+
+  // Bell
+  bellBtn: {
+    position: 'relative',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: '#5a6080',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 9,
-    fontWeight: 700,
-    color: '#02a4ba',
+    width: 30,
+    height: 30,
+    borderRadius: 6,
+    transition: 'color 0.15s, background 0.15s',
   },
-  signOutBtn: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: '#4a5068',
+  bellBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    background: '#e85454',
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    padding: 4,
-    borderRadius: 4,
-    transition: 'color 0.15s',
+    justifyContent: 'center',
+    padding: '0 3px',
+    lineHeight: 1,
+    border: '1.5px solid #111318',
   },
-  sidebar: {
+
+  // Dropdown
+  dropdown: {
+    position: 'absolute',
+    top: 36,
+    right: 0,
+    width: 340,
     background: '#111318',
-    borderRight: '1px solid #1e2028',
-    overflowY: 'auto',
-    padding: '12px 0 24px',
+    border: '1px solid #1e2028',
+    borderRadius: 10,
+    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+    zIndex: 100,
+    overflow: 'hidden',
   },
-  navGroup: { marginBottom: 20 },
-  navGroupLabel: {
-    fontSize: 9,
-    fontWeight: 700,
-    color: '#3a3e50',
-    textTransform: 'uppercase',
-    letterSpacing: '1.2px',
-    padding: '0 16px',
-    marginBottom: 4,
+  dropdownHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '12px 14px 10px',
+    borderBottom: '1px solid #1e2028',
   },
-  navItem: {
+  dropdownTitle: { fontSize: 11, fontWeight: 700, color: '#e4e6f0', textTransform: 'uppercase', letterSpacing: '0.8px' },
+  dropdownClose: { background: 'none', border: 'none', cursor: 'pointer', color: '#4a5068', display: 'flex', alignItems: 'center', padding: 2 },
+  dropdownBody: { maxHeight: 360, overflowY: 'auto' },
+  emptyState: { padding: '24px 14px', fontSize: 12, color: '#4a5068', textAlign: 'center' },
+
+  groupHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '10px 14px 6px',
+    borderTop: '1px solid #1a1d24',
+  },
+  groupLabel: { fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.6px', flex: 1 },
+  groupCount: { fontSize: 9, fontWeight: 700, borderRadius: 10, padding: '1px 6px' },
+
+  notifRow: {
     width: '100%',
     display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '7px 16px',
-    fontSize: 11,
-    fontWeight: 500,
-    color: '#5a6080',
-    background: 'none',
+    flexDirection: 'column',
+    gap: 2,
+    padding: '7px 14px 7px 28px',
+    background: 'transparent',
     border: 'none',
-    borderLeft: '2px solid transparent',
     cursor: 'pointer',
     textAlign: 'left',
-    transition: 'all 0.1s',
+    transition: 'background 0.1s',
     fontFamily: "'Inter', sans-serif",
   },
-  navItemActive: {
+  notifDesc: { fontSize: 11, color: '#9aa0b8', lineHeight: 1.4 },
+  notifTime: { fontSize: 9, color: '#3a3e50' },
+
+  dropdownFooter: {
+    padding: '8px 14px',
+    borderTop: '1px solid #1e2028',
+  },
+  viewAllBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: 10,
     color: '#02a4ba',
-    background: 'rgba(2,164,186,0.07)',
-    borderLeftColor: '#02a4ba',
+    fontFamily: "'Inter', sans-serif",
+    padding: 0,
   },
+
+  // Sidebar
+  sidebar: { background: '#111318', borderRight: '1px solid #1e2028', overflowY: 'auto', padding: '12px 0 24px' },
+  navGroup: { marginBottom: 20 },
+  navGroupLabel: { fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase', letterSpacing: '1.2px', padding: '0 16px', marginBottom: 4 },
+  navItem: { width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', fontSize: 11, fontWeight: 500, color: '#5a6080', background: 'none', border: 'none', borderLeft: '2px solid transparent', cursor: 'pointer', textAlign: 'left', transition: 'all 0.1s', fontFamily: "'Inter', sans-serif" },
+  navItemActive: { color: '#02a4ba', background: 'rgba(2,164,186,0.07)', borderLeftColor: '#02a4ba' },
   navLabel: { flex: 1 },
-  badgeRed: {
-    fontSize: 8,
-    fontWeight: 700,
-    background: 'rgba(232,84,84,0.15)',
-    color: '#e85454',
-    border: '1px solid rgba(232,84,84,0.3)',
-    borderRadius: 10,
-    padding: '1px 5px',
-  },
-  badgeAmber: {
-    fontSize: 8,
-    fontWeight: 700,
-    background: 'rgba(245,166,35,0.15)',
-    color: '#f5a623',
-    border: '1px solid rgba(245,166,35,0.3)',
-    borderRadius: 10,
-    padding: '1px 5px',
-  },
-  main: {
-    overflowY: 'auto',
-    background: '#0a0908',
-    display: 'flex',
-    flexDirection: 'column',
-  },
+  badgeRed: { fontSize: 8, fontWeight: 700, background: 'rgba(232,84,84,0.15)', color: '#e85454', border: '1px solid rgba(232,84,84,0.3)', borderRadius: 10, padding: '1px 5px' },
+  badgeAmber: { fontSize: 8, fontWeight: 700, background: 'rgba(245,166,35,0.15)', color: '#f5a623', border: '1px solid rgba(245,166,35,0.3)', borderRadius: 10, padding: '1px 5px' },
+  main: { overflowY: 'auto', background: '#0a0908', display: 'flex', flexDirection: 'column' },
 };
