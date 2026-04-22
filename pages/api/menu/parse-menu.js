@@ -187,7 +187,7 @@ async function pass1_extractAndClassify(imageContents, globalIngredients, restau
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 6000,
+    max_tokens: 8000,
     system: [
       {
         type: 'text',
@@ -269,7 +269,23 @@ Return ONLY valid JSON:
   });
 
   const raw = response.content[0]?.text || '{}';
+
+  console.log(`[pass1] stop_reason: ${response.stop_reason}`);
+  console.log(`[pass1] usage: input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+  console.log(`[pass1] raw response (first 500 chars): ${raw.slice(0, 500)}`);
+
+  if (response.stop_reason === 'max_tokens') {
+    console.warn('[pass1] WARNING: response was truncated — JSON may be incomplete');
+  }
+
   const parsed = safeParseJSON(raw);
+
+  if (!parsed) {
+    console.error('[pass1] safeParseJSON returned null. Full raw response:', raw);
+  } else {
+    console.log(`[pass1] parsed: ${parsed.ingredients?.length ?? 0} ingredients, ${parsed.dishes?.length ?? 0} dishes`);
+  }
+
   return {
     ingredients: parsed?.ingredients || [],
     dishes: parsed?.dishes || [],
