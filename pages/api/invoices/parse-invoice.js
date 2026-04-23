@@ -101,69 +101,6 @@ function safeParseJSON(text) {
   return null;
 }
 
-// ─── Claude Vision: extract invoice data ─────────────────────────────────────
-
-async function extractInvoiceData(imageContents, restaurantId) {
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
-    messages: [{
-      role: 'user',
-      content: [
-        ...imageContents,
-        {
-          type: 'text',
-          text: `You are an expert at reading food service supplier invoices. Extract all data from this invoice.
-
-Return ONLY valid JSON with this exact structure:
-{
-  "supplier": "string — vendor/supplier company name",
-  "invoice_number": "string — invoice or order number",
-  "invoice_date": "string — date in YYYY-MM-DD format, or null if not found",
-  "total_amount": number — total invoice amount as a number, or null,
-  "line_items": [
-    {
-      "item_name": "string — product/ingredient name as written on invoice",
-      "quantity": number — quantity ordered,
-      "unit": "string — unit of measure (lb, oz, case, each, bag, etc.)",
-      "unit_cost": number — cost per unit,
-      "line_total": number — total for this line item,
-      "category": "string — best guess category: Produce, Protein, Dairy, Dry Goods, Beverage, Supplies, or Other"
-    }
-  ],
-  "confidence": {
-    "supplier": "high|medium|low",
-    "invoice_number": "high|medium|low",
-    "invoice_date": "high|medium|low",
-    "total_amount": "high|medium|low"
-  },
-  "notes": "any important notes or caveats about the extraction"
-}
-
-Rules:
-- Extract EVERY line item visible on the invoice, even if partial
-- For item_name: use the actual product name, not codes or SKUs
-- For unit: normalize to standard units (lb, oz, each, case, bag, box, gal, qt, etc.)
-- If a field is genuinely not present, use null
-- Do not invent or estimate values not visible in the image
-- If multiple pages, combine all line items`,
-        },
-      ],
-    }],
-  });
-
-  const raw = response.content[0]?.text || '{}';
-
-  await logAiUsage({
-    feature: 'invoice_parse',
-    model: 'claude-sonnet-4-20250514',
-    usage: response.usage,
-    restaurantId,
-  });
-
-  return safeParseJSON(raw);
-}
-
 // ─── Normalize ingredient name for matching ───────────────────────────────────
 
 function normalizeName(name) {
