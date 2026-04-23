@@ -21,25 +21,72 @@ const supabase = createClient(
 
 // ─── PDF → base64 images ──────────────────────────────────────────────────────
 
-async function pdfToImages(filePath) {
-  const { fromPath } = await import('pdf2pic');
-  const convert = fromPath(filePath, {
-    density: 150,
-    saveFilename: 'inv_page',
-    savePath: '/tmp',
-    format: 'png',
-    width: 1200,
-    height: 1600,
+// ─── Claude: extract invoice data ─────────────────────────────────────────────
+// Handles both PDFs (as document type) and images natively — no pdf2pic needed.
+
+async function extractInvoiceData(fileContent, mediaType, restaurantId) {
+  const contentBlock = mediaType === 'application/pdf'
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileContent } }
+    : { type: 'image',    source: { type: 'base64', media_type: mediaType, data: fileContent } };
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [
+        contentBlock,
+        {
+          type: 'text',
+          text: `You are an expert at reading food service supplier invoices. Extract all data from this invoice.
+
+Return ONLY valid JSON with this exact structure:
+{
+  "supplier": "string — vendor/supplier company name",
+  "invoice_number": "string — invoice or order number",
+  "invoice_date": "string — date in YYYY-MM-DD format, or null if not found",
+  "total_amount": number — total invoice amount as a number, or null,
+  "line_items": [
+    {
+      "item_name": "string — product/ingredient name as written on invoice",
+      "quantity": number — quantity ordered,
+      "unit": "string — unit of measure (lb, oz, case, each, bag, etc.)",
+      "unit_cost": number — cost per unit,
+      "line_total": number — total for this line item,
+      "category": "string — best guess category: Produce, Protein, Dairy, Dry Goods, Beverage, Supplies, or Other"
+    }
+  ],
+  "confidence": {
+    "supplier": "high|medium|low",
+    "invoice_number": "high|medium|low",
+    "invoice_date": "high|medium|low",
+    "total_amount": "high|medium|low"
+  },
+  "notes": "any important notes or caveats about the extraction"
+}
+
+Rules:
+- Extract EVERY line item visible on the invoice, even if partial
+- For item_name: use the actual product name, not codes or SKUs
+- For unit: normalize to standard units (lb, oz, each, case, bag, box, gal, qt, etc.)
+- If a field is genuinely not present, use null
+- Do not invent or estimate values not visible in the image
+- If multiple pages, combine all line items`,
+        },
+      ],
+    }],
   });
-  const images = [];
-  for (let i = 1; i <= 8; i++) {
-    try {
-      const result = await convert(i, { responseType: 'base64' });
-      if (result?.base64) images.push(result.base64);
-      else break;
-    } catch { break; }
-  }
-  return images;
+
+  const raw = response.content[0]?.text || '{}';
+
+  await logAiUsage({
+    feature: 'invoice_parse',
+    model: 'claude-sonnet-4-20250514',
+    usage: response.usage,
+    restaurantId,
+  });
+
+  return safeParseJSON(raw);
 }
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
@@ -267,28 +314,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    let imageContents = [];
-    if (isPDF) {
-      const base64Pages = await pdfToImages(file.filepath);
-      if (!base64Pages.length) {
-        return res.status(500).json({ error: 'Could not extract pages from PDF.' });
-      }
-      imageContents = base64Pages.map(b64 => ({
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/png', data: b64 },
-      }));
-    } else {
-      const data = fs.readFileSync(file.filepath);
-      const base64 = data.toString('base64');
-      const mediaType =
-        ext === '.png'  ? 'image/png'  :
-        ext === '.webp' ? 'image/webp' :
-        'image/jpeg';
-      imageContents = [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
-    }
+    const fileBuffer = fs.readFileSync(file.filepath);
+    const fileBase64 = fileBuffer.toString('base64');
+
+    const mediaType = isPDF ? 'application/pdf'
+      : ext === '.png'  ? 'image/png'
+      : ext === '.webp' ? 'image/webp'
+      : 'image/jpeg';
 
     console.log('[parse-invoice] Extracting invoice data...');
-    const extracted = await extractInvoiceData(imageContents, restaurantId);
+    const extracted = await extractInvoiceData(fileBase64, mediaType, restaurantId);
 
     if (!extracted) {
       return res.status(500).json({ error: 'Could not parse invoice. Try a clearer image.' });
