@@ -143,35 +143,39 @@ async function loadRestaurantIngredients(restaurantId) {
     .order('name');
 
   if (error) throw new Error('Failed to load ingredients: ' + error.message);
+  if (!ingredients?.length) return [];
 
-  const ingredientIds = (ingredients || []).map(i => i.id);
-  if (!ingredientIds.length) return [];
+  const ingredientIds = ingredients.map(i => i.id);
 
-  const { data: usageData } = await supabase
+  const { data: ciData } = await supabase
     .from('component_ingredients')
-    .select(`
-      ingredient_id,
-      menu_item_components (
-        menu_item_id,
-        menu_items (
-          id,
-          name
-        )
-      )
-    `)
+    .select('ingredient_id, menu_item_id')
     .in('ingredient_id', ingredientIds);
 
-  const usageMap = {};
-  for (const row of usageData || []) {
-    const ingId = row.ingredient_id;
-    const menuItem = row.menu_item_components?.menu_items;
-    if (menuItem?.name) {
-      if (!usageMap[ingId]) usageMap[ingId] = new Set();
-      usageMap[ingId].add(menuItem.name);
+  const menuItemIds = [...new Set((ciData || []).map(r => r.menu_item_id).filter(Boolean))];
+
+  let menuNameMap = {};
+  if (menuItemIds.length) {
+    const { data: menuItems } = await supabase
+      .from('menu_items')
+      .select('id, name')
+      .in('id', menuItemIds);
+
+    for (const m of (menuItems || [])) {
+      menuNameMap[m.id] = m.name;
     }
   }
 
-  return (ingredients || []).map(ing => ({
+  const usageMap = {};
+  for (const row of (ciData || [])) {
+    const name = menuNameMap[row.menu_item_id];
+    if (name) {
+      if (!usageMap[row.ingredient_id]) usageMap[row.ingredient_id] = new Set();
+      usageMap[row.ingredient_id].add(name);
+    }
+  }
+
+  return ingredients.map(ing => ({
     ...ing,
     used_in: usageMap[ing.id] ? [...usageMap[ing.id]] : [],
   }));
