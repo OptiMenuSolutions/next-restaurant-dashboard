@@ -259,7 +259,7 @@ export default async function handler(req, res) {
       : ext === '.webp' ? 'image/webp'
       : 'image/jpeg';
 
-    console.log('[parse-invoice] Extracting invoice data...');
+    console.log('[parse-invoice] Raw Claude response:', raw);
     const extracted = await extractInvoiceData(fileBase64, mediaType, restaurantId);
 
     if (!extracted) {
