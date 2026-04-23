@@ -78,6 +78,7 @@ Rules:
   });
 
   const raw = response.content[0]?.text || '{}';
+  console.log('[parse-invoice] Raw Claude response:', raw);
 
   await logAiUsage({
     feature: 'invoice_parse',
@@ -259,7 +260,7 @@ export default async function handler(req, res) {
       : ext === '.webp' ? 'image/webp'
       : 'image/jpeg';
 
-    console.log('[parse-invoice] Raw Claude response:', raw);
+    console.log('[parse-invoice] Extracting invoice data...');
     const extracted = await extractInvoiceData(fileBase64, mediaType, restaurantId);
 
     if (!extracted) {
