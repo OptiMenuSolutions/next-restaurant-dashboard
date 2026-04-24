@@ -88,7 +88,7 @@ Rules:
 
   await logAiUsage({
     feature: 'invoice_parse',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     usage: response.usage,
     restaurantId,
   });
