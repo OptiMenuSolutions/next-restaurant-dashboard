@@ -153,13 +153,31 @@ async function loadRestaurantIngredients(restaurantId) {
 
   const ingredientIds = ingredients.map(i => i.id);
 
+  // Step 1: ingredient_id → component_id
   const { data: ciData } = await supabase
     .from('component_ingredients')
-    .select('ingredient_id, menu_item_id')
+    .select('ingredient_id, component_id')
     .in('ingredient_id', ingredientIds);
 
-  const menuItemIds = [...new Set((ciData || []).map(r => r.menu_item_id).filter(Boolean))];
+  if (!ciData?.length) return ingredients.map(ing => ({ ...ing, used_in: [] }));
 
+  const componentIds = [...new Set(ciData.map(r => r.component_id).filter(Boolean))];
+
+  // Step 2: component_id → menu_item_id
+  const { data: components } = await supabase
+    .from('menu_item_components')
+    .select('id, menu_item_id')
+    .in('id', componentIds);
+
+  // Build component_id → menu_item_id map
+  const compToMenuItem = {};
+  for (const c of (components || [])) {
+    compToMenuItem[c.id] = c.menu_item_id;
+  }
+
+  const menuItemIds = [...new Set(Object.values(compToMenuItem).filter(Boolean))];
+
+  // Step 3: menu_item_id → name
   let menuNameMap = {};
   if (menuItemIds.length) {
     const { data: menuItems } = await supabase
@@ -172,12 +190,14 @@ async function loadRestaurantIngredients(restaurantId) {
     }
   }
 
+  // Build ingredient_id → Set of dish names
   const usageMap = {};
-  for (const row of (ciData || [])) {
-    const name = menuNameMap[row.menu_item_id];
-    if (name) {
+  for (const row of ciData) {
+    const menuItemId = compToMenuItem[row.component_id];
+    const dishName = menuNameMap[menuItemId];
+    if (dishName) {
       if (!usageMap[row.ingredient_id]) usageMap[row.ingredient_id] = new Set();
-      usageMap[row.ingredient_id].add(name);
+      usageMap[row.ingredient_id].add(dishName);
     }
   }
 
