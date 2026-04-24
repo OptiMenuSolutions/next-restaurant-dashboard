@@ -2,6 +2,7 @@
 // Receives confirmed invoice data from the client after the user has resolved
 // all ambiguous ingredient matches. Writes to: invoices, invoice_items, ingredients.
 // Also updates ingredients.last_price and ingredients.last_ordered_at.
+// OPTIMIZED: Uses batched inserts/updates instead of sequential per-item DB calls.
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -24,7 +25,10 @@ export default async function handler(req, res) {
   const { restaurant_id, invoice, line_items, file_url } = body;
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
-  if (!invoice) return res.status(400).json({ error: 'invoice data is required' });
+  if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
+
+  const activeItems = (line_items || []).filter(i => !i.dismissed);
+  const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
 
   const results = {
     invoice_id: null,
@@ -40,12 +44,12 @@ export default async function handler(req, res) {
       .from('invoices')
       .insert({
         restaurant_id,
-        supplier: invoice.supplier || null,
-        number: invoice.invoice_number || null,
-        date: invoice.invoice_date || null,
-        amount: invoice.total_amount || null,
-        file_url: file_url || null,
-        is_sample: false,
+        supplier:   invoice.supplier       || null,
+        number:     invoice.invoice_number || null,
+        date:       invoice.invoice_date   || null,
+        amount:     invoice.total_amount   || null,
+        file_url:   file_url               || null,
+        is_sample:  false,
       })
       .select('id')
       .single();
@@ -53,96 +57,122 @@ export default async function handler(req, res) {
     if (invoiceError) {
       return res.status(500).json({ error: 'Failed to create invoice: ' + invoiceError.message });
     }
-
     results.invoice_id = invoiceRecord.id;
 
-    // ── Step 2: Process each confirmed line item ───────────────────────────────
-    for (const item of (line_items || [])) {
-      // Skip items the user dismissed
-      if (item.dismissed) continue;
+    // ── Step 2: Batch-create new ingredients ──────────────────────────────────
+    // Collect all items that need a new ingredient created
+    const newIngredientItems = activeItems.filter(
+      i => !i.selected_ingredient_id && i.match_status === 'new' && i.confirm_new
+    );
 
-      let ingredientId = item.selected_ingredient_id || null;
+    // Map from item._id → new ingredient id (populated after insert)
+    const newIngredientIdMap = {};
 
-      // ── Create new ingredient if user confirmed a new one ──────────────────
-      if (!ingredientId && item.match_status === 'new' && item.confirm_new) {
-        const { data: newIng, error: newIngError } = await supabase
-          .from('ingredients')
-          .insert({
-            restaurant_id,
-            name: item.confirmed_name || item.item_name,
-            unit: item.unit || 'each',
-            standard_unit: item.unit || 'each',
-            original_unit: item.unit || 'each',
-            last_price: item.unit_cost || null,
-            last_ordered_at: invoice.invoice_date || new Date().toISOString().split('T')[0],
-            ingredient_category: 'weight',
-            is_sample: false,
-            is_estimated: false,
-          })
-          .select('id')
-          .single();
+    if (newIngredientItems.length > 0) {
+      const toInsert = newIngredientItems.map(item => ({
+        restaurant_id,
+        name:              item.confirmed_name || item.item_name,
+        unit:              item.unit           || 'each',
+        standard_unit:     item.unit           || 'each',
+        original_unit:     item.unit           || 'each',
+        last_price:        item.unit_cost      || null,
+        last_ordered_at:   invoiceDate,
+        ingredient_category: 'weight',
+        is_sample:         false,
+        is_estimated:      false,
+      }));
 
-        if (newIngError) {
-          results.errors.push(`Failed to create ingredient "${item.item_name}": ${newIngError.message}`);
-        } else {
-          ingredientId = newIng.id;
-          results.ingredients_created++;
+      const { data: createdIngredients, error: createError } = await supabase
+        .from('ingredients')
+        .insert(toInsert)
+        .select('id, name');
+
+      if (createError) {
+        results.errors.push('Failed to batch-create ingredients: ' + createError.message);
+      } else {
+        // Match created rows back to items by name (names are unique per restaurant)
+        for (const item of newIngredientItems) {
+          const targetName = (item.confirmed_name || item.item_name || '').toLowerCase().trim();
+          const match = createdIngredients.find(
+            c => c.name.toLowerCase().trim() === targetName
+          );
+          if (match) {
+            newIngredientIdMap[item._id] = match.id;
+            results.ingredients_created++;
+          }
         }
       }
+    }
 
-      // ── Update existing ingredient price + last ordered ────────────────────
-      if (ingredientId && item.unit_cost) {
-        const { error: updateError } = await supabase
-          .from('ingredients')
-          .update({
-            last_price: item.unit_cost,
-            last_ordered_at: invoice.invoice_date || new Date().toISOString().split('T')[0],
-            is_estimated: false
-          })
-          .eq('id', ingredientId)
-          .eq('restaurant_id', restaurant_id);
-
-        if (updateError) {
-          results.errors.push(`Failed to update ingredient ${ingredientId}: ${updateError.message}`);
-        } else {
-          results.ingredients_updated++;
-        }
+    // ── Step 3: Batch-update existing ingredient prices ───────────────────────
+    // Build a map of ingredientId → { unit_cost, invoiceDate } for all matched items
+    const ingredientUpdates = {};
+    for (const item of activeItems) {
+      const ingId = item.selected_ingredient_id || newIngredientIdMap[item._id] || null;
+      if (ingId && item.unit_cost) {
+        ingredientUpdates[ingId] = {
+          last_price:      item.unit_cost,
+          last_ordered_at: invoiceDate,
+          is_estimated:    false,
+        };
       }
+    }
 
-      // ── Insert invoice_item record ─────────────────────────────────────────
+    // Fire all ingredient updates in parallel
+    const updatePromises = Object.entries(ingredientUpdates).map(([ingId, updates]) =>
+      supabase
+        .from('ingredients')
+        .update(updates)
+        .eq('id', ingId)
+        .eq('restaurant_id', restaurant_id)
+        .then(({ error }) => {
+          if (error) {
+            results.errors.push(`Failed to update ingredient ${ingId}: ${error.message}`);
+          } else {
+            results.ingredients_updated++;
+          }
+        })
+    );
+    await Promise.all(updatePromises);
+
+    // ── Step 4: Batch-insert all invoice_items ────────────────────────────────
+    const invoiceItemsToInsert = activeItems.map(item => {
+      const ingredientId =
+        item.selected_ingredient_id ||
+        newIngredientIdMap[item._id] ||
+        null;
+
       const lineTotal = item.line_total || (
         (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0)
       );
 
-      const { error: itemError } = await supabase
-        .from('invoice_items')
-        .insert({
-          invoice_id: invoiceRecord.id,
-          item_name: item.item_name,
-          quantity: item.quantity || null,
-          unit: item.unit || null,
-          unit_cost: item.unit_cost || null,
-          amount: lineTotal || null,
-          ingredient_name_normalized: normalizeName(item.item_name),
-          category: item.category || null,
-          ingredient_id: ingredientId || null,
-        });
+      return {
+        invoice_id:                invoiceRecord.id,
+        item_name:                 item.item_name,
+        quantity:                  item.quantity   || null,
+        unit:                      item.unit       || null,
+        unit_cost:                 item.unit_cost  || null,
+        amount:                    lineTotal       || null,
+        ingredient_name_normalized: normalizeName(item.item_name),
+        category:                  item.category   || null,
+        ingredient_id:             ingredientId,
+      };
+    });
 
-      if (itemError) {
-        results.errors.push(`Failed to save line item "${item.item_name}": ${itemError.message}`);
-      } else {
-        results.items_saved++;
-      }
+    const { error: itemsError } = await supabase
+      .from('invoice_items')
+      .insert(invoiceItemsToInsert);
+
+    if (itemsError) {
+      results.errors.push('Failed to batch-insert invoice items: ' + itemsError.message);
+    } else {
+      results.items_saved = invoiceItemsToInsert.length;
     }
 
-    // ── Step 3: Recompute menu item costs for affected ingredients ────────────
-    // For each updated ingredient, find menu items that use it and recompute cost
-    const updatedIngredientIds = (line_items || [])
-      .filter(i => i.selected_ingredient_id && !i.dismissed)
-      .map(i => i.selected_ingredient_id);
+    // ── Step 5: Recompute menu item costs for affected ingredients ────────────
+    const updatedIngredientIds = Object.keys(ingredientUpdates);
 
     if (updatedIngredientIds.length > 0) {
-      // Find all component_ingredients that reference these ingredients
       const { data: affectedComponents } = await supabase
         .from('component_ingredients')
         .select(`
@@ -161,74 +191,93 @@ export default async function handler(req, res) {
         `)
         .in('ingredient_id', updatedIngredientIds);
 
-      // Group by menu_item_id and recompute costs
-      const menuItemMap = {};
-      for (const ci of (affectedComponents || [])) {
-        const comp = ci.menu_item_components;
-        const menuItem = comp?.menu_items;
-        if (!menuItem) continue;
+      // Collect unique affected menu item IDs
+      const affectedMenuItemIds = [
+        ...new Set(
+          (affectedComponents || [])
+            .map(ci => ci.menu_item_components?.menu_items?.id)
+            .filter(Boolean)
+        )
+      ];
 
-        if (!menuItemMap[menuItem.id]) {
-          menuItemMap[menuItem.id] = { name: menuItem.name, oldCost: menuItem.cost };
-        }
-      }
-
-      // For each affected menu item, recompute total cost from components
-      for (const [menuItemId, info] of Object.entries(menuItemMap)) {
+      if (affectedMenuItemIds.length > 0) {
+        // Load all components for affected menu items in one query
         const { data: allComps } = await supabase
           .from('menu_item_components')
           .select(`
+            menu_item_id,
             cost,
             component_ingredients (
               quantity,
               ingredients:ingredient_id (
+                id,
                 last_price
               )
             )
           `)
-          .eq('menu_item_id', menuItemId);
+          .in('menu_item_id', affectedMenuItemIds);
 
-        let newCost = 0;
-        for (const comp of (allComps || [])) {
-          for (const ci of (comp.component_ingredients || [])) {
-            const price = parseFloat(ci.ingredients?.last_price || 0);
-            const qty = parseFloat(ci.quantity || 0);
-            newCost += price * qty;
+        // Build old cost map from affectedComponents
+        const oldCostMap = {};
+        const nameMap = {};
+        for (const ci of (affectedComponents || [])) {
+          const menuItem = ci.menu_item_components?.menu_items;
+          if (menuItem) {
+            oldCostMap[menuItem.id] = parseFloat(menuItem.cost || 0);
+            nameMap[menuItem.id]    = menuItem.name;
           }
         }
 
-        newCost = Math.round(newCost * 100) / 100;
-
-        if (newCost > 0 && Math.abs(newCost - parseFloat(info.oldCost || 0)) > 0.001) {
-          // Update menu item cost
-          await supabase
-            .from('menu_items')
-            .update({ cost: newCost })
-            .eq('id', menuItemId)
-            .eq('restaurant_id', restaurant_id);
-
-          // Log cost history
-          await supabase
-            .from('menu_item_cost_history')
-            .insert({
-              menu_item_id: menuItemId,
-              menu_item_name: info.name,
-              old_cost: parseFloat(info.oldCost || 0),
-              new_cost: newCost,
-              change_reason: 'invoice_update',
-              restaurant_id,
-            });
+        // Recompute new cost per menu item
+        const newCostMap = {};
+        for (const comp of (allComps || [])) {
+          const mid = comp.menu_item_id;
+          if (!newCostMap[mid]) newCostMap[mid] = 0;
+          for (const ci of (comp.component_ingredients || [])) {
+            const price = parseFloat(ci.ingredients?.last_price || 0);
+            const qty   = parseFloat(ci.quantity || 0);
+            newCostMap[mid] += price * qty;
+          }
         }
+
+        // Batch-update menu items whose cost actually changed + log history in parallel
+        const costUpdatePromises = Object.entries(newCostMap)
+          .filter(([mid, newCost]) => {
+            const rounded = Math.round(newCost * 100) / 100;
+            return rounded > 0 && Math.abs(rounded - (oldCostMap[mid] || 0)) > 0.001;
+          })
+          .flatMap(([mid, newCost]) => {
+            const rounded = Math.round(newCost * 100) / 100;
+            return [
+              supabase
+                .from('menu_items')
+                .update({ cost: rounded })
+                .eq('id', mid)
+                .eq('restaurant_id', restaurant_id),
+              supabase
+                .from('menu_item_cost_history')
+                .insert({
+                  menu_item_id:   mid,
+                  menu_item_name: nameMap[mid],
+                  old_cost:       oldCostMap[mid] || 0,
+                  new_cost:       rounded,
+                  change_reason:  'invoice_update',
+                  restaurant_id,
+                }),
+            ];
+          });
+
+        await Promise.all(costUpdatePromises);
       }
     }
 
     return res.status(200).json({
       success: true,
-      invoice_id: results.invoice_id,
-      items_saved: results.items_saved,
-      ingredients_created: results.ingredients_created,
-      ingredients_updated: results.ingredients_updated,
-      errors: results.errors,
+      invoice_id:           results.invoice_id,
+      items_saved:          results.items_saved,
+      ingredients_created:  results.ingredients_created,
+      ingredients_updated:  results.ingredients_updated,
+      errors:               results.errors,
     });
 
   } catch (err) {
