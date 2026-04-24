@@ -30,7 +30,7 @@ async function extractInvoiceData(fileContent, mediaType, restaurantId) {
     : { type: 'image',    source: { type: 'base64', media_type: mediaType, data: fileContent } };
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 8000,
     messages: [{
       role: 'user',
@@ -270,8 +270,10 @@ export default async function handler(req, res) {
       : ext === '.webp' ? 'image/webp'
       : 'image/jpeg';
 
-    console.log('[parse-invoice] Extracting invoice data...');
+    console.log('[parse-invoice] File read complete, starting Claude call...');
+    const claudeStart = Date.now();
     const extracted = await extractInvoiceData(fileBase64, mediaType, restaurantId);
+    console.log(`[parse-invoice] Claude finished in ${Date.now() - claudeStart}ms`);
 
     if (!extracted) {
       return res.status(500).json({ error: 'Could not parse invoice. Try a clearer image.' });
