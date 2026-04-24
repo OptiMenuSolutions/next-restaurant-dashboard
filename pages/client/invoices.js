@@ -430,6 +430,36 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [saving, setSaving] = useState(false);
   const [savedResult, setSavedResult] = useState(null);
+  const PARSE_STAGES = [
+    { msg: 'Uploading invoice...', sub: 'Sending file to server' },
+    { msg: 'Claude is reading your invoice', sub: 'Scanning line items and pricing...' },
+    { msg: 'Extracting ingredients...', sub: 'Identifying products and quantities' },
+    { msg: 'Matching to your inventory...', sub: 'Comparing against existing ingredients' },
+    { msg: 'Almost done...', sub: 'Finalizing results' },
+  ];
+
+  const [stageIdx, setStageIdx] = useState(0);
+  const stageTimerRef = useRef(null);
+
+  function startStageTimer() {
+    setStageIdx(0);
+    let idx = 0;
+    const intervals = [2000, 8000, 6000, 4000]; // advance through stages
+    function advance() {
+      idx++;
+      if (idx < PARSE_STAGES.length - 1) {
+        setStageIdx(idx);
+        stageTimerRef.current = setTimeout(advance, intervals[idx] || 4000);
+      } else {
+        setStageIdx(PARSE_STAGES.length - 1);
+      }
+    }
+    stageTimerRef.current = setTimeout(advance, intervals[0]);
+  }
+
+  function stopStageTimer() {
+    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
+  }
 
   const pendingCount = lineItems.filter(i =>
     !i.dismissed && (
@@ -444,6 +474,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
     if (!file) return;
     setStep('parsing');
     setErrorMsg('');
+    startStageTimer();
 
     try {
       // First upload file to Supabase Storage
@@ -465,6 +496,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Parse failed');
 
+      stopStageTimer();
       setParseResult(data);
       // Initialize local line item state with expanded new item names
       setLineItems((data.line_items || []).map(item => ({
@@ -603,8 +635,23 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           {step === 'parsing' && (
             <div className="pm-parsing">
               <div className="pm-spin" />
-              <div className="pm-parse-title">Claude is reading your invoice</div>
-              <div className="pm-parse-sub">Extracting line items and matching ingredients...</div>
+              <div className="pm-parse-title" style={{ transition: 'opacity .3s' }}>
+                {PARSE_STAGES[stageIdx].msg}
+              </div>
+              <div className="pm-parse-sub" style={{ transition: 'opacity .3s' }}>
+                {PARSE_STAGES[stageIdx].sub}
+              </div>
+              <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+                {PARSE_STAGES.map((_, i) => (
+                  <div key={i} style={{
+                    width: i === stageIdx ? 16 : 5,
+                    height: 5,
+                    borderRadius: 3,
+                    background: i <= stageIdx ? '#02a4ba' : '#2a2620',
+                    transition: 'all .4s ease',
+                  }} />
+                ))}
+              </div>
             </div>
           )}
 
