@@ -31,7 +31,7 @@ async function extractInvoiceData(fileContent, mediaType, restaurantId) {
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 4000,
+    max_tokens: 8000,
     messages: [{
       role: 'user',
       content: [
@@ -78,6 +78,12 @@ Rules:
   });
 
   const raw = response.content[0]?.text || '{}';
+  
+  if (response.stop_reason === 'max_tokens') {
+    console.warn('[parse-invoice] Response truncated — max_tokens too low');
+    return res.status(500).json({ error: 'Invoice too large to parse in one pass. Try uploading one page at a time.' });
+  }
+
   console.log('[parse-invoice] Raw Claude response:', raw);
 
   await logAiUsage({
