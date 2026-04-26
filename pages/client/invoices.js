@@ -18,18 +18,18 @@ function formatCurrency(amount) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function formatCurrencyWhole(amount) {
+  if (amount === null || amount === undefined || amount === '') return '--';
+  const n = parseFloat(amount);
+  if (isNaN(n)) return '--';
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
 function formatCurrencyShort(amount) {
   if (!amount) return '$0';
   const n = parseFloat(amount);
   if (isNaN(n)) return '$0';
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
-  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-function formatCurrencyWhole(amount) {
-  if (amount === null || amount === undefined || amount === '') return '--';
-  const n = parseFloat(amount);
-  if (isNaN(n)) return '--';
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
@@ -155,21 +155,10 @@ const CSS = `
   .inv-mc-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; }
   .inv-mc-lbl { font-size: clamp(7px,.55vw,9px); color: #3a3630; }
 
-  .inv-donut-wrap { display: flex; align-items: center; gap: clamp(10px,1vw,18px); }
-  .inv-donut { position: relative; width: clamp(52px,5vw,72px); height: clamp(52px,5vw,72px); flex-shrink: 0; }
-  .inv-donut svg { width: 100%; height: 100%; }
-  .inv-donut-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .inv-donut-pct { font-family: 'Playfair Display', serif; font-size: clamp(12px,1.1vw,16px); color: #e8e2d8; line-height: 1; }
-  .inv-donut-sub { font-size: clamp(6px,.52vw,8px); color: #4a453e; }
-  .inv-donut-legend { display: flex; flex-direction: column; gap: clamp(4px,.4vh,7px); }
-  .inv-dl { display: flex; align-items: center; gap: 5px; font-size: clamp(8px,.62vw,11px); color: #6b6358; }
-  .inv-dl-dot { width: clamp(5px,.4vw,7px); height: clamp(5px,.4vw,7px); border-radius: 50%; flex-shrink: 0; }
-  .inv-dl-val { font-weight: 600; margin-left: auto; color: #e8e2d8; font-size: clamp(9px,.65vw,11px); }
-
   .inv-stat-pair { display: flex; flex-direction: column; gap: clamp(5px,.5vh,8px); }
   .inv-stat-item { display: flex; align-items: center; justify-content: space-between; }
   .inv-stat-name { font-size: clamp(9px,.68vw,11px); color: #6b6358; }
-  .inv-stat-val { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.05vw,17px); }
+  .inv-stat-val { font-family: 'Playfair Display', serif !important; font-size: clamp(13px,1.05vw,17px); }
 
   .inv-prog-row { display: flex; align-items: center; gap: 7px; margin-bottom: clamp(4px,.4vh,7px); }
   .inv-prog-row:last-child { margin-bottom: 0; }
@@ -433,7 +422,7 @@ function MobBottomNav({ current, router }) {
 
 function ParseModal({ onClose, restaurantId, onSaved }) {
   const fileInputRef = useRef(null);
-  const [step, setStep] = useState('drop'); // drop | parsing | review | saving | success | error
+  const [step, setStep] = useState('drop');
   const [dragOver, setDragOver] = useState(false);
   const [parseResult, setParseResult] = useState(null);
   const [lineItems, setLineItems] = useState([]);
@@ -455,7 +444,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   function startStageTimer() {
     setStageIdx(0);
     let idx = 0;
-    const intervals = [2000, 8000, 6000, 4000]; // advance through stages
+    const intervals = [2000, 8000, 6000, 4000];
     function advance() {
       idx++;
       if (idx < PARSE_STAGES.length - 1) {
@@ -488,13 +477,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
     startStageTimer();
 
     try {
-      // First upload file to Supabase Storage
       const filePath = `${restaurantId}/${Date.now()}_${file.name}`;
       const { error: uploadError } = await supabase.storage.from('invoices').upload(filePath, file);
       if (uploadError) throw new Error('File upload failed: ' + uploadError.message);
       const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(filePath);
 
-      // Send to parse API
       const formData = new FormData();
       formData.append('file', file);
       formData.append('restaurant_id', restaurantId);
@@ -509,7 +496,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
       stopStageTimer();
       setParseResult(data);
-      // Initialize local line item state with expanded new item names
       setLineItems((data.line_items || []).map(item => ({
         ...item,
         confirmed_name: item.item_name,
@@ -518,7 +504,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       })));
       setStep('review');
 
-      // Auto-expand first ambiguous or new item
       const firstPending = (data.line_items || []).find(
         i => i.match_status === 'ambiguous' || i.match_status === 'new'
       );
@@ -536,7 +521,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         ? { ...item, selected_ingredient_id: candidate.id, selected_ingredient_name: candidate.name }
         : item
     ));
-    // Auto-collapse and move to next pending
     const currentIdx = lineItems.findIndex(i => i._id === itemId);
     const nextPending = lineItems.slice(currentIdx + 1).find(
       i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new')
@@ -624,8 +608,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         </div>
 
         <div className="pm-body">
-
-          {/* DROP ZONE */}
           {step === 'drop' && (
             <div
               className={`pm-drop${dragOver ? ' over' : ''}`}
@@ -642,7 +624,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             </div>
           )}
 
-          {/* PARSING */}
           {step === 'parsing' && (
             <div className="pm-parsing">
               <div className="pm-spin" />
@@ -666,7 +647,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             </div>
           )}
 
-          {/* SAVING */}
           {step === 'saving' && (
             <div className="pm-parsing">
               <div className="pm-spin" />
@@ -675,7 +655,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             </div>
           )}
 
-          {/* SUCCESS */}
           {step === 'success' && savedResult && (
             <div className="pm-success">
               <div className="pm-success-icon">
@@ -695,7 +674,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             </div>
           )}
 
-          {/* ERROR */}
           {step === 'error' && (
             <div className="pm-parsing">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c04040" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -704,10 +682,8 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             </div>
           )}
 
-          {/* REVIEW */}
           {step === 'review' && inv && (
             <>
-              {/* Invoice header */}
               <div className="pm-inv-hd">
                 <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600, marginBottom: 8 }}>Invoice Details</div>
                 <div className="pm-inv-grid">
@@ -733,7 +709,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                 )}
               </div>
 
-              {/* Match summary */}
               {summary && (
                 <div className="pm-summary">
                   <div className="pm-sum-pill pm-sum-auto">
@@ -755,9 +730,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                 </div>
               )}
 
-              {/* Line items */}
               <div>
-                {/* Items needing review first */}
                 {lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
                   <>
                     <div className="pm-section-title">Needs Your Review</div>
@@ -778,7 +751,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                   </>
                 )}
 
-                {/* Auto-matched items */}
                 {lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
                   <>
                     <div className="pm-section-title" style={{ marginTop: 16 }}>Auto-Matched</div>
@@ -799,7 +771,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                   </>
                 )}
 
-                {/* Dismissed items */}
                 {lineItems.some(i => i.dismissed) && (
                   <>
                     <div className="pm-section-title" style={{ marginTop: 16 }}>Dismissed</div>
@@ -821,7 +792,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           )}
         </div>
 
-        {/* FOOTER */}
         <div className="pm-ft">
           {step === 'drop' && (
             <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>Files are processed immediately — nothing is saved until you confirm.</div>
@@ -864,8 +834,6 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
   const lineTotal = item.line_total || ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0));
-
-  // For auto-matched, show which ingredient it matched
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
 
   return (
@@ -894,7 +862,6 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         </div>
       </div>
 
-      {/* Candidate picker — for ambiguous matches */}
       {expanded && item.match_status === 'ambiguous' && (
         <div className="pm-candidates">
           <div className="pm-cand-title">Which ingredient is this?</div>
@@ -933,7 +900,6 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         </div>
       )}
 
-      {/* New ingredient confirm */}
       {expanded && item.match_status === 'new' && (
         <div className="pm-new-confirm">
           <div className="pm-new-lbl">New ingredient — confirm to add to your inventory</div>
@@ -1017,7 +983,11 @@ export default function ClientInvoices() {
 
   async function fetchInvoices() {
     setLoading(true);
-    const { data } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('date', { ascending: false, nullsFirst: false });
+    const { data } = await supabase
+      .from('invoices')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .order('date', { ascending: false, nullsFirst: false });
     setInvoices(data || []);
     setLoading(false);
     const { selected } = router.query;
@@ -1043,18 +1013,42 @@ export default function ClientInvoices() {
   }
 
   // ── Derived stats ──
-  const processed = invoices.filter(i => getStatus(i).ok);
-  const pending = invoices.filter(i => !getStatus(i).ok);
-  const totalSpend = processed.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
   const now = new Date();
-  const currentMonth = new Date().getMonth();
-  const thisMonthSpend = processed.filter(i => i.date && new Date(i.date).getMonth() === currentMonth).reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-  const avgInvoice = processed.length > 0 ? totalSpend / processed.length : 0;
-  const largest = processed.length > 0 ? Math.max(...processed.map(i => parseFloat(i.amount || 0))) : 0;
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const totalSpend = invoices.reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
+
+  const thisMonthSpend = invoices.filter(i => {
+    if (!i.date) return false;
+    const [y, m] = i.date.split('T')[0].split('-').map(Number);
+    return y === currentYear && m - 1 === currentMonth;
+  }).reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
+
+  const avgInvoice = invoices.length > 0 ? totalSpend / invoices.length : 0;
+  const largest = invoices.length > 0 ? Math.max(...invoices.map(i => parseFloat(i.amount || 0))) : 0;
   const lastInvoice = invoices[0];
-  const daysSinceLast = lastInvoice ? Math.floor((Date.now() - new Date(lastInvoice.created_at)) / 86400000) : null;
-  const invoicesThisMonth = invoices.filter(i => i.created_at && new Date(i.created_at).getMonth() === currentMonth).length;
-  const processedPct = invoices.length > 0 ? Math.round((processed.length / invoices.length) * 100) : 0;
+  const daysSinceLast = lastInvoice?.date
+    ? (() => {
+        const [y, m, d] = lastInvoice.date.split('T')[0].split('-').map(Number);
+        return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000);
+      })()
+    : null;
+
+  // Invoices dated in current month
+  const invoicesThisMonthByDate = invoices.filter(i => {
+    if (!i.date) return false;
+    const [y, m] = i.date.split('T')[0].split('-').map(Number);
+    return y === currentYear && m - 1 === currentMonth;
+  }).length;
+
+  // Invoices uploaded (created_at) in current month
+  const invoicesUploadedThisMonth = invoices.filter(i => {
+    if (!i.created_at) return false;
+    const d = new Date(i.created_at);
+    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+  }).length;
+
   const supplierMap = {};
   invoices.forEach(i => {
     if (i.supplier) {
@@ -1064,9 +1058,9 @@ export default function ClientInvoices() {
   });
   const topSuppliers = Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const maxSupplier = topSuppliers[0]?.[1] || 1;
-  const currentYear = new Date().getFullYear();
+
   const monthlySpend = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+    const d = new Date(currentYear, currentMonth - 11 + i, 1);
     const yr = d.getFullYear();
     const mo = d.getMonth();
     const total = invoices.filter(inv => {
@@ -1077,14 +1071,24 @@ export default function ClientInvoices() {
     return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total };
   });
   const maxMonthly = Math.max(...monthlySpend.map(m => m.total), 1);
+
+  const lastMonthDate = new Date(currentYear, currentMonth - 1, 1);
+  const lastMonthSpend = invoices.filter(inv => {
+    if (!inv.date) return false;
+    const [y, m] = inv.date.split('T')[0].split('-').map(Number);
+    return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth();
+  }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
+
+  const monthDelta = thisMonthSpend - lastMonthSpend;
+  const monthPct = lastMonthSpend > 0 ? Math.round((monthDelta / lastMonthSpend) * 100) : null;
+  const monthUp = monthDelta >= 0;
+
   const filtered = invoices.filter(i => {
     const s = searchTerm.toLowerCase();
     return (i.number || '').toLowerCase().includes(s) || (i.supplier || '').toLowerCase().includes(s);
   });
+
   const totalCalculated = invoiceItems.reduce((s, i) => s + calculateItemTotal(i), 0);
-  const donutCirc = 2 * Math.PI * 14;
-  const processedDash = (processed.length / Math.max(invoices.length, 1)) * donutCirc;
-  const pendingDash = (pending.length / Math.max(invoices.length, 1)) * donutCirc;
 
   // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
   if (isMobile) {
@@ -1108,10 +1112,9 @@ export default function ClientInvoices() {
           <div className="mob-stats">
             {[
               { v: invoices.length, l: 'Total', c: '#02a4ba' },
-              { v: processed.length, l: 'Processed', c: '#2a8a5a' },
-              { v: pending.length, l: 'Pending', c: '#d4a020' },
               { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
               { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+              { v: formatCurrencyShort(lastMonthSpend), l: 'Last Month', c: '#6b6358' },
             ].map(({ v, l, c }) => (
               <div key={l} className="mob-stat">
                 <div className="mob-stat-v" style={{ color: c }}>{v}</div>
@@ -1127,7 +1130,7 @@ export default function ClientInvoices() {
             <div className="mob-list-th">Supplier</div>
             <div className="mob-list-th">Invoice No.</div>
             <div className="mob-list-th">Amount</div>
-            <div className="mob-list-th">Status</div>
+            <div className="mob-list-th">Date</div>
           </div>
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
@@ -1141,17 +1144,14 @@ export default function ClientInvoices() {
                   <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No invoices yet'}</div>
                   {!searchTerm && <button className="mob-add-btn" onClick={() => setShowParseModal(true)}>Upload First Invoice</button>}
                 </div>
-              ) : filtered.map(invoice => {
-                const { label, ok } = getStatus(invoice);
-                return (
-                  <div key={invoice.id} className={`mob-list-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`} onClick={() => selectInvoice(invoice)}>
-                    <div className="mob-td primary">{invoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Unknown</span>}</div>
-                    <div className="mob-td">{invoice.number || <span style={{ color: '#4a453e' }}>—</span>}</div>
-                    <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: '#4a453e' }}>—</span>}</div>
-                    <div><span className={`mob-pill ${ok ? 'ok' : 'pend'}`}>{label}</span></div>
-                  </div>
-                );
-              })}
+              ) : filtered.map(invoice => (
+                <div key={invoice.id} className={`mob-list-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`} onClick={() => selectInvoice(invoice)}>
+                  <div className="mob-td primary">{invoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Unknown</span>}</div>
+                  <div className="mob-td">{invoice.number || <span style={{ color: '#4a453e' }}>—</span>}</div>
+                  <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                  <div className="mob-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -1204,9 +1204,7 @@ export default function ClientInvoices() {
                     </div>
                   </>
                 ) : (
-                  <div style={{ fontSize: 13, color: '#4a453e', textAlign: 'center', padding: '16px 0' }}>
-                    {getStatus(selectedInvoice).ok ? 'No line items recorded' : 'Pending processing'}
-                  </div>
+                  <div style={{ fontSize: 13, color: '#4a453e', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
                 )}
               </div>
             </div>
@@ -1270,10 +1268,9 @@ export default function ClientInvoices() {
         <div className="inv-sbar">
           {[
             { v: invoices.length, l: 'Total Invoices', c: '#02a4ba' },
-            { v: processed.length, l: 'Processed', c: '#2a8a5a' },
-            { v: pending.length, l: 'Pending', c: '#d4a020' },
-            { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
-            { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+            { v: formatCurrencyWhole(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
+            { v: formatCurrencyWhole(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+            { v: formatCurrencyWhole(lastMonthSpend), l: 'Last Month', c: '#6b6358' },
           ].map(({ v, l, c }) => (
             <div key={l}>
               <div className="inv-sv" style={{ color: c }}>{v}</div>
@@ -1341,14 +1338,15 @@ export default function ClientInvoices() {
               {!selectedInvoice && (
                 <div className="inv-detail-body">
                   <div className="inv-widget-row">
+                    {/* Monthly Spend Trend */}
                     <div className="inv-widget">
                       <div className="inv-wlbl">
                         <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                         Monthly Spend Trend
                       </div>
                       <div className="inv-mini-chart">
-                        {monthlySpend.map(({ month, total }) => (
-                          <div key={month} className="inv-mc-col">
+                        {monthlySpend.map(({ month, total }, idx) => (
+                          <div key={idx} className="inv-mc-col">
                             <div className="inv-mc-track">
                               <div className="inv-mc-bar" style={{ height: `${Math.max(2, (total / maxMonthly) * 90)}%`, background: getBarColor(total) }} />
                             </div>
@@ -1357,49 +1355,38 @@ export default function ClientInvoices() {
                         ))}
                       </div>
                     </div>
+
+                    {/* This Month vs Last Month */}
                     <div className="inv-widget">
                       <div className="inv-wlbl">
                         <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
                         This Month vs Last Month
                       </div>
-                      {(() => {
-                        const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-                        const lastMonthSpend = invoices.filter(inv => {
-                          if (!inv.date) return false;
-                          const [y, m] = inv.date.split('T')[0].split('-').map(Number);
-                          return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth();
-                        }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
-                        const delta = thisMonthSpend - lastMonthSpend;
-                        const pct = lastMonthSpend > 0 ? Math.round((delta / lastMonthSpend) * 100) : null;
-                        const up = delta >= 0;
-                        return (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                              <div>
-                                <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
-                              </div>
-                              <div style={{ textAlign: 'right' }}>
-                                <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
-                              </div>
-                            </div>
-                            {pct !== null && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: up ? '#c04040' : '#2a8a5a' }}>
-                                <span>{up ? '▲' : '▼'}</span>
-                                <span>{Math.abs(pct)}% {up ? 'higher' : 'lower'} than last month</span>
-                              </div>
-                            )}
-                            {pct === null && (
-                              <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data for last month</div>
-                            )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                          <div>
+                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
+                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
                           </div>
-                        );
-                      })()}
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
+                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
+                          </div>
+                        </div>
+                        {monthPct !== null ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: monthUp ? '#c04040' : '#2a8a5a' }}>
+                            <span>{monthUp ? '▲' : '▼'}</span>
+                            <span>{Math.abs(monthPct)}% {monthUp ? 'higher' : 'lower'} than last month</span>
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data for last month</div>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div className="inv-widget-row">
+                    {/* Key Metrics */}
                     <div className="inv-widget">
                       <div className="inv-wlbl">
                         <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
@@ -1408,25 +1395,34 @@ export default function ClientInvoices() {
                       <div className="inv-stat-pair">
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Avg invoice size</div>
-                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#e8e2d8' }}>{formatCurrencyWhole(avgInvoice)}</div>
+                          <div className="inv-stat-val" style={{ color: '#e8e2d8' }}>{formatCurrencyWhole(avgInvoice)}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Largest invoice</div>
-                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#02a4ba' }}>{formatCurrencyWhole(largest)}</div>
+                          <div className="inv-stat-val" style={{ color: '#02a4ba' }}>{formatCurrencyWhole(largest)}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Days since last invoice</div>
-                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: daysSinceLast > 7 ? '#d4a020' : '#2a8a5a' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div>
+                          <div className="inv-stat-val" style={{ color: daysSinceLast > 7 ? '#d4a020' : '#2a8a5a' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <div className="inv-stat-name">Invoices this month</div>
-                            <div style={{ fontSize: 'clamp(8px,.58vw,9px)', color: '#3a3630' }}>uploaded this month</div>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#3a3630' }}>by invoice date</div>
                           </div>
-                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#2a8a5a' }}>{invoicesThisMonth}</div>
+                          <div className="inv-stat-val" style={{ color: '#2a8a5a' }}>{invoicesThisMonthByDate}</div>
+                        </div>
+                        <div className="inv-stat-item">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div className="inv-stat-name">Uploaded this month</div>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#3a3630' }}>by upload date</div>
+                          </div>
+                          <div className="inv-stat-val" style={{ color: '#4a453e' }}>{invoicesUploadedThisMonth}</div>
                         </div>
                       </div>
                     </div>
+
+                    {/* Top Suppliers */}
                     <div className="inv-widget">
                       <div className="inv-wlbl">
                         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
@@ -1438,13 +1434,14 @@ export default function ClientInvoices() {
                           <div key={name} className="inv-prog-row">
                             <div className="inv-prog-label">{name}</div>
                             <div className="inv-prog-track"><div className="inv-prog-fill" style={{ width: `${(amount / maxSupplier) * 100}%`, background: colors[i] }} /></div>
-                            <div className="inv-prog-val" style={{ color: colors[i] }}>{formatCurrencyShort(amount)}</div>
+                            <div className="inv-prog-val" style={{ color: colors[i] }}>{formatCurrencyWhole(amount)}</div>
                           </div>
                         );
                       }) : <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e', marginTop: 4 }}>No supplier data yet</div>}
                     </div>
                   </div>
 
+                  {/* Recent Activity */}
                   <div className="inv-widget-full">
                     <div className="inv-wlbl">
                       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -1456,7 +1453,7 @@ export default function ClientInvoices() {
                         <div key={inv.id} className="inv-act-item" onClick={() => selectInvoice(inv)}>
                           <div className="inv-act-dot" style={{ background: ok ? '#2a8a5a' : '#d4a020' }} />
                           <div className="inv-act-text"><strong>{inv.number || 'Invoice'}</strong>{inv.supplier ? ` from ${inv.supplier}` : ''} — {ok ? 'processed successfully' : 'pending review'}</div>
-                          {inv.amount && <div className="inv-act-amount">{formatCurrencyShort(inv.amount)}</div>}
+                          {inv.amount && <div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
                           <div className="inv-act-time">{timeAgo(inv.created_at)}</div>
                         </div>
                       );
@@ -1520,9 +1517,7 @@ export default function ClientInvoices() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 8, color: '#4a453e' }}>
                       <IconFile size={36} />
-                      <div style={{ fontSize: 'clamp(11px,0.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>
-                        {getStatus(selectedInvoice).ok ? 'No line items recorded' : 'Pending processing'}
-                      </div>
+                      <div style={{ fontSize: 'clamp(11px,0.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>No line items recorded</div>
                     </div>
                   )}
 
