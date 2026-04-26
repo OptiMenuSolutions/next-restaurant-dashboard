@@ -158,7 +158,7 @@ const CSS = `
   .inv-stat-pair { display: flex; flex-direction: column; gap: clamp(5px,.5vh,8px); }
   .inv-stat-item { display: flex; align-items: center; justify-content: space-between; }
   .inv-stat-name { font-size: clamp(9px,.68vw,11px); color: #6b6358; }
-  .inv-stat-val { font-family: 'Playfair Display', serif !important; font-size: clamp(13px,1.05vw,17px); }
+  .inv-stat-val { font-family: 'Inter', sans-serif !important; font-size: clamp(13px,1.05vw,17px); font-weight: 600; }
 
   .inv-prog-row { display: flex; align-items: center; gap: 7px; margin-bottom: clamp(4px,.4vh,7px); }
   .inv-prog-row:last-child { margin-bottom: 0; }
