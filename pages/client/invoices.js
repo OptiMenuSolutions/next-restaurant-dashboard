@@ -26,6 +26,13 @@ function formatCurrencyShort(amount) {
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function formatCurrencyWhole(amount) {
+  if (amount === null || amount === undefined || amount === '') return '--';
+  const n = parseFloat(amount);
+  if (isNaN(n)) return '--';
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
 function formatDate(d) {
   if (!d) return 'Not provided';
   try {
@@ -1039,6 +1046,7 @@ export default function ClientInvoices() {
   const processed = invoices.filter(i => getStatus(i).ok);
   const pending = invoices.filter(i => !getStatus(i).ok);
   const totalSpend = processed.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+  const now = new Date();
   const currentMonth = new Date().getMonth();
   const thisMonthSpend = processed.filter(i => i.date && new Date(i.date).getMonth() === currentMonth).reduce((s, i) => s + parseFloat(i.amount || 0), 0);
   const avgInvoice = processed.length > 0 ? totalSpend / processed.length : 0;
@@ -1048,13 +1056,25 @@ export default function ClientInvoices() {
   const invoicesThisMonth = invoices.filter(i => i.created_at && new Date(i.created_at).getMonth() === currentMonth).length;
   const processedPct = invoices.length > 0 ? Math.round((processed.length / invoices.length) * 100) : 0;
   const supplierMap = {};
-  processed.forEach(i => { if (i.supplier) supplierMap[i.supplier] = (supplierMap[i.supplier] || 0) + parseFloat(i.amount || 0); });
+  invoices.forEach(i => {
+    if (i.supplier) {
+      const key = i.supplier.trim();
+      supplierMap[key] = Math.round(((supplierMap[key] || 0) + (Math.round(parseFloat(i.amount || 0) * 100) / 100)) * 100) / 100;
+    }
+  });
   const topSuppliers = Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const maxSupplier = topSuppliers[0]?.[1] || 1;
   const currentYear = new Date().getFullYear();
-  const monthlySpend = Array.from({ length: 12 }, (_, m) => {
-    const total = processed.filter(i => i.date && new Date(i.date).getFullYear() === currentYear && new Date(i.date).getMonth() === m).reduce((s, i) => s + parseFloat(i.amount || 0), 0);
-    return { month: new Date(currentYear, m).toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total };
+  const monthlySpend = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+    const yr = d.getFullYear();
+    const mo = d.getMonth();
+    const total = invoices.filter(inv => {
+      if (!inv.date) return false;
+      const [y, m] = inv.date.split('T')[0].split('-').map(Number);
+      return y === yr && (m - 1) === mo;
+    }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
+    return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total };
   });
   const maxMonthly = Math.max(...monthlySpend.map(m => m.total), 1);
   const filtered = invoices.filter(i => {
@@ -1339,31 +1359,43 @@ export default function ClientInvoices() {
                     </div>
                     <div className="inv-widget">
                       <div className="inv-wlbl">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        Processing Breakdown
+                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                        This Month vs Last Month
                       </div>
-                      <div className="inv-donut-wrap">
-                        <div className="inv-donut">
-                          <svg viewBox="0 0 36 36">
-                            <circle cx="18" cy="18" r="14" fill="none" stroke="#1a1915" strokeWidth="5"/>
-                            {invoices.length > 0 && <>
-                              <circle cx="18" cy="18" r="14" fill="none" stroke="#2a8a5a" strokeWidth="5"
-                                strokeDasharray={`${processedDash} ${donutCirc}`} strokeDashoffset={donutCirc * 0.25} strokeLinecap="round"/>
-                              <circle cx="18" cy="18" r="14" fill="none" stroke="#d4a020" strokeWidth="5"
-                                strokeDasharray={`${pendingDash} ${donutCirc}`} strokeDashoffset={-(processedDash - donutCirc * 0.25)} strokeLinecap="round"/>
-                            </>}
-                          </svg>
-                          <div className="inv-donut-inner">
-                            <div className="inv-donut-pct">{processedPct}%</div>
-                            <div className="inv-donut-sub">done</div>
+                      {(() => {
+                        const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                        const lastMonthSpend = invoices.filter(inv => {
+                          if (!inv.date) return false;
+                          const [y, m] = inv.date.split('T')[0].split('-').map(Number);
+                          return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth();
+                        }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
+                        const delta = thisMonthSpend - lastMonthSpend;
+                        const pct = lastMonthSpend > 0 ? Math.round((delta / lastMonthSpend) * 100) : null;
+                        const up = delta >= 0;
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                              <div>
+                                <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
+                              </div>
+                            </div>
+                            {pct !== null && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: up ? '#c04040' : '#2a8a5a' }}>
+                                <span>{up ? '▲' : '▼'}</span>
+                                <span>{Math.abs(pct)}% {up ? 'higher' : 'lower'} than last month</span>
+                              </div>
+                            )}
+                            {pct === null && (
+                              <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data for last month</div>
+                            )}
                           </div>
-                        </div>
-                        <div className="inv-donut-legend">
-                          <div className="inv-dl"><div className="inv-dl-dot" style={{ background: '#2a8a5a' }}/> Processed <div className="inv-dl-val">{processed.length}</div></div>
-                          <div className="inv-dl"><div className="inv-dl-dot" style={{ background: '#d4a020' }}/> Pending <div className="inv-dl-val">{pending.length}</div></div>
-                          <div className="inv-dl"><div className="inv-dl-dot" style={{ background: '#1a1915', border: '1px solid #2a2620' }}/> Total <div className="inv-dl-val">{invoices.length}</div></div>
-                        </div>
-                      </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -1374,10 +1406,25 @@ export default function ClientInvoices() {
                         Key Metrics
                       </div>
                       <div className="inv-stat-pair">
-                        <div className="inv-stat-item"><div className="inv-stat-name">Avg invoice size</div><div className="inv-stat-val" style={{ color: '#e8e2d8' }}>{formatCurrencyShort(avgInvoice)}</div></div>
-                        <div className="inv-stat-item"><div className="inv-stat-name">Largest invoice</div><div className="inv-stat-val" style={{ color: '#02a4ba' }}>{formatCurrencyShort(largest)}</div></div>
-                        <div className="inv-stat-item"><div className="inv-stat-name">Days since last invoice</div><div className="inv-stat-val" style={{ color: daysSinceLast > 7 ? '#d4a020' : '#2a8a5a' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div></div>
-                        <div className="inv-stat-item"><div className="inv-stat-name">Invoices this month</div><div className="inv-stat-val" style={{ color: '#2a8a5a' }}>{invoicesThisMonth}</div></div>
+                        <div className="inv-stat-item">
+                          <div className="inv-stat-name">Avg invoice size</div>
+                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#e8e2d8' }}>{formatCurrencyWhole(avgInvoice)}</div>
+                        </div>
+                        <div className="inv-stat-item">
+                          <div className="inv-stat-name">Largest invoice</div>
+                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#02a4ba' }}>{formatCurrencyWhole(largest)}</div>
+                        </div>
+                        <div className="inv-stat-item">
+                          <div className="inv-stat-name">Days since last invoice</div>
+                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: daysSinceLast > 7 ? '#d4a020' : '#2a8a5a' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div>
+                        </div>
+                        <div className="inv-stat-item">
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <div className="inv-stat-name">Invoices this month</div>
+                            <div style={{ fontSize: 'clamp(8px,.58vw,9px)', color: '#3a3630' }}>uploaded this month</div>
+                          </div>
+                          <div className="inv-stat-val" style={{ fontFamily: "'Playfair Display', serif", color: '#2a8a5a' }}>{invoicesThisMonth}</div>
+                        </div>
                       </div>
                     </div>
                     <div className="inv-widget">
