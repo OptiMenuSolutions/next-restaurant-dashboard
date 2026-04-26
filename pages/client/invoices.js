@@ -110,14 +110,14 @@ const CSS = `
   .inv-search-sm { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
 
   .inv-ph { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .inv-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
+  .inv-ph-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
   .inv-ph-sub { font-size: clamp(9px,.65vw,11px); color: #4a453e; margin-top: 2px; }
   .inv-search-lg { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(160px,16vw,300px); outline: none; font-family: 'Inter', sans-serif; }
   .inv-upload-btn { display: flex; align-items: center; gap: 6px; background: #02a4ba; border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .inv-upload-btn:hover { background: #01bcd4; }
 
   .inv-sbar { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
-  .inv-sv { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
+  .inv-sv { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
   .inv-sl { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
   .inv-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px); flex: 1; min-height: 0; overflow: hidden; }
@@ -184,7 +184,7 @@ const CSS = `
   .inv-dfield { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
   .inv-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
   .inv-dfield-val { font-size: clamp(10px,.75vw,13px); color: #e8e2d8; font-weight: 500; }
-  .inv-dfield-val.accent { color: #02a4ba; font-family: 'Playfair Display', serif; font-size: clamp(14px,1.1vw,18px); }
+  .inv-dfield-val.accent { color: #02a4ba; font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
   .inv-dfield-val.link { color: #02a4ba; font-size: clamp(9px,.65vw,11px); cursor: pointer; text-decoration: underline; }
 
   .inv-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 90px; gap: 5px; padding: clamp(5px,.5vh,8px) clamp(8px,.7vw,12px); background: #0f0e0c; border-radius: 6px 6px 0 0; border: 1px solid #2a2620; border-bottom: none; }
@@ -201,14 +201,14 @@ const CSS = `
 
   .inv-total-bar { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; margin-top: clamp(5px,.5vh,8px); }
   .inv-total-label { font-size: clamp(9px,.68vw,12px); color: #6b6358; font-weight: 500; }
-  .inv-total-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.1vw,18px); color: #02a4ba; }
+  .inv-total-val { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); color: #02a4ba; }
   .inv-diff { font-size: clamp(8px,.62vw,10px); color: #c04040; margin-top: 3px; text-align: right; }
 
   /* ── PARSE MODAL ── */
   .pm-bg { position: fixed; inset: 0; background: rgba(0,0,0,.82); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
   .pm-modal { background: #13120f; border: 1px solid #2a2620; border-radius: 12px; width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; animation: slideUp .2s ease; }
   .pm-hd { padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); border-bottom: 1px solid #2a2620; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .pm-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
+  .pm-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
   .pm-close { background: none; border: none; color: #4a453e; cursor: pointer; font-size: 18px; line-height: 1; transition: color .15s; }
   .pm-close:hover { color: #e8e2d8; }
   .pm-body { flex: 1; overflow-y: auto; padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); display: flex; flex-direction: column; gap: clamp(12px,1.2vh,20px); }
@@ -233,7 +233,7 @@ const CSS = `
   .pm-inv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
   .pm-inv-field-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
   .pm-inv-field-val { font-size: clamp(11px,.85vw,14px); color: #e8e2d8; font-weight: 500; }
-  .pm-inv-field-val.accent { color: #02a4ba; font-family: 'Playfair Display', serif; font-size: clamp(14px,1.1vw,18px); }
+  .pm-inv-field-val.accent { color: #02a4ba; font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
   .pm-conf-badge { display: inline-block; font-size: clamp(7px,.58vw,9px); padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
   .pm-conf-high { background: rgba(42,138,90,.15); color: #2a8a5a; }
   .pm-conf-medium { background: rgba(212,160,32,.15); color: #d4a020; }
@@ -303,7 +303,7 @@ const CSS = `
   /* Success */
   .pm-success { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; text-align: center; }
   .pm-success-icon { width: 48px; height: 48px; border-radius: 50%; background: rgba(42,138,90,.12); border: 2px solid rgba(42,138,90,.3); display: flex; align-items: center; justify-content: center; }
-  .pm-success-title { font-family: 'Playfair Display', serif; font-size: clamp(16px,1.4vw,22px); color: #e8e2d8; }
+  .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,22px); color: #e8e2d8; }
   .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: #4a453e; max-width: 340px; line-height: 1.5; }
 
   .inv-confirm-banner { margin: 0 clamp(10px,1vw,20px); background: rgba(42,138,90,.1); border: 1px solid rgba(42,138,90,.25); border-radius: 6px; padding: 10px 14px; font-size: clamp(10px,.75vw,13px); color: #2a8a5a; display: flex; align-items: center; justify-content: space-between; }
@@ -314,13 +314,13 @@ const CSS = `
   .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; }
   .mob-logo span { color: #02a4ba; }
   .mob-titlebar { background: #13120f; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .mob-page-title { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; line-height: 1; }
+  .mob-page-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 20px; color: #e8e2d8; line-height: 1; }
   .mob-page-sub { font-size: 11px; color: #4a453e; margin-top: 3px; }
   .mob-stats { background: #13120f; border-bottom: 1px solid #2a2620; padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
   .mob-stats::-webkit-scrollbar { display: none; }
   .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid #2a2620; }
   .mob-stat:last-child { border-right: none; }
-  .mob-stat-v { font-family: 'Playfair Display', serif; font-size: 16px; line-height: 1; }
+  .mob-stat-v { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 16px; line-height: 1; }
   .mob-stat-l { font-size: 9px; color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
   .mob-search-bar { padding: 10px 14px; background: #0a0908; border-bottom: 1px solid #2a2620; flex-shrink: 0; }
   .mob-search-input { width: 100%; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #e8e2d8; outline: none; font-family: 'Inter', sans-serif; }
@@ -346,7 +346,7 @@ const CSS = `
   .mob-dfield { background: #13120f; border: 1px solid #2a2620; border-radius: 8px; padding: 10px 12px; }
   .mob-dfield-lbl { font-size: 9px; color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
   .mob-dfield-val { font-size: 13px; color: #e8e2d8; font-weight: 500; }
-  .mob-dfield-val.accent { font-family: 'Playfair Display', serif; font-size: 18px; color: #02a4ba; }
+  .mob-dfield-val.accent { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; color: #02a4ba; }
   .mob-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 8px 12px; background: #0f0e0c; border-radius: 8px 8px 0 0; border: 1px solid #2a2620; border-bottom: none; }
   .mob-ith { font-size: 9px; font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .6px; }
   .mob-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 11px 12px; border: 1px solid #2a2620; border-top: none; align-items: center; }
@@ -1200,7 +1200,7 @@ export default function ClientInvoices() {
                     ))}
                     <div className="mob-total-bar">
                       <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>Calculated Total</div>
-                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#02a4ba' }}>{formatCurrency(totalCalculated)}</div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18, color: '#02a4ba' }}>{formatCurrency(totalCalculated)}</div>
                     </div>
                   </>
                 ) : (
@@ -1366,11 +1366,11 @@ export default function ClientInvoices() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                           <div>
                             <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
-                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
+                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
-                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
+                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
                           </div>
                         </div>
                         {monthPct !== null ? (
