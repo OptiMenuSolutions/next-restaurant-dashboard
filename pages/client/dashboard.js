@@ -10,6 +10,7 @@ import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from "../../components/TourDataBanner";
+import UniversalSearch from '../../components/UniversalSearch';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -114,18 +115,6 @@ const GLOBAL_CSS = `
     transition: all 0.15s;
   }
   .db-tab.active { color: #e8e2d8; background: #1a1915; }
-
-  .db-search {
-    background: #1a1915;
-    border: 1px solid #2a2620;
-    border-radius: clamp(3px, 0.3vw, 6px);
-    padding: clamp(3px, 0.3vh, 6px) clamp(8px, 0.7vw, 13px);
-    font-size: clamp(10px, 0.75vw, 13px);
-    color: #e8e2d8;
-    width: clamp(120px, 12vw, 220px);
-    outline: none;
-    font-family: 'Inter', sans-serif;
-  }
 
   .db-wbar {
     background: #13120f;
@@ -1009,7 +998,9 @@ export default function ClientDashboard() {
               <div style={{ width: 'clamp(4px,0.35vw,6px)', height: 'clamp(4px,0.35vw,6px)', background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
-            <input className="db-search" placeholder="Search..." />
+            <div style={{ width: 'clamp(160px, 14vw, 260px)' }}>
+              <UniversalSearch restaurantId={restaurantId} placeholder="Search..." />
+            </div>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
