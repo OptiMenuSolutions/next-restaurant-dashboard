@@ -1010,7 +1010,7 @@ export default function ClientInvoices() {
 
   async function fetchInvoices() {
     setLoading(true);
-    const { data } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('created_at', { ascending: false });
+    const { data } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('date', { ascending: false, nullsFirst: false });
     setInvoices(data || []);
     setLoading(false);
     const { selected } = router.query;
