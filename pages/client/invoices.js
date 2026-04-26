@@ -28,14 +28,18 @@ function formatCurrencyShort(amount) {
 
 function formatDate(d) {
   if (!d) return 'Not provided';
-  try { return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }); }
-  catch { return 'Invalid date'; }
+  try {
+    const [year, month, day] = d.split('T')[0].split('-');
+    return new Date(+year, +month - 1, +day).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  } catch { return 'Invalid date'; }
 }
 
 function formatDateShort(d) {
   if (!d) return '—';
-  try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-  catch { return '—'; }
+  try {
+    const [year, month, day] = d.split('T')[0].split('-');
+    return new Date(+year, +month - 1, +day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch { return '—'; }
 }
 
 function timeAgo(d) {
