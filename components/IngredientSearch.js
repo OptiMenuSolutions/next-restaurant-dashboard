@@ -212,15 +212,15 @@ export default function IngredientSearch({
               setShowDropdown(true);
             }
           }}
-          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white text-sm"
+          className="w-full pl-10 pr-10 py-2 rounded-lg text-sm" style={{ background: '#1a1915', border: '1px solid #2a2620', color: '#e8e2d8', outline: 'none', fontFamily: "'Inter', sans-serif" }}
         />
         
         {/* Search Icon */}
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
           {isSearching ? (
-            <IconLoader size={16} className="text-gray-400 animate-spin" />
+            <IconLoader size={16} style={{ color: "#4a453e" }} className="animate-spin" />
           ) : (
-            <IconSearch size={16} className="text-gray-400" />
+            <IconSearch size={16} style={{ color: "#4a453e" }} />
           )}
         </div>
 
@@ -228,7 +228,7 @@ export default function IngredientSearch({
         {searchTerm && (
           <button 
             onClick={clearSearch} 
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 transition-colors" style={{ color: "#4a453e" }}
           >
             <IconX size={16} />
           </button>
@@ -239,7 +239,7 @@ export default function IngredientSearch({
       {showDropdown && searchResults.length > 0 && (
         <div 
           ref={dropdownRef}
-          className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto"
+          className="absolute top-full left-0 right-0 mt-1 rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto" style={{ background: '#13120f', border: '1px solid #2a2620' }}
         >
           <div className="py-2">
             {searchResults.map((result, index) => (
@@ -248,8 +248,8 @@ export default function IngredientSearch({
                 onClick={() => handleResultClick(result)}
                 className={`px-4 py-3 cursor-pointer transition-colors ${
                   index === selectedIndex 
-                    ? 'bg-blue-50 border-l-4 border-blue-500' 
-                    : 'hover:bg-gray-50'
+                    ? 'border-l-4 border-teal' 
+                    : ''
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -260,22 +260,22 @@ export default function IngredientSearch({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <h4 className="text-sm font-medium text-gray-900 truncate">
+                        <h4 className="text-sm font-medium truncate" style={{ color: "#e8e2d8" }}>
                           {result.name}
                         </h4>
-                        <p className="text-xs text-gray-500 truncate flex items-center gap-1">
+                        <p className="text-xs truncate flex items-center gap-1" style={{ color: "#6b6358" }}>
                           <IconScale size={12} />
                           {result.unit}
                         </p>
                       </div>
                       
                       <div className="flex-shrink-0 text-right ml-4">
-                        <div className="text-sm font-medium text-gray-900 flex items-center gap-1">
+                        <div className="text-sm font-medium flex items-center gap-1" style={{ color: "#e8e2d8" }}>
                           <IconCurrencyDollar size={12} />
                           {result.hasPrice ? formatCurrency(result.price) : 'No price'}
                         </div>
                         {result.lastOrdered && (
-                          <div className="text-xs text-gray-500 flex items-center gap-1">
+                          <div className="text-xs flex items-center gap-1" style={{ color: "#6b6358" }}>
                             <IconCalendar size={10} />
                             {formatDate(result.lastOrdered)}
                           </div>
@@ -291,7 +291,7 @@ export default function IngredientSearch({
                         </span>
                       </div>
                       
-                      <div className="text-xs text-gray-400">
+                      <div className="text-xs" style={{ color: "#4a453e" }}>
                         Click to view details
                       </div>
                     </div>
@@ -302,8 +302,8 @@ export default function IngredientSearch({
           </div>
           
           {/* Footer */}
-          <div className="border-t border-gray-200 px-4 py-2 bg-gray-50">
-            <p className="text-xs text-gray-500 text-center">
+          <div className="px-4 py-2" style={{ borderTop: "1px solid #2a2620", background: "#0f0e0c" }}>
+            <p className="text-xs text-center" style={{ color: "#4a453e" }}>
               Use ↑↓ to navigate, Enter to select, Esc to close
             </p>
           </div>
@@ -314,12 +314,12 @@ export default function IngredientSearch({
       {showDropdown && searchResults.length === 0 && !isSearching && searchTerm.trim() && (
         <div 
           ref={dropdownRef}
-          className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50"
+          className="absolute top-full left-0 right-0 mt-1 rounded-lg shadow-lg z-50" style={{ background: "#13120f", border: "1px solid #2a2620" }}
         >
           <div className="px-4 py-6 text-center">
             <IconPackage size={24} className="mx-auto text-gray-300 mb-2" />
-            <p className="text-sm text-gray-500">No ingredients found for "{searchTerm}"</p>
-            <p className="text-xs text-gray-400 mt-1">Try searching by ingredient name or unit type</p>
+            <p className="text-sm" style={{ color: "#6b6358" }}>No ingredients found for "{searchTerm}"</p>
+            <p className="text-xs mt-1" style={{ color: "#4a453e" }}>Try searching by ingredient name or unit type</p>
           </div>
         </div>
       )}

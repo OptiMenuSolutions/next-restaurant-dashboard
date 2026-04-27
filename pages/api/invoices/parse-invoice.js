@@ -84,7 +84,6 @@ Rules:
     return res.status(500).json({ error: 'Invoice too large to parse in one pass. Try uploading one page at a time.' });
   }
 
-  console.log('[parse-invoice] Raw Claude response:', raw);
 
   await logAiUsage({
     feature: 'invoice_parse',
@@ -290,20 +289,15 @@ export default async function handler(req, res) {
       : ext === '.webp' ? 'image/webp'
       : 'image/jpeg';
 
-    console.log('[parse-invoice] File read complete, starting Claude call...');
     const claudeStart = Date.now();
     const extracted = await extractInvoiceData(fileBase64, mediaType, restaurantId);
-    console.log(`[parse-invoice] Claude finished in ${Date.now() - claudeStart}ms`);
 
     if (!extracted) {
       return res.status(500).json({ error: 'Could not parse invoice. Try a clearer image.' });
     }
 
-    console.log(`[parse-invoice] Extracted: supplier=${extracted.supplier}, items=${extracted.line_items?.length}`);
 
-    console.log('[parse-invoice] Loading restaurant ingredients...');
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
-    console.log(`[parse-invoice] Found ${restaurantIngredients.length} existing ingredients`);
 
     const lineItemsWithMatches = (extracted.line_items || []).map((item, idx) => {
       const matchResult = matchLineItem(item, restaurantIngredients);
