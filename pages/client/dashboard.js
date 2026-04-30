@@ -277,6 +277,31 @@ const GLOBAL_CSS = `
     overflow: hidden;
   }
 
+  /* FIX #1 — restaurant name/sub use Inter (same as old code) */
+  .db-rest-icon {
+    width: clamp(22px, 1.8vw, 32px);
+    height: clamp(22px, 1.8vw, 32px);
+    border-radius: 50%;
+    background: rgba(2,164,186,.1);
+    border: 1px solid rgba(2,164,186,.2);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .db-rest-name {
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(10px, 0.8vw, 14px);
+    font-weight: 600;
+    color: #e8e2d8;
+    text-align: center;
+  }
+  .db-rest-sub {
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(8px, 0.58vw, 10px);
+    color: #4a453e;
+    text-align: center;
+  }
+
   .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(2px, 0.25vh, 4px); flex-shrink: 0; }
   .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
   .db-ring { position: relative; width: clamp(52px, 4.8vw, 76px); height: clamp(52px, 4.8vw, 76px); }
@@ -335,7 +360,7 @@ const GLOBAL_CSS = `
   .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.75vw, 13px); color: #4a453e; text-align: center; padding: 8px; }
   .db-spinner { width: clamp(7px, 0.62vw, 10px); height: clamp(7px, 0.62vw, 10px); border: 1.5px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 
-  /* ── Thermal ticket ── */
+  /* ── Thermal ticket — FIX #2: two-column, no scroll ── */
   .db-ticket {
     background: #111009;
     border: 1px solid #2a2620;
@@ -350,15 +375,31 @@ const GLOBAL_CSS = `
   .db-ticket:nth-child(2) { animation-delay: 0.08s; }
   .db-ticket:nth-child(3) { animation-delay: 0.16s; }
 
-  .db-ticket-receipt {
+  /* Two-column layout inside ticket */
+  .db-ticket-inner {
     flex: 1;
-    overflow-y: auto;
-    padding: clamp(6px, 0.7vh, 10px) clamp(8px, 0.8vw, 14px);
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .db-ticket-left {
+    flex: 1;
+    padding: clamp(6px, 0.7vh, 10px) clamp(8px, 0.8vw, 12px);
     display: flex;
     flex-direction: column;
     gap: 0;
+    border-right: 1px dashed #2a2620;
+    overflow: hidden;
   }
-  .db-ticket-receipt::-webkit-scrollbar { width: 2px; }
+
+  .db-ticket-right {
+    width: 40%;
+    padding: clamp(6px, 0.7vh, 10px) clamp(6px, 0.6vw, 10px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
 
   .db-receipt-stars {
     font-size: clamp(7px, 0.55vw, 9px);
@@ -383,7 +424,7 @@ const GLOBAL_CSS = `
   .db-receipt-divider {
     border: none;
     border-top: 1px dashed #2a2620;
-    margin: clamp(4px,0.4vh,7px) 0;
+    margin: clamp(3px,0.3vh,5px) 0;
     flex-shrink: 0;
   }
 
@@ -407,7 +448,7 @@ const GLOBAL_CSS = `
     color: #9a9086;
     font-style: italic;
     line-height: 1.5;
-    margin: clamp(3px,0.3vh,5px) 0;
+    margin: clamp(2px,0.2vh,4px) 0;
     flex-shrink: 0;
   }
   .db-receipt-sell::before { content: '"'; color: #02a4ba; font-style: normal; }
@@ -435,7 +476,8 @@ const GLOBAL_CSS = `
     font-size: clamp(7px, 0.52vw, 9px);
     color: #2a2620;
     text-align: center;
-    margin-top: clamp(4px,0.4vh,6px);
+    margin-top: auto;
+    padding-top: clamp(4px,0.4vh,6px);
     flex-shrink: 0;
   }
 
@@ -530,19 +572,20 @@ const GLOBAL_CSS = `
   .db-pm-ing-delta { font-size: clamp(10px, 0.72vw, 12px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
   .db-pm-ing-prices { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; padding-left: 2px; }
 
-  /* ── Top ingredient costs ── */
-  .db-ing-list { flex: 1; overflow-y: auto; min-height: 0; }
-  .db-ing-list::-webkit-scrollbar { width: 2px; }
+  /* ── Top ingredient costs — FIX #4: fixed 8, flex fill ── */
+  .db-ing-list { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .db-ing-row {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    padding: clamp(5px, 0.55vh, 8px) clamp(7px, 0.65vw, 11px);
+    padding: 0 clamp(7px, 0.65vw, 11px);
     background: #0f0e0c;
     border-radius: clamp(4px, 0.32vw, 6px);
     border: 1px solid #1a1915;
     margin-bottom: clamp(4px, 0.4vh, 6px);
-    flex-shrink: 0;
+    flex: 1;
+    justify-content: center;
+    min-height: 0;
   }
   .db-ing-row:last-child { margin-bottom: 0; }
   .db-ing-top { display: flex; align-items: center; justify-content: space-between; }
@@ -641,7 +684,7 @@ function ScoreRing({ score }) {
   );
 }
 
-// ─── Thermal Ticket ───────────────────────────────────────────────────────────
+// ─── Thermal Ticket — FIX #2: two-column, no scroll, dish name bug fixed ─────
 const SELL_COPY = [
   "Just came in fresh — one of the best things on the menu tonight.",
   "The kitchen is really proud of this one tonight — worth every bite.",
@@ -654,34 +697,32 @@ const SELL_COPY = [
 function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   if (!rec) return null;
 
-  // Handle all field name variants from different API response formats
-  const dishName = rec.dish || rec.title || '';
-  const description = rec.reason || rec.description || '';
-  const sellCopy = rec.talking_point || rec.sellCopy || SELL_COPY[index % SELL_COPY.length];
+  // FIX: rec coming from fetchAIRecommendations is already mapped to {title, description, sellCopy, ...}
+  // so read title first (that's what the mapper outputs), then fall back to dish
+  const dishName = rec.title || rec.dish || '';
+  const description = rec.description || rec.reason || '';
+  const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin ? parseFloat(rec.margin) : null;
   const confidence = rec.confidence || null;
-  const urgency = rec.urgency || rec.type || 'margin';
 
   const typeColor =
     rec.type === 'inventory' ? '#c04040' :
     rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
 
   const urgencyLabel =
-    urgency === 'high' ? 'URGENT' :
-    urgency === 'medium' || rec.type === 'margin' ? 'HIGH MARGIN' :
-    urgency === 'low' || rec.type === 'trending' ? 'TRENDING' : 'RECOMMENDED';
+    rec.urgency === 'high' ? 'URGENT' :
+    rec.type === 'margin' ? 'HIGH MARGIN' :
+    rec.type === 'trending' ? 'TRENDING' : 'RECOMMENDED';
 
-  // Find matching menu item for recipe breakdown
+  // FIX: match on dishName (which is rec.title from the mapper)
   const menuItem = (menuItems || []).find(m =>
     m.name?.toLowerCase().trim() === dishName.toLowerCase().trim()
   );
 
-  // Build set of at-risk ingredient names
   const atRiskNames = new Set(
     (wasteRisk || []).map(w => w.name?.toLowerCase().trim())
   );
 
-  // Margin vs average
   let marginVsAvg = null;
   if (marginVal && averageMargin > 0) {
     const diff = marginVal - averageMargin;
@@ -689,113 +730,113 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   }
 
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const starRow = '********************************';
+  const starRow = '***********************';
 
   return (
     <div className="db-ticket">
-      <div className="db-ticket-receipt">
-        {/* Header */}
-        <div className="db-receipt-stars">{starRow}</div>
-        <div className="db-receipt-center" style={{ color: typeColor }}>{urgencyLabel}</div>
-        <div className="db-receipt-stars">{starRow}</div>
+      <div className="db-ticket-inner">
 
-        <div className="db-receipt-divider" />
+        {/* LEFT: header + meta + sell copy */}
+        <div className="db-ticket-left">
+          <div className="db-receipt-stars">{starRow}</div>
+          <div className="db-receipt-center" style={{ color: typeColor }}>{urgencyLabel}</div>
+          <div className="db-receipt-stars">{starRow}</div>
 
-        {/* Meta rows */}
-        <div className="db-receipt-row">
-          <span className="db-receipt-key">Date:</span>
-          <span className="db-receipt-val">{today}</span>
-        </div>
-        <div className="db-receipt-row">
-          <span className="db-receipt-key">Pick:</span>
-          <span className="db-receipt-val teal">Tonight #{index + 1}</span>
-        </div>
+          <div className="db-receipt-divider" />
 
-        <div className="db-receipt-divider" />
+          <div className="db-receipt-row">
+            <span className="db-receipt-key">Date:</span>
+            <span className="db-receipt-val" style={{ fontSize: 'clamp(7px,0.55vw,9px)' }}>{today}</span>
+          </div>
+          <div className="db-receipt-row">
+            <span className="db-receipt-key">Pick:</span>
+            <span className="db-receipt-val teal">Tonight #{index + 1}</span>
+          </div>
 
-        {/* Dish name — large hero */}
-        <div style={{
-          fontFamily: 'Courier New, monospace',
-          fontSize: 'clamp(12px, 1.05vw, 17px)',
-          fontWeight: 700,
-          color: '#e8e2d8',
-          lineHeight: 1.2,
-          marginBottom: 'clamp(2px, 0.22vh, 4px)',
-        }}>{dishName || '—'}</div>
+          <div className="db-receipt-divider" />
 
-        {/* Description — smaller underneath */}
-        {description && (
+          {/* Dish name — large */}
           <div style={{
             fontFamily: 'Courier New, monospace',
-            fontSize: 'clamp(7px, 0.55vw, 9px)',
-            color: '#6b6358',
-            lineHeight: 1.4,
-            marginBottom: 'clamp(3px, 0.3vh, 5px)',
-          }}>{description}</div>
-        )}
+            fontSize: 'clamp(11px, 0.95vw, 15px)',
+            fontWeight: 700,
+            color: '#e8e2d8',
+            lineHeight: 1.2,
+            marginBottom: 'clamp(2px, 0.2vh, 3px)',
+          }}>{dishName || '—'}</div>
 
-        <div className="db-receipt-divider" />
+          {/* Description — smaller underneath */}
+          {description && (
+            <div style={{
+              fontFamily: 'Courier New, monospace',
+              fontSize: 'clamp(7px, 0.55vw, 9px)',
+              color: '#6b6358',
+              lineHeight: 1.4,
+              marginBottom: 'clamp(3px, 0.3vh, 5px)',
+            }}>{description}</div>
+          )}
 
-        {/* Stats */}
-        {marginVal && (
-          <div className="db-receipt-row">
-            <span className="db-receipt-key">Margin:</span>
-            <span className="db-receipt-val" style={{ color: typeColor }}>
-              {marginVal.toFixed(1)}%{marginVsAvg ? ` (${marginVsAvg})` : ''}
-            </span>
-          </div>
-        )}
-        <div className="db-receipt-row">
-          <span className="db-receipt-key">Popularity:</span>
-          <span className="db-receipt-val" style={{ color: '#4a453e' }}>—</span>
-        </div>
-        {confidence && (
-          <div className="db-receipt-row">
-            <span className="db-receipt-key">Confidence:</span>
-            <span className="db-receipt-val teal">{confidence}%</span>
-          </div>
-        )}
+          <div className="db-receipt-divider" />
 
-        <div className="db-receipt-divider" />
-
-        {/* Sell copy */}
-        <div className="db-receipt-sell">{sellCopy}</div>
-
-        <div className="db-receipt-divider" />
-
-        {/* Recipe breakdown */}
-        <div style={{
-          fontSize: 'clamp(7px, 0.55vw, 9px)',
-          color: '#4a453e',
-          textTransform: 'uppercase',
-          letterSpacing: '0.8px',
-          marginBottom: 3,
-        }}>Recipe</div>
-
-        {menuItem?.menu_item_components?.length > 0 ? (
-          menuItem.menu_item_components.map((comp, ci) => (
-            <div key={ci}>
-              <div className="db-receipt-component">— {comp.name || `Component ${ci + 1}`}</div>
-              {(comp.component_ingredients || []).map((ci2, ii) => {
-                const ingName = ci2.ingredients?.name || ci2.name || '';
-                const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
-                return (
-                  <div key={ii} className={`db-receipt-ingredient${isAtRisk ? ' at-risk' : ''}`}>
-                    &nbsp;&nbsp;· {ingName}
-                    {ci2.quantity ? ` (${ci2.quantity})` : ''}
-                    {isAtRisk ? ' ⚠' : ''}
-                  </div>
-                );
-              })}
+          {marginVal && (
+            <div className="db-receipt-row">
+              <span className="db-receipt-key">Margin:</span>
+              <span className="db-receipt-val" style={{ color: typeColor }}>
+                {marginVal.toFixed(1)}%{marginVsAvg ? ` (${marginVsAvg})` : ''}
+              </span>
             </div>
-          ))
-        ) : (
-          <div className="db-receipt-ingredient" style={{ color: '#3a3630' }}>
-            {dishName ? 'Recipe not linked' : 'No dish selected'}
-          </div>
-        )}
+          )}
+          {confidence && (
+            <div className="db-receipt-row">
+              <span className="db-receipt-key">Confidence:</span>
+              <span className="db-receipt-val teal">{confidence}%</span>
+            </div>
+          )}
 
-        <div className="db-receipt-footer">#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
+          <div className="db-receipt-divider" />
+
+          <div className="db-receipt-sell">{sellCopy}</div>
+
+          <div className="db-receipt-footer">#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
+        </div>
+
+        {/* RIGHT: recipe breakdown */}
+        <div className="db-ticket-right">
+          <div style={{
+            fontSize: 'clamp(7px, 0.55vw, 9px)',
+            color: '#4a453e',
+            textTransform: 'uppercase',
+            letterSpacing: '0.8px',
+            marginBottom: 4,
+            flexShrink: 0,
+          }}>Recipe</div>
+
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {menuItem?.menu_item_components?.length > 0 ? (
+              menuItem.menu_item_components.map((comp, ci) => (
+                <div key={ci}>
+                  <div className="db-receipt-component">— {comp.name || `Component ${ci + 1}`}</div>
+                  {(comp.component_ingredients || []).map((ci2, ii) => {
+                    const ingName = ci2.ingredients?.name || ci2.name || '';
+                    const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
+                    return (
+                      <div key={ii} className={`db-receipt-ingredient${isAtRisk ? ' at-risk' : ''}`}>
+                        &nbsp;&nbsp;· {ingName}
+                        {ci2.quantity ? ` (${ci2.quantity})` : ''}
+                        {isAtRisk ? ' ⚠' : ''}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#3a3630', fontFamily: 'Courier New, monospace' }}>
+                {dishName ? 'Recipe not linked' : 'No dish selected'}
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -803,10 +844,12 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
 // ─── WasteRow helper ─────────────────────────────────────────────────────────
 function WasteRow({ item, router }) {
-  const urgencyColor = getWasteUrgencyColor(item.daysLeft);
-  const consumed = Math.min(100, Math.max(0,
-    ((item.shelfLife - item.daysLeft) / item.shelfLife) * 100));
-  const label = item.daysLeft === 0 ? 'Use today' : item.daysLeft === 1 ? '1 day left' : `${item.daysLeft} days left`;
+  // FIX #3: show expired proteins too, with red "Expired" label
+  const daysLeft = item.daysLeft;
+  const urgencyColor = daysLeft < 0 ? '#c04040' : getWasteUrgencyColor(daysLeft);
+  const consumed = daysLeft < 0 ? 100 : Math.min(100, Math.max(0,
+    ((item.shelfLife - daysLeft) / item.shelfLife) * 100));
+  const label = daysLeft < 0 ? 'Expired' : daysLeft === 0 ? 'Use today' : daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
   const qtyText = item.remainingQty > 0
     ? `~${item.remainingQty.toFixed(1)} ${item.unit || 'units'} remaining`
     : item.invoicedQty > 0 ? `${item.invoicedQty.toFixed(1)} ${item.unit || 'units'} invoiced` : 'Qty unknown';
@@ -839,7 +882,6 @@ function PriceMovementCard({ priceByCategory }) {
 
   const categories = Object.keys(priceByCategory).sort();
 
-  // Compute global min/max across ALL ingredients for shared Y axis
   let globalMin = Infinity;
   let globalMax = -Infinity;
   Object.values(priceByCategory).forEach(cat => {
@@ -876,12 +918,10 @@ function PriceMovementCard({ priceByCategory }) {
           <div className="db-empty">No price history yet</div>
         )}
 
-        {/* Category view */}
         {!selectedCat && categories.map(cat => {
           const d = priceByCategory[cat];
           const isUp = d.avgDelta > 0;
           const deltaColor = isUp ? '#c04040' : '#2a8a5a';
-          // Category sparkline = average history across ingredients
           const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
           const avgHistory = Array.from({ length: maxLen }, (_, idx) => {
             const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
@@ -903,7 +943,6 @@ function PriceMovementCard({ priceByCategory }) {
           );
         })}
 
-        {/* Ingredient drill-down */}
         {selectedCat && catData && catData.ingredients.map((ing, i) => {
           const isUp = ing.deltaPct > 0;
           const deltaColor = isUp ? '#c04040' : '#2a8a5a';
@@ -1059,7 +1098,7 @@ export default function ClientDashboard() {
     }
   }
 
-  // ── Waste Risk with POS-adjusted quantity, split proteins vs other ────────
+  // ── Protein classification ────────────────────────────────────────────────
   const PROTEIN_KEYS = new Set([
     'fish','salmon','tuna','halibut','cod','tilapia','mahi','shrimp','scallop',
     'lobster','crab','oyster','clam','swordfish','bass','snapper','flounder',
@@ -1076,13 +1115,13 @@ export default function ClientDashboard() {
     return false;
   }
 
+  // ── FIX #3: Waste Risk — proteins shown even if expired (daysLeft < 0) ──
   function computeWasteRisk(invoiceItems, invoices, posSales) {
     const invoiceDateMap = {};
     (invoices || []).forEach(inv => {
       if (inv.id && inv.date) invoiceDateMap[inv.id] = inv.date;
     });
 
-    // POS daily sales map: item_name_lower -> { date -> qty }
     const posByItem = {};
     (posSales || []).forEach(s => {
       const key = (s.item_name || '').toLowerCase().trim();
@@ -1090,7 +1129,6 @@ export default function ClientDashboard() {
       posByItem[key][s.sale_date] = (posByItem[key][s.sale_date] || 0) + parseFloat(s.quantity_sold || 0);
     });
 
-    // Find most recent invoice_item per ingredient
     const latestByIngredient = {};
     (invoiceItems || []).forEach(item => {
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
@@ -1120,7 +1158,6 @@ export default function ClientDashboard() {
       const daysSinceDelivery = Math.floor((today - deliveryDate) / (1000 * 60 * 60 * 24));
       const daysLeft = shelfLife - daysSinceDelivery;
 
-      // Remaining quantity: invoiced - sum POS sales since delivery
       let soldSinceDelivery = 0;
       const nameLower = name.toLowerCase().trim();
       if (posByItem[nameLower]) {
@@ -1130,6 +1167,7 @@ export default function ClientDashboard() {
       }
       const remainingQty = Math.max(0, info.quantity - soldSinceDelivery);
       const totalValue = remainingQty * info.unitCost;
+      const protein = isProtein(name);
 
       return {
         name, daysLeft, shelfLife,
@@ -1139,19 +1177,22 @@ export default function ClientDashboard() {
         invoicedQty: info.quantity,
         remainingQty,
         totalValue,
-        protein: isProtein(name),
+        protein,
       };
     });
 
-    // Expand window: proteins up to 7 days, others up to 5 days
+    // Proteins: show within 7 days OR if expired (recently past shelf life, within 3 days over)
+    // Other ingredients: show within 5 days
     return risks
-      .filter(r => r.daysLeft >= 0 && (r.protein ? r.daysLeft <= 7 : r.daysLeft <= 5))
+      .filter(r => {
+        if (r.protein) return r.daysLeft <= 7 && r.daysLeft >= -3;
+        return r.daysLeft >= 0 && r.daysLeft <= 5;
+      })
       .sort((a, b) => a.daysLeft - b.daysLeft);
   }
 
-  // ── Price by Category: real 6-month history, monthly buckets ─────────────
+  // ── Price by Category ─────────────────────────────────────────────────────
   function computePriceByCategory(invoiceItems) {
-    // Group by category -> ingredient -> monthly avg price
     const catMap = {};
 
     (invoiceItems || []).forEach(item => {
@@ -1169,7 +1210,6 @@ export default function ClientDashboard() {
       catMap[cat][name][monthKey].push(price);
     });
 
-    // Build 6 monthly buckets (oldest to newest)
     const buckets = Array.from({ length: 6 }, (_, i) => {
       const d = new Date();
       d.setMonth(d.getMonth() - (5 - i));
@@ -1185,7 +1225,6 @@ export default function ClientDashboard() {
           if (!vals || vals.length === 0) return null;
           return vals.reduce((a, v) => a + v, 0) / vals.length;
         });
-        // Fill nulls with nearest known value
         let last = null;
         const filled = history.map(v => { if (v !== null) { last = v; return v; } return last; });
         const filled2 = filled.slice().reverse().map(v => { if (v !== null) { last = v; return v; } return last; }).reverse();
@@ -1266,10 +1305,13 @@ export default function ClientDashboard() {
     const averageMargin = itemsWithMargins.length > 0
       ? itemsWithMargins.reduce((s, i) => s + i.margin, 0) / itemsWithMargins.length : 0;
     const lowMarginCount = itemsWithMargins.filter(i => i.margin < LOW_MARGIN_THRESHOLD).length;
+    const highMarginCount = itemsWithMargins.filter(i => i.margin >= 60).length;
 
+    // FIX #4: cap at 8
     const ingredientTrends = ingredients
       .filter(i => i.last_price > 0)
       .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
+      .slice(0, 8)
       .map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
 
     const aiProfitScore = calculateAIProfitScore({
@@ -1282,7 +1324,8 @@ export default function ClientDashboard() {
       totalInvoices: invoices.length, totalIngredients: ingredients.length,
       totalMenuItems: menuItems.length, ingredientTrends, menuItemAnalysis,
       unpricedIngredients, averageMargin, totalSpending, aiProfitScore,
-      lowMarginCount, wasteRisk: wasteRisk || [], priceByCategory: priceByCategory || {},
+      lowMarginCount, highMarginCount,
+      wasteRisk: wasteRisk || [], priceByCategory: priceByCategory || {},
     };
   }
 
@@ -1513,7 +1556,7 @@ export default function ClientDashboard() {
               {/* ROW TOP */}
               <div className="db-row-top">
 
-                {/* LEFT COL — score card only in top row */}
+                {/* LEFT — score card */}
                 <div className="db-score-card">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px,0.22vh,3px)', width: '100%' }}>
                     <div className="db-rest-icon">
@@ -1557,16 +1600,19 @@ export default function ClientDashboard() {
               {/* ROW BOTTOM */}
               <div className="db-row-bottom">
 
-                {/* LEFT COL — stats card in bottom row */}
+                {/* FIX #5: Key Metrics — 7 pills to fill the card */}
                 <div className="db-stats-card">
                   <div style={{ fontSize: 'clamp(8px,0.58vw,10px)', color: '#3a3630', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, flexShrink: 0 }}>Key Metrics</div>
                   {[
-                    { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba', sub: `${data.totalInvoices} on file` },
-                    { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
-                    { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a', sub: `${data.averageMargin.toFixed(1)}% avg margin` },
                     { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
+                    { l: 'Avg Margin', v: `${data.averageMargin.toFixed(1)}%`, c: getMarginColor(data.averageMargin), sub: `${(100 - data.averageMargin).toFixed(1)}% avg food cost` },
+                    { l: 'High Margin Items', v: data.highMarginCount || 0, c: '#2a8a5a', sub: 'Above 60% margin' },
+                    { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
+                    { l: 'Menu Items', v: data.totalMenuItems, c: '#02a4ba', sub: `${data.menuItemAnalysis?.filter(m => m.hasCompleteData).length || 0} fully costed` },
+                    { l: 'Ingredients', v: data.totalIngredients, c: '#e8e2d8', sub: data.unpricedIngredients > 0 ? `${data.unpricedIngredients} unpriced` : 'All priced' },
+                    { l: 'Waste Alerts', v: data.wasteRisk.length, c: data.wasteRisk.length > 0 ? '#c04040' : '#2a8a5a', sub: data.wasteRisk.length > 0 ? `${wasteProteins.length} protein, ${wasteOther.length} other` : 'Nothing expiring soon' },
                   ].map(({ l, v, c, sub }) => (
-                    <div key={l} className="db-pill">
+                    <div key={l} className="db-pill" style={{ flex: 1 }}>
                       <div className="db-pill-left">
                         <div className="db-pill-l">{l}</div>
                         <div className="db-pill-sub">{sub}</div>
@@ -1591,7 +1637,6 @@ export default function ClientDashboard() {
                       <div className="db-empty">No expiring items detected</div>
                     )}
 
-                    {/* Proteins section */}
                     {wasteProteins.length > 0 && (
                       <>
                         <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
@@ -1601,12 +1646,10 @@ export default function ClientDashboard() {
                       </>
                     )}
 
-                    {/* Divider between sections */}
                     {wasteProteins.length > 0 && wasteOther.length > 0 && (
                       <div style={{ borderTop: '1px solid #1a1915', margin: 'clamp(4px,0.4vh,7px) 0', flexShrink: 0 }} />
                     )}
 
-                    {/* Other ingredients section */}
                     {wasteOther.length > 0 && (
                       <>
                         <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
@@ -1619,10 +1662,9 @@ export default function ClientDashboard() {
 
                   {data.wasteRisk.length > 0 && (
                     <div className="db-legend-strip">
-                      <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Use today / 1 day</span>
+                      <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Expired / today</span>
                       <span><span className="db-legend-dot" style={{ background: '#d4a020' }} />2 days</span>
                       <span><span className="db-legend-dot" style={{ background: '#02a4ba' }} />3–7 days</span>
-                      <span style={{ marginLeft: 'auto', color: '#2a2620' }}>⚠ = at risk in tonight's picks</span>
                     </div>
                   )}
                 </div>
@@ -1630,7 +1672,7 @@ export default function ClientDashboard() {
                 {/* PRICE MOVEMENT */}
                 <PriceMovementCard priceByCategory={data.priceByCategory} />
 
-                {/* TOP INGREDIENT COSTS */}
+                {/* TOP INGREDIENT COSTS — FIX #4: top 8, flex fill, no scroll */}
                 <div className="db-card">
                   <div className="db-card-hd">
                     <div className="db-card-title">
