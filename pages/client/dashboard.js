@@ -736,6 +736,10 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const starRow = '***********************';
 
+  console.log('dishName:', dishName);
+  console.log('menuItems count:', (menuItems || []).length);
+  console.log('menuItems names:', (menuItems || []).map(m => m.name));
+
   return (
     <div className="db-ticket">
       <div className="db-ticket-inner">
@@ -1199,6 +1203,14 @@ export default function ClientDashboard() {
 
     // Proteins: any delivery within last 14 days (covers full shelf life + recently expired)
     // Other ingredients: 0–5 days left
+    console.log('All risks before filter:', risks.map(r => ({
+      name: r.name,
+      protein: r.protein,
+      daysLeft: r.daysLeft,
+      daysSinceDelivery: r.daysSinceDelivery,
+      dateStr: r.deliveryDate,
+    })));
+    
     return risks
       .filter(r => {
         if (r.protein) return r.daysSinceDelivery <= 14;
