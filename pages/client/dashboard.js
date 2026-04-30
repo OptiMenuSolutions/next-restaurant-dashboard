@@ -153,76 +153,35 @@ const GLOBAL_CSS = `
   }
   .db-logo span { color: #02a4ba; }
 
-  /* ── Body (nav + content) ── */
-  .db-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
-
-  /* ── Left nav sidebar ── */
-  .db-sidenav {
-    width: clamp(140px, 13vw, 185px);
+  /* ── Nav tabs ── */
+  .db-nav {
     background: #0f0e0c;
-    border-right: 1px solid #2a2620;
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-
-  .db-sidenav-label {
-    font-size: clamp(8px, 0.58vw, 10px);
-    color: #3a3630;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    font-weight: 600;
-    padding: clamp(10px, 1vh, 16px) clamp(12px, 1vw, 18px) clamp(4px, 0.4vh, 6px);
-    flex-shrink: 0;
-  }
-
-  .db-navlink {
+    border-bottom: 1px solid #2a2620;
+    height: clamp(34px, 3.8vh, 46px);
+    padding: 0 clamp(10px, 1vw, 20px);
     display: flex;
     align-items: center;
-    padding: clamp(7px, 0.75vh, 11px) clamp(12px, 1vw, 18px);
-    font-size: clamp(11px, 0.82vw, 14px);
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .db-tab {
+    padding: clamp(2px, 0.3vh, 4px) clamp(6px, 0.6vw, 11px);
+    border-radius: clamp(3px, 0.3vw, 6px);
+    font-size: clamp(10px, 0.75vw, 13px);
     color: #4a453e;
-    cursor: pointer;
     border: none;
     background: none;
+    cursor: pointer;
     font-family: 'Inter', sans-serif;
-    text-align: left;
-    width: 100%;
-    border-left: 2px solid transparent;
+    line-height: 1.5;
     transition: all 0.15s;
-    flex-shrink: 0;
   }
-  .db-navlink:hover { color: #9a9086; background: #13120f; }
-  .db-navlink.active {
-    color: #e8e2d8;
-    background: #13120f;
-    border-left-color: #02a4ba;
-  }
-
-  .db-sidenav-spacer { flex: 1; }
-
-  .db-sidenav-bottom {
-    border-top: 1px solid #2a2620;
-    padding: clamp(8px, 0.8vh, 12px) clamp(10px, 0.9vw, 16px);
-    flex-shrink: 0;
-  }
-
-  .db-sidenav-user {
-    font-size: clamp(10px, 0.75vw, 13px);
-    color: #6b6358;
-    margin-bottom: 4px;
-  }
+  .db-tab.active { color: #e8e2d8; background: #1a1915; }
 
   /* ── Main content area ── */
   .db-main {
     flex: 1;
-    min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -257,7 +216,7 @@ const GLOBAL_CSS = `
   .db-grid-wrap {
     flex: 1;
     min-height: 0;
-    padding: clamp(6px, 0.6vw, 10px);
+    padding: clamp(6px, 0.6vw, 10px) clamp(24px, 3vw, 60px);
     gap: 0;
     display: flex;
     flex-direction: column;
@@ -281,41 +240,42 @@ const GLOBAL_CSS = `
     min-height: 0;
   }
 
-  /* ── Left panel (spans both rows) ── */
-  .db-panel {
+  /* ── Left column — two stacked cards ── */
+  .db-left-col {
     grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(5px, 0.5vw, 9px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* Score card — top left */
+  .db-score-card {
     background: #13120f;
     border: 1px solid #2a2620;
     border-radius: clamp(5px, 0.4vw, 8px);
     padding: clamp(8px, 0.7vw, 14px);
     display: flex;
     flex-direction: column;
-    gap: clamp(5px, 0.5vh, 9px);
-    overflow: hidden;
+    align-items: center;
+    gap: clamp(4px, 0.4vh, 7px);
+    flex-shrink: 0;
   }
 
-  .db-panel-top {
+  /* Stats card — bottom left */
+  .db-stats-card {
+    background: #13120f;
+    border: 1px solid #2a2620;
+    border-radius: clamp(5px, 0.4vw, 8px);
+    padding: clamp(8px, 0.7vw, 14px);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: clamp(2px, 0.22vh, 4px);
-    padding-bottom: clamp(6px, 0.6vh, 10px);
-    border-bottom: 1px solid #2a2620;
-    flex-shrink: 0;
+    gap: clamp(5px, 0.5vh, 8px);
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
-  .db-rest-icon {
-    width: clamp(22px, 1.8vw, 32px);
-    height: clamp(22px, 1.8vw, 32px);
-    border-radius: 50%;
-    background: rgba(2,164,186,.1);
-    border: 1px solid rgba(2,164,186,.2);
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .db-rest-name { font-size: clamp(10px, 0.8vw, 14px); font-weight: 600; color: #e8e2d8; }
-  .db-rest-sub { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; }
 
   .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(2px, 0.25vh, 4px); flex-shrink: 0; }
   .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
@@ -529,21 +489,22 @@ const GLOBAL_CSS = `
     align-items: center;
     gap: 3px;
   }
-  .db-pm-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .db-pm-scroll { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
   .db-pm-scroll::-webkit-scrollbar { width: 2px; }
 
   .db-pm-cat-row {
     display: flex;
     align-items: center;
     gap: clamp(5px, 0.45vw, 8px);
-    padding: clamp(5px, 0.55vh, 9px) clamp(7px, 0.65vw, 11px);
+    padding: 0 clamp(7px, 0.65vw, 11px);
     background: #0f0e0c;
     border-radius: clamp(4px, 0.32vw, 6px);
     border: 1px solid #1a1915;
     margin-bottom: clamp(4px, 0.4vh, 6px);
     cursor: pointer;
     transition: border-color 0.15s;
-    flex-shrink: 0;
+    flex: 1;
+    min-height: 0;
   }
   .db-pm-cat-row:last-child { margin-bottom: 0; }
   .db-pm-cat-row:hover { border-color: #3a3630; }
@@ -692,19 +653,30 @@ const SELL_COPY = [
 
 function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   if (!rec) return null;
-  const dishName = rec.title || rec.dish || '';
-  const typeColor = rec.type === 'inventory' ? '#c04040' : rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
-  const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
+
+  // Handle all field name variants from different API response formats
+  const dishName = rec.dish || rec.title || '';
+  const description = rec.reason || rec.description || '';
+  const sellCopy = rec.talking_point || rec.sellCopy || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin ? parseFloat(rec.margin) : null;
-  const confidence = rec.confidence || 75;
-  const urgencyLabel = rec.urgency === 'high' ? 'URGENT' : rec.urgency === 'medium' ? 'RECOMMENDED' : 'SUGGESTED';
+  const confidence = rec.confidence || null;
+  const urgency = rec.urgency || rec.type || 'margin';
+
+  const typeColor =
+    rec.type === 'inventory' ? '#c04040' :
+    rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
+
+  const urgencyLabel =
+    urgency === 'high' ? 'URGENT' :
+    urgency === 'medium' || rec.type === 'margin' ? 'HIGH MARGIN' :
+    urgency === 'low' || rec.type === 'trending' ? 'TRENDING' : 'RECOMMENDED';
 
   // Find matching menu item for recipe breakdown
   const menuItem = (menuItems || []).find(m =>
-    m.name?.toLowerCase() === dishName.toLowerCase()
+    m.name?.toLowerCase().trim() === dishName.toLowerCase().trim()
   );
 
-  // Build set of at-risk ingredient names for highlighting
+  // Build set of at-risk ingredient names
   const atRiskNames = new Set(
     (wasteRisk || []).map(w => w.name?.toLowerCase().trim())
   );
@@ -729,7 +701,7 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
         <div className="db-receipt-divider" />
 
-        {/* Meta */}
+        {/* Meta rows */}
         <div className="db-receipt-row">
           <span className="db-receipt-key">Date:</span>
           <span className="db-receipt-val">{today}</span>
@@ -741,17 +713,30 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
         <div className="db-receipt-divider" />
 
-        {/* Dish name */}
+        {/* Dish name — large hero */}
         <div style={{
           fontFamily: 'Courier New, monospace',
-          fontSize: 'clamp(11px, 0.95vw, 16px)',
+          fontSize: 'clamp(12px, 1.05vw, 17px)',
           fontWeight: 700,
           color: '#e8e2d8',
-          marginBottom: 'clamp(3px,0.3vh,5px)',
           lineHeight: 1.2,
-        }}>{dishName}</div>
+          marginBottom: 'clamp(2px, 0.22vh, 4px)',
+        }}>{dishName || '—'}</div>
 
-        {/* Margin */}
+        {/* Description — smaller underneath */}
+        {description && (
+          <div style={{
+            fontFamily: 'Courier New, monospace',
+            fontSize: 'clamp(7px, 0.55vw, 9px)',
+            color: '#6b6358',
+            lineHeight: 1.4,
+            marginBottom: 'clamp(3px, 0.3vh, 5px)',
+          }}>{description}</div>
+        )}
+
+        <div className="db-receipt-divider" />
+
+        {/* Stats */}
         {marginVal && (
           <div className="db-receipt-row">
             <span className="db-receipt-key">Margin:</span>
@@ -760,18 +745,16 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
             </span>
           </div>
         )}
-
-        {/* Popularity */}
         <div className="db-receipt-row">
           <span className="db-receipt-key">Popularity:</span>
           <span className="db-receipt-val" style={{ color: '#4a453e' }}>—</span>
         </div>
-
-        {/* Confidence */}
-        <div className="db-receipt-row">
-          <span className="db-receipt-key">Confidence:</span>
-          <span className="db-receipt-val teal">{confidence}%</span>
-        </div>
+        {confidence && (
+          <div className="db-receipt-row">
+            <span className="db-receipt-key">Confidence:</span>
+            <span className="db-receipt-val teal">{confidence}%</span>
+          </div>
+        )}
 
         <div className="db-receipt-divider" />
 
@@ -781,7 +764,13 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
         <div className="db-receipt-divider" />
 
         {/* Recipe breakdown */}
-        <div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>Recipe</div>
+        <div style={{
+          fontSize: 'clamp(7px, 0.55vw, 9px)',
+          color: '#4a453e',
+          textTransform: 'uppercase',
+          letterSpacing: '0.8px',
+          marginBottom: 3,
+        }}>Recipe</div>
 
         {menuItem?.menu_item_components?.length > 0 ? (
           menuItem.menu_item_components.map((comp, ci) => (
@@ -801,10 +790,44 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
             </div>
           ))
         ) : (
-          <div className="db-receipt-ingredient" style={{ color: '#3a3630' }}>Recipe not linked</div>
+          <div className="db-receipt-ingredient" style={{ color: '#3a3630' }}>
+            {dishName ? 'Recipe not linked' : 'No dish selected'}
+          </div>
         )}
 
         <div className="db-receipt-footer">#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── WasteRow helper ─────────────────────────────────────────────────────────
+function WasteRow({ item, router }) {
+  const urgencyColor = getWasteUrgencyColor(item.daysLeft);
+  const consumed = Math.min(100, Math.max(0,
+    ((item.shelfLife - item.daysLeft) / item.shelfLife) * 100));
+  const label = item.daysLeft === 0 ? 'Use today' : item.daysLeft === 1 ? '1 day left' : `${item.daysLeft} days left`;
+  const qtyText = item.remainingQty > 0
+    ? `~${item.remainingQty.toFixed(1)} ${item.unit || 'units'} remaining`
+    : item.invoicedQty > 0 ? `${item.invoicedQty.toFixed(1)} ${item.unit || 'units'} invoiced` : 'Qty unknown';
+  return (
+    <div className="db-waste-row">
+      <div className="db-waste-top">
+        <div className="db-waste-dot" style={{ background: urgencyColor }} />
+        <div className="db-waste-name">{item.name}</div>
+        <div className="db-waste-days" style={{ color: urgencyColor }}>{label}</div>
+      </div>
+      <div className="db-waste-bar-track">
+        <div className="db-waste-bar-fill" style={{ width: `${consumed}%`, background: urgencyColor, opacity: 0.7 }} />
+      </div>
+      <div className="db-waste-meta">
+        <span className="db-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
+        {item.invoiceId && (
+          <button className="db-waste-invoice-link"
+            onClick={() => router.push(`/client/invoices?selected=${item.invoiceId}`)}>
+            View invoice →
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1036,18 +1059,30 @@ export default function ClientDashboard() {
     }
   }
 
-  // ── Waste Risk with POS-adjusted remaining quantity ───────────────────────
+  // ── Waste Risk with POS-adjusted quantity, split proteins vs other ────────
+  const PROTEIN_KEYS = new Set([
+    'fish','salmon','tuna','halibut','cod','tilapia','mahi','shrimp','scallop',
+    'lobster','crab','oyster','clam','swordfish','bass','snapper','flounder',
+    'trout','bluefin tuna','seared toro','chicken','beef','pork','lamb','veal',
+    'duck','turkey','steak','ground beef','ground pork','bacon','sausage',
+    'filet mignon','new york strip','ribeye','short rib',
+  ]);
+  function isProtein(name) {
+    const lower = (name || '').toLowerCase();
+    if (PROTEIN_KEYS.has(lower)) return true;
+    for (const key of PROTEIN_KEYS) {
+      if (lower.includes(key)) return true;
+    }
+    return false;
+  }
+
   function computeWasteRisk(invoiceItems, invoices, posSales) {
     const invoiceDateMap = {};
-    const invoiceIdMap = {};
     (invoices || []).forEach(inv => {
-      if (inv.id && inv.date) {
-        invoiceDateMap[inv.id] = inv.date;
-        invoiceIdMap[inv.id] = inv;
-      }
+      if (inv.id && inv.date) invoiceDateMap[inv.id] = inv.date;
     });
 
-    // Build POS daily sales map: item_name_lower -> { date -> qty }
+    // POS daily sales map: item_name_lower -> { date -> qty }
     const posByItem = {};
     (posSales || []).forEach(s => {
       const key = (s.item_name || '').toLowerCase().trim();
@@ -1068,6 +1103,7 @@ export default function ClientDashboard() {
           date,
           unit: item.unit,
           quantity: parseFloat(item.quantity || 0),
+          unitCost: parseFloat(item.unit_cost || 0),
           invoiceId: item.invoice_id || item.invoices?.id,
           invoiceDate: dateStr,
         };
@@ -1084,7 +1120,7 @@ export default function ClientDashboard() {
       const daysSinceDelivery = Math.floor((today - deliveryDate) / (1000 * 60 * 60 * 24));
       const daysLeft = shelfLife - daysSinceDelivery;
 
-      // Compute remaining quantity: invoiced - sum of POS sales since delivery
+      // Remaining quantity: invoiced - sum POS sales since delivery
       let soldSinceDelivery = 0;
       const nameLower = name.toLowerCase().trim();
       if (posByItem[nameLower]) {
@@ -1093,24 +1129,24 @@ export default function ClientDashboard() {
         });
       }
       const remainingQty = Math.max(0, info.quantity - soldSinceDelivery);
+      const totalValue = remainingQty * info.unitCost;
 
       return {
-        name,
-        daysLeft,
-        shelfLife,
-        deliveryDate: info.date,
+        name, daysLeft, shelfLife,
+        deliveryDate: info.invoiceDate,
         invoiceId: info.invoiceId,
         unit: info.unit,
         invoicedQty: info.quantity,
         remainingQty,
-        soldSinceDelivery,
+        totalValue,
+        protein: isProtein(name),
       };
     });
 
+    // Expand window: proteins up to 7 days, others up to 5 days
     return risks
-      .filter(r => r.daysLeft >= 0 && r.daysLeft <= 5)
-      .sort((a, b) => a.daysLeft - b.daysLeft)
-      .slice(0, 6);
+      .filter(r => r.daysLeft >= 0 && (r.protein ? r.daysLeft <= 7 : r.daysLeft <= 5))
+      .sort((a, b) => a.daysLeft - b.daysLeft);
   }
 
   // ── Price by Category: real 6-month history, monthly buckets ─────────────
@@ -1234,7 +1270,6 @@ export default function ClientDashboard() {
     const ingredientTrends = ingredients
       .filter(i => i.last_price > 0)
       .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
-      .slice(0, 6)
       .map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
 
     const aiProfitScore = calculateAIProfitScore({
@@ -1268,14 +1303,6 @@ export default function ClientDashboard() {
     score += Math.min((recent / 5) * 10, 10);
     return { score: Math.max(0, Math.min(100, Math.round(score))) };
   }
-
-  const NAV_ITEMS = [
-    { label: 'Dashboard', path: '/client/dashboard' },
-    { label: 'Invoices', path: '/client/invoices' },
-    { label: 'Ingredients', path: '/client/ingredients' },
-    { label: 'Menu Items', path: '/client/menu-items' },
-    { label: 'Analytics', path: '/client/analytics' },
-  ];
 
   // ── MOBILE ─────────────────────────────────────────────────────────────────
   if (isMobile) {
@@ -1425,14 +1452,29 @@ export default function ClientDashboard() {
   const maxIngPrice = data.ingredientTrends.length > 0
     ? Math.max(...data.ingredientTrends.map(i => i.price)) : 1;
 
+  const wasteProteins = data.wasteRisk.filter(w => w.protein);
+  const wasteOther = data.wasteRisk.filter(w => !w.protein);
+
+  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
+
   return (
     <>
       <style>{GLOBAL_CSS}</style>
       <div className="db-root">
 
-        {/* TOP BAR */}
+        {/* TOP NAV */}
         <div className="db-topbar">
-          <div className="db-logo">Opti<span>Menu</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
+            <div className="db-logo">Opti<span>Menu</span></div>
+            <div style={{ display: 'flex', gap: 2 }}>
+              {tabs.map(t => (
+                <button key={t} className={`db-tab${t === 'Dashboard' ? ' active' : ''}`}
+                  onClick={() => { if (t !== 'Dashboard') router.push(`/client/${t.toLowerCase().replace(' ', '-')}`); }}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,0.7vw,12px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.62vw,11px)', color: '#02a4ba' }}>
               <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
@@ -1441,206 +1483,183 @@ export default function ClientDashboard() {
             <div style={{ width: 'clamp(140px,13vw,240px)' }}>
               <UniversalSearch restaurantId={restaurantId} placeholder="Search..." />
             </div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />
           </div>
         </div>
 
-        {/* BODY */}
-        <div className="db-body">
-
-          {/* LEFT NAV SIDEBAR */}
-          <div className="db-sidenav">
-            <div className="db-sidenav-label">Navigation</div>
-            {NAV_ITEMS.map(({ label, path }) => (
-              <button key={label} className={`db-navlink${path === '/client/dashboard' ? ' active' : ''}`}
-                onClick={() => router.push(path)}>
-                {label}
-              </button>
-            ))}
-            <div className="db-sidenav-spacer" />
-            <div className="db-sidenav-bottom">
-              <div className="db-sidenav-user">{restaurantName}</div>
-              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />
-            </div>
+        {/* WELCOME BAR */}
+        <div className="db-wbar">
+          <div style={{ display: 'flex', alignItems: 'baseline' }}>
+            <span className="db-wname">Welcome back, {userName}</span>
+            <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
           </div>
+        </div>
 
-          {/* MAIN */}
-          <div className="db-main">
-
-            {/* WELCOME BAR */}
-            <div className="db-wbar">
-              <div style={{ display: 'flex', alignItems: 'baseline' }}>
-                <span className="db-wname">Welcome back, {userName}</span>
-                <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
-              </div>
+        <div className="db-main">
+          {loading ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 'clamp(10px,0.78vw,13px)', color: '#4a453e' }}>Loading dashboard...</div>
             </div>
+          ) : (
+            <div className="db-grid-wrap">
 
-            {loading ? (
-              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-                <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                <div style={{ fontSize: 'clamp(10px,0.78vw,13px)', color: '#4a453e' }}>Loading dashboard...</div>
+              {/* SECTION HEADER — Tickets */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0 }}>
+                <div />
+                <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Tonight's Recommendations</div>
               </div>
-            ) : (
-              <div className="db-grid-wrap">
 
-                {/* SECTION HEADER — Tickets */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0 }}>
-                  <div />
-                  <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Tonight's Recommendations</div>
+              {/* ROW TOP */}
+              <div className="db-row-top">
+
+                {/* LEFT COL — score card only in top row */}
+                <div className="db-score-card">
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px,0.22vh,3px)', width: '100%' }}>
+                    <div className="db-rest-icon">
+                      <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                    </div>
+                    <div className="db-rest-name">{restaurantName}</div>
+                    <div className="db-rest-sub">Management Dashboard</div>
+                  </div>
+                  <ScoreRing score={data.aiProfitScore.score} />
                 </div>
 
-                {/* ROW TOP — Left panel + 3 tickets */}
-                <div className="db-row-top">
-
-                  {/* LEFT PANEL — top half */}
-                  <div className="db-panel" style={{ gridRow: '1 / 3' }}>
-                    <div className="db-panel-top">
-                      <div className="db-rest-icon">
-                        <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
-                      </div>
-                      <div className="db-rest-name">{restaurantName}</div>
-                      <div className="db-rest-sub">Management Dashboard</div>
+                {/* THREE THERMAL TICKETS */}
+                {aiLoading ? (
+                  [0, 1, 2].map(i => (
+                    <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <div className="db-spinner" />
+                      <div style={{ fontSize: 'clamp(9px,0.62vw,11px)', color: '#4a453e', fontFamily: 'Courier New, monospace' }}>Analyzing menu...</div>
                     </div>
-                    <ScoreRing score={data.aiProfitScore.score} />
-                    <div className="db-pills">
-                      {[
-                        { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba', sub: `${data.totalInvoices} on file` },
-                        { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
-                        { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a', sub: `${data.averageMargin.toFixed(1)}% avg margin` },
-                        { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
-                      ].map(({ l, v, c, sub }) => (
-                        <div key={l} className="db-pill">
-                          <div className="db-pill-left">
-                            <div className="db-pill-l">{l}</div>
-                            <div className="db-pill-sub">{sub}</div>
-                          </div>
-                          <div className="db-pill-v" style={{ color: c }}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* THREE THERMAL TICKETS */}
-                  {aiLoading ? (
-                    [0, 1, 2].map(i => (
-                      <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <div className="db-spinner" />
-                        <div style={{ fontSize: 'clamp(9px,0.62vw,11px)', color: '#4a453e', fontFamily: 'Courier New, monospace' }}>Analyzing menu...</div>
+                  ))
+                ) : (data.aiRecommendations || []).length > 0
+                  ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
+                      <ThermalTicket key={i} rec={rec} index={i}
+                        menuItems={menuItemsFull}
+                        wasteRisk={data.wasteRisk}
+                        averageMargin={data.averageMargin} />
+                    ))
+                  : [0, 1, 2].map(i => (
+                      <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center' }}>
+                        <div className="db-empty">No recommendations yet</div>
                       </div>
                     ))
-                  ) : (data.aiRecommendations || []).length > 0
-                    ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
-                        <ThermalTicket key={i} rec={rec} index={i}
-                          menuItems={menuItemsFull}
-                          wasteRisk={data.wasteRisk}
-                          averageMargin={data.averageMargin} />
-                      ))
-                    : [0, 1, 2].map(i => (
-                        <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center' }}>
-                          <div className="db-empty">No recommendations yet</div>
+                }
+              </div>
+
+              {/* SECTION HEADER — Operations */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0, margin: 'clamp(3px,0.3vh,5px) 0' }}>
+                <div />
+                <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Operations</div>
+              </div>
+
+              {/* ROW BOTTOM */}
+              <div className="db-row-bottom">
+
+                {/* LEFT COL — stats card in bottom row */}
+                <div className="db-stats-card">
+                  <div style={{ fontSize: 'clamp(8px,0.58vw,10px)', color: '#3a3630', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, flexShrink: 0 }}>Key Metrics</div>
+                  {[
+                    { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba', sub: `${data.totalInvoices} on file` },
+                    { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
+                    { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a', sub: `${data.averageMargin.toFixed(1)}% avg margin` },
+                    { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
+                  ].map(({ l, v, c, sub }) => (
+                    <div key={l} className="db-pill">
+                      <div className="db-pill-left">
+                        <div className="db-pill-l">{l}</div>
+                        <div className="db-pill-sub">{sub}</div>
+                      </div>
+                      <div className="db-pill-v" style={{ color: c }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* WASTE RISK — two sections */}
+                <div className="db-card">
+                  <div className="db-card-hd">
+                    <div className="db-card-title">
+                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                      Waste Risk
+                    </div>
+                    <span className="db-card-sub">{data.wasteRisk.length > 0 ? `${data.wasteRisk.length} at risk` : 'All clear'}</span>
+                  </div>
+
+                  <div className="db-waste-list">
+                    {data.wasteRisk.length === 0 && (
+                      <div className="db-empty">No expiring items detected</div>
+                    )}
+
+                    {/* Proteins section */}
+                    {wasteProteins.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
+                          Proteins at Risk
                         </div>
-                      ))
-                  }
-                </div>
+                        {wasteProteins.map((item, i) => <WasteRow key={`p-${i}`} item={item} router={router} />)}
+                      </>
+                    )}
 
-                {/* SECTION HEADER — Operations */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0, margin: 'clamp(3px,0.3vh,5px) 0' }}>
-                  <div />
-                  <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Operations</div>
-                </div>
+                    {/* Divider between sections */}
+                    {wasteProteins.length > 0 && wasteOther.length > 0 && (
+                      <div style={{ borderTop: '1px solid #1a1915', margin: 'clamp(4px,0.4vh,7px) 0', flexShrink: 0 }} />
+                    )}
 
-                {/* ROW BOTTOM — (left panel continues) + 3 data cards */}
-                <div className="db-row-bottom">
-
-                  {/* LEFT PANEL placeholder for grid (actual panel spans via gridRow above) */}
-                  <div style={{ gridColumn: 1 }} />
-
-                  {/* WASTE RISK */}
-                  <div className="db-card">
-                    <div className="db-card-hd">
-                      <div className="db-card-title">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        Waste Risk
-                      </div>
-                      <span className="db-card-sub">{data.wasteRisk.length > 0 ? `${data.wasteRisk.length} at risk` : 'All clear'}</span>
-                    </div>
-                    <div className="db-waste-list">
-                      {data.wasteRisk.length > 0 ? data.wasteRisk.map((item, i) => {
-                        const urgencyColor = getWasteUrgencyColor(item.daysLeft);
-                        const consumed = Math.min(100, Math.max(0,
-                          ((item.shelfLife - item.daysLeft) / item.shelfLife) * 100));
-                        const label = item.daysLeft === 0 ? 'Use today' : item.daysLeft === 1 ? '1 day left' : `${item.daysLeft} days left`;
-                        const qtyText = item.remainingQty > 0
-                          ? `~${item.remainingQty.toFixed(1)} ${item.unit || 'units'} remaining`
-                          : 'Qty unknown';
-                        return (
-                          <div key={i} className="db-waste-row">
-                            <div className="db-waste-top">
-                              <div className="db-waste-dot" style={{ background: urgencyColor }} />
-                              <div className="db-waste-name">{item.name}</div>
-                              <div className="db-waste-days" style={{ color: urgencyColor }}>{label}</div>
-                            </div>
-                            <div className="db-waste-bar-track">
-                              <div className="db-waste-bar-fill"
-                                style={{ width: `${consumed}%`, background: urgencyColor, opacity: 0.7 }} />
-                            </div>
-                            <div className="db-waste-meta">
-                              <span className="db-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
-                              {item.invoiceId && (
-                                <button className="db-waste-invoice-link"
-                                  onClick={() => router.push(`/client/invoices?id=${item.invoiceId}`)}>
-                                  View invoice →
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }) : <div className="db-empty">No expiring items detected</div>}
-                    </div>
-                    {data.wasteRisk.length > 0 && (
-                      <div className="db-legend-strip">
-                        <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Use today / 1 day</span>
-                        <span><span className="db-legend-dot" style={{ background: '#d4a020' }} />2 days</span>
-                        <span><span className="db-legend-dot" style={{ background: '#02a4ba' }} />3–5 days</span>
-                        <span style={{ marginLeft: 'auto', color: '#2a2620' }}>⚠ = at risk in tonight's picks</span>
-                      </div>
+                    {/* Other ingredients section */}
+                    {wasteOther.length > 0 && (
+                      <>
+                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
+                          Ingredients at Risk
+                        </div>
+                        {wasteOther.map((item, i) => <WasteRow key={`o-${i}`} item={item} router={router} />)}
+                      </>
                     )}
                   </div>
 
-                  {/* PRICE MOVEMENT — category drill-down */}
-                  <PriceMovementCard priceByCategory={data.priceByCategory} />
-
-                  {/* TOP INGREDIENT COSTS */}
-                  <div className="db-card">
-                    <div className="db-card-hd">
-                      <div className="db-card-title">
-                        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                        Top Ingredient Costs
-                      </div>
-                      <span className="db-card-sub">by unit price</span>
+                  {data.wasteRisk.length > 0 && (
+                    <div className="db-legend-strip">
+                      <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Use today / 1 day</span>
+                      <span><span className="db-legend-dot" style={{ background: '#d4a020' }} />2 days</span>
+                      <span><span className="db-legend-dot" style={{ background: '#02a4ba' }} />3–7 days</span>
+                      <span style={{ marginLeft: 'auto', color: '#2a2620' }}>⚠ = at risk in tonight's picks</span>
                     </div>
-                    <div className="db-ing-list">
-                      {data.ingredientTrends.length > 0 ? data.ingredientTrends.map(ing => (
-                        <div key={ing.name} className="db-ing-row">
-                          <div className="db-ing-top">
-                            <div>
-                              <div className="db-ing-name">{ing.name}</div>
-                              <div className="db-ing-unit">per {ing.unit}</div>
-                            </div>
-                            <div className="db-ing-val">{formatCurrencyDetailed(ing.price)}</div>
-                          </div>
-                          <div className="db-ing-bar-track">
-                            <div className="db-ing-bar-fill"
-                              style={{ width: `${(ing.price / maxIngPrice) * 100}%` }} />
-                          </div>
-                        </div>
-                      )) : <div className="db-empty">No ingredient data yet</div>}
-                    </div>
-                  </div>
-
+                  )}
                 </div>
+
+                {/* PRICE MOVEMENT */}
+                <PriceMovementCard priceByCategory={data.priceByCategory} />
+
+                {/* TOP INGREDIENT COSTS */}
+                <div className="db-card">
+                  <div className="db-card-hd">
+                    <div className="db-card-title">
+                      <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                      Top Ingredient Costs
+                    </div>
+                    <span className="db-card-sub">by unit price</span>
+                  </div>
+                  <div className="db-ing-list">
+                    {data.ingredientTrends.length > 0 ? data.ingredientTrends.map(ing => (
+                      <div key={ing.name} className="db-ing-row">
+                        <div className="db-ing-top">
+                          <div>
+                            <div className="db-ing-name">{ing.name}</div>
+                            <div className="db-ing-unit">per {ing.unit}</div>
+                          </div>
+                          <div className="db-ing-val">{formatCurrencyDetailed(ing.price)}</div>
+                        </div>
+                        <div className="db-ing-bar-track">
+                          <div className="db-ing-bar-fill" style={{ width: `${(ing.price / maxIngPrice) * 100}%` }} />
+                        </div>
+                      </div>
+                    )) : <div className="db-empty">No ingredient data yet</div>}
+                  </div>
+                </div>
+
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
