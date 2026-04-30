@@ -1,5 +1,5 @@
 // pages/client/dashboard.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import { Analytics } from '@vercel/analytics/react';
@@ -14,89 +14,100 @@ import UniversalSearch from '../../components/UniversalSearch';
 
 // ─── Shelf life knowledge (days from delivery) ────────────────────────────────
 const SHELF_LIFE = {
-  // Fish & Seafood
   fish: 2, salmon: 2, tuna: 2, halibut: 2, cod: 2, tilapia: 2, mahi: 2,
   shrimp: 2, scallop: 2, lobster: 1, crab: 2, oyster: 3, clam: 3,
   swordfish: 2, bass: 2, snapper: 2, flounder: 2, trout: 2,
   "bluefin tuna": 2, "seared toro": 2,
-  // Meat & Poultry
   chicken: 3, beef: 4, pork: 4, lamb: 4, veal: 3, duck: 3, turkey: 3,
   steak: 4, "ground beef": 3, "ground pork": 3, bacon: 7, sausage: 4,
   "filet mignon": 4, "new york strip": 4, ribeye: 4, "short rib": 4,
-  // Dairy
   milk: 7, cream: 7, butter: 14, cheese: 14, "heavy cream": 7,
   "sour cream": 14, yogurt: 14, mozzarella: 7, parmesan: 30,
-  // Produce — leafy
   lettuce: 7, spinach: 5, arugula: 5, kale: 7, herbs: 5,
   basil: 5, parsley: 7, cilantro: 5, mint: 7, chives: 7,
-  // Produce — soft
   tomato: 7, strawberry: 5, raspberry: 3, blueberry: 7, mushroom: 7,
   avocado: 4, asparagus: 5, corn: 4, pea: 5,
-  // Produce — firm
   carrot: 21, onion: 30, garlic: 30, potato: 21, apple: 21,
   lemon: 21, lime: 14, orange: 14, beet: 21, celery: 14,
   broccoli: 7, cauliflower: 7, zucchini: 7, pepper: 10,
-  // Pantry / long shelf
   olive: 60, oil: 180, flour: 180, sugar: 365, salt: 365,
   pasta: 365, rice: 365, vinegar: 365, sauce: 30,
 };
 
-function getShelfLife(ingredientName) {
-  if (!ingredientName) return 14;
-  const lower = ingredientName.toLowerCase();
-  // Try exact match first
+function getShelfLife(name) {
+  if (!name) return 14;
+  const lower = name.toLowerCase();
   if (SHELF_LIFE[lower]) return SHELF_LIFE[lower];
-  // Try partial match
   for (const [key, days] of Object.entries(SHELF_LIFE)) {
     if (lower.includes(key) || key.includes(lower.split(' ')[0])) return days;
   }
-  return 14; // default: 2 weeks
+  return 14;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
 function formatCurrency(amount) {
   if (!amount) return "$0";
   const n = parseFloat(amount);
   if (isNaN(n)) return "$0";
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
-
 function formatCurrencyDetailed(amount) {
   if (!amount) return "$0.00";
   const n = parseFloat(amount);
   if (isNaN(n)) return "$0.00";
   return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
 function formatDate(d) {
   if (!d) return "N/A";
   try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
   catch { return "N/A"; }
 }
-
+function formatDateLong(d) {
+  if (!d) return "N/A";
+  try { return new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); }
+  catch { return "N/A"; }
+}
 function getMarginColor(m) {
   if (m >= 60) return "#2a8a5a";
   if (m >= 40) return "#02a4ba";
   if (m >= 25) return "#d4a020";
   return "#c04040";
 }
-
 function getScoreInfo(score) {
-  if (score >= 85) return { color: "#2a8a5a", label: "Excellent" };
-  if (score >= 70) return { color: "#02a4ba", label: "Good" };
-  if (score >= 55) return { color: "#d4a020", label: "Fair" };
-  return { color: "#c04040", label: "Needs Work" };
+  if (score >= 85) return { color: "#2a8a5a", label: "Excellent", pct: "Top 10%" };
+  if (score >= 70) return { color: "#02a4ba", label: "Good", pct: "Top 30%" };
+  if (score >= 55) return { color: "#d4a020", label: "Fair", pct: "Top 50%" };
+  return { color: "#c04040", label: "Needs Work", pct: "Bottom 50%" };
 }
-
 function getWasteUrgencyColor(daysLeft) {
   if (daysLeft <= 1) return "#c04040";
   if (daysLeft <= 2) return "#d4a020";
   return "#02a4ba";
 }
 
-// ─── CSS ─────────────────────────────────────────────────────────────────────
+// ─── Sparkline SVG ────────────────────────────────────────────────────────────
+function Sparkline({ points, color, globalMin, globalMax, width = 70, height = 24 }) {
+  if (!points || points.length < 2) return null;
+  const minV = globalMin !== undefined ? globalMin : Math.min(...points);
+  const maxV = globalMax !== undefined ? globalMax : Math.max(...points);
+  const range = maxV - minV || 1;
+  const pad = 2;
+  const coords = points.map((p, i) => {
+    const x = pad + (i / (points.length - 1)) * (width - pad * 2);
+    const y = pad + ((maxV - p) / range) * (height - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const lastPt = coords.split(' ').pop().split(',');
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} style={{ overflow: 'visible', flexShrink: 0 }}>
+      <polyline points={coords} fill="none" stroke={color} strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
+      <circle cx={lastPt[0]} cy={lastPt[1]} r="2.5" fill={color} />
+    </svg>
+  );
+}
 
+// ─── CSS ─────────────────────────────────────────────────────────────────────
 const GLOBAL_CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: #0a0908; overflow: hidden; }
@@ -105,6 +116,7 @@ const GLOBAL_CSS = `
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
 
   input::placeholder { color: #3a3630 !important; }
   ::-webkit-scrollbar { width: 3px; }
@@ -122,76 +134,163 @@ const GLOBAL_CSS = `
     overflow: hidden;
   }
 
-  .db-nav {
+  /* ── Top bar ── */
+  .db-topbar {
     background: #0f0e0c;
     border-bottom: 1px solid #2a2620;
-    height: clamp(36px, 4vh, 52px);
+    height: clamp(36px, 4vh, 48px);
     padding: 0 clamp(10px, 1vw, 20px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
   }
-
   .db-logo {
     font-family: 'Playfair Display', serif;
-    font-size: clamp(13px, 1.1vw, 19px);
+    font-size: clamp(14px, 1.1vw, 20px);
     color: #e8e2d8;
     letter-spacing: -.3px;
   }
   .db-logo span { color: #02a4ba; }
 
-  .db-tab {
-    padding: clamp(2px, 0.3vh, 4px) clamp(6px, 0.6vw, 11px);
-    border-radius: clamp(3px, 0.3vw, 6px);
-    font-size: clamp(10px, 0.75vw, 13px);
+  /* ── Body (nav + content) ── */
+  .db-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Left nav sidebar ── */
+  .db-sidenav {
+    width: clamp(140px, 13vw, 185px);
+    background: #0f0e0c;
+    border-right: 1px solid #2a2620;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .db-sidenav-label {
+    font-size: clamp(8px, 0.58vw, 10px);
+    color: #3a3630;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    padding: clamp(10px, 1vh, 16px) clamp(12px, 1vw, 18px) clamp(4px, 0.4vh, 6px);
+    flex-shrink: 0;
+  }
+
+  .db-navlink {
+    display: flex;
+    align-items: center;
+    padding: clamp(7px, 0.75vh, 11px) clamp(12px, 1vw, 18px);
+    font-size: clamp(11px, 0.82vw, 14px);
     color: #4a453e;
+    cursor: pointer;
     border: none;
     background: none;
-    cursor: pointer;
     font-family: 'Inter', sans-serif;
-    line-height: 1.5;
+    text-align: left;
+    width: 100%;
+    border-left: 2px solid transparent;
     transition: all 0.15s;
+    flex-shrink: 0;
   }
-  .db-tab.active { color: #e8e2d8; background: #1a1915; }
+  .db-navlink:hover { color: #9a9086; background: #13120f; }
+  .db-navlink.active {
+    color: #e8e2d8;
+    background: #13120f;
+    border-left-color: #02a4ba;
+  }
 
+  .db-sidenav-spacer { flex: 1; }
+
+  .db-sidenav-bottom {
+    border-top: 1px solid #2a2620;
+    padding: clamp(8px, 0.8vh, 12px) clamp(10px, 0.9vw, 16px);
+    flex-shrink: 0;
+  }
+
+  .db-sidenav-user {
+    font-size: clamp(10px, 0.75vw, 13px);
+    color: #6b6358;
+    margin-bottom: 4px;
+  }
+
+  /* ── Main content area ── */
+  .db-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Welcome bar ── */
   .db-wbar {
     background: #13120f;
     border-bottom: 1px solid #2a2620;
-    height: clamp(30px, 3.5vh, 46px);
-    padding: 0 clamp(10px, 1vw, 20px);
+    height: clamp(28px, 3.2vh, 40px);
+    padding: 0 clamp(10px, 1vw, 16px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-shrink: 0;
   }
+  .db-wname { font-size: clamp(11px, 0.82vw, 15px); font-weight: 600; color: #e8e2d8; }
+  .db-wsub { font-size: clamp(9px, 0.62vw, 11px); color: #4a453e; margin-left: 6px; }
 
-  .db-wname { font-size: clamp(11px, 0.85vw, 16px); font-weight: 600; color: #e8e2d8; }
-  .db-wsub { font-size: clamp(9px, 0.65vw, 12px); color: #4a453e; margin-left: 6px; }
+  /* ── Section headers ── */
+  .db-section-hd {
+    font-size: clamp(8px, 0.58vw, 10px);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #3a3630;
+    padding: clamp(4px, 0.4vh, 6px) 0 clamp(3px, 0.3vh, 5px);
+    flex-shrink: 0;
+  }
 
   /* ── Grid ── */
   .db-grid-wrap {
     flex: 1;
     min-height: 0;
     padding: clamp(6px, 0.6vw, 10px);
-    gap: clamp(5px, 0.5vw, 9px);
-    display: grid;
-    grid-template-columns: clamp(148px, 12vw, 210px) 1fr 1fr 1fr;
-    grid-template-rows: 36% 64%;
+    gap: 0;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 
-  /* ── Left panel ── */
+  .db-row-top {
+    display: grid;
+    grid-template-columns: clamp(148px, 12vw, 200px) 1fr 1fr 1fr;
+    gap: clamp(5px, 0.5vw, 9px);
+    flex: 0 0 32%;
+    min-height: 0;
+    margin-bottom: clamp(5px, 0.5vw, 9px);
+  }
+
+  .db-row-bottom {
+    display: grid;
+    grid-template-columns: clamp(148px, 12vw, 200px) 1fr 1fr 1fr;
+    gap: clamp(5px, 0.5vw, 9px);
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Left panel (spans both rows) ── */
   .db-panel {
     grid-column: 1;
-    grid-row: 1 / 3;
     background: #13120f;
     border: 1px solid #2a2620;
-    border-radius: clamp(5px, 0.4vw, 9px);
+    border-radius: clamp(5px, 0.4vw, 8px);
     padding: clamp(8px, 0.7vw, 14px);
     display: flex;
     flex-direction: column;
-    gap: clamp(5px, 0.5vh, 10px);
+    gap: clamp(5px, 0.5vh, 9px);
     overflow: hidden;
   }
 
@@ -200,466 +299,313 @@ const GLOBAL_CSS = `
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: clamp(2px, 0.25vh, 4px);
+    gap: clamp(2px, 0.22vh, 4px);
     padding-bottom: clamp(6px, 0.6vh, 10px);
     border-bottom: 1px solid #2a2620;
     flex-shrink: 0;
   }
-
   .db-rest-icon {
     width: clamp(22px, 1.8vw, 32px);
     height: clamp(22px, 1.8vw, 32px);
     border-radius: 50%;
     background: rgba(2,164,186,.1);
     border: 1px solid rgba(2,164,186,.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
   .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .db-rest-name { font-size: clamp(10px, 0.8vw, 14px); font-weight: 600; color: #e8e2d8; }
   .db-rest-sub { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; }
 
-  .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(3px, 0.3vh, 5px); flex-shrink: 0; }
+  .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(2px, 0.25vh, 4px); flex-shrink: 0; }
   .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
-  .db-ring { position: relative; width: clamp(52px, 4.8vw, 78px); height: clamp(52px, 4.8vw, 78px); }
+  .db-ring { position: relative; width: clamp(52px, 4.8vw, 76px); height: clamp(52px, 4.8vw, 76px); }
   .db-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .db-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
   .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(15px, 1.4vw, 22px); color: #e8e2d8; line-height: 1; }
   .db-ring-sub { font-size: clamp(7px, 0.52vw, 9px); color: #4a453e; }
-  .db-score-tag { font-size: clamp(8px, 0.6vw, 11px); font-weight: 600; padding: clamp(2px,0.18vh,3px) clamp(6px,0.5vw,10px); border-radius: 10px; }
+  .db-score-tag { font-size: clamp(8px, 0.6vw, 11px); font-weight: 600; padding: 2px clamp(6px,0.5vw,10px); border-radius: 10px; }
+  .db-score-pct { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; margin-top: 1px; }
 
   .db-pills { display: flex; flex-direction: column; gap: clamp(4px, 0.4vh, 7px); flex: 1; overflow: hidden; }
   .db-pill {
     background: #0f0e0c;
     border-radius: clamp(4px, 0.3vw, 6px);
-    padding: clamp(4px, 0.4vh, 7px) clamp(7px, 0.6vw, 12px);
+    padding: clamp(4px, 0.42vh, 7px) clamp(7px, 0.6vw, 12px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     border: 1px solid #1a1915;
     flex-shrink: 0;
+    gap: 6px;
   }
+  .db-pill-left { flex: 1; min-width: 0; }
   .db-pill-l { font-size: clamp(9px, 0.62vw, 11px); color: #6b6358; }
-  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(12px, 1vw, 16px); }
+  .db-pill-sub { font-size: clamp(7px, 0.52vw, 9px); color: #3a3630; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(12px, 1vw, 16px); flex-shrink: 0; }
 
   /* ── Generic card ── */
   .db-card {
     background: #13120f;
     border: 1px solid #2a2620;
-    border-radius: clamp(5px, 0.4vw, 9px);
-    padding: clamp(10px, 0.9vw, 18px) clamp(10px, 1vw, 20px);
+    border-radius: clamp(5px, 0.4vw, 8px);
+    padding: clamp(8px, 0.8vw, 14px) clamp(9px, 0.9vw, 16px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
   }
-
   .db-card-hd {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: clamp(7px, 0.75vh, 14px);
+    margin-bottom: clamp(5px, 0.6vh, 10px);
     flex-shrink: 0;
   }
-
   .db-card-title {
-    font-size: clamp(10px, 0.78vw, 14px);
+    font-size: clamp(10px, 0.75vw, 13px);
     font-weight: 600;
     color: #e8e2d8;
     display: flex;
     align-items: center;
-    gap: clamp(4px, 0.35vw, 7px);
+    gap: clamp(4px, 0.32vw, 6px);
   }
-  .db-card-title svg { width: clamp(10px, 0.85vw, 15px); height: clamp(10px, 0.85vw, 15px); stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .db-card-title svg { width: clamp(10px, 0.82vw, 14px); height: clamp(10px, 0.82vw, 14px); stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .db-card-sub { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; }
+  .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.75vw, 13px); color: #4a453e; text-align: center; padding: 8px; }
+  .db-spinner { width: clamp(7px, 0.62vw, 10px); height: clamp(7px, 0.62vw, 10px); border: 1.5px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 
-  .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.78vw, 14px); color: #4a453e; }
-  .db-spinner { width: clamp(7px, 0.65vw, 11px); height: clamp(7px, 0.65vw, 11px); border: 1.5px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
-
-  /* ── Kitchen Tickets row ── */
-  .db-tickets-row {
-    grid-column: 2 / 5;
-    grid-row: 1;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: clamp(5px, 0.5vw, 9px);
-    min-height: 0;
-  }
-
-  /* ── Single kitchen ticket ── */
+  /* ── Thermal ticket ── */
   .db-ticket {
-    background: #13120f;
+    background: #111009;
     border: 1px solid #2a2620;
-    border-radius: clamp(5px, 0.4vw, 9px);
+    border-radius: clamp(4px, 0.35vw, 7px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    position: relative;
+    font-family: 'Courier New', monospace;
     animation: fadeIn 0.3s ease both;
+    position: relative;
   }
   .db-ticket:nth-child(2) { animation-delay: 0.08s; }
   .db-ticket:nth-child(3) { animation-delay: 0.16s; }
 
-  /* Ticket top tear edge */
-  .db-ticket-tear {
-    height: 5px;
-    background: repeating-linear-gradient(
-      90deg,
-      #1a1915 0px,
-      #1a1915 5px,
-      transparent 5px,
-      transparent 9px
-    );
-    flex-shrink: 0;
-  }
-
-  .db-ticket-header {
-    background: #1a1915;
-    border-bottom: 1px dashed #2a2620;
-    padding: clamp(4px, 0.5vh, 7px) clamp(10px, 0.9vw, 16px);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-  }
-
-  .db-ticket-label {
-    font-size: clamp(7px, 0.55vw, 9px);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #4a453e;
-    font-family: 'Courier New', monospace;
-  }
-
-  .db-ticket-badge {
-    font-size: clamp(7px, 0.52vw, 9px);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .5px;
-    padding: 2px clamp(5px,0.42vw,8px);
-    border-radius: 4px;
-  }
-
-  .db-ticket-body {
+  .db-ticket-receipt {
     flex: 1;
-    padding: clamp(8px, 0.9vh, 13px) clamp(10px, 0.9vw, 16px) clamp(6px, 0.7vh, 10px);
+    overflow-y: auto;
+    padding: clamp(6px, 0.7vh, 10px) clamp(8px, 0.8vw, 14px);
     display: flex;
     flex-direction: column;
-    gap: clamp(4px, 0.45vh, 7px);
-    min-height: 0;
+    gap: 0;
   }
+  .db-ticket-receipt::-webkit-scrollbar { width: 2px; }
 
-  /* Margin number sits top-right, dish name is the hero */
-  .db-ticket-top-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 8px;
+  .db-receipt-stars {
+    font-size: clamp(7px, 0.55vw, 9px);
+    color: #c04040;
+    text-align: center;
+    letter-spacing: 1px;
     flex-shrink: 0;
+    line-height: 1.4;
   }
 
-  .db-ticket-name {
-    font-family: 'Playfair Display', serif;
-    font-size: clamp(14px, 1.25vw, 22px);
-    color: #e8e2d8;
-    line-height: 1.15;
-    flex: 1;
-  }
-
-  .db-ticket-margin-big {
-    font-family: 'Courier New', monospace;
-    font-size: clamp(13px, 1.1vw, 18px);
+  .db-receipt-center {
+    font-size: clamp(9px, 0.72vw, 12px);
     font-weight: 700;
-    line-height: 1;
-    white-space: nowrap;
+    color: #e8e2d8;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: clamp(2px,0.2vh,4px) 0;
     flex-shrink: 0;
-    padding-top: 2px;
   }
 
-  .db-ticket-divider {
+  .db-receipt-divider {
     border: none;
     border-top: 1px dashed #2a2620;
+    margin: clamp(4px,0.4vh,7px) 0;
     flex-shrink: 0;
   }
 
-  .db-ticket-why {
-    font-size: clamp(9px, 0.65vw, 11px);
-    color: #6b6358;
-    line-height: 1.4;
-    flex-shrink: 0;
-  }
-
-  .db-ticket-sell {
-    font-size: clamp(10px, 0.7vw, 12px);
-    color: #9a9086;
-    line-height: 1.45;
-    font-style: italic;
-    flex: 1;
-  }
-
-  .db-ticket-sell::before {
-    content: '"';
-    color: #02a4ba;
-    font-style: normal;
-    font-weight: 600;
-  }
-  .db-ticket-sell::after {
-    content: '"';
-    color: #02a4ba;
-    font-style: normal;
-    font-weight: 600;
-  }
-
-  /* Ticket bottom */
-  .db-ticket-bottom {
-    padding: clamp(4px, 0.45vh, 6px) clamp(10px, 0.9vw, 16px);
-    border-top: 1px dashed #2a2620;
+  .db-receipt-row {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: clamp(8px, 0.62vw, 11px);
+    line-height: 1.7;
+    flex-shrink: 0;
+  }
+  .db-receipt-key { color: #6b6358; }
+  .db-receipt-val { color: #e8e2d8; font-weight: 600; text-align: right; }
+  .db-receipt-val.teal { color: #02a4ba; }
+  .db-receipt-val.green { color: #2a8a5a; }
+  .db-receipt-val.red { color: #c04040; }
+  .db-receipt-val.amber { color: #d4a020; }
+
+  .db-receipt-sell {
+    font-size: clamp(8px, 0.62vw, 11px);
+    color: #9a9086;
+    font-style: italic;
+    line-height: 1.5;
+    margin: clamp(3px,0.3vh,5px) 0;
+    flex-shrink: 0;
+  }
+  .db-receipt-sell::before { content: '"'; color: #02a4ba; font-style: normal; }
+  .db-receipt-sell::after { content: '"'; color: #02a4ba; font-style: normal; }
+
+  .db-receipt-component {
+    font-size: clamp(8px, 0.6vw, 10px);
+    color: #6b6358;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .db-receipt-ingredient {
+    font-size: clamp(7px, 0.55vw, 9px);
+    color: #4a453e;
+    padding-left: 10px;
+    line-height: 1.6;
+    flex-shrink: 0;
+  }
+  .db-receipt-ingredient.at-risk {
+    color: #c04040;
+    font-weight: 600;
+  }
+
+  .db-receipt-footer {
+    font-size: clamp(7px, 0.52vw, 9px);
+    color: #2a2620;
+    text-align: center;
+    margin-top: clamp(4px,0.4vh,6px);
     flex-shrink: 0;
   }
 
-  .db-ticket-no {
-    font-family: 'Courier New', monospace;
-    font-size: clamp(8px, 0.55vw, 10px);
-    color: #2a2620;
-  }
+  /* ── Waste risk card ── */
+  .db-waste-list { flex: 1; overflow-y: auto; min-height: 0; }
+  .db-waste-list::-webkit-scrollbar { width: 2px; }
 
-  /* ── Bottom row cards ── */
-  .db-bottom-row {
-    grid-column: 2 / 5;
-    grid-row: 2;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: clamp(5px, 0.5vw, 9px);
-    min-height: 0;
-  }
-
-  /* Waste risk rows — with shelf life bar */
   .db-waste-row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: clamp(5px, 0.55vh, 9px) clamp(8px, 0.7vw, 12px);
+    gap: 3px;
+    padding: clamp(5px, 0.55vh, 8px) clamp(7px, 0.65vw, 11px);
     background: #0f0e0c;
-    border-radius: clamp(4px, 0.35vw, 6px);
+    border-radius: clamp(4px, 0.32vw, 6px);
     border: 1px solid #1a1915;
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
   }
   .db-waste-row:last-child { margin-bottom: 0; }
+  .db-waste-top { display: flex; align-items: center; gap: 6px; }
+  .db-waste-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .db-waste-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-waste-days { font-size: clamp(9px, 0.62vw, 11px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .db-waste-bar-track { width: 100%; height: 3px; background: #1a1915; border-radius: 2px; overflow: hidden; }
+  .db-waste-bar-fill { height: 100%; border-radius: 2px; }
+  .db-waste-meta { display: flex; justify-content: space-between; }
+  .db-waste-meta-txt { font-size: clamp(7px, 0.52vw, 9px); color: #3a3630; }
+  .db-waste-invoice-link {
+    font-size: clamp(7px, 0.52vw, 9px);
+    color: #02a4ba;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: 'Inter', sans-serif;
+    padding: 0;
+    text-decoration: underline;
+    opacity: 0.8;
+  }
+  .db-waste-invoice-link:hover { opacity: 1; }
 
-  .db-waste-top {
+  /* ── Price movement card ── */
+  .db-pm-back {
+    font-size: clamp(8px, 0.6vw, 11px);
+    color: #02a4ba;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    padding: 0;
     display: flex;
     align-items: center;
-    gap: clamp(6px, 0.5vw, 10px);
+    gap: 3px;
   }
+  .db-pm-scroll { flex: 1; overflow-y: auto; min-height: 0; }
+  .db-pm-scroll::-webkit-scrollbar { width: 2px; }
 
-  .db-waste-dot {
-    width: clamp(6px, 0.5vw, 8px);
-    height: clamp(6px, 0.5vw, 8px);
-    border-radius: 50%;
+  .db-pm-cat-row {
+    display: flex;
+    align-items: center;
+    gap: clamp(5px, 0.45vw, 8px);
+    padding: clamp(5px, 0.55vh, 9px) clamp(7px, 0.65vw, 11px);
+    background: #0f0e0c;
+    border-radius: clamp(4px, 0.32vw, 6px);
+    border: 1px solid #1a1915;
+    margin-bottom: clamp(4px, 0.4vh, 6px);
+    cursor: pointer;
+    transition: border-color 0.15s;
     flex-shrink: 0;
   }
+  .db-pm-cat-row:last-child { margin-bottom: 0; }
+  .db-pm-cat-row:hover { border-color: #3a3630; }
+  .db-pm-cat-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-pm-cat-delta { font-size: clamp(10px, 0.72vw, 12px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .db-pm-cat-count { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; white-space: nowrap; flex-shrink: 0; }
+  .db-pm-cat-chevron { font-size: 10px; color: #3a3630; flex-shrink: 0; }
 
-  .db-waste-name {
-    flex: 1;
-    font-size: clamp(10px, 0.75vw, 13px);
-    color: #9a9086;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-transform: capitalize;
-  }
-
-  .db-waste-days {
-    font-size: clamp(9px, 0.65vw, 11px);
-    font-weight: 600;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .db-waste-bar-track {
-    width: 100%;
-    height: 3px;
-    background: #1a1915;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .db-waste-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.6s ease;
-  }
-
-  /* Price movement rows — with sparkline */
-  .db-price-row {
+  .db-pm-ing-row {
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    padding: clamp(5px, 0.55vh, 9px) clamp(8px, 0.7vw, 12px);
+    gap: 4px;
+    padding: clamp(5px, 0.55vh, 9px) clamp(7px, 0.65vw, 11px);
     background: #0f0e0c;
-    border-radius: clamp(4px, 0.35vw, 6px);
+    border-radius: clamp(4px, 0.32vw, 6px);
     border: 1px solid #1a1915;
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
   }
-  .db-price-row:last-child { margin-bottom: 0; }
+  .db-pm-ing-row:last-child { margin-bottom: 0; }
+  .db-pm-ing-top { display: flex; align-items: center; gap: 6px; }
+  .db-pm-ing-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: capitalize; }
+  .db-pm-ing-delta { font-size: clamp(10px, 0.72vw, 12px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+  .db-pm-ing-prices { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; padding-left: 2px; }
 
-  .db-price-top {
-    display: flex;
-    align-items: center;
-    gap: clamp(6px, 0.5vw, 10px);
-  }
-
-  .db-price-name {
-    flex: 1;
-    font-size: clamp(10px, 0.75vw, 13px);
-    color: #9a9086;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-transform: capitalize;
-  }
-
-  .db-price-meta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-
-  .db-price-delta {
-    font-size: clamp(10px, 0.75vw, 13px);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .db-price-from {
-    font-size: clamp(8px, 0.6vw, 10px);
-    color: #4a453e;
-    white-space: nowrap;
-  }
-
-  .db-sparkline {
-    width: 100%;
-    height: 22px;
-    overflow: visible;
-  }
-
-  /* Top ingredient rows — with bar chart */
+  /* ── Top ingredient costs ── */
+  .db-ing-list { flex: 1; overflow-y: auto; min-height: 0; }
+  .db-ing-list::-webkit-scrollbar { width: 2px; }
   .db-ing-row {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: clamp(5px, 0.55vh, 9px) clamp(8px, 0.7vw, 12px);
+    gap: 3px;
+    padding: clamp(5px, 0.55vh, 8px) clamp(7px, 0.65vw, 11px);
     background: #0f0e0c;
-    border-radius: clamp(4px, 0.35vw, 6px);
+    border-radius: clamp(4px, 0.32vw, 6px);
     border: 1px solid #1a1915;
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
   }
   .db-ing-row:last-child { margin-bottom: 0; }
+  .db-ing-top { display: flex; align-items: center; justify-content: space-between; }
+  .db-ing-name { font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; }
+  .db-ing-unit { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; }
+  .db-ing-val { font-size: clamp(11px, 0.8vw, 13px); font-weight: 600; color: #02a4ba; }
+  .db-ing-bar-track { width: 100%; height: 3px; background: #1a1915; border-radius: 2px; overflow: hidden; }
+  .db-ing-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #02a4ba44, #02a4ba); }
 
-  .db-ing-top {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .db-ing-name { font-size: clamp(10px, 0.75vw, 13px); color: #9a9086; }
-  .db-ing-unit { font-size: clamp(8px, 0.6vw, 10px); color: #4a453e; }
-  .db-ing-val { font-size: clamp(11px, 0.82vw, 14px); font-weight: 600; color: #02a4ba; }
-
-  .db-ing-bar-track {
-    width: 100%;
-    height: 3px;
-    background: #1a1915;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .db-ing-bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    background: linear-gradient(90deg, #02a4ba44, #02a4ba);
-    transition: width 0.6s ease;
-  }
-
-  /* Pill trend arrows */
-  .db-pill-trend {
-    font-size: clamp(8px, 0.58vw, 10px);
-    margin-top: 1px;
-  }
-
-  /* Ticket confidence meter */
-  .db-ticket-confidence {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    flex-shrink: 0;
-  }
-
-  .db-ticket-conf-track {
-    flex: 1;
-    height: 3px;
-    background: #2a2620;
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .db-ticket-conf-fill {
-    height: 100%;
-    border-radius: 2px;
-  }
-
-  .db-ticket-conf-label {
-    font-size: clamp(8px, 0.58vw, 9px);
-    color: #4a453e;
-    white-space: nowrap;
-    font-family: 'Courier New', monospace;
-  }
-
-  .db-ticket-stats {
-    display: flex;
-    align-items: center;
-    gap: clamp(6px, 0.6vw, 10px);
-    flex-shrink: 0;
-  }
-
-  .db-ticket-stat-item {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .db-ticket-stat-val {
-    font-family: 'Courier New', monospace;
-    font-size: clamp(10px, 0.78vw, 13px);
-    font-weight: 700;
-    color: #e8e2d8;
-    line-height: 1;
-  }
-
-  .db-ticket-stat-lbl {
+  /* ── Waste risk legend ── */
+  .db-legend-strip {
     font-size: clamp(7px, 0.55vw, 9px);
-    color: #4a453e;
-    text-transform: uppercase;
-    letter-spacing: .4px;
-  }
-
-  .db-ticket-stat-sep {
-    width: 1px;
-    height: 20px;
-    background: #2a2620;
+    color: #3a3630;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
+    border-top: 1px solid #1a1915;
+    margin-top: clamp(4px, 0.4vh, 6px);
   }
+  .db-legend-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 3px; flex-shrink: 0; }
 
-  /* Mobile (preserved from original) */
+  /* Mobile */
   .mob-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
   .mob-header { background: #0f0e0c; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
   .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; }
@@ -689,17 +635,11 @@ const GLOBAL_CSS = `
   .mob-score-num { font-family: 'Playfair Display', serif; font-size: 18px; color: #e8e2d8; line-height: 1; }
   .mob-score-sub { font-size: 9px; color: #4a453e; }
   .mob-score-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 10px; margin-top: 5px; }
-  .mob-ai-item { background: #0f0e0c; border-radius: 7px; border-left: 2px solid #02a4ba; padding: 10px 12px; margin-bottom: 8px; }
+  .mob-ai-item { background: #0f0e0c; border-radius: 7px; border-left: 2px solid #02a4ba; padding: 10px 12px; margin-bottom: 8px; font-family: 'Courier New', monospace; }
   .mob-ai-item:last-child { margin-bottom: 0; }
-  .mob-ai-title { font-size: 12px; font-weight: 600; color: #e8e2d8; margin-bottom: 3px; }
+  .mob-ai-title { font-size: 13px; font-weight: 700; color: #e8e2d8; margin-bottom: 3px; }
   .mob-ai-desc { font-size: 11px; color: #6b6358; line-height: 1.45; }
   .mob-ai-sell { font-size: 11px; color: #9a9086; font-style: italic; margin-top: 5px; line-height: 1.45; }
-  .mob-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .mob-bar-row:last-child { margin-bottom: 0; }
-  .mob-bar-name { font-size: 12px; color: #9a9086; width: 110px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mob-bar-track { flex: 1; background: #1a1915; border-radius: 3px; height: 5px; }
-  .mob-bar-fill { height: 5px; border-radius: 3px; }
-  .mob-bar-pct { font-size: 12px; font-weight: 600; width: 44px; text-align: right; flex-shrink: 0; }
   .mob-ing-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1915; }
   .mob-ing-row:last-child { border-bottom: none; }
   .mob-ing-name { font-size: 13px; color: #9a9086; }
@@ -713,26 +653,11 @@ const GLOBAL_CSS = `
   .mob-nav-label { font-size: 10px; color: #4a453e; }
   .mob-nav-label.active { color: #02a4ba; }
   .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: #02a4ba; }
-
-  @media (max-width: 1024px) {
-    .db-grid-wrap {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: auto auto auto;
-      overflow-y: auto;
-    }
-    .db-panel { grid-column: 1 / 3; grid-row: 1; flex-direction: row; align-items: center; gap: clamp(12px, 2vw, 24px); }
-    .db-panel-top { border-bottom: none; border-right: 1px solid #2a2620; padding-bottom: 0; padding-right: clamp(12px, 2vw, 22px); }
-    .db-pills { flex-direction: row; flex-wrap: wrap; }
-    .db-pill { min-width: 110px; flex: 1; }
-    .db-tickets-row { grid-column: 1 / 3; grid-row: 2; }
-    .db-bottom-row { grid-column: 1 / 3; grid-row: 3; }
-  }
 `;
 
-// ─── ScoreRing (unchanged) ────────────────────────────────────────────────────
-
+// ─── ScoreRing ────────────────────────────────────────────────────────────────
 function ScoreRing({ score }) {
-  const { color, label } = getScoreInfo(score);
+  const { color, label, pct } = getScoreInfo(score);
   const circumference = 2 * Math.PI * 40;
   const dash = (score / 100) * circumference;
   return (
@@ -750,12 +675,12 @@ function ScoreRing({ score }) {
         </div>
       </div>
       <div className="db-score-tag" style={{ background: `${color}18`, color }}>{label}</div>
+      <div className="db-score-pct">{pct} of similar restaurants</div>
     </div>
   );
 }
 
-// ─── KitchenTicket ────────────────────────────────────────────────────────────
-
+// ─── Thermal Ticket ───────────────────────────────────────────────────────────
 const SELL_COPY = [
   "Just came in fresh — one of the best things on the menu tonight.",
   "The kitchen is really proud of this one tonight — worth every bite.",
@@ -765,90 +690,224 @@ const SELL_COPY = [
   "Incredibly fresh tonight — this is the one to get.",
 ];
 
-function KitchenTicket({ rec, index }) {
+function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   if (!rec) return null;
-
-  const typeColor =
-    rec.type === 'inventory' ? '#c04040' :
-    rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
-
-  const typeLabel =
-    rec.type === 'inventory' ? 'Move Tonight' :
-    rec.type === 'margin' ? 'High Margin' : 'Trending';
-
-  const urgencyLabel =
-    rec.urgency === 'high' ? 'Urgent' :
-    rec.urgency === 'medium' ? 'Recommended' : 'Suggested';
-
+  const dishName = rec.title || rec.dish || '';
+  const typeColor = rec.type === 'inventory' ? '#c04040' : rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
   const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
-  const marginDisplay = rec.margin ? `${parseFloat(rec.margin).toFixed(1)}%` : null;
+  const marginVal = rec.margin ? parseFloat(rec.margin) : null;
   const confidence = rec.confidence || 75;
+  const urgencyLabel = rec.urgency === 'high' ? 'URGENT' : rec.urgency === 'medium' ? 'RECOMMENDED' : 'SUGGESTED';
+
+  // Find matching menu item for recipe breakdown
+  const menuItem = (menuItems || []).find(m =>
+    m.name?.toLowerCase() === dishName.toLowerCase()
+  );
+
+  // Build set of at-risk ingredient names for highlighting
+  const atRiskNames = new Set(
+    (wasteRisk || []).map(w => w.name?.toLowerCase().trim())
+  );
+
+  // Margin vs average
+  let marginVsAvg = null;
+  if (marginVal && averageMargin > 0) {
+    const diff = marginVal - averageMargin;
+    marginVsAvg = diff >= 0 ? `+${diff.toFixed(1)}% vs avg` : `${diff.toFixed(1)}% vs avg`;
+  }
+
+  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const starRow = '********************************';
 
   return (
     <div className="db-ticket">
-      <div className="db-ticket-tear" />
-      <div className="db-ticket-header">
-        <span className="db-ticket-label">Tonight's Pick #{index + 1}</span>
-        <span className="db-ticket-badge" style={{ background: `${typeColor}18`, color: typeColor }}>
-          {typeLabel}
-        </span>
-      </div>
-      <div className="db-ticket-body">
-        {/* Dish name + margin */}
-        <div className="db-ticket-top-row">
-          <div className="db-ticket-name">{rec.title || rec.dish}</div>
-          {marginDisplay && (
-            <div className="db-ticket-margin-big" style={{ color: typeColor }}>{marginDisplay}</div>
-          )}
+      <div className="db-ticket-receipt">
+        {/* Header */}
+        <div className="db-receipt-stars">{starRow}</div>
+        <div className="db-receipt-center" style={{ color: typeColor }}>{urgencyLabel}</div>
+        <div className="db-receipt-stars">{starRow}</div>
+
+        <div className="db-receipt-divider" />
+
+        {/* Meta */}
+        <div className="db-receipt-row">
+          <span className="db-receipt-key">Date:</span>
+          <span className="db-receipt-val">{today}</span>
+        </div>
+        <div className="db-receipt-row">
+          <span className="db-receipt-key">Pick:</span>
+          <span className="db-receipt-val teal">Tonight #{index + 1}</span>
         </div>
 
-        <hr className="db-ticket-divider" />
+        <div className="db-receipt-divider" />
 
-        {/* Business reason */}
-        <div className="db-ticket-why">{rec.description || rec.reason}</div>
+        {/* Dish name */}
+        <div style={{
+          fontFamily: 'Courier New, monospace',
+          fontSize: 'clamp(11px, 0.95vw, 16px)',
+          fontWeight: 700,
+          color: '#e8e2d8',
+          marginBottom: 'clamp(3px,0.3vh,5px)',
+          lineHeight: 1.2,
+        }}>{dishName}</div>
+
+        {/* Margin */}
+        {marginVal && (
+          <div className="db-receipt-row">
+            <span className="db-receipt-key">Margin:</span>
+            <span className="db-receipt-val" style={{ color: typeColor }}>
+              {marginVal.toFixed(1)}%{marginVsAvg ? ` (${marginVsAvg})` : ''}
+            </span>
+          </div>
+        )}
+
+        {/* Popularity */}
+        <div className="db-receipt-row">
+          <span className="db-receipt-key">Popularity:</span>
+          <span className="db-receipt-val" style={{ color: '#4a453e' }}>—</span>
+        </div>
+
+        {/* Confidence */}
+        <div className="db-receipt-row">
+          <span className="db-receipt-key">Confidence:</span>
+          <span className="db-receipt-val teal">{confidence}%</span>
+        </div>
+
+        <div className="db-receipt-divider" />
 
         {/* Sell copy */}
-        <div className="db-ticket-sell">{sellCopy}</div>
+        <div className="db-receipt-sell">{sellCopy}</div>
 
-        <hr className="db-ticket-divider" />
+        <div className="db-receipt-divider" />
 
-        {/* Stats row */}
-        <div className="db-ticket-stats">
-          {marginDisplay && (
-            <>
-              <div className="db-ticket-stat-item">
-                <div className="db-ticket-stat-val" style={{ color: typeColor }}>{marginDisplay}</div>
-                <div className="db-ticket-stat-lbl">Margin</div>
-              </div>
-              <div className="db-ticket-stat-sep" />
-            </>
-          )}
-          <div className="db-ticket-stat-item">
-            <div className="db-ticket-stat-val" style={{ color: typeColor }}>{urgencyLabel}</div>
-            <div className="db-ticket-stat-lbl">Priority</div>
-          </div>
-          <div className="db-ticket-stat-sep" />
-          <div className="db-ticket-stat-item" style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <div className="db-ticket-conf-track" style={{ flex: 1 }}>
-                <div className="db-ticket-conf-fill"
-                  style={{ width: `${confidence}%`, background: typeColor + 'aa' }} />
-              </div>
-              <span className="db-ticket-conf-label">{confidence}%</span>
+        {/* Recipe breakdown */}
+        <div style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>Recipe</div>
+
+        {menuItem?.menu_item_components?.length > 0 ? (
+          menuItem.menu_item_components.map((comp, ci) => (
+            <div key={ci}>
+              <div className="db-receipt-component">— {comp.name || `Component ${ci + 1}`}</div>
+              {(comp.component_ingredients || []).map((ci2, ii) => {
+                const ingName = ci2.ingredients?.name || ci2.name || '';
+                const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
+                return (
+                  <div key={ii} className={`db-receipt-ingredient${isAtRisk ? ' at-risk' : ''}`}>
+                    &nbsp;&nbsp;· {ingName}
+                    {ci2.quantity ? ` (${ci2.quantity})` : ''}
+                    {isAtRisk ? ' ⚠' : ''}
+                  </div>
+                );
+              })}
             </div>
-            <div className="db-ticket-stat-lbl">Confidence</div>
-          </div>
+          ))
+        ) : (
+          <div className="db-receipt-ingredient" style={{ color: '#3a3630' }}>Recipe not linked</div>
+        )}
+
+        <div className="db-receipt-footer">#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Price Movement Card ──────────────────────────────────────────────────────
+function PriceMovementCard({ priceByCategory }) {
+  const [selectedCat, setSelectedCat] = useState(null);
+
+  const categories = Object.keys(priceByCategory).sort();
+
+  // Compute global min/max across ALL ingredients for shared Y axis
+  let globalMin = Infinity;
+  let globalMax = -Infinity;
+  Object.values(priceByCategory).forEach(cat => {
+    cat.ingredients.forEach(ing => {
+      ing.history.forEach(p => {
+        if (p < globalMin) globalMin = p;
+        if (p > globalMax) globalMax = p;
+      });
+    });
+  });
+  if (globalMin === Infinity) { globalMin = 0; globalMax = 1; }
+
+  const catData = selectedCat ? priceByCategory[selectedCat] : null;
+
+  return (
+    <div className="db-card">
+      <div className="db-card-hd">
+        <div className="db-card-title">
+          <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          Price Movement
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {selectedCat && (
+            <button className="db-pm-back" onClick={() => setSelectedCat(null)}>
+              ← Back
+            </button>
+          )}
+          <span className="db-card-sub">{selectedCat || '6-month trend'}</span>
         </div>
       </div>
-      <div className="db-ticket-bottom">
-        <span className="db-ticket-no">#{String(index + 1).padStart(3, '0')}</span>
+
+      <div className="db-pm-scroll">
+        {categories.length === 0 && (
+          <div className="db-empty">No price history yet</div>
+        )}
+
+        {/* Category view */}
+        {!selectedCat && categories.map(cat => {
+          const d = priceByCategory[cat];
+          const isUp = d.avgDelta > 0;
+          const deltaColor = isUp ? '#c04040' : '#2a8a5a';
+          // Category sparkline = average history across ingredients
+          const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
+          const avgHistory = Array.from({ length: maxLen }, (_, idx) => {
+            const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
+            return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+          });
+          return (
+            <div key={cat} className="db-pm-cat-row" onClick={() => setSelectedCat(cat)}>
+              <div className="db-pm-cat-name">{cat || 'Uncategorized'}</div>
+              {avgHistory.length >= 2 && (
+                <Sparkline points={avgHistory} color={deltaColor}
+                  globalMin={globalMin} globalMax={globalMax} width={60} height={20} />
+              )}
+              <div className="db-pm-cat-delta" style={{ color: deltaColor }}>
+                {isUp ? '↑' : '↓'} {Math.abs(d.avgDelta).toFixed(1)}%
+              </div>
+              <div className="db-pm-cat-count">{d.ingredients.length} items</div>
+              <div className="db-pm-cat-chevron">›</div>
+            </div>
+          );
+        })}
+
+        {/* Ingredient drill-down */}
+        {selectedCat && catData && catData.ingredients.map((ing, i) => {
+          const isUp = ing.deltaPct > 0;
+          const deltaColor = isUp ? '#c04040' : '#2a8a5a';
+          return (
+            <div key={i} className="db-pm-ing-row" style={{ animation: 'slideIn 0.2s ease both', animationDelay: `${i * 0.04}s` }}>
+              <div className="db-pm-ing-top">
+                <div className="db-pm-ing-name">{ing.name}</div>
+                {ing.history.length >= 2 && (
+                  <Sparkline points={ing.history} color={deltaColor}
+                    globalMin={globalMin} globalMax={globalMax} width={60} height={20} />
+                )}
+                <div className="db-pm-ing-delta" style={{ color: deltaColor }}>
+                  {isUp ? '↑' : '↓'} {Math.abs(ing.deltaPct).toFixed(1)}%
+                </div>
+              </div>
+              <div className="db-pm-ing-prices">
+                {formatCurrencyDetailed(ing.firstPrice)} → {formatCurrencyDetailed(ing.lastPrice)}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-
 export default function ClientDashboard() {
   const router = useRouter();
   const { isMobile } = useWindowSize();
@@ -859,24 +918,20 @@ export default function ClientDashboard() {
   const [userEmail, setUserEmail] = useState("");
   const [restaurantName, setRestaurantName] = useState("Your Restaurant");
   const [aiLoading, setAiLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("Dashboard");
+  const [menuItemsFull, setMenuItemsFull] = useState([]);
 
   const [data, setData] = useState({
     totalInvoices: 0, totalIngredients: 0, totalMenuItems: 0,
     ingredientTrends: [], menuItemAnalysis: [],
     unpricedIngredients: 0, averageMargin: 0,
     totalSpending: 0, aiProfitScore: { score: 0 }, aiRecommendations: [],
-    lowMarginCount: 0, wasteRisk: [], priceMovement: [],
+    lowMarginCount: 0, wasteRisk: [], priceByCategory: {},
   });
 
   const LOW_MARGIN_THRESHOLD = 40;
 
   useEffect(() => {
-    router.prefetch('/client/dashboard');
-    router.prefetch('/client/invoices');
-    router.prefetch('/client/ingredients');
-    router.prefetch('/client/menu-items');
-    router.prefetch('/client/analytics');
+    ['dashboard','invoices','ingredients','menu-items','analytics'].forEach(p => router.prefetch(`/client/${p}`));
   }, []);
 
   useEffect(() => {
@@ -887,13 +942,12 @@ export default function ClientDashboard() {
   }, [restaurantId]);
 
   useEffect(() => {
-    if (!router.isReady) return;
-    if (router.query.tour !== 'true') return;
-    if (!restaurantId) return;
+    if (!router.isReady || router.query.tour !== 'true' || !restaurantId) return;
     fetchSampleData().then(sample => {
       if (!sample) return;
-      const processed = processDashboardData(sample.invoices, sample.ingredients, sample.menuItems, [], []);
+      const processed = processDashboardData(sample.invoices, sample.ingredients, sample.menuItems, [], {});
       setData(processed);
+      setMenuItemsFull(sample.menuItems || []);
       setLoading(false);
     });
   }, [router.isReady, router.query.tour, restaurantId]);
@@ -907,8 +961,9 @@ export default function ClientDashboard() {
     if (isTour && restaurantId) {
       fetchSampleData().then(sample => {
         if (sample) {
-          const processed = processDashboardData(sample.invoices, sample.ingredients, sample.menuItems, [], []);
+          const processed = processDashboardData(sample.invoices, sample.ingredients, sample.menuItems, [], {});
           setData(processed);
+          setMenuItemsFull(sample.menuItems || []);
           setLoading(false);
         }
       });
@@ -920,50 +975,58 @@ export default function ClientDashboard() {
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       if (userError || !user) { setError("Authentication required"); setLoading(false); return; }
       setUserEmail(user.email || '');
-
       const { data: profile, error: profileError } = await supabase
         .from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
-
-      if (profileError || !profile?.restaurant_id) {
-        setError("Could not determine restaurant access"); setLoading(false); return;
-      }
-
+      if (profileError || !profile?.restaurant_id) { setError("Could not determine restaurant access"); setLoading(false); return; }
       setRestaurantId(profile.restaurant_id);
       setUserName(profile.full_name ? profile.full_name.split(' ')[0] : "User");
-
       const { data: rd } = await supabase.from("restaurants").select("name").eq("id", profile.restaurant_id).single();
       setRestaurantName(rd?.name || "Your Restaurant");
-
       if (router.query.tour !== 'true') await fetchDashboardData(profile.restaurant_id);
       else setLoading(false);
-    } catch {
-      setError("An unexpected error occurred"); setLoading(false);
-    }
+    } catch { setError("An unexpected error occurred"); setLoading(false); }
   }
 
   async function fetchDashboardData(restId) {
     try {
       setLoading(true);
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const fromDate = sixMonthsAgo.toISOString().split('T')[0];
 
       const [
         { data: invoices },
         { data: ingredients },
         { data: menuItems },
         { data: invoiceItems },
+        { data: posSales },
       ] = await Promise.all([
-        supabase.from("invoices").select("*").eq("restaurant_id", restId).order("created_at", { ascending: false }),
+        supabase.from("invoices").select("*").eq("restaurant_id", restId).order("date", { ascending: false }),
         supabase.from("ingredients").select("*").eq("restaurant_id", restId),
-        supabase.from("menu_items").select(`*, menu_item_components(id, name, cost, component_ingredients(quantity, ingredients(last_price, is_estimated)))`).eq("restaurant_id", restId),
-        // Join invoice_items with invoices to get delivery dates
+        supabase.from("menu_items").select(`
+          id, name, price, cost, category,
+          menu_item_components(
+            id, name, cost,
+            component_ingredients(
+              quantity,
+              ingredients(id, name, last_price, is_estimated)
+            )
+          )
+        `).eq("restaurant_id", restId),
         supabase.from("invoice_items")
-          .select("*, invoices!inner(date, restaurant_id)")
+          .select("*, invoices!inner(id, date, restaurant_id)")
           .eq("invoices.restaurant_id", restId)
-          .order("invoices(date)", { ascending: false }),
+          .gte("invoices.date", fromDate)
+          .order("invoices(date)", { ascending: true }),
+        supabase.from("pos_sales")
+          .select("item_name, quantity_sold, sale_date")
+          .eq("restaurant_id", restId),
       ]);
 
-      const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || []);
-      const priceMovement = computePriceMovement(invoiceItems || []);
-      const processed = processDashboardData(invoices || [], ingredients || [], menuItems || [], wasteRisk, priceMovement);
+      setMenuItemsFull(menuItems || []);
+      const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || [], posSales || []);
+      const priceByCategory = computePriceByCategory(invoiceItems || []);
+      const processed = processDashboardData(invoices || [], ingredients || [], menuItems || [], wasteRisk, priceByCategory);
       setData(processed);
       setLoading(false);
       fetchAIRecommendations(processed, restId);
@@ -973,121 +1036,189 @@ export default function ClientDashboard() {
     }
   }
 
-  // ── Waste Risk: find most recent delivery date per ingredient, compute days left ──
-  function computeWasteRisk(invoiceItems, invoices) {
-    // Build invoice date map
+  // ── Waste Risk with POS-adjusted remaining quantity ───────────────────────
+  function computeWasteRisk(invoiceItems, invoices, posSales) {
     const invoiceDateMap = {};
-    (invoices || []).forEach(inv => { if (inv.id && inv.date) invoiceDateMap[inv.id] = inv.date; });
+    const invoiceIdMap = {};
+    (invoices || []).forEach(inv => {
+      if (inv.id && inv.date) {
+        invoiceDateMap[inv.id] = inv.date;
+        invoiceIdMap[inv.id] = inv;
+      }
+    });
 
-    // Find most recent purchase date per ingredient
+    // Build POS daily sales map: item_name_lower -> { date -> qty }
+    const posByItem = {};
+    (posSales || []).forEach(s => {
+      const key = (s.item_name || '').toLowerCase().trim();
+      if (!posByItem[key]) posByItem[key] = {};
+      posByItem[key][s.sale_date] = (posByItem[key][s.sale_date] || 0) + parseFloat(s.quantity_sold || 0);
+    });
+
+    // Find most recent invoice_item per ingredient
     const latestByIngredient = {};
     (invoiceItems || []).forEach(item => {
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
       if (!name) return;
-      // Date from joined invoices object or from map
       const dateStr = item.invoices?.date || invoiceDateMap[item.invoice_id];
       if (!dateStr) return;
       const date = new Date(dateStr);
       if (!latestByIngredient[name] || date > latestByIngredient[name].date) {
-        latestByIngredient[name] = { date, unit: item.unit };
+        latestByIngredient[name] = {
+          date,
+          unit: item.unit,
+          quantity: parseFloat(item.quantity || 0),
+          invoiceId: item.invoice_id || item.invoices?.id,
+          invoiceDate: dateStr,
+        };
       }
     });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const risks = Object.entries(latestByIngredient).map(([name, { date, unit }]) => {
+    const risks = Object.entries(latestByIngredient).map(([name, info]) => {
       const shelfLife = getShelfLife(name);
-      const deliveryDate = new Date(date);
+      const deliveryDate = new Date(info.date);
       deliveryDate.setHours(0, 0, 0, 0);
       const daysSinceDelivery = Math.floor((today - deliveryDate) / (1000 * 60 * 60 * 24));
       const daysLeft = shelfLife - daysSinceDelivery;
-      return { name, daysLeft, shelfLife, deliveryDate };
+
+      // Compute remaining quantity: invoiced - sum of POS sales since delivery
+      let soldSinceDelivery = 0;
+      const nameLower = name.toLowerCase().trim();
+      if (posByItem[nameLower]) {
+        Object.entries(posByItem[nameLower]).forEach(([saleDate, qty]) => {
+          if (saleDate >= info.invoiceDate) soldSinceDelivery += qty;
+        });
+      }
+      const remainingQty = Math.max(0, info.quantity - soldSinceDelivery);
+
+      return {
+        name,
+        daysLeft,
+        shelfLife,
+        deliveryDate: info.date,
+        invoiceId: info.invoiceId,
+        unit: info.unit,
+        invoicedQty: info.quantity,
+        remainingQty,
+        soldSinceDelivery,
+      };
     });
 
-    // Only show items expiring within 5 days, sorted by urgency
     return risks
       .filter(r => r.daysLeft >= 0 && r.daysLeft <= 5)
       .sort((a, b) => a.daysLeft - b.daysLeft)
-      .slice(0, 5);
+      .slice(0, 6);
   }
 
-  // ── Price Movement: find last two prices per ingredient, compute delta ──
-  function computePriceMovement(invoiceItems) {
-    // Group by normalized ingredient name, collect all prices with dates
-    const priceHistory = {};
+  // ── Price by Category: real 6-month history, monthly buckets ─────────────
+  function computePriceByCategory(invoiceItems) {
+    // Group by category -> ingredient -> monthly avg price
+    const catMap = {};
+
     (invoiceItems || []).forEach(item => {
+      if (!item.unit_cost || !item.invoices?.date) return;
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
-      if (!name || !item.unit_cost || !item.invoices?.date) return;
-      if (!priceHistory[name]) priceHistory[name] = [];
-      priceHistory[name].push({ price: parseFloat(item.unit_cost), date: new Date(item.invoices.date) });
+      if (!name) return;
+      const cat = (item.category || 'Uncategorized').trim();
+      const date = new Date(item.invoices.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const price = parseFloat(item.unit_cost);
+
+      if (!catMap[cat]) catMap[cat] = {};
+      if (!catMap[cat][name]) catMap[cat][name] = {};
+      if (!catMap[cat][name][monthKey]) catMap[cat][name][monthKey] = [];
+      catMap[cat][name][monthKey].push(price);
     });
 
-    const movements = [];
-    Object.entries(priceHistory).forEach(([name, entries]) => {
-      if (entries.length < 2) return;
-      // Sort by date desc
-      entries.sort((a, b) => b.date - a.date);
-      const latest = entries[0].price;
-      const prior = entries[1].price;
-      if (prior === 0) return;
-      const deltaPct = ((latest - prior) / prior) * 100;
-      if (Math.abs(deltaPct) < 3) return; // filter noise
-      movements.push({ name, latest, prior, deltaPct });
+    // Build 6 monthly buckets (oldest to newest)
+    const buckets = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date();
+      d.setMonth(d.getMonth() - (5 - i));
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
 
-    // Sort by absolute change, show top 5
-    return movements
-      .sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct))
-      .slice(0, 5);
+    const result = {};
+    Object.entries(catMap).forEach(([cat, ingredients]) => {
+      const ingList = [];
+      Object.entries(ingredients).forEach(([ingName, monthData]) => {
+        const history = buckets.map(b => {
+          const vals = monthData[b];
+          if (!vals || vals.length === 0) return null;
+          return vals.reduce((a, v) => a + v, 0) / vals.length;
+        });
+        // Fill nulls with nearest known value
+        let last = null;
+        const filled = history.map(v => { if (v !== null) { last = v; return v; } return last; });
+        const filled2 = filled.slice().reverse().map(v => { if (v !== null) { last = v; return v; } return last; }).reverse();
+        const validPts = filled2.filter(Boolean);
+        if (validPts.length < 2) return;
+        const firstPrice = validPts[0];
+        const lastPrice = validPts[validPts.length - 1];
+        const deltaPct = ((lastPrice - firstPrice) / firstPrice) * 100;
+        if (Math.abs(deltaPct) < 2) return;
+        ingList.push({ name: ingName, history: filled2, deltaPct, firstPrice, lastPrice });
+      });
+      if (ingList.length === 0) return;
+      ingList.sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
+      const avgDelta = ingList.reduce((s, i) => s + i.deltaPct, 0) / ingList.length;
+      result[cat] = { ingredients: ingList, avgDelta };
+    });
+
+    return result;
   }
 
   async function fetchAIRecommendations(dashData, restId) {
     try {
       setAiLoading(true);
-      const res = await fetch('/api/ai-recommendations', {
+      const res = await fetch('/api/dish-recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dashboardData: dashData, restaurantId: restId, restaurantName: userName }),
+        body: JSON.stringify({ restaurantId: restId }),
       });
       if (!res.ok) throw new Error(`API ${res.status}`);
       const json = await res.json();
-      setData(prev => ({ ...prev, aiRecommendations: json.recommendations || [] }));
+      const recs = (json.recommendations || []).map(r => ({
+        title: r.dish || r.title,
+        description: r.reason || r.description,
+        sellCopy: r.talking_point || r.sellCopy,
+        type: r.type,
+        margin: r.margin,
+        confidence: r.confidence,
+        urgency: r.urgency,
+      }));
+      setData(prev => ({ ...prev, aiRecommendations: recs }));
     } catch {
       setData(prev => ({
         ...prev,
         aiRecommendations: [
-          { title: "Review Top Performers", description: "Your highest margin items are ready to promote.", sellCopy: "This one is exceptional right now — highly recommend it.", type: "margin" },
-          { title: "Monitor Ingredient Costs", description: "Track pricing changes across key ingredients.", sellCopy: "Just came in fresh — one of the best things on the menu tonight.", type: "trending" },
-          { title: "Optimize Your Menu", description: "A few adjustments could meaningfully improve overall margins.", sellCopy: "The kitchen is really proud of this one tonight — worth every bite.", type: "trending" },
+          { title: "Top Margin Item", description: "Highest margin dish on the menu tonight.", sellCopy: SELL_COPY[0], type: "margin", confidence: 80, urgency: "medium" },
+          { title: "Fresh Catch Tonight", description: "Recently delivered — push before weekend.", sellCopy: SELL_COPY[1], type: "inventory", confidence: 75, urgency: "high" },
+          { title: "Guest Favorite", description: "Consistently strong seller this week.", sellCopy: SELL_COPY[2], type: "trending", confidence: 70, urgency: "low" },
         ]
       }));
     } finally { setAiLoading(false); }
   }
 
-  function processDashboardData(invoices, ingredients, menuItems, wasteRisk, priceMovement) {
+  function processDashboardData(invoices, ingredients, menuItems, wasteRisk, priceByCategory) {
     const processedInvoices = invoices.filter(i => i.number && i.supplier && i.amount);
     const totalSpending = processedInvoices.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
     const unpricedIngredients = ingredients.filter(i => !i.last_price || parseFloat(i.last_price) === 0).length;
 
     const menuItemAnalysis = menuItems.map(item => {
       const price = parseFloat(item.price || 0);
-      let cost = 0;
-      let hasCompleteData = false;
-
+      let cost = 0; let hasCompleteData = false;
       if (item.menu_item_components && item.menu_item_components.length > 0) {
         cost = item.menu_item_components.reduce((t, c) => t + parseFloat(c.cost || 0), 0);
         hasCompleteData = item.menu_item_components.every(c =>
           (c.component_ingredients || []).length > 0 &&
-          (c.component_ingredients || []).every(ci =>
-            ci.ingredients?.last_price && parseFloat(ci.ingredients.last_price) > 0
-          )
+          (c.component_ingredients || []).every(ci => ci.ingredients?.last_price && parseFloat(ci.ingredients.last_price) > 0)
         );
       } else if (item.cost && parseFloat(item.cost) > 0) {
-        cost = parseFloat(item.cost);
-        hasCompleteData = price > 0;
+        cost = parseFloat(item.cost); hasCompleteData = price > 0;
       }
-
       const margin = price > 0 && cost > 0 ? ((price - cost) / price) * 100 : 0;
       const hasEstimated = item.menu_item_components?.some(c =>
         (c.component_ingredients || []).some(ci => ci.ingredients?.is_estimated === true)
@@ -1103,30 +1234,20 @@ export default function ClientDashboard() {
     const ingredientTrends = ingredients
       .filter(i => i.last_price > 0)
       .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
-      .slice(0, 5)
+      .slice(0, 6)
       .map(i => ({ name: i.name, price: parseFloat(i.last_price), unit: i.unit }));
 
     const aiProfitScore = calculateAIProfitScore({
       itemsWithMargins, averageMargin, unpricedIngredients,
-      totalIngredients: ingredients.length,
-      totalMenuItems: menuItems.length,
-      processedInvoices,
-      totalInvoices: invoices.length,
+      totalIngredients: ingredients.length, totalMenuItems: menuItems.length,
+      processedInvoices, totalInvoices: invoices.length,
     });
 
     return {
-      totalInvoices: invoices.length,
-      totalIngredients: ingredients.length,
-      totalMenuItems: menuItems.length,
-      ingredientTrends,
-      menuItemAnalysis,
-      unpricedIngredients,
-      averageMargin,
-      totalSpending,
-      aiProfitScore,
-      lowMarginCount,
-      wasteRisk: wasteRisk || [],
-      priceMovement: priceMovement || [],
+      totalInvoices: invoices.length, totalIngredients: ingredients.length,
+      totalMenuItems: menuItems.length, ingredientTrends, menuItemAnalysis,
+      unpricedIngredients, averageMargin, totalSpending, aiProfitScore,
+      lowMarginCount, wasteRisk: wasteRisk || [], priceByCategory: priceByCategory || {},
     };
   }
 
@@ -1148,14 +1269,19 @@ export default function ClientDashboard() {
     return { score: Math.max(0, Math.min(100, Math.round(score))) };
   }
 
-  const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
+  const NAV_ITEMS = [
+    { label: 'Dashboard', path: '/client/dashboard' },
+    { label: 'Invoices', path: '/client/invoices' },
+    { label: 'Ingredients', path: '/client/ingredients' },
+    { label: 'Menu Items', path: '/client/menu-items' },
+    { label: 'Analytics', path: '/client/analytics' },
+  ];
 
-  // ── MOBILE LAYOUT (preserved) ──────────────────────────────────────────────
+  // ── MOBILE ─────────────────────────────────────────────────────────────────
   if (isMobile) {
     const circumference = 2 * Math.PI * 40;
     const scoreDash = (data.aiProfitScore.score / 100) * circumference;
     const { color: scoreColor, label: scoreLabel } = getScoreInfo(data.aiProfitScore.score);
-
     return (
       <>
         <style>{GLOBAL_CSS}</style>
@@ -1167,14 +1293,12 @@ export default function ClientDashboard() {
                 <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
                 Active
               </div>
-              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true} />
             </div>
           </div>
           <div className="mob-titlebar">
             <div className="mob-page-title">Dashboard</div>
-            <div className="mob-page-sub">
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}
-            </div>
+            <div className="mob-page-sub">{new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</div>
           </div>
           <div className="mob-stats">
             {[
@@ -1193,16 +1317,12 @@ export default function ClientDashboard() {
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
               <div style={{ width: 24, height: 24, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading dashboard...</div>
+              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading...</div>
             </div>
           ) : (
             <div className="mob-content">
-              {/* OptiScore */}
               <div className="mob-card">
-                <div className="mob-card-title">
-                  <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                  OptiScore
-                </div>
+                <div className="mob-card-title">OptiScore</div>
                 <div className="mob-score-row">
                   <div className="mob-score-ring">
                     <svg viewBox="0 0 100 100">
@@ -1216,12 +1336,11 @@ export default function ClientDashboard() {
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#4a453e', marginBottom: 6 }}>{restaurantName}</div>
+                    <div style={{ fontSize: 12, color: '#4a453e', marginBottom: 4 }}>{restaurantName}</div>
                     <div className="mob-score-badge" style={{ background: `${scoreColor}18`, color: scoreColor }}>{scoreLabel}</div>
                   </div>
                 </div>
               </div>
-              {/* Quick pills */}
               <div className="mob-pill-grid">
                 {[
                   { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba' },
@@ -1235,13 +1354,8 @@ export default function ClientDashboard() {
                   </div>
                 ))}
               </div>
-              {/* Tonight's Picks */}
               <div className="mob-card">
-                <div className="mob-card-title">
-                  <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                  Tonight's Picks
-                  {aiLoading && <div style={{ width: 10, height: 10, border: '1.5px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite', marginLeft: 4 }} />}
-                </div>
+                <div className="mob-card-title">Tonight's Picks</div>
                 {(data.aiRecommendations || []).slice(0, 3).map((rec, i) => {
                   const typeColor = rec.type === 'inventory' ? '#c04040' : rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
                   const sellCopy = rec.sellCopy || SELL_COPY[i % SELL_COPY.length];
@@ -1254,31 +1368,9 @@ export default function ClientDashboard() {
                   );
                 })}
               </div>
-              {/* Waste Risk */}
-              {data.wasteRisk.length > 0 && (
-                <div className="mob-card">
-                  <div className="mob-card-title">
-                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    Waste Risk
-                  </div>
-                  {data.wasteRisk.map((item, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < data.wasteRisk.length - 1 ? '1px solid #1a1915' : 'none' }}>
-                      <div style={{ width: 7, height: 7, borderRadius: '50%', background: getWasteUrgencyColor(item.daysLeft), flexShrink: 0 }} />
-                      <div style={{ flex: 1, fontSize: 13, color: '#9a9086' }}>{item.name}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: getWasteUrgencyColor(item.daysLeft) }}>
-                        {item.daysLeft === 0 ? 'Use today' : `${item.daysLeft}d left`}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* Top Ingredient Costs */}
               <div className="mob-card">
-                <div className="mob-card-title">
-                  <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                  Top Ingredient Costs
-                </div>
-                {data.ingredientTrends.length > 0 ? data.ingredientTrends.map(ing => (
+                <div className="mob-card-title">Top Ingredient Costs</div>
+                {data.ingredientTrends.map(ing => (
                   <div key={ing.name} className="mob-ing-row">
                     <div>
                       <div className="mob-ing-name">{ing.name}</div>
@@ -1286,9 +1378,9 @@ export default function ClientDashboard() {
                     </div>
                     <div className="mob-ing-price">{formatCurrencyDetailed(ing.price)}</div>
                   </div>
-                )) : <div style={{ fontSize: 12, color: '#4a453e', textAlign: 'center', padding: '8px 0' }}>No ingredient data yet</div>}
+                ))}
               </div>
-              <div style={{ height: 8, flexShrink: 0 }} />
+              <div style={{ height: 8 }} />
             </div>
           )}
           <div className="mob-bottom-nav">
@@ -1317,235 +1409,217 @@ export default function ClientDashboard() {
     );
   }
 
-  // ── DESKTOP ERROR STATE ────────────────────────────────────────────────────
+  // ── DESKTOP ERROR ──────────────────────────────────────────────────────────
   if (error) return (
     <>
       <style>{GLOBAL_CSS}</style>
       <div style={{ background: '#0a0908', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 'clamp(12px,1vw,16px)', color: '#e8e2d8' }}>Unable to Load Dashboard</div>
-        <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e', marginBottom: 8 }}>{error}</div>
+        <div style={{ fontSize: 16, color: '#e8e2d8' }}>Unable to Load Dashboard</div>
+        <div style={{ fontSize: 13, color: '#4a453e', marginBottom: 8 }}>{error}</div>
         <button onClick={() => window.location.reload()} style={{ background: '#02a4ba', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#0a0908', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Try Again</button>
       </div>
     </>
   );
 
-  // ── DESKTOP LAYOUT ─────────────────────────────────────────────────────────
+  // ── DESKTOP ────────────────────────────────────────────────────────────────
+  const maxIngPrice = data.ingredientTrends.length > 0
+    ? Math.max(...data.ingredientTrends.map(i => i.price)) : 1;
+
   return (
     <>
       <style>{GLOBAL_CSS}</style>
       <div className="db-root">
 
-        {/* NAV */}
-        <div className="db-nav">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
-            <div className="db-logo">Opti<span>Menu</span></div>
-            <div style={{ display: 'flex', gap: 2 }}>
-              {tabs.map(t => (
-                <button key={t} className={`db-tab${activeTab === t ? ' active' : ''}`}
-                  onClick={() => { setActiveTab(t); if (t !== 'Dashboard') router.push(`/client/${t.toLowerCase().replace(' ', '-')}`); }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* TOP BAR */}
+        <div className="db-topbar">
+          <div className="db-logo">Opti<span>Menu</span></div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,0.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.65vw,12px)', color: '#02a4ba' }}>
-              <div style={{ width: 'clamp(4px,0.35vw,6px)', height: 'clamp(4px,0.35vw,6px)', background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.62vw,11px)', color: '#02a4ba' }}>
+              <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
-            <div style={{ width: 'clamp(160px, 14vw, 260px)' }}>
+            <div style={{ width: 'clamp(140px,13vw,240px)' }}>
               <UniversalSearch restaurantId={restaurantId} placeholder="Search..." />
             </div>
-            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
-        {/* WELCOME BAR */}
-        <div className="db-wbar">
-          <div style={{ display: 'flex', alignItems: 'baseline' }}>
-            <span className="db-wname">Welcome back, {userName}</span>
-            <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
-          </div>
-        </div>
+        {/* BODY */}
+        <div className="db-body">
 
-        {/* GRID */}
-        {loading ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-            <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-            <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e' }}>Loading dashboard...</div>
+          {/* LEFT NAV SIDEBAR */}
+          <div className="db-sidenav">
+            <div className="db-sidenav-label">Navigation</div>
+            {NAV_ITEMS.map(({ label, path }) => (
+              <button key={label} className={`db-navlink${path === '/client/dashboard' ? ' active' : ''}`}
+                onClick={() => router.push(path)}>
+                {label}
+              </button>
+            ))}
+            <div className="db-sidenav-spacer" />
+            <div className="db-sidenav-bottom">
+              <div className="db-sidenav-user">{restaurantName}</div>
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />
+            </div>
           </div>
-        ) : (
-          <div className="db-grid-wrap">
 
-            {/* LEFT PANEL */}
-            <div className="db-panel">
-              <div className="db-panel-top">
-                <div className="db-rest-icon">
-                  <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
-                </div>
-                <div className="db-rest-name">{restaurantName}</div>
-                <div className="db-rest-sub">Management Dashboard</div>
-              </div>
-              <ScoreRing score={data.aiProfitScore.score} />
-              <div className="db-pills">
-                {[
-                  {
-                    l: 'Invoices', v: data.totalInvoices, c: '#02a4ba',
-                    sub: data.totalInvoices > 0 ? `${data.totalInvoices} on file` : 'None uploaded yet',
-                  },
-                  {
-                    l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040',
-                    sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy',
-                  },
-                  {
-                    l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a',
-                    sub: data.averageMargin > 0 ? `${data.averageMargin.toFixed(1)}% avg margin` : 'No cost data yet',
-                  },
-                  {
-                    l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020',
-                    sub: data.totalInvoices > 0 ? `Across ${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` : 'No invoices yet',
-                  },
-                ].map(({ l, v, c, sub }) => (
-                  <div key={l} className="db-pill">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="db-pill-l">{l}</div>
-                      <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#3a3630', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub}</div>
-                    </div>
-                    <div className="db-pill-v" style={{ color: c }}>{v}</div>
-                  </div>
-                ))}
+          {/* MAIN */}
+          <div className="db-main">
+
+            {/* WELCOME BAR */}
+            <div className="db-wbar">
+              <div style={{ display: 'flex', alignItems: 'baseline' }}>
+                <span className="db-wname">Welcome back, {userName}</span>
+                <span className="db-wsub">· {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {restaurantName}</span>
               </div>
             </div>
 
-            {/* ROW 1 — THREE KITCHEN TICKETS */}
-            <div className="db-tickets-row">
-              {aiLoading ? (
-                [0, 1, 2].map(i => (
-                  <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <div className="db-spinner" />
-                    <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#4a453e' }}>Analyzing tonight's menu...</div>
-                  </div>
-                ))
-              ) : (data.aiRecommendations || []).length > 0
-                ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
-                    <KitchenTicket key={i} rec={rec} index={i} />
-                  ))
-                : [0, 1, 2].map(i => (
-                    <div key={i} className="db-ticket">
-                      <div className="db-ticket-tear" />
-                      <div className="db-ticket-header">
-                        <span className="db-ticket-label">Tonight's Pick #{i + 1}</span>
-                      </div>
-                      <div className="db-empty">No recommendations yet</div>
-                    </div>
-                  ))
-              }
-            </div>
-
-            {/* ROW 2 — WASTE RISK | PRICE MOVEMENT | TOP INGREDIENTS */}
-            <div className="db-bottom-row">
-
-              {/* Waste Risk — with shelf life consumption bars */}
-              <div className="db-card">
-                <div className="db-card-hd">
-                  <div className="db-card-title">
-                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    Waste Risk
-                  </div>
-                  <span style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>
-                    {data.wasteRisk.length > 0 ? `${data.wasteRisk.length} item${data.wasteRisk.length !== 1 ? 's' : ''} at risk` : ''}
-                  </span>
-                </div>
-                {data.wasteRisk.length > 0
-                  ? data.wasteRisk.map((item, i) => {
-                    const urgencyColor = getWasteUrgencyColor(item.daysLeft);
-                    const consumed = Math.min(100, Math.max(0, ((item.shelfLife - item.daysLeft) / item.shelfLife) * 100));
-                    const label = item.daysLeft === 0 ? 'Use today' : item.daysLeft === 1 ? '1 day left' : `${item.daysLeft} days left`;
-                    return (
-                      <div key={i} className="db-waste-row">
-                        <div className="db-waste-top">
-                          <div className="db-waste-dot" style={{ background: urgencyColor }} />
-                          <div className="db-waste-name">{item.name}</div>
-                          <div className="db-waste-days" style={{ color: urgencyColor }}>{label}</div>
-                        </div>
-                        <div className="db-waste-bar-track">
-                          <div className="db-waste-bar-fill"
-                            style={{ width: `${consumed}%`, background: urgencyColor, opacity: 0.7 }} />
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 1 }}>
-                          <span style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#3a3630' }}>Received</span>
-                          <span style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#3a3630' }}>{item.shelfLife}d shelf life</span>
-                        </div>
-                      </div>
-                    );
-                  })
-                  : <div className="db-empty">No expiring items detected</div>
-                }
+            {loading ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+                <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                <div style={{ fontSize: 'clamp(10px,0.78vw,13px)', color: '#4a453e' }}>Loading dashboard...</div>
               </div>
+            ) : (
+              <div className="db-grid-wrap">
 
-              {/* Price Movement — with sparklines */}
-              <div className="db-card">
-                <div className="db-card-hd">
-                  <div className="db-card-title">
-                    <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                    Price Movement
-                  </div>
-                  <span style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>vs. prior invoice</span>
+                {/* SECTION HEADER — Tickets */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0 }}>
+                  <div />
+                  <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Tonight's Recommendations</div>
                 </div>
-                {data.priceMovement.length > 0
-                  ? data.priceMovement.map((item, i) => {
-                    const isUp = item.deltaPct > 0;
-                    const deltaColor = isUp ? '#c04040' : '#2a8a5a';
-                    // Build a simple 3-point sparkline: prior, midpoint, latest
-                    const pts = [item.prior, (item.prior + item.latest) / 2, item.latest];
-                    const minP = Math.min(...pts) * 0.98;
-                    const maxP = Math.max(...pts) * 1.02;
-                    const range = maxP - minP || 1;
-                    const W = 60; const H = 18;
-                    const coords = pts.map((p, idx) => {
-                      const x = (idx / (pts.length - 1)) * W;
-                      const y = H - ((p - minP) / range) * H;
-                      return `${x},${y}`;
-                    }).join(' ');
-                    return (
-                      <div key={i} className="db-price-row">
-                        <div className="db-price-top">
-                          <div className="db-price-name">{item.name}</div>
-                          <div className="db-price-meta">
-                            <svg className="db-sparkline" viewBox={`0 0 ${W} ${H}`} style={{ width: 60, height: 18, overflow: 'visible' }}>
-                              <polyline points={coords} fill="none" stroke={deltaColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
-                              <circle cx={coords.split(' ').pop().split(',')[0]} cy={coords.split(' ').pop().split(',')[1]} r="2" fill={deltaColor} />
-                            </svg>
-                            <div className="db-price-delta" style={{ color: deltaColor }}>
-                              {isUp ? '↑' : '↓'} {Math.abs(item.deltaPct).toFixed(1)}%
+
+                {/* ROW TOP — Left panel + 3 tickets */}
+                <div className="db-row-top">
+
+                  {/* LEFT PANEL — top half */}
+                  <div className="db-panel" style={{ gridRow: '1 / 3' }}>
+                    <div className="db-panel-top">
+                      <div className="db-rest-icon">
+                        <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                      </div>
+                      <div className="db-rest-name">{restaurantName}</div>
+                      <div className="db-rest-sub">Management Dashboard</div>
+                    </div>
+                    <ScoreRing score={data.aiProfitScore.score} />
+                    <div className="db-pills">
+                      {[
+                        { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba', sub: `${data.totalInvoices} on file` },
+                        { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
+                        { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a', sub: `${data.averageMargin.toFixed(1)}% avg margin` },
+                        { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
+                      ].map(({ l, v, c, sub }) => (
+                        <div key={l} className="db-pill">
+                          <div className="db-pill-left">
+                            <div className="db-pill-l">{l}</div>
+                            <div className="db-pill-sub">{sub}</div>
+                          </div>
+                          <div className="db-pill-v" style={{ color: c }}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* THREE THERMAL TICKETS */}
+                  {aiLoading ? (
+                    [0, 1, 2].map(i => (
+                      <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <div className="db-spinner" />
+                        <div style={{ fontSize: 'clamp(9px,0.62vw,11px)', color: '#4a453e', fontFamily: 'Courier New, monospace' }}>Analyzing menu...</div>
+                      </div>
+                    ))
+                  ) : (data.aiRecommendations || []).length > 0
+                    ? (data.aiRecommendations || []).slice(0, 3).map((rec, i) => (
+                        <ThermalTicket key={i} rec={rec} index={i}
+                          menuItems={menuItemsFull}
+                          wasteRisk={data.wasteRisk}
+                          averageMargin={data.averageMargin} />
+                      ))
+                    : [0, 1, 2].map(i => (
+                        <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center' }}>
+                          <div className="db-empty">No recommendations yet</div>
+                        </div>
+                      ))
+                  }
+                </div>
+
+                {/* SECTION HEADER — Operations */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'clamp(148px,12vw,200px) 1fr 1fr 1fr', gap: 'clamp(5px,0.5vw,9px)', flexShrink: 0, margin: 'clamp(3px,0.3vh,5px) 0' }}>
+                  <div />
+                  <div className="db-section-hd" style={{ gridColumn: '2 / 5' }}>Operations</div>
+                </div>
+
+                {/* ROW BOTTOM — (left panel continues) + 3 data cards */}
+                <div className="db-row-bottom">
+
+                  {/* LEFT PANEL placeholder for grid (actual panel spans via gridRow above) */}
+                  <div style={{ gridColumn: 1 }} />
+
+                  {/* WASTE RISK */}
+                  <div className="db-card">
+                    <div className="db-card-hd">
+                      <div className="db-card-title">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        Waste Risk
+                      </div>
+                      <span className="db-card-sub">{data.wasteRisk.length > 0 ? `${data.wasteRisk.length} at risk` : 'All clear'}</span>
+                    </div>
+                    <div className="db-waste-list">
+                      {data.wasteRisk.length > 0 ? data.wasteRisk.map((item, i) => {
+                        const urgencyColor = getWasteUrgencyColor(item.daysLeft);
+                        const consumed = Math.min(100, Math.max(0,
+                          ((item.shelfLife - item.daysLeft) / item.shelfLife) * 100));
+                        const label = item.daysLeft === 0 ? 'Use today' : item.daysLeft === 1 ? '1 day left' : `${item.daysLeft} days left`;
+                        const qtyText = item.remainingQty > 0
+                          ? `~${item.remainingQty.toFixed(1)} ${item.unit || 'units'} remaining`
+                          : 'Qty unknown';
+                        return (
+                          <div key={i} className="db-waste-row">
+                            <div className="db-waste-top">
+                              <div className="db-waste-dot" style={{ background: urgencyColor }} />
+                              <div className="db-waste-name">{item.name}</div>
+                              <div className="db-waste-days" style={{ color: urgencyColor }}>{label}</div>
+                            </div>
+                            <div className="db-waste-bar-track">
+                              <div className="db-waste-bar-fill"
+                                style={{ width: `${consumed}%`, background: urgencyColor, opacity: 0.7 }} />
+                            </div>
+                            <div className="db-waste-meta">
+                              <span className="db-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
+                              {item.invoiceId && (
+                                <button className="db-waste-invoice-link"
+                                  onClick={() => router.push(`/client/invoices?id=${item.invoiceId}`)}>
+                                  View invoice →
+                                </button>
+                              )}
                             </div>
                           </div>
-                        </div>
-                        <div className="db-price-from" style={{ paddingLeft: 14 }}>
-                          {formatCurrencyDetailed(item.prior)} → {formatCurrencyDetailed(item.latest)}
-                        </div>
+                        );
+                      }) : <div className="db-empty">No expiring items detected</div>}
+                    </div>
+                    {data.wasteRisk.length > 0 && (
+                      <div className="db-legend-strip">
+                        <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Use today / 1 day</span>
+                        <span><span className="db-legend-dot" style={{ background: '#d4a020' }} />2 days</span>
+                        <span><span className="db-legend-dot" style={{ background: '#02a4ba' }} />3–5 days</span>
+                        <span style={{ marginLeft: 'auto', color: '#2a2620' }}>⚠ = at risk in tonight's picks</span>
                       </div>
-                    );
-                  })
-                  : <div className="db-empty">No price changes detected</div>
-                }
-              </div>
-
-              {/* Top Ingredient Costs — with relative cost bars */}
-              <div className="db-card">
-                <div className="db-card-hd">
-                  <div className="db-card-title">
-                    <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                    Top Ingredient Costs
+                    )}
                   </div>
-                  <span style={{ fontSize: 'clamp(8px,0.6vw,10px)', color: '#4a453e' }}>by unit price</span>
-                </div>
-                {data.ingredientTrends.length > 0
-                  ? (() => {
-                    const maxPrice = Math.max(...data.ingredientTrends.map(i => i.price));
-                    return data.ingredientTrends.map(ing => {
-                      const barPct = (ing.price / maxPrice) * 100;
-                      return (
+
+                  {/* PRICE MOVEMENT — category drill-down */}
+                  <PriceMovementCard priceByCategory={data.priceByCategory} />
+
+                  {/* TOP INGREDIENT COSTS */}
+                  <div className="db-card">
+                    <div className="db-card-hd">
+                      <div className="db-card-title">
+                        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+                        Top Ingredient Costs
+                      </div>
+                      <span className="db-card-sub">by unit price</span>
+                    </div>
+                    <div className="db-ing-list">
+                      {data.ingredientTrends.length > 0 ? data.ingredientTrends.map(ing => (
                         <div key={ing.name} className="db-ing-row">
                           <div className="db-ing-top">
                             <div>
@@ -1555,19 +1629,19 @@ export default function ClientDashboard() {
                             <div className="db-ing-val">{formatCurrencyDetailed(ing.price)}</div>
                           </div>
                           <div className="db-ing-bar-track">
-                            <div className="db-ing-bar-fill" style={{ width: `${barPct}%` }} />
+                            <div className="db-ing-bar-fill"
+                              style={{ width: `${(ing.price / maxIngPrice) * 100}%` }} />
                           </div>
                         </div>
-                      );
-                    });
-                  })()
-                  : <div className="db-empty">No ingredient data yet</div>
-                }
-              </div>
+                      )) : <div className="db-empty">No ingredient data yet</div>}
+                    </div>
+                  </div>
 
-            </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       <Analytics /><SpeedInsights />
