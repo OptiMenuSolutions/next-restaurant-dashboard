@@ -173,11 +173,11 @@ const GLOBAL_CSS = `
   .db-grid-wrap {
     flex: 1;
     min-height: 0;
-    padding: clamp(6px, 0.6vw, 12px);
-    gap: clamp(6px, 0.6vw, 12px);
+    padding: clamp(6px, 0.6vw, 10px);
+    gap: clamp(5px, 0.5vw, 9px);
     display: grid;
-    grid-template-columns: clamp(155px, 13vw, 230px) 1fr 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-columns: clamp(148px, 12vw, 210px) 1fr 1fr 1fr;
+    grid-template-rows: 36% 64%;
     overflow: hidden;
   }
 
@@ -188,10 +188,10 @@ const GLOBAL_CSS = `
     background: #13120f;
     border: 1px solid #2a2620;
     border-radius: clamp(5px, 0.4vw, 9px);
-    padding: clamp(10px, 0.9vw, 18px);
+    padding: clamp(8px, 0.7vw, 14px);
     display: flex;
     flex-direction: column;
-    gap: clamp(8px, 0.8vh, 16px);
+    gap: clamp(5px, 0.5vh, 10px);
     overflow: hidden;
   }
 
@@ -200,15 +200,15 @@ const GLOBAL_CSS = `
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: clamp(3px, 0.35vh, 6px);
-    padding-bottom: clamp(8px, 0.8vh, 14px);
+    gap: clamp(2px, 0.25vh, 4px);
+    padding-bottom: clamp(6px, 0.6vh, 10px);
     border-bottom: 1px solid #2a2620;
     flex-shrink: 0;
   }
 
   .db-rest-icon {
-    width: clamp(26px, 2.4vw, 42px);
-    height: clamp(26px, 2.4vw, 42px);
+    width: clamp(22px, 1.8vw, 32px);
+    height: clamp(22px, 1.8vw, 32px);
     border-radius: 50%;
     background: rgba(2,164,186,.1);
     border: 1px solid rgba(2,164,186,.2);
@@ -218,31 +218,31 @@ const GLOBAL_CSS = `
     flex-shrink: 0;
   }
   .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .db-rest-name { font-size: clamp(10px, 0.85vw, 15px); font-weight: 600; color: #e8e2d8; }
-  .db-rest-sub { font-size: clamp(8px, 0.62vw, 11px); color: #4a453e; }
+  .db-rest-name { font-size: clamp(10px, 0.8vw, 14px); font-weight: 600; color: #e8e2d8; }
+  .db-rest-sub { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; }
 
-  .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(4px, 0.4vh, 7px); flex-shrink: 0; }
-  .db-score-lbl { font-size: clamp(8px, 0.62vw, 11px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
-  .db-ring { position: relative; width: clamp(56px, 5.5vw, 90px); height: clamp(56px, 5.5vw, 90px); }
+  .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(3px, 0.3vh, 5px); flex-shrink: 0; }
+  .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
+  .db-ring { position: relative; width: clamp(52px, 4.8vw, 78px); height: clamp(52px, 4.8vw, 78px); }
   .db-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .db-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(16px, 1.6vw, 26px); color: #e8e2d8; line-height: 1; }
-  .db-ring-sub { font-size: clamp(7px, 0.58vw, 10px); color: #4a453e; }
-  .db-score-tag { font-size: clamp(9px, 0.65vw, 12px); font-weight: 600; padding: clamp(2px,0.2vh,3px) clamp(7px,0.55vw,11px); border-radius: 10px; }
+  .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(15px, 1.4vw, 22px); color: #e8e2d8; line-height: 1; }
+  .db-ring-sub { font-size: clamp(7px, 0.52vw, 9px); color: #4a453e; }
+  .db-score-tag { font-size: clamp(8px, 0.6vw, 11px); font-weight: 600; padding: clamp(2px,0.18vh,3px) clamp(6px,0.5vw,10px); border-radius: 10px; }
 
-  .db-pills { display: flex; flex-direction: column; gap: clamp(5px, 0.5vh, 9px); flex: 1; overflow: hidden; }
+  .db-pills { display: flex; flex-direction: column; gap: clamp(4px, 0.4vh, 7px); flex: 1; overflow: hidden; }
   .db-pill {
     background: #0f0e0c;
-    border-radius: clamp(4px, 0.35vw, 7px);
-    padding: clamp(5px, 0.55vh, 10px) clamp(8px, 0.7vw, 14px);
+    border-radius: clamp(4px, 0.3vw, 6px);
+    padding: clamp(4px, 0.4vh, 7px) clamp(7px, 0.6vw, 12px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     border: 1px solid #1a1915;
     flex-shrink: 0;
   }
-  .db-pill-l { font-size: clamp(9px, 0.68vw, 13px); color: #6b6358; }
-  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(13px, 1.1vw, 18px); }
+  .db-pill-l { font-size: clamp(9px, 0.62vw, 11px); color: #6b6358; }
+  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(12px, 1vw, 16px); }
 
   /* ── Generic card ── */
   .db-card {
@@ -283,7 +283,7 @@ const GLOBAL_CSS = `
     grid-row: 1;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: clamp(6px, 0.6vw, 12px);
+    gap: clamp(5px, 0.5vw, 9px);
     min-height: 0;
   }
 
@@ -303,13 +303,13 @@ const GLOBAL_CSS = `
 
   /* Ticket top tear edge */
   .db-ticket-tear {
-    height: clamp(6px, 0.6vh, 10px);
+    height: 5px;
     background: repeating-linear-gradient(
       90deg,
       #1a1915 0px,
-      #1a1915 6px,
-      transparent 6px,
-      transparent 10px
+      #1a1915 5px,
+      transparent 5px,
+      transparent 9px
     );
     flex-shrink: 0;
   }
@@ -317,7 +317,7 @@ const GLOBAL_CSS = `
   .db-ticket-header {
     background: #1a1915;
     border-bottom: 1px dashed #2a2620;
-    padding: clamp(6px, 0.6vh, 10px) clamp(10px, 0.9vw, 16px);
+    padding: clamp(4px, 0.5vh, 7px) clamp(10px, 0.9vw, 16px);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -325,7 +325,7 @@ const GLOBAL_CSS = `
   }
 
   .db-ticket-label {
-    font-size: clamp(7px, 0.58vw, 10px);
+    font-size: clamp(7px, 0.55vw, 9px);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -334,29 +334,48 @@ const GLOBAL_CSS = `
   }
 
   .db-ticket-badge {
-    font-size: clamp(7px, 0.55vw, 9px);
+    font-size: clamp(7px, 0.52vw, 9px);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: .5px;
-    padding: clamp(2px,0.2vh,3px) clamp(5px,0.45vw,8px);
+    padding: 2px clamp(5px,0.42vw,8px);
     border-radius: 4px;
   }
 
   .db-ticket-body {
     flex: 1;
-    padding: clamp(8px, 0.8vh, 14px) clamp(10px, 0.9vw, 16px);
+    padding: clamp(8px, 0.9vh, 13px) clamp(10px, 0.9vw, 16px) clamp(6px, 0.7vh, 10px);
     display: flex;
     flex-direction: column;
-    gap: clamp(5px, 0.5vh, 9px);
+    gap: clamp(4px, 0.45vh, 7px);
     min-height: 0;
+  }
+
+  /* Margin number sits top-right, dish name is the hero */
+  .db-ticket-top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    flex-shrink: 0;
   }
 
   .db-ticket-name {
     font-family: 'Playfair Display', serif;
-    font-size: clamp(13px, 1.15vw, 20px);
+    font-size: clamp(14px, 1.25vw, 22px);
     color: #e8e2d8;
-    line-height: 1.2;
+    line-height: 1.15;
+    flex: 1;
+  }
+
+  .db-ticket-margin-big {
+    font-family: 'Courier New', monospace;
+    font-size: clamp(13px, 1.1vw, 18px);
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
     flex-shrink: 0;
+    padding-top: 2px;
   }
 
   .db-ticket-divider {
@@ -368,14 +387,14 @@ const GLOBAL_CSS = `
   .db-ticket-why {
     font-size: clamp(9px, 0.65vw, 11px);
     color: #6b6358;
-    line-height: 1.5;
+    line-height: 1.4;
     flex-shrink: 0;
   }
 
   .db-ticket-sell {
-    font-size: clamp(9px, 0.68vw, 12px);
+    font-size: clamp(10px, 0.7vw, 12px);
     color: #9a9086;
-    line-height: 1.5;
+    line-height: 1.45;
     font-style: italic;
     flex: 1;
   }
@@ -393,25 +412,19 @@ const GLOBAL_CSS = `
     font-weight: 600;
   }
 
-  /* Ticket bottom tear */
+  /* Ticket bottom */
   .db-ticket-bottom {
-    padding: clamp(5px, 0.5vh, 8px) clamp(10px, 0.9vw, 16px);
+    padding: clamp(4px, 0.45vh, 6px) clamp(10px, 0.9vw, 16px);
     border-top: 1px dashed #2a2620;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     flex-shrink: 0;
-  }
-
-  .db-ticket-margin {
-    font-family: 'Courier New', monospace;
-    font-size: clamp(9px, 0.72vw, 13px);
-    font-weight: 700;
   }
 
   .db-ticket-no {
     font-family: 'Courier New', monospace;
-    font-size: clamp(8px, 0.6vw, 11px);
+    font-size: clamp(8px, 0.55vw, 10px);
     color: #2a2620;
   }
 
@@ -421,7 +434,7 @@ const GLOBAL_CSS = `
     grid-row: 2;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: clamp(6px, 0.6vw, 12px);
+    gap: clamp(5px, 0.5vw, 9px);
     min-height: 0;
   }
 
@@ -632,7 +645,7 @@ function KitchenTicket({ rec, index }) {
     rec.type === 'margin' ? 'High Margin' : 'Trending';
 
   const sellCopy = rec.sellCopy || SELL_COPY[index % SELL_COPY.length];
-  const marginDisplay = rec.margin ? `${rec.margin.toFixed(1)}%` : null;
+  const marginDisplay = rec.margin ? `${parseFloat(rec.margin).toFixed(1)}%` : null;
 
   return (
     <div className="db-ticket">
@@ -644,16 +657,17 @@ function KitchenTicket({ rec, index }) {
         </span>
       </div>
       <div className="db-ticket-body">
-        <div className="db-ticket-name">{rec.title}</div>
+        <div className="db-ticket-top-row">
+          <div className="db-ticket-name">{rec.title}</div>
+          {marginDisplay && (
+            <div className="db-ticket-margin-big" style={{ color: typeColor }}>{marginDisplay}</div>
+          )}
+        </div>
         <hr className="db-ticket-divider" />
         <div className="db-ticket-why">{rec.description}</div>
         <div className="db-ticket-sell">{sellCopy}</div>
       </div>
       <div className="db-ticket-bottom">
-        {marginDisplay
-          ? <span className="db-ticket-margin" style={{ color: typeColor }}>{marginDisplay} margin</span>
-          : <span className="db-ticket-margin" style={{ color: '#4a453e' }}>—</span>
-        }
         <span className="db-ticket-no">#{String(index + 1).padStart(3, '0')}</span>
       </div>
     </div>
