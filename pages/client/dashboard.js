@@ -1263,11 +1263,11 @@ export default function ClientDashboard() {
       const recs = (json.recommendations || []).map(r => ({
         title: r.title,
         description: r.description,
-        sellCopy: r.talking_point || null,
+        sellCopy: r.talking_point || null,  // now populated from improved prompt
         type: r.type,
-        margin: r.margin,
-        confidence: r.confidence,
-        urgency: r.urgency,
+        margin: r.margin || null,
+        confidence: r.confidence || null,
+        urgency: r.urgency || null,
       }));
       setData(prev => ({ ...prev, aiRecommendations: recs }));
     } catch {
