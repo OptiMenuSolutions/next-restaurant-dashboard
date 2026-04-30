@@ -327,7 +327,7 @@ const GLOBAL_CSS = `
   .db-pill-left { flex: 1; min-width: 0; }
   .db-pill-l { font-size: clamp(9px, 0.62vw, 11px); color: #6b6358; }
   .db-pill-sub { font-size: clamp(7px, 0.52vw, 9px); color: #3a3630; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .db-pill-v { font-family: 'Playfair Display', serif; font-size: clamp(12px, 1vw, 16px); flex-shrink: 0; }
+  .db-pill-v { font-family: 'Inter', sans-serif; font-size: clamp(12px, 1vw, 16px); font-weight: 700; flex-shrink: 0; }
 
   /* ── Generic card ── */
   .db-card {
@@ -385,7 +385,7 @@ const GLOBAL_CSS = `
 
   .db-ticket-left {
     flex: 1;
-    padding: clamp(6px, 0.7vh, 10px) clamp(8px, 0.8vw, 12px);
+    padding: clamp(5px, 0.55vh, 8px) clamp(7px, 0.7vw, 11px);
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -394,8 +394,8 @@ const GLOBAL_CSS = `
   }
 
   .db-ticket-right {
-    width: 40%;
-    padding: clamp(6px, 0.7vh, 10px) clamp(6px, 0.6vw, 10px);
+    width: 45%;
+    padding: clamp(5px, 0.55vh, 8px) clamp(6px, 0.6vw, 10px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -424,7 +424,7 @@ const GLOBAL_CSS = `
   .db-receipt-divider {
     border: none;
     border-top: 1px dashed #2a2620;
-    margin: clamp(3px,0.3vh,5px) 0;
+    margin: clamp(2px,0.2vh,3px) 0;
     flex-shrink: 0;
   }
 
@@ -455,16 +455,17 @@ const GLOBAL_CSS = `
   .db-receipt-sell::after { content: '"'; color: #02a4ba; font-style: normal; }
 
   .db-receipt-component {
-    font-size: clamp(8px, 0.6vw, 10px);
-    color: #6b6358;
-    margin-top: 2px;
+    font-size: clamp(9px, 0.72vw, 12px);
+    color: #9a9086;
+    margin-top: 4px;
+    font-weight: 600;
     flex-shrink: 0;
   }
   .db-receipt-ingredient {
-    font-size: clamp(7px, 0.55vw, 9px);
-    color: #4a453e;
+    font-size: clamp(8px, 0.65vw, 11px);
+    color: #7a7268;
     padding-left: 10px;
-    line-height: 1.6;
+    line-height: 1.7;
     flex-shrink: 0;
   }
   .db-receipt-ingredient.at-risk {
@@ -733,28 +734,16 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
     marginVsAvg = diff >= 0 ? `+${diff.toFixed(1)}% vs avg` : `${diff.toFixed(1)}% vs avg`;
   }
 
-  const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-  const starRow = '***********************';
-
   return (
     <div className="db-ticket">
       <div className="db-ticket-inner">
 
-        {/* LEFT: header + meta + sell copy */}
+        {/* LEFT: compact header + dish + description + sell copy */}
         <div className="db-ticket-left">
-          <div className="db-receipt-stars">{starRow}</div>
-          <div className="db-receipt-center" style={{ color: typeColor }}>{urgencyLabel}</div>
-          <div className="db-receipt-stars">{starRow}</div>
-
-          <div className="db-receipt-divider" />
-
-          <div className="db-receipt-row">
-            <span className="db-receipt-key">Date:</span>
-            <span className="db-receipt-val" style={{ fontSize: 'clamp(7px,0.55vw,9px)' }}>{today}</span>
-          </div>
-          <div className="db-receipt-row">
-            <span className="db-receipt-key">Pick:</span>
-            <span className="db-receipt-val teal">Tonight #{index + 1}</span>
+          {/* Single header line: urgency label + pick number */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, marginBottom: 'clamp(3px,0.3vh,5px)' }}>
+            <div style={{ fontSize: 'clamp(8px,0.65vw,11px)', fontWeight: 700, color: typeColor, textTransform: 'uppercase', letterSpacing: '1px' }}>{urgencyLabel}</div>
+            <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#02a4ba' }}>#{index + 1}</div>
           </div>
 
           <div className="db-receipt-divider" />
@@ -767,41 +756,37 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
             color: '#e8e2d8',
             lineHeight: 1.2,
             marginBottom: 'clamp(2px, 0.2vh, 3px)',
+            flexShrink: 0,
           }}>{dishName || '—'}</div>
 
-          {/* Description — smaller underneath */}
+          {/* Description */}
           {description && (
             <div style={{
               fontFamily: 'Courier New, monospace',
-              fontSize: 'clamp(7px, 0.55vw, 9px)',
+              fontSize: 'clamp(7px, 0.58vw, 10px)',
               color: '#6b6358',
               lineHeight: 1.4,
-              marginBottom: 'clamp(3px, 0.3vh, 5px)',
+              marginBottom: 'clamp(2px, 0.2vh, 4px)',
+              flexShrink: 0,
             }}>{description}</div>
           )}
 
           <div className="db-receipt-divider" />
 
-          {marginVal && (
-            <div className="db-receipt-row">
-              <span className="db-receipt-key">Margin:</span>
-              <span className="db-receipt-val" style={{ color: typeColor }}>
-                {marginVal.toFixed(1)}%{marginVsAvg ? ` (${marginVsAvg})` : ''}
-              </span>
-            </div>
-          )}
-          {confidence && (
-            <div className="db-receipt-row">
-              <span className="db-receipt-key">Confidence:</span>
-              <span className="db-receipt-val teal">{confidence}%</span>
-            </div>
-          )}
+          {/* Sell copy — takes remaining space */}
+          <div style={{
+            fontFamily: 'Courier New, monospace',
+            fontSize: 'clamp(7px, 0.58vw, 10px)',
+            color: '#9a9086',
+            fontStyle: 'italic',
+            lineHeight: 1.45,
+            flex: 1,
+            overflow: 'hidden',
+          }}>
+            <span style={{ color: '#02a4ba' }}>"</span>{sellCopy}<span style={{ color: '#02a4ba' }}>"</span>
+          </div>
 
-          <div className="db-receipt-divider" />
-
-          <div className="db-receipt-sell">{sellCopy}</div>
-
-          <div className="db-receipt-footer">#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
+          <div className="db-receipt-footer" style={{ marginTop: 'clamp(3px,0.3vh,5px)' }}>#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
         </div>
 
         {/* RIGHT: recipe breakdown */}
