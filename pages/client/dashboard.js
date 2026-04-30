@@ -714,9 +714,13 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
     rec.type === 'margin' ? 'HIGH MARGIN' :
     rec.type === 'trending' ? 'TRENDING' : 'RECOMMENDED';
 
-  // FIX: match on dishName (which is rec.title from the mapper)
+  // Match dish name: exact first, then partial (handles minor API/DB name differences)
+  const dishLower = dishName.toLowerCase().trim();
   const menuItem = (menuItems || []).find(m =>
-    m.name?.toLowerCase().trim() === dishName.toLowerCase().trim()
+    m.name?.toLowerCase().trim() === dishLower
+  ) || (menuItems || []).find(m =>
+    dishLower.includes(m.name?.toLowerCase().trim()) ||
+    m.name?.toLowerCase().trim().includes(dishLower)
   );
 
   const atRiskNames = new Set(
@@ -844,12 +848,16 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
 // ─── WasteRow helper ─────────────────────────────────────────────────────────
 function WasteRow({ item, router }) {
-  // FIX #3: show expired proteins too, with red "Expired" label
   const daysLeft = item.daysLeft;
-  const urgencyColor = daysLeft < 0 ? '#c04040' : getWasteUrgencyColor(daysLeft);
-  const consumed = daysLeft < 0 ? 100 : Math.min(100, Math.max(0,
+  const isExpired = daysLeft < 0;
+  const urgencyColor = isExpired ? '#c04040' : getWasteUrgencyColor(daysLeft);
+  const consumed = isExpired ? 100 : Math.min(100, Math.max(0,
     ((item.shelfLife - daysLeft) / item.shelfLife) * 100));
-  const label = daysLeft < 0 ? 'Expired' : daysLeft === 0 ? 'Use today' : daysLeft === 1 ? '1 day left' : `${daysLeft} days left`;
+  const label = isExpired
+    ? `Expired ${Math.abs(daysLeft)}d ago`
+    : daysLeft === 0 ? 'Use today'
+    : daysLeft === 1 ? '1 day left'
+    : `${daysLeft} days left`;
   const qtyText = item.remainingQty > 0
     ? `~${item.remainingQty.toFixed(1)} ${item.unit || 'units'} remaining`
     : item.invoicedQty > 0 ? `${item.invoicedQty.toFixed(1)} ${item.unit || 'units'} invoiced` : 'Qty unknown';
@@ -1115,11 +1123,16 @@ export default function ClientDashboard() {
     return false;
   }
 
-  // ── FIX #3: Waste Risk — proteins shown even if expired (daysLeft < 0) ──
+  // ── Waste Risk — proteins shown for any delivery within last 14 days ──────
   function computeWasteRisk(invoiceItems, invoices, posSales) {
+    // Build full invoice date + id map from the invoices array (more reliable than join)
     const invoiceDateMap = {};
+    const invoiceIdSet = new Set();
     (invoices || []).forEach(inv => {
-      if (inv.id && inv.date) invoiceDateMap[inv.id] = inv.date;
+      if (inv.id && inv.date) {
+        invoiceDateMap[inv.id] = inv.date;
+        invoiceIdSet.add(inv.id);
+      }
     });
 
     const posByItem = {};
@@ -1133,9 +1146,11 @@ export default function ClientDashboard() {
     (invoiceItems || []).forEach(item => {
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
       if (!name) return;
+      // Prefer join date, fall back to invoiceDateMap lookup
       const dateStr = item.invoices?.date || invoiceDateMap[item.invoice_id];
       if (!dateStr) return;
       const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
       if (!latestByIngredient[name] || date > latestByIngredient[name].date) {
         latestByIngredient[name] = {
           date,
@@ -1171,6 +1186,7 @@ export default function ClientDashboard() {
 
       return {
         name, daysLeft, shelfLife,
+        daysSinceDelivery,
         deliveryDate: info.invoiceDate,
         invoiceId: info.invoiceId,
         unit: info.unit,
@@ -1181,11 +1197,11 @@ export default function ClientDashboard() {
       };
     });
 
-    // Proteins: show within 7 days OR if expired (recently past shelf life, within 3 days over)
-    // Other ingredients: show within 5 days
+    // Proteins: any delivery within last 14 days (covers full shelf life + recently expired)
+    // Other ingredients: 0–5 days left
     return risks
       .filter(r => {
-        if (r.protein) return r.daysLeft <= 7 && r.daysLeft >= -3;
+        if (r.protein) return r.daysSinceDelivery <= 14;
         return r.daysLeft >= 0 && r.daysLeft <= 5;
       })
       .sort((a, b) => a.daysLeft - b.daysLeft);
