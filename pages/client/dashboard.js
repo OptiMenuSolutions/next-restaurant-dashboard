@@ -1167,6 +1167,10 @@ export default function ClientDashboard() {
       }
     });
 
+    console.log('invoiceItems count:', (invoiceItems || []).length);
+    console.log('invoiceDateMap keys:', Object.keys(invoiceDateMap).length);
+    console.log('sample invoiceItem:', invoiceItems?.[0]);
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
