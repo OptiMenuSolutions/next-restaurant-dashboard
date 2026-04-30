@@ -736,10 +736,6 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const starRow = '***********************';
 
-  console.log('dishName:', dishName);
-  console.log('menuItems count:', (menuItems || []).length);
-  console.log('menuItems names:', (menuItems || []).map(m => m.name));
-
   return (
     <div className="db-ticket">
       <div className="db-ticket-inner">
@@ -1167,10 +1163,6 @@ export default function ClientDashboard() {
       }
     });
 
-    console.log('invoiceItems count:', (invoiceItems || []).length);
-    console.log('invoiceDateMap keys:', Object.keys(invoiceDateMap).length);
-    console.log('sample invoiceItem:', invoiceItems?.[0]);
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1205,22 +1197,18 @@ export default function ClientDashboard() {
       };
     });
 
-    // Proteins: any delivery within last 14 days (covers full shelf life + recently expired)
-    // Other ingredients: 0–5 days left
-    console.log('All risks before filter:', risks.map(r => ({
-      name: r.name,
-      protein: r.protein,
-      daysLeft: r.daysLeft,
-      daysSinceDelivery: r.daysSinceDelivery,
-      dateStr: r.deliveryDate,
-    })));
-    
-    return risks
-      .filter(r => {
-        if (r.protein) return r.daysSinceDelivery <= 14;
-        return r.daysLeft >= 0 && r.daysLeft <= 5;
-      })
+    // Always show the 4 most recently delivered proteins (sorted by delivery date desc)
+    // Plus any non-proteins expiring within 5 days
+    const proteins = risks
+      .filter(r => r.protein)
+      .sort((a, b) => a.daysSinceDelivery - b.daysSinceDelivery)
+      .slice(0, 4);
+
+    const others = risks
+      .filter(r => !r.protein && r.daysLeft >= 0 && r.daysLeft <= 5)
       .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    return [...proteins, ...others];
   }
 
   // ── Price by Category ─────────────────────────────────────────────────────
@@ -1280,7 +1268,7 @@ export default function ClientDashboard() {
   async function fetchAIRecommendations(dashData, restId) {
     try {
       setAiLoading(true);
-      const res = await fetch('/api/dish-recommendations', {
+      const res = await fetch('/api/ai-recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantId: restId }),
@@ -1288,9 +1276,9 @@ export default function ClientDashboard() {
       if (!res.ok) throw new Error(`API ${res.status}`);
       const json = await res.json();
       const recs = (json.recommendations || []).map(r => ({
-        title: r.dish || r.title,
-        description: r.reason || r.description,
-        sellCopy: r.talking_point || r.sellCopy,
+        title: r.title,
+        description: r.description,
+        sellCopy: r.talking_point || null,
         type: r.type,
         margin: r.margin,
         confidence: r.confidence,
