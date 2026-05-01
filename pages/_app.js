@@ -28,14 +28,9 @@ export default function App({ Component, pageProps }) {
     registerServiceWorker();
   }, []);
 
-  return <Component {...pageProps} />;
-}
-
-export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
-        {/* Blocking script runs before paint — eliminates theme flash */}
         <script dangerouslySetInnerHTML={{ __html: ANTI_FLASH_SCRIPT }} />
       </Head>
       <ThemeProvider>
