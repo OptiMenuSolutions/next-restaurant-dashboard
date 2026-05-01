@@ -759,6 +759,8 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
             flexShrink: 0,
           }}>{dishName || '—'}</div>
 
+          <div className="db-receipt-divider" />
+
           {/* Description */}
           {description && (
             <div style={{
