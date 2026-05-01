@@ -68,21 +68,21 @@ function formatDateLong(d) {
   catch { return "N/A"; }
 }
 function getMarginColor(m) {
-  if (m >= 60) return "#2a8a5a";
-  if (m >= 40) return "#02a4ba";
-  if (m >= 25) return "#d4a020";
-  return "#c04040";
+  if (m >= 60) return "var(--color-green)";
+  if (m >= 40) return "var(--accent)";
+  if (m >= 25) return "var(--color-amber)";
+  return "var(--color-red)";
 }
 function getScoreInfo(score) {
-  if (score >= 85) return { color: "#2a8a5a", label: "Excellent", pct: "Top 10%" };
-  if (score >= 70) return { color: "#02a4ba", label: "Good", pct: "Top 30%" };
-  if (score >= 55) return { color: "#d4a020", label: "Fair", pct: "Top 50%" };
-  return { color: "#c04040", label: "Needs Work", pct: "Bottom 50%" };
+  if (score >= 85) return { color: "var(--color-green)", label: "Excellent", pct: "Top 10%" };
+  if (score >= 70) return { color: "var(--accent)",      label: "Good",      pct: "Top 30%" };
+  if (score >= 55) return { color: "var(--color-amber)", label: "Fair",      pct: "Top 50%" };
+  return { color: "var(--color-red)", label: "Needs Work", pct: "Bottom 50%" };
 }
 function getWasteUrgencyColor(daysLeft) {
-  if (daysLeft <= 1) return "#c04040";
-  if (daysLeft <= 2) return "#d4a020";
-  return "#02a4ba";
+  if (daysLeft <= 1) return "var(--color-red)";
+  if (daysLeft <= 2) return "var(--color-amber)";
+  return "var(--accent)";
 }
 
 // ─── Sparkline SVG ────────────────────────────────────────────────────────────
@@ -110,7 +110,7 @@ function Sparkline({ points, color, globalMin, globalMax, width = 70, height = 2
 // ─── CSS ─────────────────────────────────────────────────────────────────────
 const GLOBAL_CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: #0a0908; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
   #__next { height: 100%; }
 
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -118,15 +118,15 @@ const GLOBAL_CSS = `
   @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
 
-  input::placeholder { color: #3a3630 !important; }
+  input::placeholder { color: var(--text-faint) !important; }
   ::-webkit-scrollbar { width: 3px; }
-  ::-webkit-scrollbar-track { background: #0f0e0c; }
-  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
+  ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
 
   .db-root {
     font-family: 'Inter', sans-serif;
-    background: #0a0908;
-    color: #e8e2d8;
+    background: var(--bg-root);
+    color: var(--text-primary);
     width: 100%;
     height: 100vh;
     display: flex;
@@ -136,8 +136,8 @@ const GLOBAL_CSS = `
 
   /* ── Top bar ── */
   .db-topbar {
-    background: #0f0e0c;
-    border-bottom: 1px solid #2a2620;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
     height: clamp(36px, 4vh, 48px);
     padding: 0 clamp(10px, 1vw, 20px);
     display: flex;
@@ -148,15 +148,15 @@ const GLOBAL_CSS = `
   .db-logo {
     font-family: 'Playfair Display', serif;
     font-size: clamp(14px, 1.1vw, 20px);
-    color: #e8e2d8;
+    color: var(--text-primary);
     letter-spacing: -.3px;
   }
-  .db-logo span { color: #02a4ba; }
+  .db-logo span { color: var(--accent); }
 
   /* ── Nav tabs ── */
   .db-nav {
-    background: #0f0e0c;
-    border-bottom: 1px solid #2a2620;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
     height: clamp(34px, 3.8vh, 46px);
     padding: 0 clamp(10px, 1vw, 20px);
     display: flex;
@@ -168,7 +168,7 @@ const GLOBAL_CSS = `
     padding: clamp(2px, 0.3vh, 4px) clamp(6px, 0.6vw, 11px);
     border-radius: clamp(3px, 0.3vw, 6px);
     font-size: clamp(10px, 0.75vw, 13px);
-    color: #4a453e;
+    color: var(--text-muted);
     border: none;
     background: none;
     cursor: pointer;
@@ -176,7 +176,7 @@ const GLOBAL_CSS = `
     line-height: 1.5;
     transition: all 0.15s;
   }
-  .db-tab.active { color: #e8e2d8; background: #1a1915; }
+  .db-tab.active { color: var(--text-primary); background: var(--bg-inset); }
 
   /* ── Main content area ── */
   .db-main {
@@ -189,8 +189,8 @@ const GLOBAL_CSS = `
 
   /* ── Welcome bar ── */
   .db-wbar {
-    background: #13120f;
-    border-bottom: 1px solid #2a2620;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
     height: clamp(28px, 3.2vh, 40px);
     padding: 0 clamp(10px, 1vw, 16px);
     display: flex;
@@ -198,8 +198,8 @@ const GLOBAL_CSS = `
     justify-content: space-between;
     flex-shrink: 0;
   }
-  .db-wname { font-size: clamp(11px, 0.82vw, 15px); font-weight: 600; color: #e8e2d8; }
-  .db-wsub { font-size: clamp(9px, 0.62vw, 11px); color: #4a453e; margin-left: 6px; }
+  .db-wname { font-size: clamp(11px, 0.82vw, 15px); font-weight: 600; color: var(--text-primary); }
+  .db-wsub { font-size: clamp(9px, 0.62vw, 11px); color: var(--text-muted); margin-left: 6px; }
 
   /* ── Section headers ── */
   .db-section-hd {
@@ -207,7 +207,7 @@ const GLOBAL_CSS = `
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 1.2px;
-    color: #3a3630;
+    color: var(--text-faint);
     padding: clamp(4px, 0.4vh, 6px) 0 clamp(3px, 0.3vh, 5px);
     flex-shrink: 0;
   }
@@ -252,8 +252,8 @@ const GLOBAL_CSS = `
 
   /* Score card — top left */
   .db-score-card {
-    background: #13120f;
-    border: 1px solid #2a2620;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: clamp(5px, 0.4vw, 8px);
     padding: clamp(8px, 0.7vw, 14px);
     display: flex;
@@ -265,8 +265,8 @@ const GLOBAL_CSS = `
 
   /* Stats card — bottom left */
   .db-stats-card {
-    background: #13120f;
-    border: 1px solid #2a2620;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: clamp(5px, 0.4vw, 8px);
     padding: clamp(8px, 0.7vw, 14px);
     display: flex;
@@ -277,62 +277,61 @@ const GLOBAL_CSS = `
     overflow: hidden;
   }
 
-  /* FIX #1 — restaurant name/sub use Inter (same as old code) */
   .db-rest-icon {
     width: clamp(22px, 1.8vw, 32px);
     height: clamp(22px, 1.8vw, 32px);
     border-radius: 50%;
-    background: rgba(2,164,186,.1);
-    border: 1px solid rgba(2,164,186,.2);
+    background: var(--accent-bg);
+    border: 1px solid var(--accent-border);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
   }
-  .db-rest-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .db-rest-icon svg { width: 55%; height: 55%; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .db-rest-name {
     font-family: 'Inter', sans-serif;
     font-size: clamp(10px, 0.8vw, 14px);
     font-weight: 600;
-    color: #e8e2d8;
+    color: var(--text-primary);
     text-align: center;
   }
   .db-rest-sub {
     font-family: 'Inter', sans-serif;
     font-size: clamp(8px, 0.58vw, 10px);
-    color: #4a453e;
+    color: var(--text-muted);
     text-align: center;
   }
 
   .db-score-wrap { display: flex; flex-direction: column; align-items: center; gap: clamp(2px, 0.25vh, 4px); flex-shrink: 0; }
-  .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: #6b6358; text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
+  .db-score-lbl { font-size: clamp(8px, 0.58vw, 10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; font-weight: 500; }
   .db-ring { position: relative; width: clamp(52px, 4.8vw, 76px); height: clamp(52px, 4.8vw, 76px); }
   .db-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .db-ring-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(15px, 1.4vw, 22px); color: #e8e2d8; line-height: 1; }
-  .db-ring-sub { font-size: clamp(7px, 0.52vw, 9px); color: #4a453e; }
+  .db-ring-num { font-family: 'Playfair Display', serif; font-size: clamp(15px, 1.4vw, 22px); color: var(--text-primary); line-height: 1; }
+  .db-ring-sub { font-size: clamp(7px, 0.52vw, 9px); color: var(--text-muted); }
   .db-score-tag { font-size: clamp(8px, 0.6vw, 11px); font-weight: 600; padding: 2px clamp(6px,0.5vw,10px); border-radius: 10px; }
-  .db-score-pct { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; margin-top: 1px; }
+  .db-score-pct { font-size: clamp(7px, 0.55vw, 9px); color: var(--text-muted); margin-top: 1px; }
 
   .db-pills { display: flex; flex-direction: column; gap: clamp(4px, 0.4vh, 7px); flex: 1; overflow: hidden; }
   .db-pill {
-    background: #0f0e0c;
+    background: var(--bg-elevated);
     border-radius: clamp(4px, 0.3vw, 6px);
     padding: clamp(4px, 0.42vh, 7px) clamp(7px, 0.6vw, 12px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border: 1px solid #1a1915;
+    border: 1px solid var(--border-subtle);
     flex-shrink: 0;
     gap: 6px;
   }
   .db-pill-left { flex: 1; min-width: 0; }
-  .db-pill-l { font-size: clamp(9px, 0.62vw, 11px); color: #6b6358; }
-  .db-pill-sub { font-size: clamp(7px, 0.52vw, 9px); color: #3a3630; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-pill-l { font-size: clamp(9px, 0.62vw, 11px); color: var(--text-muted); }
+  .db-pill-sub { font-size: clamp(7px, 0.52vw, 9px); color: var(--text-faint); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .db-pill-v { font-family: 'Inter', sans-serif; font-size: clamp(12px, 1vw, 16px); font-weight: 700; flex-shrink: 0; }
 
   /* ── Generic card ── */
   .db-card {
-    background: #13120f;
-    border: 1px solid #2a2620;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: clamp(5px, 0.4vw, 8px);
     padding: clamp(8px, 0.8vw, 14px) clamp(9px, 0.9vw, 16px);
     display: flex;
@@ -350,20 +349,20 @@ const GLOBAL_CSS = `
   .db-card-title {
     font-size: clamp(10px, 0.75vw, 13px);
     font-weight: 600;
-    color: #e8e2d8;
+    color: var(--text-primary);
     display: flex;
     align-items: center;
     gap: clamp(4px, 0.32vw, 6px);
   }
-  .db-card-title svg { width: clamp(10px, 0.82vw, 14px); height: clamp(10px, 0.82vw, 14px); stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .db-card-sub { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; }
-  .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.75vw, 13px); color: #4a453e; text-align: center; padding: 8px; }
-  .db-spinner { width: clamp(7px, 0.62vw, 10px); height: clamp(7px, 0.62vw, 10px); border: 1.5px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+  .db-card-title svg { width: clamp(10px, 0.82vw, 14px); height: clamp(10px, 0.82vw, 14px); stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .db-card-sub { font-size: clamp(8px, 0.58vw, 10px); color: var(--text-muted); }
+  .db-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: clamp(10px, 0.75vw, 13px); color: var(--text-muted); text-align: center; padding: 8px; }
+  .db-spinner { width: clamp(7px, 0.62vw, 10px); height: clamp(7px, 0.62vw, 10px); border: 1.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
 
-  /* ── Thermal ticket — FIX #2: two-column, no scroll ── */
+  /* ── Thermal ticket ── */
   .db-ticket {
-    background: #111009;
-    border: 1px solid #2a2620;
+    background: var(--ticket-bg);
+    border: 1px solid var(--ticket-border);
     border-radius: clamp(4px, 0.35vw, 7px);
     display: flex;
     flex-direction: column;
@@ -375,7 +374,6 @@ const GLOBAL_CSS = `
   .db-ticket:nth-child(2) { animation-delay: 0.08s; }
   .db-ticket:nth-child(3) { animation-delay: 0.16s; }
 
-  /* Two-column layout inside ticket */
   .db-ticket-inner {
     flex: 1;
     display: flex;
@@ -389,7 +387,7 @@ const GLOBAL_CSS = `
     display: flex;
     flex-direction: column;
     gap: 0;
-    border-right: 1px dashed #2a2620;
+    border-right: 1px dashed var(--border);
     overflow: hidden;
   }
 
@@ -401,29 +399,9 @@ const GLOBAL_CSS = `
     overflow: hidden;
   }
 
-  .db-receipt-stars {
-    font-size: clamp(7px, 0.55vw, 9px);
-    color: #c04040;
-    text-align: center;
-    letter-spacing: 1px;
-    flex-shrink: 0;
-    line-height: 1.4;
-  }
-
-  .db-receipt-center {
-    font-size: clamp(9px, 0.72vw, 12px);
-    font-weight: 700;
-    color: #e8e2d8;
-    text-align: center;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    margin: clamp(2px,0.2vh,4px) 0;
-    flex-shrink: 0;
-  }
-
   .db-receipt-divider {
     border: none;
-    border-top: 1px dashed #2a2620;
+    border-top: 1px dashed var(--border);
     margin: clamp(2px,0.2vh,3px) 0;
     flex-shrink: 0;
   }
@@ -436,46 +414,35 @@ const GLOBAL_CSS = `
     line-height: 1.7;
     flex-shrink: 0;
   }
-  .db-receipt-key { color: #6b6358; }
-  .db-receipt-val { color: #e8e2d8; font-weight: 600; text-align: right; }
-  .db-receipt-val.teal { color: #02a4ba; }
-  .db-receipt-val.green { color: #2a8a5a; }
-  .db-receipt-val.red { color: #c04040; }
-  .db-receipt-val.amber { color: #d4a020; }
-
-  .db-receipt-sell {
-    font-size: clamp(8px, 0.62vw, 11px);
-    color: #9a9086;
-    font-style: italic;
-    line-height: 1.5;
-    margin: clamp(2px,0.2vh,4px) 0;
-    flex-shrink: 0;
-  }
-  .db-receipt-sell::before { content: '"'; color: #02a4ba; font-style: normal; }
-  .db-receipt-sell::after { content: '"'; color: #02a4ba; font-style: normal; }
+  .db-receipt-key { color: var(--text-muted); }
+  .db-receipt-val { color: var(--text-primary); font-weight: 600; text-align: right; }
+  .db-receipt-val.teal  { color: var(--accent); }
+  .db-receipt-val.green { color: var(--color-green); }
+  .db-receipt-val.red   { color: var(--color-red); }
+  .db-receipt-val.amber { color: var(--color-amber); }
 
   .db-receipt-component {
     font-size: clamp(9px, 0.72vw, 12px);
-    color: #9a9086;
+    color: var(--text-secondary);
     margin-top: 4px;
     font-weight: 600;
     flex-shrink: 0;
   }
   .db-receipt-ingredient {
     font-size: clamp(8px, 0.65vw, 11px);
-    color: #7a7268;
+    color: var(--text-muted);
     padding-left: 10px;
     line-height: 1.7;
     flex-shrink: 0;
   }
   .db-receipt-ingredient.at-risk {
-    color: #c04040;
+    color: var(--color-red);
     font-weight: 600;
   }
 
   .db-receipt-footer {
     font-size: clamp(7px, 0.52vw, 9px);
-    color: #2a2620;
+    color: var(--text-disabled);
     text-align: center;
     margin-top: auto;
     padding-top: clamp(4px,0.4vh,6px);
@@ -491,24 +458,24 @@ const GLOBAL_CSS = `
     flex-direction: column;
     gap: 3px;
     padding: clamp(5px, 0.55vh, 8px) clamp(7px, 0.65vw, 11px);
-    background: #0f0e0c;
+    background: var(--bg-elevated);
     border-radius: clamp(4px, 0.32vw, 6px);
-    border: 1px solid #1a1915;
+    border: 1px solid var(--border-subtle);
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
   }
   .db-waste-row:last-child { margin-bottom: 0; }
   .db-waste-top { display: flex; align-items: center; gap: 6px; }
   .db-waste-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .db-waste-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-waste-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: var(--text-secondary); text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .db-waste-days { font-size: clamp(9px, 0.62vw, 11px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-  .db-waste-bar-track { width: 100%; height: 3px; background: #1a1915; border-radius: 2px; overflow: hidden; }
+  .db-waste-bar-track { width: 100%; height: 3px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; }
   .db-waste-bar-fill { height: 100%; border-radius: 2px; }
   .db-waste-meta { display: flex; justify-content: space-between; }
-  .db-waste-meta-txt { font-size: clamp(7px, 0.52vw, 9px); color: #3a3630; }
+  .db-waste-meta-txt { font-size: clamp(7px, 0.52vw, 9px); color: var(--text-faint); }
   .db-waste-invoice-link {
     font-size: clamp(7px, 0.52vw, 9px);
-    color: #02a4ba;
+    color: var(--accent);
     cursor: pointer;
     background: none;
     border: none;
@@ -522,7 +489,7 @@ const GLOBAL_CSS = `
   /* ── Price movement card ── */
   .db-pm-back {
     font-size: clamp(8px, 0.6vw, 11px);
-    color: #02a4ba;
+    color: var(--accent);
     background: none;
     border: none;
     cursor: pointer;
@@ -540,9 +507,9 @@ const GLOBAL_CSS = `
     align-items: center;
     gap: clamp(5px, 0.45vw, 8px);
     padding: 0 clamp(7px, 0.65vw, 11px);
-    background: #0f0e0c;
+    background: var(--bg-elevated);
     border-radius: clamp(4px, 0.32vw, 6px);
-    border: 1px solid #1a1915;
+    border: 1px solid var(--border-subtle);
     margin-bottom: clamp(4px, 0.4vh, 6px);
     cursor: pointer;
     transition: border-color 0.15s;
@@ -550,39 +517,39 @@ const GLOBAL_CSS = `
     min-height: 0;
   }
   .db-pm-cat-row:last-child { margin-bottom: 0; }
-  .db-pm-cat-row:hover { border-color: #3a3630; }
-  .db-pm-cat-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .db-pm-cat-row:hover { border-color: var(--text-faint); }
+  .db-pm-cat-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .db-pm-cat-delta { font-size: clamp(10px, 0.72vw, 12px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-  .db-pm-cat-count { font-size: clamp(8px, 0.58vw, 10px); color: #4a453e; white-space: nowrap; flex-shrink: 0; }
-  .db-pm-cat-chevron { font-size: 10px; color: #3a3630; flex-shrink: 0; }
+  .db-pm-cat-count { font-size: clamp(8px, 0.58vw, 10px); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+  .db-pm-cat-chevron { font-size: 10px; color: var(--text-faint); flex-shrink: 0; }
 
   .db-pm-ing-row {
     display: flex;
     flex-direction: column;
     gap: 4px;
     padding: clamp(5px, 0.55vh, 9px) clamp(7px, 0.65vw, 11px);
-    background: #0f0e0c;
+    background: var(--bg-elevated);
     border-radius: clamp(4px, 0.32vw, 6px);
-    border: 1px solid #1a1915;
+    border: 1px solid var(--border-subtle);
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
   }
   .db-pm-ing-row:last-child { margin-bottom: 0; }
   .db-pm-ing-top { display: flex; align-items: center; gap: 6px; }
-  .db-pm-ing-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: capitalize; }
+  .db-pm-ing-name { flex: 1; font-size: clamp(10px, 0.72vw, 12px); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: capitalize; }
   .db-pm-ing-delta { font-size: clamp(10px, 0.72vw, 12px); font-weight: 600; white-space: nowrap; flex-shrink: 0; }
-  .db-pm-ing-prices { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; padding-left: 2px; }
+  .db-pm-ing-prices { font-size: clamp(7px, 0.55vw, 9px); color: var(--text-muted); padding-left: 2px; }
 
-  /* ── Top ingredient costs — FIX #4: fixed 8, flex fill ── */
+  /* ── Top ingredient costs ── */
   .db-ing-list { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .db-ing-row {
     display: flex;
     flex-direction: column;
     gap: 3px;
     padding: 0 clamp(7px, 0.65vw, 11px);
-    background: #0f0e0c;
+    background: var(--bg-elevated);
     border-radius: clamp(4px, 0.32vw, 6px);
-    border: 1px solid #1a1915;
+    border: 1px solid var(--border-subtle);
     margin-bottom: clamp(4px, 0.4vh, 6px);
     flex: 1;
     justify-content: center;
@@ -590,74 +557,74 @@ const GLOBAL_CSS = `
   }
   .db-ing-row:last-child { margin-bottom: 0; }
   .db-ing-top { display: flex; align-items: center; justify-content: space-between; }
-  .db-ing-name { font-size: clamp(10px, 0.72vw, 12px); color: #9a9086; }
-  .db-ing-unit { font-size: clamp(7px, 0.55vw, 9px); color: #4a453e; }
-  .db-ing-val { font-size: clamp(11px, 0.8vw, 13px); font-weight: 600; color: #02a4ba; }
-  .db-ing-bar-track { width: 100%; height: 3px; background: #1a1915; border-radius: 2px; overflow: hidden; }
-  .db-ing-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #02a4ba44, #02a4ba); }
+  .db-ing-name { font-size: clamp(10px, 0.72vw, 12px); color: var(--text-secondary); }
+  .db-ing-unit { font-size: clamp(7px, 0.55vw, 9px); color: var(--text-muted); }
+  .db-ing-val { font-size: clamp(11px, 0.8vw, 13px); font-weight: 600; color: var(--accent); }
+  .db-ing-bar-track { width: 100%; height: 3px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; }
+  .db-ing-bar-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent-bg), var(--accent)); }
 
   /* ── Waste risk legend ── */
   .db-legend-strip {
     font-size: clamp(7px, 0.55vw, 9px);
-    color: #3a3630;
+    color: var(--text-faint);
     display: flex;
     align-items: center;
     gap: 10px;
     padding-top: clamp(4px, 0.4vh, 6px);
     flex-shrink: 0;
-    border-top: 1px solid #1a1915;
+    border-top: 1px solid var(--border-subtle);
     margin-top: clamp(4px, 0.4vh, 6px);
   }
   .db-legend-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 3px; flex-shrink: 0; }
 
   /* Mobile */
-  .mob-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-  .mob-header { background: #0f0e0c; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
-  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; }
-  .mob-logo span { color: #02a4ba; }
-  .mob-titlebar { background: #13120f; border-bottom: 1px solid #2a2620; padding: 10px 16px; flex-shrink: 0; }
-  .mob-page-title { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; line-height: 1; }
-  .mob-page-sub { font-size: 11px; color: #4a453e; margin-top: 3px; }
-  .mob-stats { background: #13120f; border-bottom: 1px solid #2a2620; padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
+  .mob-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  .mob-header { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
+  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text-primary); letter-spacing: -.3px; }
+  .mob-logo span { color: var(--accent); }
+  .mob-titlebar { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 10px 16px; flex-shrink: 0; }
+  .mob-page-title { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text-primary); line-height: 1; }
+  .mob-page-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .mob-stats { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
   .mob-stats::-webkit-scrollbar { display: none; }
-  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid #2a2620; }
+  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid var(--border); }
   .mob-stat:last-child { border-right: none; }
   .mob-stat-v { font-family: 'Playfair Display', serif; font-size: 16px; line-height: 1; }
-  .mob-stat-l { font-size: 9px; color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
+  .mob-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
   .mob-content { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; -webkit-overflow-scrolling: touch; }
   .mob-content::-webkit-scrollbar { display: none; }
-  .mob-card { background: #13120f; border: 1px solid #2a2620; border-radius: 10px; padding: 14px; flex-shrink: 0; }
-  .mob-card-title { font-size: 11px; font-weight: 600; color: #e8e2d8; text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
-  .mob-card-title svg { width: 12px; height: 12px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mob-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; flex-shrink: 0; }
+  .mob-card-title { font-size: 11px; font-weight: 600; color: var(--text-primary); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .mob-card-title svg { width: 12px; height: 12px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .mob-pill-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .mob-pill { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 8px; padding: 10px 12px; }
-  .mob-pill-l { font-size: 10px; color: #6b6358; margin-bottom: 4px; }
+  .mob-pill { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 10px 12px; }
+  .mob-pill-l { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
   .mob-pill-v { font-family: 'Playfair Display', serif; font-size: 18px; line-height: 1; }
   .mob-score-row { display: flex; align-items: center; gap: 16px; }
   .mob-score-ring { position: relative; width: 64px; height: 64px; flex-shrink: 0; }
   .mob-score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .mob-score-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .mob-score-num { font-family: 'Playfair Display', serif; font-size: 18px; color: #e8e2d8; line-height: 1; }
-  .mob-score-sub { font-size: 9px; color: #4a453e; }
+  .mob-score-num { font-family: 'Playfair Display', serif; font-size: 18px; color: var(--text-primary); line-height: 1; }
+  .mob-score-sub { font-size: 9px; color: var(--text-muted); }
   .mob-score-badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 10px; margin-top: 5px; }
-  .mob-ai-item { background: #0f0e0c; border-radius: 7px; border-left: 2px solid #02a4ba; padding: 10px 12px; margin-bottom: 8px; font-family: 'Courier New', monospace; }
+  .mob-ai-item { background: var(--bg-elevated); border-radius: 7px; border-left: 2px solid var(--accent); padding: 10px 12px; margin-bottom: 8px; font-family: 'Courier New', monospace; }
   .mob-ai-item:last-child { margin-bottom: 0; }
-  .mob-ai-title { font-size: 13px; font-weight: 700; color: #e8e2d8; margin-bottom: 3px; }
-  .mob-ai-desc { font-size: 11px; color: #6b6358; line-height: 1.45; }
-  .mob-ai-sell { font-size: 11px; color: #9a9086; font-style: italic; margin-top: 5px; line-height: 1.45; }
-  .mob-ing-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a1915; }
+  .mob-ai-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 3px; }
+  .mob-ai-desc { font-size: 11px; color: var(--text-muted); line-height: 1.45; }
+  .mob-ai-sell { font-size: 11px; color: var(--text-secondary); font-style: italic; margin-top: 5px; line-height: 1.45; }
+  .mob-ing-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-subtle); }
   .mob-ing-row:last-child { border-bottom: none; }
-  .mob-ing-name { font-size: 13px; color: #9a9086; }
-  .mob-ing-unit { font-size: 11px; color: #4a453e; margin-top: 2px; }
-  .mob-ing-price { font-size: 13px; font-weight: 600; color: #02a4ba; }
-  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-shrink: 0; }
+  .mob-ing-name { font-size: 13px; color: var(--text-secondary); }
+  .mob-ing-unit { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+  .mob-ing-price { font-size: 13px; font-weight: 600; color: var(--accent); }
+  .mob-bottom-nav { background: var(--bg-elevated); border-top: 1px solid var(--border); padding: 8px 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); display: flex; flex-shrink: 0; }
   .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
   .mob-nav-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; }
-  .mob-nav-icon svg { width: 20px; height: 20px; stroke: #4a453e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .mob-nav-icon.active svg { stroke: #02a4ba; }
-  .mob-nav-label { font-size: 10px; color: #4a453e; }
-  .mob-nav-label.active { color: #02a4ba; }
-  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: #02a4ba; }
+  .mob-nav-icon svg { width: 20px; height: 20px; stroke: var(--text-muted); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mob-nav-icon.active svg { stroke: var(--accent); }
+  .mob-nav-label { font-size: 10px; color: var(--text-muted); }
+  .mob-nav-label.active { color: var(--accent); }
+  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 `;
 
 // ─── ScoreRing ────────────────────────────────────────────────────────────────
@@ -670,7 +637,7 @@ function ScoreRing({ score }) {
       <div className="db-score-lbl">OptiScore</div>
       <div className="db-ring">
         <svg viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="40" stroke="#1a1915" strokeWidth="9" fill="none" />
+          <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="9" fill="none" />
           <circle cx="50" cy="50" r="40" stroke={color} strokeWidth="9" fill="none"
             strokeDasharray={`${dash} ${circumference}`} strokeLinecap="round" />
         </svg>
@@ -679,13 +646,13 @@ function ScoreRing({ score }) {
           <div className="db-ring-sub">/ 100</div>
         </div>
       </div>
-      <div className="db-score-tag" style={{ background: `${color}18`, color }}>{label}</div>
+      <div className="db-score-tag" style={{ background: `color-mix(in srgb, ${color} 15%, transparent)`, color }}>{label}</div>
       <div className="db-score-pct">{pct} of similar restaurants</div>
     </div>
   );
 }
 
-// ─── Thermal Ticket — FIX #2: two-column, no scroll, dish name bug fixed ─────
+// ─── Thermal Ticket ───────────────────────────────────────────────────────────
 const SELL_COPY = [
   "Just came in fresh — one of the best things on the menu tonight.",
   "The kitchen is really proud of this one tonight — worth every bite.",
@@ -698,24 +665,20 @@ const SELL_COPY = [
 function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
   if (!rec) return null;
 
-  // FIX: rec coming from fetchAIRecommendations is already mapped to {title, description, sellCopy, ...}
-  // so read title first (that's what the mapper outputs), then fall back to dish
-  const dishName = rec.title || rec.dish || '';
+  const dishName  = rec.title || rec.dish || '';
   const description = rec.description || rec.reason || '';
-  const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
+  const sellCopy  = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin ? parseFloat(rec.margin) : null;
-  const confidence = rec.confidence || null;
 
   const typeColor =
-    rec.type === 'inventory' ? '#c04040' :
-    rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
+    rec.type === 'inventory' ? 'var(--color-red)' :
+    rec.type === 'margin'    ? 'var(--color-green)' : 'var(--accent)';
 
   const urgencyLabel =
     rec.urgency === 'high' ? 'URGENT' :
-    rec.type === 'margin' ? 'HIGH MARGIN' :
+    rec.type === 'margin'  ? 'HIGH MARGIN' :
     rec.type === 'trending' ? 'TRENDING' : 'RECOMMENDED';
 
-  // Match dish name: exact first, then partial (handles minor API/DB name differences)
   const dishLower = dishName.toLowerCase().trim();
   const menuItem = (menuItems || []).find(m =>
     m.name?.toLowerCase().trim() === dishLower
@@ -738,22 +701,20 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
     <div className="db-ticket">
       <div className="db-ticket-inner">
 
-        {/* LEFT: compact header + dish + description + sell copy */}
+        {/* LEFT */}
         <div className="db-ticket-left">
-          {/* Single header line: urgency label + pick number */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, marginBottom: 'clamp(3px,0.3vh,5px)' }}>
             <div style={{ fontSize: 'clamp(8px,0.65vw,11px)', fontWeight: 700, color: typeColor, textTransform: 'uppercase', letterSpacing: '1px' }}>{urgencyLabel}</div>
-            <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#02a4ba' }}>#{index + 1}</div>
+            <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: 'var(--accent)' }}>#{index + 1}</div>
           </div>
 
           <div className="db-receipt-divider" />
 
-          {/* Dish name — large */}
           <div style={{
             fontFamily: 'Courier New, monospace',
             fontSize: 'clamp(11px, 0.95vw, 15px)',
             fontWeight: 700,
-            color: '#e8e2d8',
+            color: 'var(--text-primary)',
             lineHeight: 1.2,
             marginBottom: 'clamp(2px, 0.2vh, 3px)',
             flexShrink: 0,
@@ -761,12 +722,11 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
           <div className="db-receipt-divider" />
 
-          {/* Description */}
           {description && (
             <div style={{
               fontFamily: 'Courier New, monospace',
               fontSize: 'clamp(9px, 0.72vw, 12px)',
-              color: '#ebe5dd',
+              color: 'var(--text-primary)',
               lineHeight: 1.4,
               marginBottom: 'clamp(2px, 0.2vh, 4px)',
               flexShrink: 0,
@@ -775,17 +735,16 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 
           <div className="db-receipt-divider" />
 
-          {/* Sell copy — takes remaining space */}
           <div style={{
             fontFamily: 'Courier New, monospace',
             fontSize: 'clamp(9px, 0.72vw, 12px)',
-            color: '#bbb8b5',
+            color: 'var(--text-secondary)',
             fontStyle: 'italic',
             lineHeight: 1.45,
             flex: 1,
             overflow: 'hidden',
           }}>
-            <span style={{ color: '#02a4ba' }}>"</span>{sellCopy}<span style={{ color: '#02a4ba' }}>"</span>
+            <span style={{ color: 'var(--accent)' }}>"</span>{sellCopy}<span style={{ color: 'var(--accent)' }}>"</span>
           </div>
 
           <div className="db-receipt-footer" style={{ marginTop: 'clamp(3px,0.3vh,5px)' }}>#{String(index + 1).padStart(3, '0')} · opti-menu.com</div>
@@ -795,7 +754,7 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
         <div className="db-ticket-right">
           <div style={{
             fontSize: 'clamp(7px, 0.55vw, 9px)',
-            color: '#4a453e',
+            color: 'var(--text-muted)',
             textTransform: 'uppercase',
             letterSpacing: '0.8px',
             marginBottom: 4,
@@ -821,7 +780,7 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
                 </div>
               ))
             ) : (
-              <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#3a3630', fontFamily: 'Courier New, monospace' }}>
+              <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: 'var(--text-faint)', fontFamily: 'Courier New, monospace' }}>
                 {dishName ? 'Recipe not linked' : 'No dish selected'}
               </div>
             )}
@@ -837,7 +796,7 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
 function WasteRow({ item, router }) {
   const daysLeft = item.daysLeft;
   const isExpired = daysLeft < 0;
-  const urgencyColor = isExpired ? '#c04040' : getWasteUrgencyColor(daysLeft);
+  const urgencyColor = isExpired ? 'var(--color-red)' : getWasteUrgencyColor(daysLeft);
   const consumed = isExpired ? 100 : Math.min(100, Math.max(0,
     ((item.shelfLife - daysLeft) / item.shelfLife) * 100));
   const label = isExpired
@@ -900,23 +859,19 @@ function PriceMovementCard({ priceByCategory }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {selectedCat && (
-            <button className="db-pm-back" onClick={() => setSelectedCat(null)}>
-              ← Back
-            </button>
+            <button className="db-pm-back" onClick={() => setSelectedCat(null)}>← Back</button>
           )}
           <span className="db-card-sub">{selectedCat || '6-month trend'}</span>
         </div>
       </div>
 
       <div className="db-pm-scroll">
-        {categories.length === 0 && (
-          <div className="db-empty">No price history yet</div>
-        )}
+        {categories.length === 0 && <div className="db-empty">No price history yet</div>}
 
         {!selectedCat && categories.map(cat => {
           const d = priceByCategory[cat];
           const isUp = d.avgDelta > 0;
-          const deltaColor = isUp ? '#c04040' : '#2a8a5a';
+          const deltaColor = isUp ? 'var(--color-red)' : 'var(--color-green)';
           const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
           const avgHistory = Array.from({ length: maxLen }, (_, idx) => {
             const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
@@ -940,7 +895,7 @@ function PriceMovementCard({ priceByCategory }) {
 
         {selectedCat && catData && catData.ingredients.map((ing, i) => {
           const isUp = ing.deltaPct > 0;
-          const deltaColor = isUp ? '#c04040' : '#2a8a5a';
+          const deltaColor = isUp ? 'var(--color-red)' : 'var(--color-green)';
           return (
             <div key={i} className="db-pm-ing-row" style={{ animation: 'slideIn 0.2s ease both', animationDelay: `${i * 0.04}s` }}>
               <div className="db-pm-ing-top">
@@ -1093,7 +1048,6 @@ export default function ClientDashboard() {
     }
   }
 
-  // ── Protein classification ────────────────────────────────────────────────
   const PROTEIN_KEYS = new Set([
     'fish','salmon','tuna','halibut','cod','tilapia','mahi','shrimp','scallop',
     'lobster','crab','oyster','clam','swordfish','bass','snapper','flounder',
@@ -1104,23 +1058,13 @@ export default function ClientDashboard() {
   function isProtein(name) {
     const lower = (name || '').toLowerCase();
     if (PROTEIN_KEYS.has(lower)) return true;
-    for (const key of PROTEIN_KEYS) {
-      if (lower.includes(key)) return true;
-    }
+    for (const key of PROTEIN_KEYS) { if (lower.includes(key)) return true; }
     return false;
   }
 
-  // ── Waste Risk — proteins shown for any delivery within last 14 days ──────
   function computeWasteRisk(invoiceItems, invoices, posSales) {
-    // Build full invoice date + id map from the invoices array (more reliable than join)
     const invoiceDateMap = {};
-    const invoiceIdSet = new Set();
-    (invoices || []).forEach(inv => {
-      if (inv.id && inv.date) {
-        invoiceDateMap[inv.id] = inv.date;
-        invoiceIdSet.add(inv.id);
-      }
-    });
+    (invoices || []).forEach(inv => { if (inv.id && inv.date) invoiceDateMap[inv.id] = inv.date; });
 
     const posByItem = {};
     (posSales || []).forEach(s => {
@@ -1133,15 +1077,13 @@ export default function ClientDashboard() {
     (invoiceItems || []).forEach(item => {
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
       if (!name) return;
-      // Prefer join date, fall back to invoiceDateMap lookup
       const dateStr = item.invoices?.date || invoiceDateMap[item.invoice_id];
       if (!dateStr) return;
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return;
       if (!latestByIngredient[name] || date > latestByIngredient[name].date) {
         latestByIngredient[name] = {
-          date,
-          unit: item.unit,
+          date, unit: item.unit,
           quantity: parseFloat(item.quantity || 0),
           unitCost: parseFloat(item.unit_cost || 0),
           invoiceId: item.invoice_id || item.invoices?.id,
@@ -1168,24 +1110,20 @@ export default function ClientDashboard() {
         });
       }
       const remainingQty = Math.max(0, info.quantity - soldSinceDelivery);
-      const totalValue = remainingQty * info.unitCost;
       const protein = isProtein(name);
 
       return {
-        name, daysLeft, shelfLife,
-        daysSinceDelivery,
+        name, daysLeft, shelfLife, daysSinceDelivery,
         deliveryDate: info.invoiceDate,
         invoiceId: info.invoiceId,
         unit: info.unit,
         invoicedQty: info.quantity,
         remainingQty,
-        totalValue,
+        totalValue: remainingQty * info.unitCost,
         protein,
       };
     });
 
-    // Always show the 4 most recently delivered proteins (sorted by delivery date desc)
-    // Plus any non-proteins expiring within 5 days
     const proteins = risks
       .filter(r => r.protein)
       .sort((a, b) => a.daysSinceDelivery - b.daysSinceDelivery)
@@ -1198,10 +1136,8 @@ export default function ClientDashboard() {
     return [...proteins, ...others];
   }
 
-  // ── Price by Category ─────────────────────────────────────────────────────
   function computePriceByCategory(invoiceItems) {
     const catMap = {};
-
     (invoiceItems || []).forEach(item => {
       if (!item.unit_cost || !item.invoices?.date) return;
       const name = (item.ingredient_name_normalized || item.item_name || '').trim();
@@ -1210,7 +1146,6 @@ export default function ClientDashboard() {
       const date = new Date(item.invoices.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const price = parseFloat(item.unit_cost);
-
       if (!catMap[cat]) catMap[cat] = {};
       if (!catMap[cat][name]) catMap[cat][name] = {};
       if (!catMap[cat][name][monthKey]) catMap[cat][name][monthKey] = [];
@@ -1248,7 +1183,6 @@ export default function ClientDashboard() {
       const avgDelta = ingList.reduce((s, i) => s + i.deltaPct, 0) / ingList.length;
       result[cat] = { ingredients: ingList, avgDelta };
     });
-
     return result;
   }
 
@@ -1265,7 +1199,7 @@ export default function ClientDashboard() {
       const recs = (json.recommendations || []).map(r => ({
         title: r.title,
         description: r.description,
-        sellCopy: r.talking_point || null,  // now populated from improved prompt
+        sellCopy: r.talking_point || null,
         type: r.type,
         margin: r.margin || null,
         confidence: r.confidence || null,
@@ -1314,7 +1248,6 @@ export default function ClientDashboard() {
     const lowMarginCount = itemsWithMargins.filter(i => i.margin < LOW_MARGIN_THRESHOLD).length;
     const highMarginCount = itemsWithMargins.filter(i => i.margin >= 60).length;
 
-    // FIX #4: cap at 8
     const ingredientTrends = ingredients
       .filter(i => i.last_price > 0)
       .sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price))
@@ -1344,7 +1277,7 @@ export default function ClientDashboard() {
     score += totalInvoices > 0 ? (processedInvoices.length / totalInvoices) * 10 : 0;
     if (itemsWithMargins.length > 0) {
       const high = itemsWithMargins.filter(i => i.margin >= 50).length;
-      const low = itemsWithMargins.filter(i => i.margin < 25).length;
+      const low  = itemsWithMargins.filter(i => i.margin < 25).length;
       const balance = ((high / itemsWithMargins.length) * 15) - ((low / itemsWithMargins.length) * 8);
       score += Math.max(0, Math.min(15, balance + 5));
     }
@@ -1366,8 +1299,8 @@ export default function ClientDashboard() {
           <div className="mob-header">
             <div className="mob-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#02a4ba' }}>
-                <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--accent)' }}>
+                <div style={{ width: 5, height: 5, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
                 Active
               </div>
               <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true} />
@@ -1379,11 +1312,11 @@ export default function ClientDashboard() {
           </div>
           <div className="mob-stats">
             {[
-              { v: data.totalInvoices, l: 'Invoices', c: '#02a4ba' },
-              { v: data.totalIngredients, l: 'Ingredients', c: '#e8e2d8' },
-              { v: data.totalMenuItems, l: 'Menu', c: '#e8e2d8' },
+              { v: data.totalInvoices, l: 'Invoices', c: 'var(--accent)' },
+              { v: data.totalIngredients, l: 'Ingredients', c: 'var(--text-primary)' },
+              { v: data.totalMenuItems, l: 'Menu', c: 'var(--text-primary)' },
               { v: `${data.averageMargin.toFixed(1)}%`, l: 'Margin', c: getMarginColor(data.averageMargin) },
-              { v: formatCurrency(data.totalSpending), l: 'YTD', c: '#d4a020' },
+              { v: formatCurrency(data.totalSpending), l: 'YTD', c: 'var(--color-amber)' },
             ].map(({ v, l, c }) => (
               <div key={l} className="mob-stat">
                 <div className="mob-stat-v" style={{ color: c }}>{v}</div>
@@ -1393,8 +1326,8 @@ export default function ClientDashboard() {
           </div>
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-              <div style={{ width: 24, height: 24, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading...</div>
+              <div style={{ width: 24, height: 24, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading...</div>
             </div>
           ) : (
             <div className="mob-content">
@@ -1403,7 +1336,7 @@ export default function ClientDashboard() {
                 <div className="mob-score-row">
                   <div className="mob-score-ring">
                     <svg viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" stroke="#1a1915" strokeWidth="9" fill="none"/>
+                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="9" fill="none"/>
                       <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="9" fill="none"
                         strokeDasharray={`${scoreDash} ${circumference}`} strokeLinecap="round"/>
                     </svg>
@@ -1413,17 +1346,17 @@ export default function ClientDashboard() {
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: '#4a453e', marginBottom: 4 }}>{restaurantName}</div>
-                    <div className="mob-score-badge" style={{ background: `${scoreColor}18`, color: scoreColor }}>{scoreLabel}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>{restaurantName}</div>
+                    <div className="mob-score-badge" style={{ background: `color-mix(in srgb, ${scoreColor} 15%, transparent)`, color: scoreColor }}>{scoreLabel}</div>
                   </div>
                 </div>
               </div>
               <div className="mob-pill-grid">
                 {[
-                  { l: 'Invoices', v: data.totalInvoices, c: '#02a4ba' },
-                  { l: 'Low Margin', v: data.lowMarginCount, c: '#c04040' },
-                  { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: '#2a8a5a' },
-                  { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020' },
+                  { l: 'Invoices',      v: data.totalInvoices,  c: 'var(--accent)' },
+                  { l: 'Low Margin',    v: data.lowMarginCount, c: 'var(--color-red)' },
+                  { l: 'Avg Food Cost', v: `${data.averageMargin > 0 ? (100 - data.averageMargin).toFixed(1) : 0}%`, c: 'var(--color-green)' },
+                  { l: 'YTD Spend',     v: formatCurrency(data.totalSpending), c: 'var(--color-amber)' },
                 ].map(({ l, v, c }) => (
                   <div key={l} className="mob-pill">
                     <div className="mob-pill-l">{l}</div>
@@ -1434,7 +1367,7 @@ export default function ClientDashboard() {
               <div className="mob-card">
                 <div className="mob-card-title">Tonight's Picks</div>
                 {(data.aiRecommendations || []).slice(0, 3).map((rec, i) => {
-                  const typeColor = rec.type === 'inventory' ? '#c04040' : rec.type === 'margin' ? '#2a8a5a' : '#02a4ba';
+                  const typeColor = rec.type === 'inventory' ? 'var(--color-red)' : rec.type === 'margin' ? 'var(--color-green)' : 'var(--accent)';
                   const sellCopy = rec.sellCopy || SELL_COPY[i % SELL_COPY.length];
                   return (
                     <div key={i} className="mob-ai-item" style={{ borderLeftColor: typeColor }}>
@@ -1462,11 +1395,11 @@ export default function ClientDashboard() {
           )}
           <div className="mob-bottom-nav">
             {[
-              { label: 'Dashboard', path: '/client/dashboard', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
-              { label: 'Invoices', path: '/client/invoices', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+              { label: 'Dashboard',   path: '/client/dashboard',   icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+              { label: 'Invoices',    path: '/client/invoices',    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
               { label: 'Ingredients', path: '/client/ingredients', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
-              { label: 'Menu', path: '/client/menu-items', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
-              { label: 'Analytics', path: '/client/analytics', icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
+              { label: 'Menu',        path: '/client/menu-items',  icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+              { label: 'Analytics',   path: '/client/analytics',   icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
             ].map(({ label, path, icon }) => {
               const active = path === '/client/dashboard';
               return (
@@ -1490,10 +1423,10 @@ export default function ClientDashboard() {
   if (error) return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <div style={{ background: '#0a0908', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
-        <div style={{ fontSize: 16, color: '#e8e2d8' }}>Unable to Load Dashboard</div>
-        <div style={{ fontSize: 13, color: '#4a453e', marginBottom: 8 }}>{error}</div>
-        <button onClick={() => window.location.reload()} style={{ background: '#02a4ba', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#0a0908', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Try Again</button>
+      <div style={{ background: 'var(--bg-root)', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+        <div style={{ fontSize: 16, color: 'var(--text-primary)' }}>Unable to Load Dashboard</div>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>{error}</div>
+        <button onClick={() => window.location.reload()} style={{ background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '8px 18px', color: '#0a0908', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Try Again</button>
       </div>
     </>
   );
@@ -1503,8 +1436,7 @@ export default function ClientDashboard() {
     ? Math.max(...data.ingredientTrends.map(i => i.price)) : 1;
 
   const wasteProteins = data.wasteRisk.filter(w => w.protein);
-  const wasteOther = data.wasteRisk.filter(w => !w.protein);
-
+  const wasteOther    = data.wasteRisk.filter(w => !w.protein);
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
 
   return (
@@ -1526,8 +1458,8 @@ export default function ClientDashboard() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,0.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.62vw,11px)', color: '#02a4ba' }}>
-              <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,0.62vw,11px)', color: 'var(--accent)' }}>
+              <div style={{ width: 5, height: 5, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
             <div style={{ width: 'clamp(140px,13vw,240px)', height: 'clamp(26px,2.6vh,34px)', overflow: 'visible', position: 'relative' }}>
@@ -1548,8 +1480,8 @@ export default function ClientDashboard() {
         <div className="db-main">
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-              <div style={{ fontSize: 'clamp(10px,0.78vw,13px)', color: '#4a453e' }}>Loading dashboard...</div>
+              <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 'clamp(10px,0.78vw,13px)', color: 'var(--text-muted)' }}>Loading dashboard...</div>
             </div>
           ) : (
             <div className="db-grid-wrap">
@@ -1562,8 +1494,6 @@ export default function ClientDashboard() {
 
               {/* ROW TOP */}
               <div className="db-row-top">
-
-                {/* LEFT — score card */}
                 <div className="db-score-card">
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(2px,0.22vh,3px)', width: '100%' }}>
                     <div className="db-rest-icon">
@@ -1575,12 +1505,11 @@ export default function ClientDashboard() {
                   <ScoreRing score={data.aiProfitScore.score} />
                 </div>
 
-                {/* THREE THERMAL TICKETS */}
                 {aiLoading ? (
                   [0, 1, 2].map(i => (
                     <div key={i} className="db-ticket" style={{ alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                       <div className="db-spinner" />
-                      <div style={{ fontSize: 'clamp(9px,0.62vw,11px)', color: '#4a453e', fontFamily: 'Courier New, monospace' }}>Analyzing menu...</div>
+                      <div style={{ fontSize: 'clamp(9px,0.62vw,11px)', color: 'var(--text-muted)', fontFamily: 'Courier New, monospace' }}>Analyzing menu...</div>
                     </div>
                   ))
                 ) : (data.aiRecommendations || []).length > 0
@@ -1607,17 +1536,16 @@ export default function ClientDashboard() {
               {/* ROW BOTTOM */}
               <div className="db-row-bottom">
 
-                {/* FIX #5: Key Metrics — 7 pills to fill the card */}
                 <div className="db-stats-card">
-                  <div style={{ fontSize: 'clamp(8px,0.58vw,10px)', color: '#3a3630', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, flexShrink: 0 }}>Key Metrics</div>
+                  <div style={{ fontSize: 'clamp(8px,0.58vw,10px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, flexShrink: 0 }}>Key Metrics</div>
                   {[
-                    { l: 'YTD Spend', v: formatCurrency(data.totalSpending), c: '#d4a020', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
-                    { l: 'Avg Margin', v: `${data.averageMargin.toFixed(1)}%`, c: getMarginColor(data.averageMargin), sub: `${(100 - data.averageMargin).toFixed(1)}% avg food cost` },
-                    { l: 'High Margin Items', v: data.highMarginCount || 0, c: '#2a8a5a', sub: 'Above 60% margin' },
-                    { l: 'Low Margin Items', v: data.lowMarginCount, c: '#c04040', sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
-                    { l: 'Menu Items', v: data.totalMenuItems, c: '#02a4ba', sub: `${data.menuItemAnalysis?.filter(m => m.hasCompleteData).length || 0} fully costed` },
-                    { l: 'Ingredients', v: data.totalIngredients, c: '#e8e2d8', sub: data.unpricedIngredients > 0 ? `${data.unpricedIngredients} unpriced` : 'All priced' },
-                    { l: 'Waste Alerts', v: data.wasteRisk.length, c: data.wasteRisk.length > 0 ? '#c04040' : '#2a8a5a', sub: data.wasteRisk.length > 0 ? `${wasteProteins.length} protein, ${wasteOther.length} other` : 'Nothing expiring soon' },
+                    { l: 'YTD Spend',        v: formatCurrency(data.totalSpending),   c: 'var(--color-amber)', sub: `${data.totalInvoices} invoice${data.totalInvoices !== 1 ? 's' : ''}` },
+                    { l: 'Avg Margin',        v: `${data.averageMargin.toFixed(1)}%`,  c: getMarginColor(data.averageMargin), sub: `${(100 - data.averageMargin).toFixed(1)}% avg food cost` },
+                    { l: 'High Margin Items', v: data.highMarginCount || 0,            c: 'var(--color-green)', sub: 'Above 60% margin' },
+                    { l: 'Low Margin Items',  v: data.lowMarginCount,                  c: 'var(--color-red)',   sub: data.lowMarginCount > 0 ? `Below ${LOW_MARGIN_THRESHOLD}% threshold` : 'All items healthy' },
+                    { l: 'Menu Items',        v: data.totalMenuItems,                  c: 'var(--accent)',      sub: `${data.menuItemAnalysis?.filter(m => m.hasCompleteData).length || 0} fully costed` },
+                    { l: 'Ingredients',       v: data.totalIngredients,                c: 'var(--text-primary)', sub: data.unpricedIngredients > 0 ? `${data.unpricedIngredients} unpriced` : 'All priced' },
+                    { l: 'Waste Alerts',      v: data.wasteRisk.length,               c: data.wasteRisk.length > 0 ? 'var(--color-red)' : 'var(--color-green)', sub: data.wasteRisk.length > 0 ? `${wasteProteins.length} protein, ${wasteOther.length} other` : 'Nothing expiring soon' },
                   ].map(({ l, v, c, sub }) => (
                     <div key={l} className="db-pill" style={{ flex: 1 }}>
                       <div className="db-pill-left">
@@ -1629,7 +1557,7 @@ export default function ClientDashboard() {
                   ))}
                 </div>
 
-                {/* WASTE RISK — two sections */}
+                {/* WASTE RISK */}
                 <div className="db-card">
                   <div className="db-card-hd">
                     <div className="db-card-title">
@@ -1638,40 +1566,29 @@ export default function ClientDashboard() {
                     </div>
                     <span className="db-card-sub">{data.wasteRisk.length > 0 ? `${data.wasteRisk.length} at risk` : 'All clear'}</span>
                   </div>
-
                   <div className="db-waste-list">
-                    {data.wasteRisk.length === 0 && (
-                      <div className="db-empty">No expiring items detected</div>
-                    )}
-
+                    {data.wasteRisk.length === 0 && <div className="db-empty">No expiring items detected</div>}
                     {wasteProteins.length > 0 && (
                       <>
-                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
-                          Proteins at Risk
-                        </div>
+                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>Proteins at Risk</div>
                         {wasteProteins.map((item, i) => <WasteRow key={`p-${i}`} item={item} router={router} />)}
                       </>
                     )}
-
                     {wasteProteins.length > 0 && wasteOther.length > 0 && (
-                      <div style={{ borderTop: '1px solid #1a1915', margin: 'clamp(4px,0.4vh,7px) 0', flexShrink: 0 }} />
+                      <div style={{ borderTop: '1px solid var(--border-subtle)', margin: 'clamp(4px,0.4vh,7px) 0', flexShrink: 0 }} />
                     )}
-
                     {wasteOther.length > 0 && (
                       <>
-                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>
-                          Ingredients at Risk
-                        </div>
+                        <div style={{ fontSize: 'clamp(7px,0.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', fontWeight: 600, marginBottom: 'clamp(3px,0.3vh,5px)', flexShrink: 0 }}>Ingredients at Risk</div>
                         {wasteOther.map((item, i) => <WasteRow key={`o-${i}`} item={item} router={router} />)}
                       </>
                     )}
                   </div>
-
                   {data.wasteRisk.length > 0 && (
                     <div className="db-legend-strip">
-                      <span><span className="db-legend-dot" style={{ background: '#c04040' }} />Expired / today</span>
-                      <span><span className="db-legend-dot" style={{ background: '#d4a020' }} />2 days</span>
-                      <span><span className="db-legend-dot" style={{ background: '#02a4ba' }} />3–7 days</span>
+                      <span><span className="db-legend-dot" style={{ background: 'var(--color-red)' }} />Expired / today</span>
+                      <span><span className="db-legend-dot" style={{ background: 'var(--color-amber)' }} />2 days</span>
+                      <span><span className="db-legend-dot" style={{ background: 'var(--accent)' }} />3–7 days</span>
                     </div>
                   )}
                 </div>
@@ -1679,7 +1596,7 @@ export default function ClientDashboard() {
                 {/* PRICE MOVEMENT */}
                 <PriceMovementCard priceByCategory={data.priceByCategory} />
 
-                {/* TOP INGREDIENT COSTS — FIX #4: top 8, flex fill, no scroll */}
+                {/* TOP INGREDIENT COSTS */}
                 <div className="db-card">
                   <div className="db-card-hd">
                     <div className="db-card-title">
