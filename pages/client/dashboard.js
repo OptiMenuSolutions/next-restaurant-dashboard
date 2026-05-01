@@ -763,8 +763,8 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
           {description && (
             <div style={{
               fontFamily: 'Courier New, monospace',
-              fontSize: 'clamp(7px, 0.58vw, 10px)',
-              color: '#6b6358',
+              fontSize: 'clamp(9px, 0.72vw, 12px)',
+              color: '#ebe5dd',
               lineHeight: 1.4,
               marginBottom: 'clamp(2px, 0.2vh, 4px)',
               flexShrink: 0,
@@ -776,8 +776,8 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk, averageMargin }) {
           {/* Sell copy — takes remaining space */}
           <div style={{
             fontFamily: 'Courier New, monospace',
-            fontSize: 'clamp(7px, 0.58vw, 10px)',
-            color: '#9a9086',
+            fontSize: 'clamp(9px, 0.72vw, 12px)',
+            color: '#bbb8b5',
             fontStyle: 'italic',
             lineHeight: 1.45,
             flex: 1,
@@ -1528,7 +1528,7 @@ export default function ClientDashboard() {
               <div style={{ width: 5, height: 5, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
-            <div style={{ width: 'clamp(140px,13vw,240px)' }}>
+            <div style={{ width: 'clamp(140px,13vw,240px)', height: 'clamp(26px,2.6vh,34px)', overflow: 'visible', position: 'relative' }}>
               <UniversalSearch restaurantId={restaurantId} placeholder="Search..." />
             </div>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />

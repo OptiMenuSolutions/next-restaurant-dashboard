@@ -279,8 +279,8 @@ export default function UniversalSearch({ restaurantId, placeholder = "Search in
   }
 
   return (
-    <div className="relative w-full">
-      <div className="relative" ref={searchRef}>
+    <div className="relative w-full" style={{ height: '100%' }}>
+      <div className="relative" ref={searchRef} style={{ height: '100%' }}>
         <input
           type="text"
           placeholder={placeholder}
@@ -294,6 +294,7 @@ export default function UniversalSearch({ restaurantId, placeholder = "Search in
           onBlur={e => { e.target.style.borderColor = '#2a2620'; }}
           style={{
             width: '100%',
+            height: '100%',
             paddingLeft: '2rem',
             paddingRight: '2rem',
             paddingTop: '0.375rem',
