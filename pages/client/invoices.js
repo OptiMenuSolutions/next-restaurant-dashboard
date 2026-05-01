@@ -68,16 +68,16 @@ function calculateItemTotal(item) {
 }
 
 function getBarColor(total) {
-  if (total > 5000) return '#c04040';
-  if (total > 2000) return '#d4a020';
-  if (total > 0) return '#02a4ba';
+  if (total > 5000) return 'var(--color-red)';
+  if (total > 2000) return 'var(--color-amber)';
+  if (total > 0) return 'var(--accent)';
   return '#1e1c18';
 }
 
 function getMatchColor(status) {
-  if (status === 'auto') return '#2a8a5a';
-  if (status === 'ambiguous') return '#d4a020';
-  return '#02a4ba';
+  if (status === 'auto') return 'var(--color-green)';
+  if (status === 'ambiguous') return 'var(--color-amber)';
+  return 'var(--accent)';
 }
 
 function getMatchLabel(status) {
@@ -90,7 +90,7 @@ function getMatchLabel(status) {
 
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: #0a0908; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
   #__next { height: 100%; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
@@ -98,56 +98,56 @@ const CSS = `
   input::placeholder { color: #3a3630 !important; }
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: #0f0e0c; }
-  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-  .inv-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .inv-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-  .inv-nav { background: #0f0e0c; border-bottom: 1px solid #2a2620; height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .inv-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: #e8e2d8; letter-spacing: -.3px; }
-  .inv-logo span { color: #02a4ba; }
-  .inv-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: #4a453e; border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .inv-tab.active { color: #e8e2d8; background: #1a1915; }
-  .inv-search-sm { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
+  .inv-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .inv-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
+  .inv-logo span { color: var(--accent); }
+  .inv-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .inv-tab.active { color: var(--text-primary); background: #1a1915; }
+  .inv-search-sm { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
 
-  .inv-ph { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .inv-ph-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
-  .inv-ph-sub { font-size: clamp(9px,.65vw,11px); color: #4a453e; margin-top: 2px; }
-  .inv-search-lg { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(160px,16vw,300px); outline: none; font-family: 'Inter', sans-serif; }
-  .inv-upload-btn { display: flex; align-items: center; gap: 6px; background: #02a4ba; border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
+  .inv-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .inv-ph-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
+  .inv-ph-sub { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); margin-top: 2px; }
+  .inv-search-lg { background: #1a1915; border: 1px solid var(--border); border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(160px,16vw,300px); outline: none; font-family: 'Inter', sans-serif; }
+  .inv-upload-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .inv-upload-btn:hover { background: #01bcd4; }
 
-  .inv-sbar { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
+  .inv-sbar { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
   .inv-sv { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
-  .inv-sl { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
+  .inv-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
   .inv-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px); flex: 1; min-height: 0; overflow: hidden; }
-  .inv-list { width: 55%; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .inv-list-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid #2a2620; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-  .inv-list-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; }
-  .inv-list-count { font-size: clamp(9px,.65vw,11px); color: #4a453e; background: #0f0e0c; border: 1px solid #2a2620; border-radius: 10px; padding: 1px 8px; }
-  .inv-tbl-head { display: grid; grid-template-columns: 2fr 1.5fr 1.2fr 1fr 90px; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: #0f0e0c; border-bottom: 1px solid #2a2620; flex-shrink: 0; }
-  .inv-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; }
+  .inv-list { width: 55%; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .inv-list-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+  .inv-list-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
+  .inv-list-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); background: #0f0e0c; border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
+  .inv-tbl-head { display: grid; grid-template-columns: 2fr 1.5fr 1.2fr 1fr 90px; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: #0f0e0c; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .inv-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; }
   .inv-tbl-body { flex: 1; overflow-y: auto; }
   .inv-row { display: grid; grid-template-columns: 2fr 1.5fr 1.2fr 1fr 90px; gap: 8px; padding: clamp(7px,.7vh,12px) clamp(10px,1vw,18px); border-bottom: 1px solid #1a1915; cursor: pointer; transition: background .15s; align-items: center; border-left: 2px solid transparent; }
   .inv-row:hover { background: #1a1915; }
-  .inv-row.selected { background: rgba(2,164,186,.08); border-left-color: #02a4ba; }
+  .inv-row.selected { background: rgba(2,164,186,.08); border-left-color: var(--accent); }
   .inv-td { font-size: clamp(10px,.75vw,12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .inv-td.primary { color: #e8e2d8; font-weight: 500; }
-  .inv-td.amount { color: #02a4ba; font-weight: 600; }
+  .inv-td.primary { color: var(--text-primary); font-weight: 500; }
+  .inv-td.amount { color: var(--accent); font-weight: 600; }
   .inv-pill { font-size: clamp(8px,.6vw,10px); font-weight: 500; padding: 2px 7px; border-radius: 10px; white-space: nowrap; }
-  .inv-pill.ok { background: rgba(42,138,90,.12); color: #2a8a5a; }
-  .inv-pill.pend { background: rgba(212,160,32,.12); color: #d4a020; }
+  .inv-pill.ok { background: rgba(42,138,90,.12); color: var(--color-green); }
+  .inv-pill.pend { background: rgba(212,160,32,.12); color: var(--color-amber); }
 
-  .inv-detail { flex: 1; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .inv-detail-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid #2a2620; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-  .inv-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; }
+  .inv-detail { flex: 1; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .inv-detail-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+  .inv-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
   .inv-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,16px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,14px); }
 
   .inv-widget-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .inv-widget { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,14px); }
-  .inv-widget-full { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,14px); }
-  .inv-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
-  .inv-wlbl svg { width: 10px; height: 10px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .inv-widget { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
+  .inv-widget-full { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
+  .inv-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
+  .inv-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
   .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(3px,.28vw,5px); height: clamp(50px,6vh,80px); margin-top: clamp(4px,.4vh,7px); }
   .inv-mc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
@@ -171,201 +171,201 @@ const CSS = `
   .inv-act-item:last-child { border-bottom: none; }
   .inv-act-dot { width: clamp(5px,.42vw,7px); height: clamp(5px,.42vw,7px); border-radius: 50%; flex-shrink: 0; }
   .inv-act-text { flex: 1; font-size: clamp(9px,.68vw,11px); color: #9a9086; }
-  .inv-act-text strong { color: #e8e2d8; font-weight: 500; }
-  .inv-act-amount { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #02a4ba; flex-shrink: 0; }
-  .inv-act-time { font-size: clamp(8px,.6vw,10px); color: #4a453e; flex-shrink: 0; }
+  .inv-act-text strong { color: var(--text-primary); font-weight: 500; }
+  .inv-act-amount { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--accent); flex-shrink: 0; }
+  .inv-act-time { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); flex-shrink: 0; }
 
-  .inv-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed #2a2620; border-radius: 6px; }
+  .inv-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
 
   .inv-dsection { margin-bottom: clamp(10px,1vh,16px); }
-  .inv-dsection-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
-  .inv-dsection-title::after { content: ''; flex: 1; height: 1px; background: #2a2620; }
+  .inv-dsection-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
+  .inv-dsection-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
   .inv-dgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: clamp(5px,.5vw,8px); }
   .inv-dfield { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
-  .inv-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
-  .inv-dfield-val { font-size: clamp(10px,.75vw,13px); color: #e8e2d8; font-weight: 500; }
-  .inv-dfield-val.accent { color: #02a4ba; font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
-  .inv-dfield-val.link { color: #02a4ba; font-size: clamp(9px,.65vw,11px); cursor: pointer; text-decoration: underline; }
+  .inv-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  .inv-dfield-val { font-size: clamp(10px,.75vw,13px); color: var(--text-primary); font-weight: 500; }
+  .inv-dfield-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
+  .inv-dfield-val.link { color: var(--accent); font-size: clamp(9px,.65vw,11px); cursor: pointer; text-decoration: underline; }
 
-  .inv-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 90px; gap: 5px; padding: clamp(5px,.5vh,8px) clamp(8px,.7vw,12px); background: #0f0e0c; border-radius: 6px 6px 0 0; border: 1px solid #2a2620; border-bottom: none; }
-  .inv-ith { font-size: clamp(7px,.58vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .6px; }
-  .inv-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 90px; gap: 5px; padding: clamp(5px,.5vh,9px) clamp(8px,.7vw,12px); border: 1px solid #2a2620; border-top: none; align-items: center; }
+  .inv-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 90px; gap: 5px; padding: clamp(5px,.5vh,8px) clamp(8px,.7vw,12px); background: #0f0e0c; border-radius: 6px 6px 0 0; border: 1px solid var(--border); border-bottom: none; }
+  .inv-ith { font-size: clamp(7px,.58vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
+  .inv-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 90px; gap: 5px; padding: clamp(5px,.5vh,9px) clamp(8px,.7vw,12px); border: 1px solid var(--border); border-top: none; align-items: center; }
   .inv-item-row:last-child { border-radius: 0 0 6px 6px; }
   .inv-item-row:nth-child(odd) { background: #0f0e0c; }
   .inv-item-row:nth-child(even) { background: #13120f; }
   .inv-itd { font-size: clamp(9px,.65vw,11px); color: #9a9086; }
-  .inv-itd.name { color: #e8e2d8; font-weight: 500; }
-  .inv-itd.val { color: #02a4ba; font-weight: 600; }
-  .inv-linked { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 8px; background: rgba(42,138,90,.12); color: #2a8a5a; }
-  .inv-unlinked { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 8px; background: rgba(212,160,32,.1); color: #d4a020; }
+  .inv-itd.name { color: var(--text-primary); font-weight: 500; }
+  .inv-itd.val { color: var(--accent); font-weight: 600; }
+  .inv-linked { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 8px; background: rgba(42,138,90,.12); color: var(--color-green); }
+  .inv-unlinked { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 8px; background: rgba(212,160,32,.1); color: var(--color-amber); }
 
-  .inv-total-bar { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; margin-top: clamp(5px,.5vh,8px); }
+  .inv-total-bar { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; margin-top: clamp(5px,.5vh,8px); }
   .inv-total-label { font-size: clamp(9px,.68vw,12px); color: #6b6358; font-weight: 500; }
-  .inv-total-val { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); color: #02a4ba; }
-  .inv-diff { font-size: clamp(8px,.62vw,10px); color: #c04040; margin-top: 3px; text-align: right; }
+  .inv-total-val { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); color: var(--accent); }
+  .inv-diff { font-size: clamp(8px,.62vw,10px); color: var(--color-red); margin-top: 3px; text-align: right; }
 
   /* ── PARSE MODAL ── */
   .pm-bg { position: fixed; inset: 0; background: rgba(0,0,0,.82); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-  .pm-modal { background: #13120f; border: 1px solid #2a2620; border-radius: 12px; width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; animation: slideUp .2s ease; }
-  .pm-hd { padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); border-bottom: 1px solid #2a2620; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .pm-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
-  .pm-close { background: none; border: none; color: #4a453e; cursor: pointer; font-size: 18px; line-height: 1; transition: color .15s; }
-  .pm-close:hover { color: #e8e2d8; }
+  .pm-modal { background: #13120f; border: 1px solid var(--border); border-radius: 12px; width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; animation: slideUp .2s ease; }
+  .pm-hd { padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .pm-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
+  .pm-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; line-height: 1; transition: color .15s; }
+  .pm-close:hover { color: var(--text-primary); }
   .pm-body { flex: 1; overflow-y: auto; padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); display: flex; flex-direction: column; gap: clamp(12px,1.2vh,20px); }
-  .pm-ft { padding: clamp(12px,1.2vh,18px) clamp(16px,1.4vw,24px); border-top: 1px solid #2a2620; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
+  .pm-ft { padding: clamp(12px,1.2vh,18px) clamp(16px,1.4vw,24px); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
 
   /* Drop zone */
-  .pm-drop { border: 2px dashed #2a2620; border-radius: 10px; padding: clamp(28px,4vh,48px) 20px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
-  .pm-drop:hover, .pm-drop.over { border-color: #02a4ba; background: rgba(2,164,186,.04); }
-  .pm-drop-icon { width: 40px; height: 40px; stroke: #2a2620; fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; margin: 0 auto 12px; }
-  .pm-drop-title { font-size: clamp(12px,.95vw,15px); color: #e8e2d8; font-weight: 500; margin-bottom: 4px; }
-  .pm-drop-sub { font-size: clamp(9px,.68vw,12px); color: #4a453e; margin-bottom: 14px; }
-  .pm-browse { background: #02a4ba; border: none; border-radius: 6px; padding: 8px 18px; font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; }
+  .pm-drop { border: 2px dashed var(--border); border-radius: 10px; padding: clamp(28px,4vh,48px) 20px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
+  .pm-drop:hover, .pm-drop.over { border-color: var(--accent); background: rgba(2,164,186,.04); }
+  .pm-drop-icon { width: 40px; height: 40px; stroke: var(--border); fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; margin: 0 auto 12px; }
+  .pm-drop-title { font-size: clamp(12px,.95vw,15px); color: var(--text-primary); font-weight: 500; margin-bottom: 4px; }
+  .pm-drop-sub { font-size: clamp(9px,.68vw,12px); color: var(--text-muted); margin-bottom: 14px; }
+  .pm-browse { background: var(--accent); border: none; border-radius: 6px; padding: 8px 18px; font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; }
 
   /* Parsing state */
   .pm-parsing { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 20px; text-align: center; }
-  .pm-spin { width: 32px; height: 32px; border: 3px solid #2a2620; border-top-color: #02a4ba; border-radius: 50%; animation: spin .7s linear infinite; }
-  .pm-parse-title { font-size: clamp(13px,1vw,16px); font-weight: 600; color: #e8e2d8; }
-  .pm-parse-sub { font-size: clamp(10px,.75vw,13px); color: #4a453e; }
+  .pm-spin { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  .pm-parse-title { font-size: clamp(13px,1vw,16px); font-weight: 600; color: var(--text-primary); }
+  .pm-parse-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); }
 
   /* Invoice header summary */
-  .pm-inv-hd { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; padding: clamp(10px,1vw,16px); }
+  .pm-inv-hd { background: #0f0e0c; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); }
   .pm-inv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
-  .pm-inv-field-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
-  .pm-inv-field-val { font-size: clamp(11px,.85vw,14px); color: #e8e2d8; font-weight: 500; }
-  .pm-inv-field-val.accent { color: #02a4ba; font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
+  .pm-inv-field-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  .pm-inv-field-val { font-size: clamp(11px,.85vw,14px); color: var(--text-primary); font-weight: 500; }
+  .pm-inv-field-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
   .pm-conf-badge { display: inline-block; font-size: clamp(7px,.58vw,9px); padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
-  .pm-conf-high { background: rgba(42,138,90,.15); color: #2a8a5a; }
-  .pm-conf-medium { background: rgba(212,160,32,.15); color: #d4a020; }
-  .pm-conf-low { background: rgba(192,64,64,.15); color: #c04040; }
+  .pm-conf-high { background: rgba(42,138,90,.15); color: var(--color-green); }
+  .pm-conf-medium { background: rgba(212,160,32,.15); color: var(--color-amber); }
+  .pm-conf-low { background: rgba(192,64,64,.15); color: var(--color-red); }
 
   /* Summary bar */
   .pm-summary { display: flex; gap: 8px; flex-wrap: wrap; }
   .pm-sum-pill { display: flex; align-items: center; gap: 5px; font-size: clamp(9px,.68vw,11px); padding: 4px 10px; border-radius: 20px; font-weight: 500; }
-  .pm-sum-auto { background: rgba(42,138,90,.1); color: #2a8a5a; border: 1px solid rgba(42,138,90,.2); }
-  .pm-sum-ambig { background: rgba(212,160,32,.1); color: #d4a020; border: 1px solid rgba(212,160,32,.2); }
-  .pm-sum-new { background: rgba(2,164,186,.1); color: #02a4ba; border: 1px solid rgba(2,164,186,.2); }
+  .pm-sum-auto { background: rgba(42,138,90,.1); color: var(--color-green); border: 1px solid rgba(42,138,90,.2); }
+  .pm-sum-ambig { background: rgba(212,160,32,.1); color: var(--color-amber); border: 1px solid rgba(212,160,32,.2); }
+  .pm-sum-new { background: rgba(2,164,186,.1); color: var(--accent); border: 1px solid rgba(2,164,186,.2); }
 
   /* Line items */
-  .pm-section-title { font-size: clamp(9px,.7vw,11px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .pm-section-title::after { content: ''; flex: 1; height: 1px; background: #2a2620; }
+  .pm-section-title { font-size: clamp(9px,.7vw,11px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .pm-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-  .pm-line-item { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; overflow: hidden; margin-bottom: 6px; transition: border-color .15s; }
+  .pm-line-item { background: #0f0e0c; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 6px; transition: border-color .15s; }
   .pm-line-item:last-child { margin-bottom: 0; }
-  .pm-line-item.status-auto { border-left: 3px solid #2a8a5a; }
-  .pm-line-item.status-ambiguous { border-left: 3px solid #d4a020; }
-  .pm-line-item.status-new { border-left: 3px solid #02a4ba; }
+  .pm-line-item.status-auto { border-left: 3px solid var(--color-green); }
+  .pm-line-item.status-ambiguous { border-left: 3px solid var(--color-amber); }
+  .pm-line-item.status-new { border-left: 3px solid var(--accent); }
   .pm-line-item.dismissed { opacity: .4; }
 
   .pm-li-hd { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 120px; gap: 8px; padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
   .pm-li-hd:hover { background: rgba(255,255,255,.02); }
-  .pm-li-name { font-size: clamp(10px,.78vw,13px); font-weight: 500; color: #e8e2d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pm-li-meta { font-size: clamp(8px,.62vw,10px); color: #4a453e; margin-top: 2px; }
+  .pm-li-name { font-size: clamp(10px,.78vw,13px); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-li-meta { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-top: 2px; }
   .pm-li-cell { font-size: clamp(9px,.68vw,11px); color: #9a9086; }
-  .pm-li-cell.val { color: #02a4ba; font-weight: 600; }
+  .pm-li-cell.val { color: var(--accent); font-weight: 600; }
   .pm-li-status { display: flex; align-items: center; gap: 5px; font-size: clamp(8px,.62vw,10px); font-weight: 600; }
 
   /* Candidate picker */
   .pm-candidates { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid #1a1915; display: flex; flex-direction: column; gap: 6px; }
-  .pm-cand-title { font-size: clamp(8px,.62vw,10px); color: #4a453e; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 4px; }
-  .pm-cand-option { display: flex; align-items: flex-start; gap: 10px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); border: 1px solid #2a2620; border-radius: 7px; cursor: pointer; transition: all .15s; background: #13120f; }
+  .pm-cand-title { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 4px; }
+  .pm-cand-option { display: flex; align-items: flex-start; gap: 10px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; transition: all .15s; background: #13120f; }
   .pm-cand-option:hover { border-color: #3a3630; background: #1a1915; }
-  .pm-cand-option.selected { border-color: #02a4ba; background: rgba(2,164,186,.06); }
+  .pm-cand-option.selected { border-color: var(--accent); background: rgba(2,164,186,.06); }
   .pm-cand-radio { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #3a3630; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-  .pm-cand-radio.checked { border-color: #02a4ba; }
-  .pm-cand-radio-dot { width: 6px; height: 6px; border-radius: 50%; background: #02a4ba; }
-  .pm-cand-name { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; }
-  .pm-cand-unit { font-size: clamp(8px,.62vw,10px); color: #4a453e; margin-top: 1px; }
+  .pm-cand-radio.checked { border-color: var(--accent); }
+  .pm-cand-radio-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  .pm-cand-name { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
+  .pm-cand-unit { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-top: 1px; }
   .pm-cand-dishes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-  .pm-cand-dish-tag { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; background: rgba(2,164,186,.08); color: #02a4ba; border: 1px solid rgba(2,164,186,.15); }
-  .pm-cand-score { font-size: clamp(7px,.58vw,9px); color: #4a453e; margin-left: auto; flex-shrink: 0; }
+  .pm-cand-dish-tag { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
+  .pm-cand-score { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
 
   /* New ingredient confirm */
   .pm-new-confirm { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid #1a1915; display: flex; flex-direction: column; gap: 8px; }
-  .pm-new-lbl { font-size: clamp(8px,.62vw,10px); color: #4a453e; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
-  .pm-new-name-input { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: 6px 10px; font-size: clamp(10px,.78vw,12px); color: #e8e2d8; outline: none; font-family: 'Inter', sans-serif; width: 100%; transition: border-color .15s; }
-  .pm-new-name-input:focus { border-color: #02a4ba; }
+  .pm-new-lbl { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+  .pm-new-name-input { background: #1a1915; border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: clamp(10px,.78vw,12px); color: var(--text-primary); outline: none; font-family: 'Inter', sans-serif; width: 100%; transition: border-color .15s; }
+  .pm-new-name-input:focus { border-color: var(--accent); }
   .pm-new-actions { display: flex; gap: 8px; }
-  .pm-new-confirm-btn { background: rgba(2,164,186,.1); border: 1px solid rgba(2,164,186,.3); border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: #02a4ba; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; transition: all .15s; }
+  .pm-new-confirm-btn { background: rgba(2,164,186,.1); border: 1px solid rgba(2,164,186,.3); border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: var(--accent); cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; transition: all .15s; }
   .pm-new-confirm-btn:hover { background: rgba(2,164,186,.18); }
-  .pm-new-confirm-btn.active { background: rgba(2,164,186,.2); border-color: #02a4ba; }
-  .pm-dismiss-btn { background: none; border: 1px solid #2a2620; border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .pm-dismiss-btn:hover { color: #c04040; border-color: rgba(192,64,64,.3); }
+  .pm-new-confirm-btn.active { background: rgba(2,164,186,.2); border-color: var(--accent); }
+  .pm-dismiss-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .pm-dismiss-btn:hover { color: var(--color-red); border-color: rgba(192,64,64,.3); }
 
   /* Footer buttons */
-  .pm-btn-primary { background: #02a4ba; border: none; border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(18px,1.6vw,28px); font-size: clamp(11px,.85vw,14px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; white-space: nowrap; }
+  .pm-btn-primary { background: var(--accent); border: none; border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(18px,1.6vw,28px); font-size: clamp(11px,.85vw,14px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; white-space: nowrap; }
   .pm-btn-primary:hover { background: #01bcd4; }
   .pm-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-  .pm-btn-secondary { background: none; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(14px,1.2vw,20px); font-size: clamp(11px,.85vw,14px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .pm-btn-secondary:hover { color: #e8e2d8; border-color: #3a3630; }
-  .pm-progress-text { font-size: clamp(9px,.68vw,11px); color: #4a453e; }
+  .pm-btn-secondary { background: none; border: 1px solid var(--border); border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(14px,1.2vw,20px); font-size: clamp(11px,.85vw,14px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .pm-btn-secondary:hover { color: var(--text-primary); border-color: #3a3630; }
+  .pm-progress-text { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
 
   /* Success */
   .pm-success { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; text-align: center; }
   .pm-success-icon { width: 48px; height: 48px; border-radius: 50%; background: rgba(42,138,90,.12); border: 2px solid rgba(42,138,90,.3); display: flex; align-items: center; justify-content: center; }
-  .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,22px); color: #e8e2d8; }
-  .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: #4a453e; max-width: 340px; line-height: 1.5; }
+  .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,22px); color: var(--text-primary); }
+  .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); max-width: 340px; line-height: 1.5; }
 
-  .inv-confirm-banner { margin: 0 clamp(10px,1vw,20px); background: rgba(42,138,90,.1); border: 1px solid rgba(42,138,90,.25); border-radius: 6px; padding: 10px 14px; font-size: clamp(10px,.75vw,13px); color: #2a8a5a; display: flex; align-items: center; justify-content: space-between; }
+  .inv-confirm-banner { margin: 0 clamp(10px,1vw,20px); background: rgba(42,138,90,.1); border: 1px solid rgba(42,138,90,.25); border-radius: 6px; padding: 10px 14px; font-size: clamp(10px,.75vw,13px); color: var(--color-green); display: flex; align-items: center; justify-content: space-between; }
 
   /* Mobile */
-  .mob-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  .mob-header { background: #0f0e0c; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
-  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: #e8e2d8; letter-spacing: -.3px; }
-  .mob-logo span { color: #02a4ba; }
-  .mob-titlebar { background: #13120f; border-bottom: 1px solid #2a2620; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .mob-page-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 20px; color: #e8e2d8; line-height: 1; }
-  .mob-page-sub { font-size: 11px; color: #4a453e; margin-top: 3px; }
-  .mob-stats { background: #13120f; border-bottom: 1px solid #2a2620; padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
+  .mob-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .mob-header { background: #0f0e0c; border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
+  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text-primary); letter-spacing: -.3px; }
+  .mob-logo span { color: var(--accent); }
+  .mob-titlebar { background: #13120f; border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .mob-page-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 20px; color: var(--text-primary); line-height: 1; }
+  .mob-page-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .mob-stats { background: #13120f; border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
   .mob-stats::-webkit-scrollbar { display: none; }
-  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid #2a2620; }
+  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid var(--border); }
   .mob-stat:last-child { border-right: none; }
   .mob-stat-v { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 16px; line-height: 1; }
-  .mob-stat-l { font-size: 9px; color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
-  .mob-search-bar { padding: 10px 14px; background: #0a0908; border-bottom: 1px solid #2a2620; flex-shrink: 0; }
-  .mob-search-input { width: 100%; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; padding: 10px 14px; font-size: 14px; color: #e8e2d8; outline: none; font-family: 'Inter', sans-serif; }
-  .mob-list-head { display: grid; grid-template-columns: 2fr 1.5fr 1fr 90px; gap: 6px; padding: 8px 14px; background: #0f0e0c; border-bottom: 1px solid #2a2620; flex-shrink: 0; }
-  .mob-list-th { font-size: 9px; font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .7px; }
+  .mob-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
+  .mob-search-bar { padding: 10px 14px; background: var(--bg-root); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .mob-search-input { width: 100%; background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--text-primary); outline: none; font-family: 'Inter', sans-serif; }
+  .mob-list-head { display: grid; grid-template-columns: 2fr 1.5fr 1fr 90px; gap: 6px; padding: 8px 14px; background: #0f0e0c; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .mob-list-th { font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .7px; }
   .mob-list-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .mob-list-body::-webkit-scrollbar { display: none; }
   .mob-list-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 90px; gap: 6px; padding: 13px 14px; border-bottom: 1px solid #1a1915; cursor: pointer; align-items: center; border-left: 3px solid transparent; }
-  .mob-list-row.selected { background: rgba(2,164,186,.07); border-left-color: #02a4ba; }
+  .mob-list-row.selected { background: rgba(2,164,186,.07); border-left-color: var(--accent); }
   .mob-td { font-size: 13px; color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mob-td.primary { color: #e8e2d8; font-weight: 500; }
-  .mob-td.amount { color: #02a4ba; font-weight: 600; }
+  .mob-td.primary { color: var(--text-primary); font-weight: 500; }
+  .mob-td.amount { color: var(--accent); font-weight: 600; }
   .mob-pill { font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 10px; }
-  .mob-pill.ok { background: rgba(42,138,90,.12); color: #2a8a5a; }
-  .mob-pill.pend { background: rgba(212,160,32,.12); color: #d4a020; }
-  .mob-add-btn { background: #02a4ba; border: none; border-radius: 7px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; }
-  .mob-detail-overlay { position: absolute; inset: 0; background: #0a0908; display: flex; flex-direction: column; z-index: 20; overflow: hidden; }
-  .mob-detail-hd { background: #0f0e0c; border-bottom: 1px solid #2a2620; padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-  .mob-back-btn { background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px; color: #02a4ba; padding: 0; }
-  .mob-detail-title { font-size: 15px; font-weight: 600; color: #e8e2d8; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mob-pill.ok { background: rgba(42,138,90,.12); color: var(--color-green); }
+  .mob-pill.pend { background: rgba(212,160,32,.12); color: var(--color-amber); }
+  .mob-add-btn { background: var(--accent); border: none; border-radius: 7px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; }
+  .mob-detail-overlay { position: absolute; inset: 0; background: var(--bg-root); display: flex; flex-direction: column; z-index: 20; overflow: hidden; }
+  .mob-detail-hd { background: #0f0e0c; border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .mob-back-btn { background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px; color: var(--accent); padding: 0; }
+  .mob-detail-title { font-size: 15px; font-weight: 600; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mob-detail-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
   .mob-dfield-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .mob-dfield { background: #13120f; border: 1px solid #2a2620; border-radius: 8px; padding: 10px 12px; }
-  .mob-dfield-lbl { font-size: 9px; color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .mob-dfield-val { font-size: 13px; color: #e8e2d8; font-weight: 500; }
-  .mob-dfield-val.accent { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; color: #02a4ba; }
-  .mob-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 8px 12px; background: #0f0e0c; border-radius: 8px 8px 0 0; border: 1px solid #2a2620; border-bottom: none; }
-  .mob-ith { font-size: 9px; font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .6px; }
-  .mob-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 11px 12px; border: 1px solid #2a2620; border-top: none; align-items: center; }
+  .mob-dfield { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .mob-dfield-lbl { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .mob-dfield-val { font-size: 13px; color: var(--text-primary); font-weight: 500; }
+  .mob-dfield-val.accent { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; color: var(--accent); }
+  .mob-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 8px 12px; background: #0f0e0c; border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none; }
+  .mob-ith { font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
+  .mob-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 11px 12px; border: 1px solid var(--border); border-top: none; align-items: center; }
   .mob-item-row:last-child { border-radius: 0 0 8px 8px; }
   .mob-item-row:nth-child(odd) { background: #0f0e0c; }
   .mob-item-row:nth-child(even) { background: #13120f; }
   .mob-itd { font-size: 12px; color: #9a9086; }
-  .mob-itd.name { color: #e8e2d8; font-weight: 500; }
-  .mob-itd.val { color: #02a4ba; font-weight: 600; }
-  .mob-linked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(42,138,90,.12); color: #2a8a5a; }
-  .mob-unlinked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(212,160,32,.1); color: #d4a020; }
-  .mob-total-bar { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
-  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid #2a2620; padding: 8px 0; padding-bottom: max(20px, calc(8px + env(safe-area-inset-bottom))); display: flex; flex-shrink: 0; }
+  .mob-itd.name { color: var(--text-primary); font-weight: 500; }
+  .mob-itd.val { color: var(--accent); font-weight: 600; }
+  .mob-linked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(42,138,90,.12); color: var(--color-green); }
+  .mob-unlinked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(212,160,32,.1); color: var(--color-amber); }
+  .mob-total-bar { background: #0f0e0c; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .mob-bottom-nav { background: #0f0e0c; border-top: 1px solid var(--border); padding: 8px 0; padding-bottom: max(20px, calc(8px + env(safe-area-inset-bottom))); display: flex; flex-shrink: 0; }
   .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
-  .mob-nav-icon svg { width: 20px; height: 20px; stroke: #4a453e; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .mob-nav-icon.active svg { stroke: #02a4ba; }
-  .mob-nav-label { font-size: 10px; color: #4a453e; }
-  .mob-nav-label.active { color: #02a4ba; }
-  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: #02a4ba; }
+  .mob-nav-icon svg { width: 20px; height: 20px; stroke: var(--text-muted); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mob-nav-icon.active svg { stroke: var(--accent); }
+  .mob-nav-label { font-size: 10px; color: var(--text-muted); }
+  .mob-nav-label.active { color: var(--accent); }
+  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 `;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -380,7 +380,7 @@ function IconUpload({ size = 12 }) {
 
 function IconFile({ size = 40 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#e8e2d8" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .25 }}>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: .25 }}>
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/>
     </svg>
   );
@@ -639,7 +639,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                     width: i === stageIdx ? 16 : 5,
                     height: 5,
                     borderRadius: 3,
-                    background: i <= stageIdx ? '#02a4ba' : '#2a2620',
+                    background: i <= stageIdx ? 'var(--accent)' : 'var(--border)',
                     transition: 'all .4s ease',
                   }} />
                 ))}
@@ -658,7 +658,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           {step === 'success' && savedResult && (
             <div className="pm-success">
               <div className="pm-success-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2a8a5a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
               <div className="pm-success-title">Invoice saved successfully</div>
               <div className="pm-success-sub">
@@ -667,7 +667,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                 {savedResult.ingredients_updated > 0 && ` · ${savedResult.ingredients_updated} ingredient price${savedResult.ingredients_updated !== 1 ? 's' : ''} updated`}
               </div>
               {savedResult.errors?.length > 0 && (
-                <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#d4a020', maxWidth: 360, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-amber)', maxWidth: 360, lineHeight: 1.5 }}>
                   {savedResult.errors.length} item{savedResult.errors.length !== 1 ? 's' : ''} had issues and were skipped.
                 </div>
               )}
@@ -676,8 +676,8 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
           {step === 'error' && (
             <div className="pm-parsing">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#c04040" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <div className="pm-parse-title" style={{ color: '#c04040' }}>Parse failed</div>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div className="pm-parse-title" style={{ color: 'var(--color-red)' }}>Parse failed</div>
               <div className="pm-parse-sub">{errorMsg}</div>
             </div>
           )}
@@ -685,27 +685,27 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           {step === 'review' && inv && (
             <>
               <div className="pm-inv-hd">
-                <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600, marginBottom: 8 }}>Invoice Details</div>
+                <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600, marginBottom: 8 }}>Invoice Details</div>
                 <div className="pm-inv-grid">
                   <div>
                     <div className="pm-inv-field-lbl">Supplier<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.supplier)}`}>{inv.confidence?.supplier || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Not found</span>}</div>
+                    <div className="pm-inv-field-val">{inv.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
                   </div>
                   <div>
                     <div className="pm-inv-field-lbl">Invoice #<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.invoice_number)}`}>{inv.confidence?.invoice_number || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.invoice_number || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Not found</span>}</div>
+                    <div className="pm-inv-field-val">{inv.invoice_number || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
                   </div>
                   <div>
                     <div className="pm-inv-field-lbl">Date<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.invoice_date)}`}>{inv.confidence?.invoice_date || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.invoice_date ? formatDateShort(inv.invoice_date) : <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Not found</span>}</div>
+                    <div className="pm-inv-field-val">{inv.invoice_date ? formatDateShort(inv.invoice_date) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
                   </div>
                   <div>
                     <div className="pm-inv-field-lbl">Total<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.total_amount)}`}>{inv.confidence?.total_amount || '?'}</span></div>
-                    <div className="pm-inv-field-val accent">{inv.total_amount ? formatCurrency(inv.total_amount) : <span style={{ color: '#4a453e', fontStyle: 'italic', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>Not found</span>}</div>
+                    <div className="pm-inv-field-val accent">{inv.total_amount ? formatCurrency(inv.total_amount) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>Not found</span>}</div>
                   </div>
                 </div>
                 {inv.notes && (
-                  <div style={{ marginTop: 8, fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', fontStyle: 'italic' }}>Note: {inv.notes}</div>
+                  <div style={{ marginTop: 8, fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontStyle: 'italic' }}>Note: {inv.notes}</div>
                 )}
               </div>
 
@@ -778,9 +778,9 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                       .filter(i => i.dismissed)
                       .map(item => (
                         <div key={item._id} className="pm-line-item dismissed" style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>{item.item_name}</div>
+                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>{item.item_name}</div>
                           <button onClick={() => setLineItems(prev => prev.map(i => i._id === item._id ? { ...i, dismissed: false } : i))}
-                            style={{ background: 'none', border: 'none', color: '#4a453e', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
+                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
                             Restore
                           </button>
                         </div>
@@ -794,7 +794,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
         <div className="pm-ft">
           {step === 'drop' && (
-            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>Files are processed immediately — nothing is saved until you confirm.</div>
+            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>Files are processed immediately — nothing is saved until you confirm.</div>
           )}
           {step === 'review' && (
             <>
@@ -844,10 +844,10 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           <div className="pm-li-name">{item.item_name}</div>
           {autoMatchName && <div className="pm-li-meta">→ {autoMatchName}</div>}
           {item.match_status === 'ambiguous' && item.selected_ingredient_id && (
-            <div className="pm-li-meta" style={{ color: '#2a8a5a' }}>→ {item.selected_ingredient_name}</div>
+            <div className="pm-li-meta" style={{ color: 'var(--color-green)' }}>→ {item.selected_ingredient_name}</div>
           )}
           {item.match_status === 'new' && item.confirm_new && (
-            <div className="pm-li-meta" style={{ color: '#02a4ba' }}>→ Will create: {item.confirmed_name}</div>
+            <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>
           )}
         </div>
         <div className="pm-li-cell">{item.quantity ? `${item.quantity} ${item.unit || ''}` : '—'}</div>
@@ -857,7 +857,7 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
           {item.match_status !== 'auto' && (
-            <span style={{ color: '#4a453e', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>
           )}
         </div>
       </div>
@@ -904,7 +904,7 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         <div className="pm-new-confirm">
           <div className="pm-new-lbl">New ingredient — confirm to add to your inventory</div>
           <div>
-            <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', marginBottom: 4 }}>Ingredient name</div>
+            <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', marginBottom: 4 }}>Ingredient name</div>
             <input
               className="pm-new-name-input"
               value={item.confirmed_name}
@@ -1111,9 +1111,9 @@ export default function ClientInvoices() {
           </div>
           <div className="mob-stats">
             {[
-              { v: invoices.length, l: 'Total', c: '#02a4ba' },
-              { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
-              { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+              { v: invoices.length, l: 'Total', c: 'var(--accent)' },
+              { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: 'var(--text-primary)' },
+              { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: 'var(--text-primary)' },
               { v: formatCurrencyShort(lastMonthSpend), l: 'Last Month', c: '#6b6358' },
             ].map(({ v, l, c }) => (
               <div key={l} className="mob-stat">
@@ -1134,8 +1134,8 @@ export default function ClientInvoices() {
           </div>
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-              <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-              <div style={{ fontSize: 12, color: '#4a453e' }}>Loading invoices...</div>
+              <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading invoices...</div>
             </div>
           ) : (
             <div className="mob-list-body">
@@ -1146,10 +1146,10 @@ export default function ClientInvoices() {
                 </div>
               ) : filtered.map(invoice => (
                 <div key={invoice.id} className={`mob-list-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`} onClick={() => selectInvoice(invoice)}>
-                  <div className="mob-td primary">{invoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Unknown</span>}</div>
-                  <div className="mob-td">{invoice.number || <span style={{ color: '#4a453e' }}>—</span>}</div>
-                  <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: '#4a453e' }}>—</span>}</div>
-                  <div className="mob-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                  <div className="mob-td primary">{invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown</span>}</div>
+                  <div className="mob-td">{invoice.number || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                  <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                  <div className="mob-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
                 </div>
               ))}
             </div>
@@ -1175,18 +1175,18 @@ export default function ClientInvoices() {
                 </div>
                 {selectedInvoice.file_url && (
                   <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
-                    style={{ display: 'block', textAlign: 'center', padding: 10, background: '#13120f', border: '1px solid #2a2620', borderRadius: 8, fontSize: 13, color: '#02a4ba', textDecoration: 'none' }}>
+                    style={{ display: 'block', textAlign: 'center', padding: 10, background: '#13120f', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
                     View Invoice File ↗
                   </a>
                 )}
                 {loadingDetail ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 12 }}>
-                    <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12 }}>
+                    <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                     Loading items...
                   </div>
                 ) : invoiceItems.length > 0 ? (
                   <>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.7px' }}>Invoice Items ({invoiceItems.length})</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.7px' }}>Invoice Items ({invoiceItems.length})</div>
                     <div className="mob-items-head">
                       <div className="mob-ith">Item</div><div className="mob-ith">Qty</div><div className="mob-ith">Cost</div><div className="mob-ith">Status</div>
                     </div>
@@ -1200,11 +1200,11 @@ export default function ClientInvoices() {
                     ))}
                     <div className="mob-total-bar">
                       <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>Calculated Total</div>
-                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18, color: '#02a4ba' }}>{formatCurrency(totalCalculated)}</div>
+                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18, color: 'var(--accent)' }}>{formatCurrency(totalCalculated)}</div>
                     </div>
                   </>
                 ) : (
-                  <div style={{ fontSize: 13, color: '#4a453e', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
                 )}
               </div>
             </div>
@@ -1240,8 +1240,8 @@ export default function ClientInvoices() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,0.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,0.65vw,11px)', color: '#02a4ba' }}>
-              <div style={{ width: 4, height: 4, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,0.65vw,11px)', color: 'var(--accent)' }}>
+              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
             <input className="inv-search-sm" placeholder="Search..." />
@@ -1263,13 +1263,13 @@ export default function ClientInvoices() {
           </div>
         </div>
 
-        {confirmMsg && <div className="inv-confirm-banner">{confirmMsg}<button onClick={() => setConfirmMsg('')} style={{ background: 'none', border: 'none', color: '#2a8a5a', cursor: 'pointer', fontSize: 14 }}>✕</button></div>}
+        {confirmMsg && <div className="inv-confirm-banner">{confirmMsg}<button onClick={() => setConfirmMsg('')} style={{ background: 'none', border: 'none', color: 'var(--color-green)', cursor: 'pointer', fontSize: 14 }}>✕</button></div>}
 
         <div className="inv-sbar">
           {[
-            { v: invoices.length, l: 'Total Invoices', c: '#02a4ba' },
-            { v: formatCurrencyWhole(totalSpend), l: 'Total Spend', c: '#e8e2d8' },
-            { v: formatCurrencyWhole(thisMonthSpend), l: 'This Month', c: '#e8e2d8' },
+            { v: invoices.length, l: 'Total Invoices', c: 'var(--accent)' },
+            { v: formatCurrencyWhole(totalSpend), l: 'Total Spend', c: 'var(--text-primary)' },
+            { v: formatCurrencyWhole(thisMonthSpend), l: 'This Month', c: 'var(--text-primary)' },
             { v: formatCurrencyWhole(lastMonthSpend), l: 'Last Month', c: '#6b6358' },
           ].map(({ v, l, c }) => (
             <div key={l}>
@@ -1281,8 +1281,8 @@ export default function ClientInvoices() {
 
         {loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-            <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-            <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: '#4a453e' }}>Loading invoices...</div>
+            <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <div style={{ fontSize: 'clamp(10px,0.8vw,13px)', color: 'var(--text-muted)' }}>Loading invoices...</div>
           </div>
         ) : (
           <div className="inv-split">
@@ -1315,10 +1315,10 @@ export default function ClientInvoices() {
                   const { label, ok } = getStatus(invoice);
                   return (
                     <div key={invoice.id} className={`inv-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`} onClick={() => selectInvoice(invoice)}>
-                      <div className="inv-td primary">{invoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Unknown</span>}</div>
-                      <div className="inv-td">{invoice.number || <span style={{ color: '#4a453e' }}>—</span>}</div>
-                      <div className="inv-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: '#4a453e' }}>—</span>}</div>
-                      <div className="inv-td amount">{invoice.amount ? formatCurrency(invoice.amount) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                      <div className="inv-td primary">{invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown</span>}</div>
+                      <div className="inv-td">{invoice.number || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                      <div className="inv-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
+                      <div className="inv-td amount">{invoice.amount ? formatCurrency(invoice.amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
                       <div><span className={`inv-pill ${ok ? 'ok' : 'pend'}`}>{label}</span></div>
                     </div>
                   );
@@ -1331,7 +1331,7 @@ export default function ClientInvoices() {
                 <div className="inv-detail-title">{selectedInvoice ? 'Invoice Detail' : 'Invoice Overview'}</div>
                 {selectedInvoice
                   ? <span className={`inv-pill ${getStatus(selectedInvoice).ok ? 'ok' : 'pend'}`}>{getStatus(selectedInvoice).label}</span>
-                  : <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: '#4a453e' }}>Click an invoice to view details</div>
+                  : <div style={{ fontSize: 'clamp(9px,0.65vw,11px)', color: 'var(--text-muted)' }}>Click an invoice to view details</div>
                 }
               </div>
 
@@ -1365,21 +1365,21 @@ export default function ClientInvoices() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                           <div>
-                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
-                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(16px,1.4vw,22px)', color: '#02a4ba' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
+                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>This Month</div>
+                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(16px,1.4vw,22px)', color: 'var(--accent)' }}>{formatCurrencyWhole(thisMonthSpend)}</div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
-                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(13px,1.05vw,17px)', color: '#e8e2d8' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
+                            <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>Last Month</div>
+                            <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 'clamp(13px,1.05vw,17px)', color: 'var(--text-primary)' }}>{formatCurrencyWhole(lastMonthSpend)}</div>
                           </div>
                         </div>
                         {monthPct !== null ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: monthUp ? '#c04040' : '#2a8a5a' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: monthUp ? 'var(--color-red)' : 'var(--color-green)' }}>
                             <span>{monthUp ? '▲' : '▼'}</span>
                             <span>{Math.abs(monthPct)}% {monthUp ? 'higher' : 'lower'} than last month</span>
                           </div>
                         ) : (
-                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data for last month</div>
+                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data for last month</div>
                         )}
                       </div>
                     </div>
@@ -1395,29 +1395,29 @@ export default function ClientInvoices() {
                       <div className="inv-stat-pair">
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Avg invoice size</div>
-                          <div className="inv-stat-val" style={{ color: '#e8e2d8' }}>{formatCurrencyWhole(avgInvoice)}</div>
+                          <div className="inv-stat-val" style={{ color: 'var(--text-primary)' }}>{formatCurrencyWhole(avgInvoice)}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Largest invoice</div>
-                          <div className="inv-stat-val" style={{ color: '#02a4ba' }}>{formatCurrencyWhole(largest)}</div>
+                          <div className="inv-stat-val" style={{ color: 'var(--accent)' }}>{formatCurrencyWhole(largest)}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div className="inv-stat-name">Days since last invoice</div>
-                          <div className="inv-stat-val" style={{ color: daysSinceLast > 7 ? '#d4a020' : '#2a8a5a' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div>
+                          <div className="inv-stat-val" style={{ color: daysSinceLast > 7 ? 'var(--color-amber)' : 'var(--color-green)' }}>{daysSinceLast !== null ? daysSinceLast : '—'}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <div className="inv-stat-name">Invoices this month</div>
                             <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#3a3630' }}>by invoice date</div>
                           </div>
-                          <div className="inv-stat-val" style={{ color: '#2a8a5a' }}>{invoicesThisMonthByDate}</div>
+                          <div className="inv-stat-val" style={{ color: 'var(--color-green)' }}>{invoicesThisMonthByDate}</div>
                         </div>
                         <div className="inv-stat-item">
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                             <div className="inv-stat-name">Uploaded this month</div>
                             <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#3a3630' }}>by upload date</div>
                           </div>
-                          <div className="inv-stat-val" style={{ color: '#4a453e' }}>{invoicesUploadedThisMonth}</div>
+                          <div className="inv-stat-val" style={{ color: 'var(--text-muted)' }}>{invoicesUploadedThisMonth}</div>
                         </div>
                       </div>
                     </div>
@@ -1429,7 +1429,7 @@ export default function ClientInvoices() {
                         Top Suppliers by Spend
                       </div>
                       {topSuppliers.length > 0 ? topSuppliers.map(([name, amount], i) => {
-                        const colors = ['#02a4ba', '#d4a020', '#2a8a5a', '#6b6358'];
+                        const colors = ['var(--accent)', 'var(--color-amber)', 'var(--color-green)', '#6b6358'];
                         return (
                           <div key={name} className="inv-prog-row">
                             <div className="inv-prog-label">{name}</div>
@@ -1437,7 +1437,7 @@ export default function ClientInvoices() {
                             <div className="inv-prog-val" style={{ color: colors[i] }}>{formatCurrencyWhole(amount)}</div>
                           </div>
                         );
-                      }) : <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e', marginTop: 4 }}>No supplier data yet</div>}
+                      }) : <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: 'var(--text-muted)', marginTop: 4 }}>No supplier data yet</div>}
                     </div>
                   </div>
 
@@ -1451,14 +1451,14 @@ export default function ClientInvoices() {
                       const { ok } = getStatus(inv);
                       return (
                         <div key={inv.id} className="inv-act-item" onClick={() => selectInvoice(inv)}>
-                          <div className="inv-act-dot" style={{ background: ok ? '#2a8a5a' : '#d4a020' }} />
+                          <div className="inv-act-dot" style={{ background: ok ? 'var(--color-green)' : 'var(--color-amber)' }} />
                           <div className="inv-act-text"><strong>{inv.number || 'Invoice'}</strong>{inv.supplier ? ` from ${inv.supplier}` : ''} — {ok ? 'processed successfully' : 'pending review'}</div>
                           {inv.amount && <div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
                           <div className="inv-act-time">{timeAgo(inv.created_at)}</div>
                         </div>
                       );
                     })}
-                    {invoices.length === 0 && <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e' }}>No invoice activity yet</div>}
+                    {invoices.length === 0 && <div style={{ fontSize: 'clamp(9px,0.68vw,11px)', color: 'var(--text-muted)' }}>No invoice activity yet</div>}
                   </div>
 
                   <div className="inv-hint">Select an invoice from the list to view full details →</div>
@@ -1470,23 +1470,23 @@ export default function ClientInvoices() {
                   <div className="inv-dsection">
                     <div className="inv-dsection-title">Invoice Information</div>
                     <div className="inv-dgrid">
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice No.</div><div className="inv-dfield-val">{selectedInvoice.number || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Pending</span>}</div></div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice Date</div><div className="inv-dfield-val">{selectedInvoice.date ? formatDate(selectedInvoice.date) : <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Pending</span>}</div></div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Supplier</div><div className="inv-dfield-val">{selectedInvoice.supplier || <span style={{ color: '#4a453e', fontStyle: 'italic' }}>Pending</span>}</div></div>
+                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice No.</div><div className="inv-dfield-val">{selectedInvoice.number || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending</span>}</div></div>
+                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice Date</div><div className="inv-dfield-val">{selectedInvoice.date ? formatDate(selectedInvoice.date) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending</span>}</div></div>
+                      <div className="inv-dfield"><div className="inv-dfield-lbl">Supplier</div><div className="inv-dfield-val">{selectedInvoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Pending</span>}</div></div>
                       <div className="inv-dfield"><div className="inv-dfield-lbl">Upload Date</div><div className="inv-dfield-val">{formatDate(selectedInvoice.created_at)}</div></div>
                       <div className="inv-dfield">
                         <div className="inv-dfield-lbl">File</div>
                         {selectedInvoice.file_url
                           ? <a className="inv-dfield-val link" href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer">View File ↗</a>
-                          : <div className="inv-dfield-val" style={{ color: '#4a453e', fontStyle: 'italic' }}>No file</div>}
+                          : <div className="inv-dfield-val" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No file</div>}
                       </div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Total Amount</div><div className="inv-dfield-val accent">{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : <span style={{ color: '#4a453e', fontStyle: 'italic', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>Pending</span>}</div></div>
+                      <div className="inv-dfield"><div className="inv-dfield-lbl">Total Amount</div><div className="inv-dfield-val accent">{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>Pending</span>}</div></div>
                     </div>
                   </div>
 
                   {loadingDetail ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', color: '#4a453e', fontSize: 'clamp(10px,0.75vw,12px)' }}>
-                      <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 0', color: 'var(--text-muted)', fontSize: 'clamp(10px,0.75vw,12px)' }}>
+                      <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                       Loading items...
                     </div>
                   ) : invoiceItems.length > 0 ? (
@@ -1515,14 +1515,14 @@ export default function ClientInvoices() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 8, color: '#4a453e' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 8, color: 'var(--text-muted)' }}>
                       <IconFile size={36} />
                       <div style={{ fontSize: 'clamp(11px,0.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>No line items recorded</div>
                     </div>
                   )}
 
                   <button onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); router.replace('/client/invoices', undefined, { shallow: true }); }}
-                    style={{ background: 'none', border: '1px solid #2a2620', borderRadius: 5, padding: 'clamp(5px,0.5vh,8px) clamp(10px,0.9vw,14px)', fontSize: 'clamp(9px,0.68vw,11px)', color: '#4a453e', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 'auto', alignSelf: 'flex-start' }}>
+                    style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 5, padding: 'clamp(5px,0.5vh,8px) clamp(10px,0.9vw,14px)', fontSize: 'clamp(9px,0.68vw,11px)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", marginTop: 'auto', alignSelf: 'flex-start' }}>
                     ← Back to overview
                   </button>
                 </div>

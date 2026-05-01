@@ -32,11 +32,11 @@ function getMarginNum(price, cost) {
 }
 
 function getMarginColor(margin) {
-  if (margin === null || margin === undefined) return '#4a453e';
-  if (margin >= 70) return '#2a8a5a';
-  if (margin >= 50) return '#02a4ba';
-  if (margin >= 30) return '#d4a020';
-  return '#c04040';
+  if (margin === null || margin === undefined) return 'var(--text-muted)';
+  if (margin >= 70) return 'var(--color-green)';
+  if (margin >= 50) return 'var(--accent)';
+  if (margin >= 30) return 'var(--color-amber)';
+  return 'var(--color-red)';
 }
 
 function getStatus(item) {
@@ -106,179 +106,179 @@ function getIncompleteIngredients(itemData) {
 const CSS = `
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: #0a0908; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
   #__next { height: 100%; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
   input::placeholder { color: #3a3630 !important; }
-  select option { background: #1a1915; color: #e8e2d8; }
+  select option { background: #1a1915; color: var(--text-primary); }
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: #0f0e0c; }
-  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
   input[type=range] { -webkit-appearance: none; height: 4px; border-radius: 2px; background: #1a1915; outline: none; cursor: pointer; }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #02a4ba; cursor: pointer; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
 
-  .mi-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .mi-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-  .mi-nav { background: #0f0e0c; border-bottom: 1px solid #2a2620; height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .mi-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: #e8e2d8; letter-spacing: -.3px; }
-  .mi-logo span { color: #02a4ba; }
-  .mi-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: #4a453e; border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .mi-tab.active { color: #e8e2d8; background: #1a1915; }
-  .mi-search-sm { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
+  .mi-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .mi-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
+  .mi-logo span { color: var(--accent); }
+  .mi-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .mi-tab.active { color: var(--text-primary); background: #1a1915; }
+  .mi-search-sm { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
 
-  .mi-ph { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .mi-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
-  .mi-ph-sub { font-size: clamp(9px,.65vw,11px); color: #4a453e; margin-top: 2px; }
-  .mi-search-lg { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(160px,16vw,280px); outline: none; font-family: 'Inter', sans-serif; }
-  .mi-sort { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,12px); color: #9a9086; font-family: 'Inter', sans-serif; outline: none; cursor: pointer; }
-  .mi-add-btn { display: flex; align-items: center; gap: 5px; background: #02a4ba; border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
+  .mi-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .mi-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
+  .mi-ph-sub { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); margin-top: 2px; }
+  .mi-search-lg { background: #1a1915; border: 1px solid var(--border); border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(160px,16vw,280px); outline: none; font-family: 'Inter', sans-serif; }
+  .mi-sort { background: #1a1915; border: 1px solid var(--border); border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,12px); color: #9a9086; font-family: 'Inter', sans-serif; outline: none; cursor: pointer; }
+  .mi-add-btn { display: flex; align-items: center; gap: 5px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .mi-add-btn:hover { background: #01bcd4; }
 
-  .mi-sbar { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
+  .mi-sbar { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
   .mi-sv { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
-  .mi-sl { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
+  .mi-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
   .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px); flex: 1; min-height: 0; overflow: hidden; }
 
   .mi-grid-wrap { flex: 1; overflow-y: auto; min-width: 0; }
   .mi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(155px,16vw,225px), 1fr)); gap: clamp(6px,.6vw,10px); }
 
-  .mi-card { background: #13120f; border: 1px solid #2a2620; border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; }
+  .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; }
   .mi-card:hover { border-color: #3a3630; background: #1a1915; }
-  .mi-card.selected { border-color: #02a4ba; background: rgba(2,164,186,.06); border-left-color: #02a4ba; }
+  .mi-card.selected { border-color: var(--accent); background: rgba(2,164,186,.06); border-left-color: var(--accent); }
 
   .mi-card-status { position: absolute; top: 10px; right: 10px; font-size: clamp(7px,.58vw,9px); font-weight: 600; padding: 2px 6px; border-radius: 8px; }
-  .cs-complete { background: rgba(42,138,90,.1); color: #2a8a5a; }
-  .cs-incomplete { background: rgba(192,64,64,.1); color: #c04040; }
-  .cs-partial { background: rgba(212,160,32,.1); color: #d4a020; }
+  .cs-complete { background: rgba(42,138,90,.1); color: var(--color-green); }
+  .cs-incomplete { background: rgba(192,64,64,.1); color: var(--color-red); }
+  .cs-partial { background: rgba(212,160,32,.1); color: var(--color-amber); }
 
   .mi-card-icon { width: clamp(26px,2.4vw,36px); height: clamp(26px,2.4vw,36px); border-radius: 7px; background: rgba(2,164,186,.08); border: 1px solid rgba(2,164,186,.15); display: flex; align-items: center; justify-content: center; margin-bottom: clamp(8px,.8vh,12px); }
-  .mi-card-icon svg { width: 55%; height: 55%; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mi-card-icon svg { width: 55%; height: 55%; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-  .mi-card-name { font-size: clamp(11px,.88vw,14px); font-weight: 600; color: #e8e2d8; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 40px; }
-  .mi-card-sub { font-size: clamp(8px,.62vw,10px); color: #4a453e; margin-bottom: clamp(8px,.8vh,12px); }
+  .mi-card-name { font-size: clamp(11px,.88vw,14px); font-weight: 600; color: var(--text-primary); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 40px; }
+  .mi-card-sub { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-bottom: clamp(8px,.8vh,12px); }
 
   .mi-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(4px,.4vw,6px); margin-bottom: clamp(6px,.6vh,9px); }
-  .mi-metric-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
-  .mi-metric-val { font-size: clamp(10px,.8vw,13px); font-weight: 600; color: #e8e2d8; }
+  .mi-metric-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
+  .mi-metric-val { font-size: clamp(10px,.8vw,13px); font-weight: 600; color: var(--text-primary); }
 
-  .mi-margin-bar { margin-top: clamp(6px,.6vh,9px); padding-top: clamp(6px,.6vh,9px); border-top: 1px solid #2a2620; }
+  .mi-margin-bar { margin-top: clamp(6px,.6vh,9px); padding-top: clamp(6px,.6vh,9px); border-top: 1px solid var(--border); }
   .mi-margin-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .mi-margin-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; }
+  .mi-margin-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
   .mi-margin-val { font-size: clamp(10px,.8vw,13px); font-weight: 700; }
   .mi-track { background: #1a1915; border-radius: 3px; height: clamp(3px,.28vh,5px); }
   .mi-fill { height: 100%; border-radius: 3px; transition: width .3s; }
 
-  .mi-detail { width: clamp(280px,32vw,440px); background: #13120f; border: 1px solid #2a2620; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
-  .mi-detail-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid #2a2620; flex-shrink: 0; }
+  .mi-detail { width: clamp(280px,32vw,440px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  .mi-detail-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-detail-hd-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .mi-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%; }
-  .mi-close-btn { background: none; border: 1px solid #2a2620; border-radius: 4px; padding: 2px 8px; font-size: clamp(8px,.62vw,10px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; }
-  .mi-close-btn:hover { color: #e8e2d8; border-color: #3a3630; }
+  .mi-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%; }
+  .mi-close-btn { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; }
+  .mi-close-btn:hover { color: var(--text-primary); border-color: #3a3630; }
 
   .mi-view-tabs { display: flex; background: #0f0e0c; border-radius: 5px; padding: 2px; gap: 2px; }
-  .mi-vtab { flex: 1; padding: clamp(3px,.3vh,5px); border-radius: 3px; font-size: clamp(8px,.65vw,11px); font-weight: 500; cursor: pointer; border: none; font-family: 'Inter', sans-serif; color: #4a453e; background: transparent; text-align: center; transition: all .15s; }
-  .mi-vtab.active { background: #1a1915; color: #e8e2d8; }
+  .mi-vtab { flex: 1; padding: clamp(3px,.3vh,5px); border-radius: 3px; font-size: clamp(8px,.65vw,11px); font-weight: 500; cursor: pointer; border: none; font-family: 'Inter', sans-serif; color: var(--text-muted); background: transparent; text-align: center; transition: all .15s; }
+  .mi-vtab.active { background: #1a1915; color: var(--text-primary); }
 
   .mi-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,14px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); }
 
   .mi-d-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(5px,.5vw,8px); }
   .mi-d-metric { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(8px,.8vw,12px); text-align: center; }
-  .mi-d-metric-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .mi-d-metric-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,19px); color: #e8e2d8; line-height: 1; }
+  .mi-d-metric-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .mi-d-metric-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,19px); color: var(--text-primary); line-height: 1; }
 
-  .mi-sect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,9px); display: flex; align-items: center; gap: 5px; }
-  .mi-sect-title::after { content: ''; flex: 1; height: 1px; background: #2a2620; }
+  .mi-sect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,9px); display: flex; align-items: center; gap: 5px; }
+  .mi-sect-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-  .mi-comp { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
+  .mi-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
   .mi-comp:last-child { margin-bottom: 0; }
   .mi-comp-hd { padding: clamp(6px,.6vh,10px) clamp(8px,.8vw,12px); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background .15s; }
   .mi-comp-hd:hover { background: #1a1915; }
-  .mi-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #e8e2d8; }
-  .mi-comp-sub { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 1px; }
-  .mi-comp-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #02a4ba; }
-  .mi-comp-pct { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 1px; text-align: right; }
-  .mi-comp-ings { background: #13120f; border-top: 1px solid #2a2620; padding: clamp(5px,.5vh,8px) clamp(8px,.8vw,12px); }
+  .mi-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); }
+  .mi-comp-sub { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; }
+  .mi-comp-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--accent); }
+  .mi-comp-pct { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; text-align: right; }
+  .mi-comp-ings { background: #13120f; border-top: 1px solid var(--border); padding: clamp(5px,.5vh,8px) clamp(8px,.8vw,12px); }
   .mi-comp-ing-row { display: flex; align-items: center; justify-content: space-between; padding: clamp(3px,.3vh,5px) 0; border-bottom: 1px solid #1a1915; }
   .mi-comp-ing-row:last-child { border-bottom: none; }
   .mi-comp-ing-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-right: 6px; }
-  .mi-comp-ing-name { font-size: clamp(9px,.68vw,11px); color: #e8e2d8; flex: 1; }
-  .mi-comp-ing-qty { font-size: clamp(8px,.62vw,10px); color: #4a453e; margin: 0 8px; }
+  .mi-comp-ing-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; }
+  .mi-comp-ing-qty { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin: 0 8px; }
   .mi-comp-ing-cost { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #9a9086; }
 
-  .mi-total-bar { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; }
+  .mi-total-bar { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; }
   .mi-total-lbl { font-size: clamp(9px,.68vw,12px); color: #6b6358; font-weight: 500; }
-  .mi-total-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,18px); color: #02a4ba; }
+  .mi-total-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,18px); color: var(--accent); }
 
   .mi-price-recs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: clamp(4px,.4vw,7px); }
-  .mi-price-rec { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; }
-  .mi-price-rec-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; line-height: 1.4; }
-  .mi-price-rec-val { font-family: 'Playfair Display', serif; font-size: clamp(12px,1.1vw,16px); color: #e8e2d8; }
-  .mi-price-rec-val.highlight { color: #2a8a5a; }
+  .mi-price-rec { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; }
+  .mi-price-rec-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; line-height: 1.4; }
+  .mi-price-rec-val { font-family: 'Playfair Display', serif; font-size: clamp(12px,1.1vw,16px); color: var(--text-primary); }
+  .mi-price-rec-val.highlight { color: var(--color-green); }
 
   .mi-opt-compare { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
   .mi-opt-card { border-radius: 6px; padding: clamp(8px,.8vw,12px); }
-  .mi-opt-orig { background: #0f0e0c; border: 1px solid #2a2620; }
+  .mi-opt-orig { background: #0f0e0c; border: 1px solid var(--border); }
   .mi-opt-new { background: rgba(42,138,90,.05); border: 1px solid rgba(42,138,90,.2); }
-  .mi-opt-card-title { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+  .mi-opt-card-title { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
   .mi-opt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-  .mi-opt-row:last-child { margin-bottom: 0; padding-top: 5px; border-top: 1px solid #2a2620; }
+  .mi-opt-row:last-child { margin-bottom: 0; padding-top: 5px; border-top: 1px solid var(--border); }
   .mi-opt-label { font-size: clamp(9px,.68vw,11px); color: #6b6358; }
-  .mi-opt-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #e8e2d8; }
-  .mi-opt-price-input { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: 2px 6px; font-size: clamp(9px,.68vw,11px); color: #e8e2d8; width: clamp(55px,5.5vw,80px); text-align: right; outline: none; font-family: 'Inter', sans-serif; }
-  .mi-opt-price-input:focus { border-color: #02a4ba; }
+  .mi-opt-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--text-primary); }
+  .mi-opt-price-input { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: clamp(55px,5.5vw,80px); text-align: right; outline: none; font-family: 'Inter', sans-serif; }
+  .mi-opt-price-input:focus { border-color: var(--accent); }
 
-  .mi-opt-comp { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; padding: clamp(8px,.8vw,12px); margin-bottom: 6px; }
+  .mi-opt-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(8px,.8vw,12px); margin-bottom: 6px; }
   .mi-opt-comp:last-child { margin-bottom: 0; }
   .mi-opt-comp-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .mi-opt-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #e8e2d8; }
-  .mi-opt-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #02a4ba; }
+  .mi-opt-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); }
+  .mi-opt-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--accent); }
   .mi-opt-slider-wrap { display: flex; align-items: center; gap: 7px; }
   .mi-opt-slider-lbl { font-size: clamp(8px,.6vw,10px); color: #6b6358; flex-shrink: 0; width: clamp(50px,5vw,70px); }
-  .mi-opt-pct { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #02a4ba; width: 35px; text-align: right; flex-shrink: 0; }
-  .mi-opt-reset { background: none; border: 1px solid #2a2620; border-radius: 4px; padding: 3px 8px; font-size: clamp(8px,.62vw,10px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .mi-opt-reset:hover { color: #e8e2d8; border-color: #3a3630; }
+  .mi-opt-pct { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--accent); width: 35px; text-align: right; flex-shrink: 0; }
+  .mi-opt-reset { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .mi-opt-reset:hover { color: var(--text-primary); border-color: #3a3630; }
 
   .mi-ov-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .mi-ov-w { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,13px); }
-  .mi-ov-wf { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,13px); }
-  .mi-ov-lbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
-  .mi-ov-lbl svg { width: 10px; height: 10px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .mi-ov-w { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
+  .mi-ov-wf { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
+  .mi-ov-lbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
+  .mi-ov-lbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .mi-ov-item { display: flex; align-items: center; justify-content: space-between; padding: clamp(4px,.4vh,7px) 0; border-bottom: 1px solid #1a1915; }
   .mi-ov-item:last-child { border-bottom: none; }
-  .mi-ov-name { font-size: clamp(9px,.68vw,11px); color: #e8e2d8; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mi-ov-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mi-ov-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; }
   .mi-ov-pill { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; flex-shrink: 0; margin-left: 5px; }
 
-  .mi-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed #2a2620; border-radius: 6px; }
-  .mi-back-btn { background: none; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; align-self: flex-start; transition: all .15s; }
+  .mi-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
+  .mi-back-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; align-self: flex-start; transition: all .15s; }
   .mi-back-btn:hover { border-color: #3a3630; color: #9a9086; }
 
-  .mi-edit-comp { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
-  .mi-edit-comp-hd { background: #13120f; padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #2a2620; }
-  .mi-edit-comp-name { flex: 1; background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: #e8e2d8; font-family: 'Inter', sans-serif; outline: none; }
-  .mi-edit-comp-name:focus { border-color: #02a4ba; }
+  .mi-edit-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .mi-edit-comp-hd { background: #13120f; padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); }
+  .mi-edit-comp-name { flex: 1; background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); font-family: 'Inter', sans-serif; outline: none; }
+  .mi-edit-comp-name:focus { border-color: var(--accent); }
   .mi-edit-ing-grid { display: grid; grid-template-columns: 1fr 72px 72px auto; gap: 5px; align-items: center; padding: clamp(4px,.4vh,6px) clamp(8px,.8vw,12px); border-bottom: 1px solid #1a1915; }
   .mi-edit-ing-grid:last-child { border-bottom: none; }
-  .mi-edit-input { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: 3px 6px; font-size: clamp(9px,.68vw,11px); color: #e8e2d8; width: 100%; outline: none; font-family: 'Inter', sans-serif; }
-  .mi-edit-input:focus { border-color: #02a4ba; }
-  .mi-edit-ing-cost { font-size: clamp(8px,.62vw,10px); color: #4a453e; text-align: right; }
-  .mi-edit-del { background: none; border: none; color: #4a453e; cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; transition: color .15s; }
-  .mi-edit-del:hover { color: #c04040; }
-  .mi-edit-add-ing { background: none; border: 1px dashed #2a2620; border-radius: 4px; padding: 4px 10px; font-size: clamp(8px,.62vw,10px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin: 6px 0 4px; transition: all .15s; }
-  .mi-edit-add-ing:hover { border-color: #02a4ba; color: #02a4ba; }
-  .mi-edit-add-comp { background: none; border: 1px dashed #2a2620; border-radius: 6px; padding: 8px; font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; transition: all .15s; text-align: center; }
-  .mi-edit-add-comp:hover { border-color: #02a4ba; color: #02a4ba; }
-  .mi-edit-save { background: #02a4ba; border: none; border-radius: 5px; padding: clamp(6px,.6vh,9px) clamp(12px,1.1vw,18px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; width: 100%; }
+  .mi-edit-input { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: 100%; outline: none; font-family: 'Inter', sans-serif; }
+  .mi-edit-input:focus { border-color: var(--accent); }
+  .mi-edit-ing-cost { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-align: right; }
+  .mi-edit-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; transition: color .15s; }
+  .mi-edit-del:hover { color: var(--color-red); }
+  .mi-edit-add-ing { background: none; border: 1px dashed var(--border); border-radius: 4px; padding: 4px 10px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin: 6px 0 4px; transition: all .15s; }
+  .mi-edit-add-ing:hover { border-color: var(--accent); color: var(--accent); }
+  .mi-edit-add-comp { background: none; border: 1px dashed var(--border); border-radius: 6px; padding: 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; transition: all .15s; text-align: center; }
+  .mi-edit-add-comp:hover { border-color: var(--accent); color: var(--accent); }
+  .mi-edit-save { background: var(--accent); border: none; border-radius: 5px; padding: clamp(6px,.6vh,9px) clamp(12px,1.1vw,18px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; width: 100%; }
   .mi-edit-save:hover { background: #01bcd4; }
-  .mi-edit-save:disabled { background: #2a2620; color: #4a453e; cursor: not-allowed; }
+  .mi-edit-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
   .mi-ing-search-wrap { position: relative; }
   .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: #1a1915; border: 1px solid #3a3630; border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
-  .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: #e8e2d8; cursor: pointer; border-bottom: 1px solid #2a2620; }
+  .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); cursor: pointer; border-bottom: 1px solid var(--border); }
   .mi-ing-option:last-child { border-bottom: none; }
-  .mi-ing-option:hover { background: #2a2620; }
-  .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: #4a453e; margin-top: 1px; }
+  .mi-ing-option:hover { background: var(--border); }
+  .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-top: 1px; }
 `;
 
 export default function ClientMenuItems() {
@@ -717,8 +717,8 @@ export default function ClientMenuItems() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: '#02a4ba' }}>
-              <div style={{ width: 4, height: 4, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--accent)' }}>
+              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
             <input className="mi-search-sm" placeholder="Search..." />
@@ -747,9 +747,9 @@ export default function ClientMenuItems() {
               onClick={() => setShowImportModal(true)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
-                background: 'transparent', border: '1px solid #02a4ba',
+                background: 'transparent', border: '1px solid var(--accent)',
                 borderRadius: 5, padding: 'clamp(5px,.5vh,8px) clamp(10px,.9vw,16px)',
-                fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: '#02a4ba',
+                fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: 'var(--accent)',
                 cursor: 'pointer', fontFamily: "'Inter', sans-serif",
                 whiteSpace: 'nowrap', transition: 'all .2s',
               }}
@@ -774,11 +774,11 @@ export default function ClientMenuItems() {
 
         <div className="mi-sbar">
           {[
-            { v: menuItems.length, l: 'Menu Items', c: '#02a4ba' },
-            { v: `${avgMargin.toFixed(1)}%`, l: 'Avg Margin', c: avgMargin >= 60 ? '#2a8a5a' : avgMargin >= 40 ? '#02a4ba' : '#d4a020' },
-            { v: belowTarget, l: 'Below Target', c: '#c04040' },
-            { v: incomplete, l: 'Incomplete Cost', c: '#d4a020' },
-            { v: avgPrice > 0 ? formatCurrency(avgPrice) : '--', l: 'Avg Price', c: '#e8e2d8' },
+            { v: menuItems.length, l: 'Menu Items', c: 'var(--accent)' },
+            { v: `${avgMargin.toFixed(1)}%`, l: 'Avg Margin', c: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' },
+            { v: belowTarget, l: 'Below Target', c: 'var(--color-red)' },
+            { v: incomplete, l: 'Incomplete Cost', c: 'var(--color-amber)' },
+            { v: avgPrice > 0 ? formatCurrency(avgPrice) : '--', l: 'Avg Price', c: 'var(--text-primary)' },
           ].map(({ v, l, c }) => (
             <div key={l}>
               <div className="mi-sv" style={{ color: c }}>{v}</div>
@@ -789,8 +789,8 @@ export default function ClientMenuItems() {
 
         {loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-            <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-            <div style={{ fontSize: 'clamp(10px,.8vw,13px)', color: '#4a453e' }}>Loading menu items...</div>
+            <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <div style={{ fontSize: 'clamp(10px,.8vw,13px)', color: 'var(--text-muted)' }}>Loading menu items...</div>
           </div>
         ) : (
           <div className="mi-body">
@@ -804,7 +804,7 @@ export default function ClientMenuItems() {
                     </div>
                     {!searchTerm && (
                       <button onClick={() => setShowImportModal(true)}
-                        style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: '#02a4ba', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
+                        style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
                         ↑ Import Your Menu
                       </button>
                     )}
@@ -822,7 +822,7 @@ export default function ClientMenuItems() {
                           <span style={{
                             fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600,
                             padding: '1px 5px', borderRadius: 6,
-                            background: 'rgba(212,160,32,.12)', color: '#d4a020',
+                            background: 'rgba(212,160,32,.12)', color: 'var(--color-amber)',
                             border: '1px solid rgba(212,160,32,.2)',
                           }}>est. costs</span>
                         )}
@@ -836,11 +836,11 @@ export default function ClientMenuItems() {
                       <div className="mi-card-metrics">
                         <div>
                           <div className="mi-metric-lbl">Price</div>
-                          <div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                          <div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
                         </div>
                         <div>
                           <div className="mi-metric-lbl">Cost</div>
-                          <div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: '#4a453e' }}>—</span>}</div>
+                          <div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
                         </div>
                       </div>
                       <div className="mi-margin-bar">
@@ -875,7 +875,7 @@ export default function ClientMenuItems() {
                         <button className={`mi-vtab${viewMode === 'optimize' ? ' active' : ''}`} onClick={() => guardEditNavigation(() => setViewMode('optimize'))}>Optimize</button>
                         <button className={`mi-vtab${viewMode === 'edit' ? ' active' : ''}`}
                           onClick={() => { setViewMode('edit'); initEditComponents(selectedItemData); fetchIngredientLibrary(); }}
-                          style={{ color: viewMode === 'edit' ? '#e8e2d8' : '#d4a020' }}>
+                          style={{ color: viewMode === 'edit' ? 'var(--text-primary)' : 'var(--color-amber)' }}>
                           Edit
                         </button>
                         <button className="mi-close-btn" onClick={() =>
@@ -908,7 +908,7 @@ export default function ClientMenuItems() {
                             <span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span>
                           </div>
                         );
-                      }) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data yet</div>}
+                      }) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
                     </div>
                     <div className="mi-ov-w">
                       <div className="mi-ov-lbl">
@@ -920,18 +920,18 @@ export default function ClientMenuItems() {
                         return (
                           <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
                             <span className="mi-ov-name">{i.name}</span>
-                            <span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: '#c04040' }}>{m?.toFixed(1)}%</span>
+                            <span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: 'var(--color-red)' }}>{m?.toFixed(1)}%</span>
                           </div>
                         );
                       })}
                       {noData.map(i => (
                         <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
                           <span className="mi-ov-name">{i.name}</span>
-                          <span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: '#d4a020' }}>No cost</span>
+                          <span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: 'var(--color-amber)' }}>No cost</span>
                         </div>
                       ))}
                       {lowMargin.length === 0 && noData.length === 0 && (
-                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#2a8a5a' }}>All items on target ✓</div>
+                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>
                       )}
                     </div>
                   </div>
@@ -943,10 +943,10 @@ export default function ClientMenuItems() {
                     </div>
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 'clamp(50px,7vh,80px)' }}>
                       {[
-                        { lo: 0, hi: 40, label: '<40%', c: '#c04040' },
-                        { lo: 40, hi: 60, label: '40–60%', c: '#d4a020' },
-                        { lo: 60, hi: 75, label: '60–75%', c: '#02a4ba' },
-                        { lo: 75, hi: 101, label: '>75%', c: '#2a8a5a' },
+                        { lo: 0, hi: 40, label: '<40%', c: 'var(--color-red)' },
+                        { lo: 40, hi: 60, label: '40–60%', c: 'var(--color-amber)' },
+                        { lo: 60, hi: 75, label: '60–75%', c: 'var(--accent)' },
+                        { lo: 75, hi: 101, label: '>75%', c: 'var(--color-green)' },
                       ].map(({ lo, hi, label, c }) => {
                         const count = bucket(lo, hi);
                         return (
@@ -954,7 +954,7 @@ export default function ClientMenuItems() {
                             <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
                               <div style={{ width: '100%', height: `${Math.max(5, (count / maxBucket) * 100)}%`, background: c, opacity: .7, borderRadius: '2px 2px 0 0' }} />
                             </div>
-                            <div style={{ fontSize: 'clamp(7px,.58vw,9px)', color: '#4a453e', textAlign: 'center' }}>{label}</div>
+                            <div style={{ fontSize: 'clamp(7px,.58vw,9px)', color: 'var(--text-muted)', textAlign: 'center' }}>{label}</div>
                             <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: c, fontWeight: 600 }}>{count}</div>
                           </div>
                         );
@@ -969,8 +969,8 @@ export default function ClientMenuItems() {
               {selectedItem && (
                 <div className="mi-detail-body">
                   {detailLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#4a453e', fontSize: 'clamp(10px,.75vw,12px)' }}>
-                      <div style={{ width: 16, height: 16, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 'clamp(10px,.75vw,12px)' }}>
+                      <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                       Loading details...
                     </div>
                   ) : selectedItemData && viewMode === 'details' ? (
@@ -978,7 +978,7 @@ export default function ClientMenuItems() {
                       <div className="mi-d-metrics">
                         <div className="mi-d-metric">
                           <div className="mi-d-metric-lbl">Menu Price</div>
-                          <div className="mi-d-metric-val" style={{ color: '#02a4ba' }}>{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div>
+                          <div className="mi-d-metric-val" style={{ color: 'var(--accent)' }}>{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div>
                         </div>
                         <div className="mi-d-metric">
                           <div className="mi-d-metric-lbl">Total Cost</div>
@@ -988,7 +988,7 @@ export default function ClientMenuItems() {
                         <div className="mi-d-metric-lbl">
                           Profit Margin
                           {selectedItemData && hasEstimatedCosts(selectedItemData.item) && (
-                            <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: '#d4a020' }}>~est</span>
+                            <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--color-amber)' }}>~est</span>
                           )}
                         </div>
                         <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>
@@ -1020,10 +1020,10 @@ export default function ClientMenuItems() {
                                 <div className="mi-comp-ings">
                                   {c.ingredients.map(ing => (
                                     <div key={ing.id} className="mi-comp-ing-row">
-                                      <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? '#2a8a5a' : '#c04040' }} />
+                                      <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? 'var(--color-green)' : 'var(--color-red)' }} />
                                       <div className="mi-comp-ing-name">{ing.name}</div>
                                       <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
-                                <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? '#d4a020' : '#9a9086' }}>
+                                <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? 'var(--color-amber)' : '#9a9086' }}>
                                   {formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}
                                 </div>
                                     </div>
@@ -1066,10 +1066,10 @@ export default function ClientMenuItems() {
                             const change = parseFloat(r.new_cost || 0) - parseFloat(r.old_cost || 0);
                             return (
                               <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, padding: 'clamp(5px,.5vh,8px) 0', borderBottom: '1px solid #1a1915' }}>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: '#4a453e' }}>{formatDate(r.created_at)}</div>
+                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--text-muted)' }}>{formatDate(r.created_at)}</div>
                                 <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: '#9a9086' }}>{formatCurrency(r.old_cost)}</div>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: '#e8e2d8' }}>{formatCurrency(r.new_cost)}</div>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', fontWeight: 600, color: change > 0 ? '#c04040' : '#2a8a5a' }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
+                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--text-primary)' }}>{formatCurrency(r.new_cost)}</div>
+                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', fontWeight: 600, color: change > 0 ? 'var(--color-red)' : 'var(--color-green)' }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
                               </div>
                             );
                           })}
@@ -1082,7 +1082,7 @@ export default function ClientMenuItems() {
                         if (incomplete.length === 0) return null;
                         return (
                           <div>
-                            <div className="mi-sect-title" style={{ color: '#c04040' }}>
+                            <div className="mi-sect-title" style={{ color: 'var(--color-red)' }}>
                               Why is this item Incomplete?
                             </div>
                             <div style={{
@@ -1098,12 +1098,12 @@ export default function ClientMenuItems() {
                                   padding: 'clamp(3px,.3vh,5px) 0', borderBottom: '1px solid #1a1915',
                                 }}>
                                   <div>
-                                    <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#e8e2d8' }}>{ing.name}</div>
-                                    {ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e' }}>in {ing.component}</div>}
+                                    <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)' }}>{ing.name}</div>
+                                    {ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>in {ing.component}</div>}
                                   </div>
                                   <span style={{
                                     fontSize: 'clamp(7px,.58vw,9px)', padding: '1px 6px', borderRadius: 8,
-                                    background: 'rgba(192,64,64,.1)', color: '#c04040',
+                                    background: 'rgba(192,64,64,.1)', color: 'var(--color-red)',
                                   }}>{ing.reason}</span>
                                 </div>
                               ))}
@@ -1148,13 +1148,13 @@ export default function ClientMenuItems() {
                               <div className="mi-opt-comp-hd">
                                 <div>
                                   <div className="mi-opt-comp-name">{c.name}</div>
-                                  <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e' }}>{c.ingredientCount} ingredients</div>
+                                  <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{c.ingredientCount} ingredients</div>
                                 </div>
                                 <div className="mi-opt-cost">{formatCurrency(newCost)}</div>
                               </div>
                               <div className="mi-opt-slider-wrap">
                                 <div className="mi-opt-slider-lbl">Portion Size</div>
-                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }}
+                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }}
                                   min="0" max="2" step="0.01" value={m}
                                   onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
                                 <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
@@ -1164,12 +1164,12 @@ export default function ClientMenuItems() {
                         }) : (
                           <div className="mi-opt-comp">
                             <div className="mi-opt-comp-hd">
-                              <div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e' }}>{selectedItemData.ingredients.length} ingredients</div></div>
+                              <div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{selectedItemData.ingredients.length} ingredients</div></div>
                               <div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div>
                             </div>
                             <div className="mi-opt-slider-wrap">
                               <div className="mi-opt-slider-lbl">Portion Size</div>
-                              <input type="range" style={{ flex: 1, background: `linear-gradient(to right,#02a4ba 0%,#02a4ba ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }}
+                              <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }}
                                 min="0" max="2" step="0.01" value={getMultiplier('all')}
                                 onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
                               <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
@@ -1180,7 +1180,7 @@ export default function ClientMenuItems() {
                     </>
                     ) : selectedItemData && viewMode === 'edit' ? (
                       <>
-                        <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: '#4a453e', marginBottom: 4 }}>
+                        <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', marginBottom: 4 }}>
                           Edit components and ingredients. Confirming a price clears the estimated flag.
                         </div>
 
@@ -1195,7 +1195,7 @@ export default function ClientMenuItems() {
                                   value={comp.name}
                                   onChange={e => updateEditComponentName(compIdx, e.target.value)}
                                 />
-                                <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#02a4ba', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', whiteSpace: 'nowrap' }}>
                                   {formatCurrency(compCost)}
                                 </span>
                                 <button className="mi-edit-del" onClick={() => removeEditComponent(compIdx)} title="Remove component">✕</button>
@@ -1204,7 +1204,7 @@ export default function ClientMenuItems() {
                               {/* Column headers */}
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 72px auto', gap: 5, padding: '4px clamp(8px,.8vw,12px)', borderBottom: '1px solid #1a1915' }}>
                                 {['Ingredient', 'Qty', 'Unit', ''].map(h => (
-                                  <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: '#4a453e', textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</div>
+                                  <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</div>
                                 ))}
                               </div>
 
@@ -1224,7 +1224,7 @@ export default function ClientMenuItems() {
                                       <input
                                         className="mi-edit-input"
                                         value={searchVal}
-                                        style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : '#2a2620' }}
+                                        style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : 'var(--border)' }}
                                         placeholder="Search ingredient..."
                                         onChange={e => {
                                           setIngSearch(prev => ({ ...prev, [key]: e.target.value }));
@@ -1290,7 +1290,7 @@ export default function ClientMenuItems() {
                           <div style={{
                             fontSize: 'clamp(9px,.68vw,11px)', padding: '6px 10px', borderRadius: 5, textAlign: 'center',
                             background: editSaveMsg.type === 'success' ? 'rgba(42,138,90,.1)' : 'rgba(192,64,64,.1)',
-                            color: editSaveMsg.type === 'success' ? '#2a8a5a' : '#c04040',
+                            color: editSaveMsg.type === 'success' ? 'var(--color-green)' : 'var(--color-red)',
                             border: `1px solid ${editSaveMsg.type === 'success' ? 'rgba(42,138,90,.2)' : 'rgba(192,64,64,.2)'}`,
                           }}>
                             {editSaveMsg.text}

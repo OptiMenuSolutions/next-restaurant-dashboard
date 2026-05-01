@@ -22,11 +22,11 @@ function formatHour(h) {
   if (h === 0) return '12am'; if (h === 12) return '12pm';
   return h < 12 ? `${h}am` : `${h - 12}pm`;
 }
-function getUrgencyColor(u) { return u === 'high' ? '#c04040' : u === 'medium' ? '#d4a020' : '#02a4ba'; }
+function getUrgencyColor(u) { return u === 'high' ? 'var(--color-red)' : u === 'medium' ? 'var(--color-amber)' : 'var(--accent)'; }
 function getTypeLabel(t) { return t === 'inventory' ? 'Move Stock' : t === 'margin' ? 'High Margin' : 'Trending'; }
 function getMarginColor(m) {
-  if (!m) return '#4a453e';
-  if (m >= 60) return '#2a8a5a'; if (m >= 40) return '#02a4ba'; if (m >= 25) return '#d4a020'; return '#c04040';
+  if (!m) return 'var(--text-muted)';
+  if (m >= 60) return 'var(--color-green)'; if (m >= 40) return 'var(--accent)'; if (m >= 25) return 'var(--color-amber)'; return 'var(--color-red)';
 }
 function formatDateLabel(dateStr) {
   if (!dateStr) return '';
@@ -36,7 +36,7 @@ function formatDateLabel(dateStr) {
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DATE_RANGES = ['7d','14d','30d','All'];
-const CAT_COLORS = ['#02a4ba','#d4a020','#2a8a5a','#c04040','#9b7ee8','#e85e8a','#4a9ede'];
+const CAT_COLORS = ['var(--accent)','var(--color-amber)','var(--color-green)','var(--color-red)','#9b7ee8','#e85e8a','#4a9ede'];
 const TABS = ['Dashboard','Invoices','Ingredients','Menu Items','Analytics'];
 const TAB_PATHS = { Dashboard:'/client/dashboard', Invoices:'/client/invoices', Ingredients:'/client/ingredients', 'Menu Items':'/client/menu-items', Analytics:'/client/analytics' };
 const NAV = [
@@ -61,7 +61,7 @@ const PAD = { left: 52, right: 12, top: 10, bottom: 26 };
 const FONT_SIZE = 10;
 const DOT_RADIUS = 3;
 
-function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
+function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
   const wrapRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [tip, setTip] = useState(null);
@@ -126,7 +126,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   if (!W || !H) {
     return (
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, color: '#4a453e' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 11, color: 'var(--text-muted)' }}>
           Loading chart...
         </div>
       </div>
@@ -136,7 +136,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
   if (pts.length < 2) {
     return (
       <div ref={wrapRef} style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontSize: 11, color: '#4a453e', textAlign: 'center' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
           Not enough data — upload at least 2 days of sales
         </div>
       </div>
@@ -169,7 +169,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
           );
         })}
 
-        <line x1={PAD.left} y1={yOf(0)} x2={W - PAD.right} y2={yOf(0)} stroke="#2a2620" strokeWidth={0.75} />
+        <line x1={PAD.left} y1={yOf(0)} x2={W - PAD.right} y2={yOf(0)} stroke="var(--border)" strokeWidth={0.75} />
 
         {areaPath && <path d={areaPath} fill={`url(#${gradId})`} clipPath={`url(#${clipId})`} />}
 
@@ -208,15 +208,15 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
       {tip && (
         <div style={{
           position: 'fixed', left: tip.x + 14, top: tip.y - 52,
-          background: '#1a1915', border: '1px solid #2a2620', borderRadius: 6,
-          padding: '6px 10px', fontSize: 11, color: '#e8e2d8',
+          background: '#1a1915', border: '1px solid var(--border)', borderRadius: 6,
+          padding: '6px 10px', fontSize: 11, color: 'var(--text-primary)',
           pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 999,
           boxShadow: '0 2px 8px rgba(0,0,0,.45)',
         }}>
           <div style={{ fontWeight: 600, color, marginBottom: 2 }}>
             {valueKey === 'rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}
           </div>
-          <div style={{ color: '#4a453e', fontSize: 10 }}>{formatDateLabel(tip.d.date)}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{formatDateLabel(tip.d.date)}</div>
         </div>
       )}
     </div>
@@ -226,7 +226,7 @@ function TrendLine({ data, valueKey = 'rev', color = '#02a4ba' }) {
 // ── DonutChart ───────────────────────────────────────────────────────────────
 function DonutChart({ data }) {
   const total = data.reduce((s,d) => s+d.value, 0);
-  if (!total) return <div style={{ textAlign:'center', padding:'8px 0', fontSize:11, color:'#4a453e' }}>No category data</div>;
+  if (!total) return <div style={{ textAlign:'center', padding:'8px 0', fontSize:11, color:'var(--text-muted)' }}>No category data</div>;
   const circ = 2*Math.PI*40; let off = circ*0.25;
   const slices = data.map((d,i) => { const pct=d.value/total, dash=pct*circ; const s={...d,pct,dash,off,color:CAT_COLORS[i%CAT_COLORS.length]}; off+=dash; return s; });
   return (
@@ -237,8 +237,8 @@ function DonutChart({ data }) {
           {slices.map((s,i) => <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*0.25}/>)}
         </svg>
         <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(10px,.9vw,14px)', color:'#e8e2d8', lineHeight:1 }}>{formatCurrency(total)}</div>
-          <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'#4a453e', marginTop:1 }}>total</div>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(10px,.9vw,14px)', color:'var(--text-primary)', lineHeight:1 }}>{formatCurrency(total)}</div>
+          <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)', marginTop:1 }}>total</div>
         </div>
       </div>
       <div style={{ display:'flex', flexDirection:'column', gap:'clamp(3px,.35vh,6px)', flex:1, overflow:'hidden' }}>
@@ -246,8 +246,8 @@ function DonutChart({ data }) {
           <div key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
             <div style={{ width:'clamp(6px,.5vw,8px)', height:'clamp(6px,.5vw,8px)', borderRadius:'50%', background:s.color, flexShrink:0 }}/>
             <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</div>
-            <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'#e8e2d8' }}>{formatCurrency(s.value)}</div>
-            <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'#4a453e', minWidth:30, textAlign:'right' }}>{(s.pct*100).toFixed(0)}%</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'var(--text-primary)' }}>{formatCurrency(s.value)}</div>
+            <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', minWidth:30, textAlign:'right' }}>{(s.pct*100).toFixed(0)}%</div>
           </div>
         ))}
       </div>
@@ -259,35 +259,35 @@ function DonutChart({ data }) {
 const CSS = `
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;background:#0a0908;overflow:hidden;}
+  html,body{height:100%;background:var(--bg-root);overflow:hidden;}
   #__next{height:100%;}
   @keyframes spin{to{transform:rotate(360deg);}}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
   input::placeholder,textarea::placeholder{color:#3a3630!important;}
-  ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:#0f0e0c;}::-webkit-scrollbar-thumb{background:#2a2620;border-radius:2px;}
+  ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:#0f0e0c;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 
-  .an-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+  .an-root{font-family:'Inter',sans-serif;background:var(--bg-root);color:var(--text-primary);width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
 
-  .an-nav{background:#0f0e0c;border-bottom:1px solid #2a2620;height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  .an-logo{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;letter-spacing:-.3px;}
-  .an-logo span{color:#02a4ba;}
-  .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:#4a453e;border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
-  .an-tab.active{color:#e8e2d8;background:#1a1915;}
+  .an-nav{background:#0f0e0c;border-bottom:1px solid var(--border);height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  .an-logo{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:var(--text-primary);letter-spacing:-.3px;}
+  .an-logo span{color:var(--accent);}
+  .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+  .an-tab.active{color:var(--text-primary);background:#1a1915;}
 
-  .an-ph{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
-  .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:#e8e2d8;}
-  .an-ph-sub{font-size:clamp(9px,.65vw,10px);color:#4a453e;}
+  .an-ph{background:#13120f;border-bottom:1px solid var(--border);padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
+  .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:var(--text-primary);}
+  .an-ph-sub{font-size:clamp(9px,.65vw,10px);color:var(--text-muted);}
 
-  .an-range-toggle{display:flex;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:2px;gap:2px;}
-  .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
-  .an-range-btn.active{background:#1a1915;color:#e8e2d8;}
+  .an-range-toggle{display:flex;background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;}
+  .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
+  .an-range-btn.active{background:#1a1915;color:var(--text-primary);}
 
-  .an-sbar{background:#13120f;border-bottom:1px solid #2a2620;padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
+  .an-sbar{background:#13120f;border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
   .an-sbar::-webkit-scrollbar{display:none;}
   .an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
-  .an-sl{font-size:clamp(7px,.55vw,9px);color:#4a453e;margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
-  .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:#2a8a5a;background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
-  .an-sync-dot{width:5px;height:5px;border-radius:50%;background:#2a8a5a;animation:blink 2s infinite;}
+  .an-sl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
+  .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:var(--color-green);background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
+  .an-sync-dot{width:5px;height:5px;border-radius:50%;background:var(--color-green);animation:blink 2s infinite;}
 
   .an-body{flex:1;min-height:0;padding:clamp(6px,.6vw,10px);gap:clamp(6px,.6vw,10px);display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:1fr 1fr;overflow:hidden;}
 
@@ -299,26 +299,26 @@ const CSS = `
   .an-time-col{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
   .an-wow-col{grid-column:4;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
-  .an-card{background:#13120f;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .an-card{background:#13120f;border:1px solid var(--border);border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(6px,.6vh,10px);flex-shrink:0;gap:6px;flex-wrap:wrap;}
-  .an-card-title{font-size:clamp(9px,.72vw,13px);font-weight:600;color:#e8e2d8;display:flex;align-items:center;gap:5px;}
-  .an-card-title svg{width:clamp(10px,.8vw,13px);height:clamp(10px,.8vw,13px);stroke:#02a4ba;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+  .an-card-title{font-size:clamp(9px,.72vw,13px);font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:5px;}
+  .an-card-title svg{width:clamp(10px,.8vw,13px);height:clamp(10px,.8vw,13px);stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
   .an-badge{font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;}
 
   .an-toggle{display:flex;background:#0f0e0c;border-radius:5px;padding:2px;gap:2px;}
-  .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:#4a453e;background:transparent;transition:all .15s;}
-  .an-toggle-btn.active{background:#1a1915;color:#e8e2d8;}
+  .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
+  .an-toggle-btn.active{background:#1a1915;color:var(--text-primary);}
 
   .an-dish-stack{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
-  .an-dish-card{background:#0f0e0c;border:1px solid #2a2620;border-radius:8px;padding:clamp(8px,.75vw,13px);display:flex;flex-direction:column;gap:clamp(4px,.4vh,7px);position:relative;overflow:hidden;flex:1;min-height:0;}
+  .an-dish-card{background:#0f0e0c;border:1px solid var(--border);border-radius:8px;padding:clamp(8px,.75vw,13px);display:flex;flex-direction:column;gap:clamp(4px,.4vh,7px);position:relative;overflow:hidden;flex:1;min-height:0;}
   .an-dish-top-bar{position:absolute;top:0;left:0;right:0;height:2px;border-radius:8px 8px 0 0;}
   .an-dish-badge{display:inline-flex;align-items:center;gap:4px;font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 8px;border-radius:10px;align-self:flex-start;text-transform:uppercase;letter-spacing:.5px;}
-  .an-dish-name{font-family:'Playfair Display',serif;font-size:clamp(13px,1.15vw,18px);color:#e8e2d8;line-height:1.2;}
+  .an-dish-name{font-family:'Playfair Display',serif;font-size:clamp(13px,1.15vw,18px);color:var(--text-primary);line-height:1.2;}
   .an-dish-reason{font-size:clamp(9px,.68vw,11px);color:#6b6358;line-height:1.4;flex:1;overflow:hidden;}
-  .an-dish-talking{background:#0a0908;border-left:2px solid #2a2620;border-radius:0 5px 5px 0;padding:clamp(4px,.4vw,7px) clamp(6px,.55vw,10px);font-size:clamp(8px,.62vw,10px);color:#9a9086;line-height:1.4;font-style:italic;overflow:hidden;}
-  .an-dish-talking-lbl{font-size:clamp(7px,.55vw,8px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;font-style:normal;}
-  .an-dish-meta{display:flex;gap:clamp(8px,.75vw,14px);padding-top:clamp(5px,.5vh,8px);border-top:1px solid #2a2620;align-items:flex-end;flex-wrap:wrap;flex-shrink:0;}
-  .an-dish-meta-lbl{font-size:clamp(7px,.55vw,9px);color:#4a453e;text-transform:uppercase;letter-spacing:.5px;}
+  .an-dish-talking{background:var(--bg-root);border-left:2px solid var(--border);border-radius:0 5px 5px 0;padding:clamp(4px,.4vw,7px) clamp(6px,.55vw,10px);font-size:clamp(8px,.62vw,10px);color:#9a9086;line-height:1.4;font-style:italic;overflow:hidden;}
+  .an-dish-talking-lbl{font-size:clamp(7px,.55vw,8px);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;font-style:normal;}
+  .an-dish-meta{display:flex;gap:clamp(8px,.75vw,14px);padding-top:clamp(5px,.5vh,8px);border-top:1px solid var(--border);align-items:flex-end;flex-wrap:wrap;flex-shrink:0;}
+  .an-dish-meta-lbl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;}
   .an-dish-meta-val{font-size:clamp(10px,.8vw,13px);font-weight:600;margin-top:1px;}
   .an-conf-bar{height:2px;border-radius:2px;background:#1a1915;flex:1;overflow:hidden;margin:3px 0;}
   .an-conf-fill{height:100%;border-radius:2px;}
@@ -333,70 +333,70 @@ const CSS = `
   .an-heatmap-wrap{display:flex;gap:3px;flex-wrap:wrap;flex:1;align-content:flex-start;}
   .an-heatmap-cell{border-radius:3px;display:flex;align-items:center;justify-content:center;position:relative;width:clamp(24px,2.2vw,34px);height:clamp(24px,2.2vw,34px);}
   .an-heatmap-cell:hover .an-heatmap-tip{display:block;}
-  .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid #2a2620;border-radius:4px;padding:3px 7px;font-size:clamp(8px,.6vw,10px);color:#e8e2d8;white-space:nowrap;z-index:20;pointer-events:none;}
+  .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:clamp(8px,.6vw,10px);color:var(--text-primary);white-space:nowrap;z-index:20;pointer-events:none;}
 
   .an-table{width:100%;border-collapse:collapse;}
-  .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:#4a453e;text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid #2a2620;text-align:left;white-space:nowrap;}
+  .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
   .an-th.r{text-align:right;}
   .an-td{font-size:clamp(9px,.68vw,11px);color:#9a9086;padding:clamp(5px,.5vh,8px) clamp(6px,.55vw,10px);border-bottom:1px solid #1a1915;}
-  .an-td.p{color:#e8e2d8;font-weight:500;}
-  .an-td.a{color:#02a4ba;font-weight:600;}
+  .an-td.p{color:var(--text-primary);font-weight:500;}
+  .an-td.a{color:var(--accent);font-weight:600;}
   .an-td.r{text-align:right;}
-  .an-td.w{color:#d4a020;}
-  .an-td.d{color:#c04040;}
-  .an-td.s{color:#2a8a5a;}
+  .an-td.w{color:var(--color-amber);}
+  .an-td.d{color:var(--color-red);}
+  .an-td.s{color:var(--color-green);}
   .an-tr:hover td{background:rgba(26,25,21,.5);}
-  .an-risk-h{background:rgba(192,64,64,.1);color:#c04040;border:1px solid rgba(192,64,64,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
-  .an-risk-m{background:rgba(212,160,32,.1);color:#d4a020;border:1px solid rgba(212,160,32,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
-  .an-trend-up{color:#2a8a5a;font-size:clamp(8px,.62vw,10px);font-weight:600;}
-  .an-trend-dn{color:#c04040;font-size:clamp(8px,.62vw,10px);font-weight:600;}
+  .an-risk-h{background:rgba(192,64,64,.1);color:var(--color-red);border:1px solid rgba(192,64,64,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
+  .an-risk-m{background:rgba(212,160,32,.1);color:var(--color-amber);border:1px solid rgba(212,160,32,.2);font-size:clamp(7px,.58vw,9px);padding:1px 6px;border-radius:8px;white-space:nowrap;}
+  .an-trend-up{color:var(--color-green);font-size:clamp(8px,.62vw,10px);font-weight:600;}
+  .an-trend-dn{color:var(--color-red);font-size:clamp(8px,.62vw,10px);font-weight:600;}
 
-  .an-btn-p{background:#02a4ba;border:none;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);font-weight:600;color:#0a0908;cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
+  .an-btn-p{background:var(--accent);border:none;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);font-weight:600;color:var(--bg-root);cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
   .an-btn-p:hover{background:#01bcd4;}
-  .an-btn-g{background:none;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#4a453e;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
-  .an-btn-g:hover{color:#e8e2d8;border-color:#3a3630;}
-  .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:#c04040;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
+  .an-btn-g{background:none;border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:var(--text-muted);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
+  .an-btn-g:hover{color:var(--text-primary);border-color:#3a3630;}
+  .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:var(--color-red);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-d:hover{background:rgba(192,64,64,.08);}
 
-  .an-mapper{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
-  .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:#e8e2d8;margin-bottom:4px;}
-  .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:#4a453e;margin-bottom:12px;}
+  .an-mapper{background:#13120f;border:1px solid var(--border);border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
+  .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:var(--text-primary);margin-bottom:4px;}
+  .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:var(--text-muted);margin-bottom:12px;}
   .an-mapper-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,.6vw,10px);margin-bottom:12px;}
   .an-mapper-lbl{font-size:clamp(9px,.65vw,10px);color:#6b6358;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;}
-  .an-mapper-lbl.req::after{content:' *';color:#c04040;}
-  .an-mapper-select{background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
-  .an-mapper-select:focus{border-color:#02a4ba;}
+  .an-mapper-lbl.req::after{content:' *';color:var(--color-red);}
+  .an-mapper-select{background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:var(--text-primary);outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
+  .an-mapper-select:focus{border-color:var(--accent);}
 
-  .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:#4a453e;padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
-  .an-note-input{width:100%;background:#0f0e0c;border:1px solid #2a2620;border-radius:6px;padding:6px 9px;font-size:clamp(10px,.78vw,12px);color:#e8e2d8;outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
-  .an-note-input:focus{border-color:#02a4ba;}
+  .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:var(--text-muted);padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
+  .an-note-input{width:100%;background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-size:clamp(10px,.78vw,12px);color:var(--text-primary);outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
+  .an-note-input:focus{border-color:var(--accent);}
   .an-scrollable{overflow-y:auto;flex:1;min-height:0;}
   .an-scrollable::-webkit-scrollbar{width:3px;}
 
-  .mob-root{font-family:'Inter',sans-serif;background:#0a0908;color:#e8e2d8;width:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
-  .mob-header{background:#0f0e0c;border-bottom:1px solid #2a2620;padding:10px 16px;padding-top:env(safe-area-inset-top,10px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  .mob-logo{font-family:'Playfair Display',serif;font-size:20px;color:#e8e2d8;letter-spacing:-.3px;}
-  .mob-logo span{color:#02a4ba;}
-  .mob-titlebar{background:#13120f;border-bottom:1px solid #2a2620;padding:10px 16px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+  .mob-root{font-family:'Inter',sans-serif;background:var(--bg-root);color:var(--text-primary);width:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
+  .mob-header{background:#0f0e0c;border-bottom:1px solid var(--border);padding:10px 16px;padding-top:env(safe-area-inset-top,10px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  .mob-logo{font-family:'Playfair Display',serif;font-size:20px;color:var(--text-primary);letter-spacing:-.3px;}
+  .mob-logo span{color:var(--accent);}
+  .mob-titlebar{background:#13120f;border-bottom:1px solid var(--border);padding:10px 16px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
   .mob-content{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:12px;-webkit-overflow-scrolling:touch;}
   .mob-content::-webkit-scrollbar{display:none;}
-  .mob-card{background:#13120f;border:1px solid #2a2620;border-radius:10px;padding:14px;flex-shrink:0;}
-  .mob-card-title{font-size:11px;font-weight:600;color:#e8e2d8;text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
-  .mob-stab{flex:1;padding:8px 0;font-size:10px;font-weight:500;color:#4a453e;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
-  .mob-stab.active{color:#02a4ba;border-bottom-color:#02a4ba;}
+  .mob-card{background:#13120f;border:1px solid var(--border);border-radius:10px;padding:14px;flex-shrink:0;}
+  .mob-card-title{font-size:11px;font-weight:600;color:var(--text-primary);text-transform:uppercase;letter-spacing:.7px;margin-bottom:12px;display:flex;align-items:center;gap:6px;}
+  .mob-stab{flex:1;padding:8px 0;font-size:10px;font-weight:500;color:var(--text-muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
+  .mob-stab.active{color:var(--accent);border-bottom-color:var(--accent);}
   .mob-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
   .mob-bar-row:last-child{margin-bottom:0;}
   .mob-bar-label{font-size:12px;color:#9a9086;width:110px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .mob-bar-track{flex:1;background:#1a1915;border-radius:3px;height:5px;}
   .mob-bar-fill{height:5px;border-radius:3px;}
   .mob-bar-val{font-size:12px;font-weight:600;width:56px;text-align:right;flex-shrink:0;}
-  .mob-bottom-nav{background:#0f0e0c;border-top:1px solid #2a2620;padding:8px 0;padding-bottom:max(8px,env(safe-area-inset-bottom));display:flex;flex-shrink:0;}
+  .mob-bottom-nav{background:#0f0e0c;border-top:1px solid var(--border);padding:8px 0;padding-bottom:max(8px,env(safe-area-inset-bottom));display:flex;flex-shrink:0;}
   .mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 0;-webkit-tap-highlight-color:transparent;}
-  .mob-nav-icon svg{width:18px;height:18px;stroke:#4a453e;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .mob-nav-icon.active svg{stroke:#02a4ba;}
-  .mob-nav-label{font-size:9px;color:#4a453e;}
-  .mob-nav-label.active{color:#02a4ba;}
-  .mob-nav-dot{width:4px;height:4px;border-radius:50%;background:#02a4ba;}
+  .mob-nav-icon svg{width:18px;height:18px;stroke:var(--text-muted);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
+  .mob-nav-icon.active svg{stroke:var(--accent);}
+  .mob-nav-label{font-size:9px;color:var(--text-muted);}
+  .mob-nav-label.active{color:var(--accent);}
+  .mob-nav-dot{width:4px;height:4px;border-radius:50%;background:var(--accent);}
 `;
 
 export default function AnalyticsPage() {
@@ -637,10 +637,10 @@ export default function AnalyticsPage() {
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true}/>
           </div>
           <div className="mob-titlebar">
-            <div><div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, color:'#e8e2d8' }}>Analytics</div><div style={{ fontSize:11, color:'#4a453e', marginTop:3 }}>POS Sales Intelligence</div></div>
+            <div><div style={{ fontFamily:"'Playfair Display',serif", fontSize:20, color:'var(--text-primary)' }}>Analytics</div><div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3 }}>POS Sales Intelligence</div></div>
             <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
           </div>
-          <div style={{ background:'#13120f', borderBottom:'1px solid #2a2620', display:'flex', flexShrink:0 }}>
+          <div style={{ background:'#13120f', borderBottom:'1px solid var(--border)', display:'flex', flexShrink:0 }}>
             {[{id:'recs',label:'Dish Picks'},{id:'sales',label:'Sales'},{id:'risk',label:'Risk'},{id:'upload',label:'Upload'}].map(t => (
               <button key={t.id} className={`mob-stab${mobileSection===t.id?' active':''}`} onClick={() => setMobileSection(t.id)}>{t.label}</button>
             ))}
@@ -648,8 +648,8 @@ export default function AnalyticsPage() {
           <div className="mob-content">
             {loading ? (
               <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
-                <div style={{ width:22, height:22, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
-                <div style={{ fontSize:12, color:'#4a453e' }}>Loading...</div>
+                <div style={{ width:22, height:22, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                <div style={{ fontSize:12, color:'var(--text-muted)' }}>Loading...</div>
               </div>
             ) : (
               <>
@@ -657,37 +657,37 @@ export default function AnalyticsPage() {
                   <div className="mob-card">
                     <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
                       <div className="mob-card-title" style={{ marginBottom:0 }}>Today's Dish Picks</div>
-                      {dishRecs.length>0 && <button style={{ fontSize:11, color:'#02a4ba', background:'none', border:'1px solid #2a2620', borderRadius:5, padding:'4px 8px', cursor:'pointer', fontFamily:"'Inter',sans-serif" }} onClick={handleShare}>⎘ Copy</button>}
+                      {dishRecs.length>0 && <button style={{ fontSize:11, color:'var(--accent)', background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'4px 8px', cursor:'pointer', fontFamily:"'Inter',sans-serif" }} onClick={handleShare}>⎘ Copy</button>}
                     </div>
                     {dishLoading ? (
-                      <div style={{ display:'flex', alignItems:'center', gap:8, color:'#4a453e', fontSize:12 }}><div style={{ width:16, height:16, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>Analyzing...</div>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--text-muted)', fontSize:12 }}><div style={{ width:16, height:16, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>Analyzing...</div>
                     ) : !hasSalesData ? (
-                      <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>Upload POS data to get dish picks</div>
+                      <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>Upload POS data to get dish picks</div>
                     ) : dishRecs.length>0 ? dishRecs.map((rec,i) => {
                       const color = getUrgencyColor(rec.urgency);
                       return (
                         <div key={i} style={{ background:'#0f0e0c', borderRadius:8, borderLeft:`3px solid ${color}`, padding:12, marginBottom:10 }}>
-                          <div style={{ fontSize:10, fontWeight:600, color:'#4a453e', marginBottom:4, textTransform:'uppercase', letterSpacing:'.5px' }}>#{i+1} Push Today · {getTypeLabel(rec.type)}</div>
-                          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:'#e8e2d8', marginBottom:5 }}>{rec.dish}</div>
+                          <div style={{ fontSize:10, fontWeight:600, color:'var(--text-muted)', marginBottom:4, textTransform:'uppercase', letterSpacing:'.5px' }}>#{i+1} Push Today · {getTypeLabel(rec.type)}</div>
+                          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:'var(--text-primary)', marginBottom:5 }}>{rec.dish}</div>
                           <div style={{ fontSize:12, color:'#6b6358', lineHeight:1.45, marginBottom:8 }}>{rec.reason}</div>
-                          {rec.talking_point && <div style={{ fontSize:11, color:'#4a453e', fontStyle:'italic', borderTop:'1px solid #1a1915', paddingTop:8, marginBottom:8, lineHeight:1.4 }}>"{rec.talking_point}"</div>}
+                          {rec.talking_point && <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic', borderTop:'1px solid #1a1915', paddingTop:8, marginBottom:8, lineHeight:1.4 }}>"{rec.talking_point}"</div>}
                           <div style={{ display:'flex', gap:12 }}>
-                            {rec.margin && <div><div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px' }}>Margin</div><div style={{ fontSize:13, fontWeight:600, color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
-                            {rec.confidence && <div><div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px' }}>Confidence</div><div style={{ fontSize:13, fontWeight:600, color }}>{rec.confidence}%</div></div>}
+                            {rec.margin && <div><div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px' }}>Margin</div><div style={{ fontSize:13, fontWeight:600, color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
+                            {rec.confidence && <div><div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px' }}>Confidence</div><div style={{ fontSize:13, fontWeight:600, color }}>{rec.confidence}%</div></div>}
                           </div>
                         </div>
                       );
-                    }) : <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>No recommendations yet</div>}
+                    }) : <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>No recommendations yet</div>}
                   </div>
                 )}
                 {mobileSection==='sales' && (
                   <>
-                    {!hasSalesData ? <div style={{ fontSize:13, color:'#4a453e', textAlign:'center', padding:32 }}>Upload POS data to see analytics</div> : (
+                    {!hasSalesData ? <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:32 }}>Upload POS data to see analytics</div> : (
                       <>
                         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                          {[{l:'Days',v:stats.totalDays,c:'#02a4ba'},{l:'Revenue',v:formatCurrency(stats.totalRevenue),c:'#2a8a5a'},{l:'Avg/Day',v:formatCurrency(stats.avgDailyRevenue),c:'#d4a020'},{l:'Top Seller',v:topSellers[0]?.name?.split(' ').slice(0,2).join(' ')||'—',c:'#e8e2d8'}].map(({l,v,c}) => (
-                            <div key={l} style={{ background:'#13120f', border:'1px solid #2a2620', borderRadius:8, padding:12 }}>
-                              <div style={{ fontSize:9, color:'#4a453e', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:4 }}>{l}</div>
+                          {[{l:'Days',v:stats.totalDays,c:'var(--accent)'},{l:'Revenue',v:formatCurrency(stats.totalRevenue),c:'var(--color-green)'},{l:'Avg/Day',v:formatCurrency(stats.avgDailyRevenue),c:'var(--color-amber)'},{l:'Top Seller',v:topSellers[0]?.name?.split(' ').slice(0,2).join(' ')||'—',c:'var(--text-primary)'}].map(({l,v,c}) => (
+                            <div key={l} style={{ background:'#13120f', border:'1px solid var(--border)', borderRadius:8, padding:12 }}>
+                              <div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:4 }}>{l}</div>
                               <div style={{ fontFamily:"'Playfair Display',serif", fontSize:18, color:c, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v}</div>
                             </div>
                           ))}
@@ -700,8 +700,8 @@ export default function AnalyticsPage() {
                           {topSellers.slice(0,8).map(item => (
                             <div key={item.name} className="mob-bar-row">
                               <div className="mob-bar-label">{item.name}</div>
-                              <div className="mob-bar-track"><div className="mob-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'#02a4ba' }}/></div>
-                              <div className="mob-bar-val" style={{ color:'#02a4ba' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
+                              <div className="mob-bar-track"><div className="mob-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'var(--accent)' }}/></div>
+                              <div className="mob-bar-val" style={{ color:'var(--accent)' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
                             </div>
                           ))}
                         </div>
@@ -712,11 +712,11 @@ export default function AnalyticsPage() {
                 {mobileSection==='risk' && (
                   <div className="mob-card">
                     <div className="mob-card-title">Inventory Risk</div>
-                    {!hasSalesData ? <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>Upload POS data first</div>
-                    : inventoryRisk.length===0 ? <div style={{ fontSize:12, color:'#4a453e', textAlign:'center', padding:'16px 0' }}>No at-risk ingredients identified</div>
+                    {!hasSalesData ? <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>Upload POS data first</div>
+                    : inventoryRisk.length===0 ? <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>No at-risk ingredients identified</div>
                     : inventoryRisk.map((r,i) => (
                       <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:'1px solid #1a1915' }}>
-                        <div><div style={{ fontSize:13, fontWeight:500, color:'#e8e2d8' }}>{r.ingredient}</div>{r.linkedDish&&<div style={{ fontSize:10, color:'#4a453e', marginTop:2 }}>Used in: {r.linkedDish}</div>}</div>
+                        <div><div style={{ fontSize:13, fontWeight:500, color:'var(--text-primary)' }}>{r.ingredient}</div>{r.linkedDish&&<div style={{ fontSize:10, color:'var(--text-muted)', marginTop:2 }}>Used in: {r.linkedDish}</div>}</div>
                         <span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'} Risk</span>
                       </div>
                     ))}
@@ -725,11 +725,11 @@ export default function AnalyticsPage() {
                 {mobileSection==='upload' && (
                   <div className="mob-card">
                     <div className="mob-card-title">Upload POS Data</div>
-                    <div style={{ border:'2px dashed #2a2620', borderRadius:10, padding:'28px 16px', textAlign:'center', marginBottom:12 }} onClick={() => fileInputRef.current?.click()}>
+                    <div style={{ border:'2px dashed var(--border)', borderRadius:10, padding:'28px 16px', textAlign:'center', marginBottom:12 }} onClick={() => fileInputRef.current?.click()}>
                       <input ref={fileInputRef} type="file" accept=".csv" style={{ display:'none' }} onChange={e => handleFileSelect(e.target.files)}/>
-                      <div style={{ fontSize:14, fontWeight:600, color:'#e8e2d8', marginBottom:6 }}>Upload Sales CSV</div>
-                      <div style={{ fontSize:12, color:'#4a453e', marginBottom:14 }}>Export from your POS and upload here</div>
-                      <button style={{ background:'#02a4ba', border:'none', borderRadius:7, padding:'10px 20px', fontSize:13, fontWeight:600, color:'#0a0908', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Choose File</button>
+                      <div style={{ fontSize:14, fontWeight:600, color:'var(--text-primary)', marginBottom:6 }}>Upload Sales CSV</div>
+                      <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:14 }}>Export from your POS and upload here</div>
+                      <button style={{ background:'var(--accent)', border:'none', borderRadius:7, padding:'10px 20px', fontSize:13, fontWeight:600, color:'var(--bg-root)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Choose File</button>
                     </div>
                     {hasSalesData && <button className="an-btn-d" style={{ width:'100%' }} onClick={handleClearData}>Clear All Sales Data</button>}
                   </div>
@@ -765,7 +765,7 @@ export default function AnalyticsPage() {
             <div style={{ display:'flex', gap:2 }}>{TABS.map(t => <button key={t} className={`an-tab${t==='Analytics'?' active':''}`} onClick={() => router.push(TAB_PATHS[t])}>{t}</button>)}</div>
           </div>
           <div style={{ display:'flex', alignItems:'center', gap:'clamp(6px,.7vw,12px)' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:'clamp(9px,.65vw,12px)', color:'#02a4ba' }}><div style={{ width:'clamp(4px,.35vw,6px)', height:'clamp(4px,.35vw,6px)', background:'#02a4ba', borderRadius:'50%', animation:'blink 2s infinite' }}/>Active</div>
+            <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:'clamp(9px,.65vw,12px)', color:'var(--accent)' }}><div style={{ width:'clamp(4px,.35vw,6px)', height:'clamp(4px,.35vw,6px)', background:'var(--accent)', borderRadius:'50%', animation:'blink 2s infinite' }}/>Active</div>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false}/>
           </div>
         </div>
@@ -773,7 +773,7 @@ export default function AnalyticsPage() {
         <div className="an-ph">
           <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-            {uploadStep==='done' && <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'#2a8a5a', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>✓ {uploadMsg}<button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>×</button></div>}
+            {uploadStep==='done' && <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>✓ {uploadMsg}<button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>×</button></div>}
             <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
             {hasSalesData && <button className="an-btn-d" style={{ padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)', fontSize:'clamp(9px,.68vw,11px)' }} onClick={handleClearData}>✕ Clear Data</button>}
             <button className="an-btn-p" onClick={() => fileInputRef.current?.click()}>
@@ -785,12 +785,12 @@ export default function AnalyticsPage() {
 
         <div className="an-sbar">
           {[
-            { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: '#02a4ba' },
-            { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: '#e8e2d8' },
-            { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: '#2a8a5a' },
-            { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: '#d4a020' },
-            { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: '#e8e2d8' },
-            { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: '#c04040' },
+            { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: 'var(--accent)' },
+            { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: 'var(--text-primary)' },
+            { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: 'var(--color-green)' },
+            { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: 'var(--color-amber)' },
+            { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: 'var(--text-primary)' },
+            { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: 'var(--color-red)' },
           ].map(({ v, l, c }) => (
             <div key={l} style={{ flexShrink:0 }}>
               <div className="an-sv" style={{ color:c }}>{v}</div>
@@ -804,8 +804,8 @@ export default function AnalyticsPage() {
 
         {loading ? (
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
-            <div style={{ width:24, height:24, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
-            <div style={{ fontSize:'clamp(11px,.85vw,14px)', color:'#4a453e' }}>Loading analytics...</div>
+            <div style={{ width:24, height:24, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+            <div style={{ fontSize:'clamp(11px,.85vw,14px)', color:'var(--text-muted)' }}>Loading analytics...</div>
           </div>
         ) : (
           <div style={{ flex:1, minHeight:0, position:'relative', display:'flex', flexDirection:'column' }}>
@@ -826,7 +826,7 @@ export default function AnalyticsPage() {
                       </div>
                     ))}
                   </div>
-                  {uploadMsg && <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'#c04040', marginBottom:10 }}>{uploadMsg}</div>}
+                  {uploadMsg && <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'var(--color-red)', marginBottom:10 }}>{uploadMsg}</div>}
                   <div style={{ display:'flex', gap:10 }}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>Cancel</button></div>
                 </div>
               </div>
@@ -834,10 +834,10 @@ export default function AnalyticsPage() {
 
             {uploadStep === 'uploading' && (
               <div style={{ position:'absolute', inset:0, zIndex:10, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}>
-                <div style={{ width:28, height:28, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
-                <div style={{ fontSize:'clamp(12px,.95vw,16px)', color:'#e8e2d8', fontWeight:600 }}>Importing sales data...</div>
-                <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'#4a453e' }}>{uploadProgress}%</div>
-                <div style={{ width:280, background:'#1a1915', borderRadius:4, height:4 }}><div style={{ height:4, borderRadius:4, background:'#02a4ba', width:`${uploadProgress}%`, transition:'width .3s' }}/></div>
+                <div style={{ width:28, height:28, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                <div style={{ fontSize:'clamp(12px,.95vw,16px)', color:'var(--text-primary)', fontWeight:600 }}>Importing sales data...</div>
+                <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'var(--text-muted)' }}>{uploadProgress}%</div>
+                <div style={{ width:280, background:'#1a1915', borderRadius:4, height:4 }}><div style={{ height:4, borderRadius:4, background:'var(--accent)', width:`${uploadProgress}%`, transition:'width .3s' }}/></div>
               </div>
             )}
 
@@ -845,7 +845,7 @@ export default function AnalyticsPage() {
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={e => { e.preventDefault(); setDragOver(false); handleFileSelect(e.dataTransfer.files); }}
-              style={dragOver ? { outline:'2px dashed #02a4ba', outlineOffset:'-4px', borderRadius:8 } : undefined}
+              style={dragOver ? { outline:'2px dashed var(--accent)', outlineOffset:'-4px', borderRadius:8 } : undefined}
             >
 
               {/* Row 1, Cols 1-3: Daily Revenue */}
@@ -854,7 +854,7 @@ export default function AnalyticsPage() {
                   <div className="an-card-hd">
                     <div className="an-card-title">
                       <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                      Daily Revenue <span style={{ fontSize:'clamp(8px,.6vw,10px)', color:'#4a453e', fontWeight:400, marginLeft:4 }}>last 30 days</span>
+                      Daily Revenue <span style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', fontWeight:400, marginLeft:4 }}>last 30 days</span>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       {trendData.length>1 && (()=>{ const first=trendData[0]?.rev||0, last=trendData[trendData.length-1]?.rev||0, pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
@@ -864,7 +864,7 @@ export default function AnalyticsPage() {
                       </div>
                     </div>
                   </div>
-                  {hasSalesData ? <TrendLine data={trendData} color="#02a4ba" valueKey={trendView}/> : <div className="an-empty">Upload POS data to see revenue trends</div>}
+                  {hasSalesData ? <TrendLine data={trendData} color="var(--accent)" valueKey={trendView}/> : <div className="an-empty">Upload POS data to see revenue trends</div>}
                 </div>
               </div>
 
@@ -885,8 +885,8 @@ export default function AnalyticsPage() {
                     {hasSalesData && topSellers.length > 0 ? topSellers.map(item => (
                       <div key={item.name} className="an-bar-row">
                         <div className="an-bar-label">{item.name}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'#02a4ba' }}/></div>
-                        <div className="an-bar-val" style={{ color:'#02a4ba' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
+                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(item.qty/maxTopQty)*100:(item.rev/maxTopRev)*100}%`, background:'var(--accent)' }}/></div>
+                        <div className="an-bar-val" style={{ color:'var(--accent)' }}>{dayView==='qty'?Math.round(item.qty):formatCurrency(item.rev)}</div>
                       </div>
                     )) : <div className="an-empty">No data yet</div>}
                   </div>
@@ -897,7 +897,7 @@ export default function AnalyticsPage() {
                       <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
                       Slow Movers
                     </div>
-                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'#c04040' }}>&lt;3 this week</div>
+                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'var(--color-red)' }}>&lt;3 this week</div>
                   </div>
                   {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0 ? <div className="an-empty">All items selling well</div> : (
                     <div className="an-scrollable">
@@ -918,7 +918,7 @@ export default function AnalyticsPage() {
                       Today's Dish Picks
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      {dishLoading && <div style={{ width:10, height:10, border:'1.5px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>}
+                      {dishLoading && <div style={{ width:10, height:10, border:'1.5px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>}
                       {dishRecs.length>0 && <>
                         <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handleShare}>⎘ Copy</button>
                         <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handlePrint}>⎙ Print</button>
@@ -928,12 +928,12 @@ export default function AnalyticsPage() {
                   </div>
                   {!hasSalesData ? (
                     <div className="an-empty" style={{ flexDirection:'column', gap:6 }}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2a2620" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--border)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
                       <div>Upload POS data to generate dish picks</div>
                     </div>
                   ) : dishLoading ? (
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flex:1, color:'#4a453e', fontSize:'clamp(10px,.78vw,12px)' }}>
-                      <div style={{ width:14, height:14, border:'2px solid #2a2620', borderTopColor:'#02a4ba', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flex:1, color:'var(--text-muted)', fontSize:'clamp(10px,.78vw,12px)' }}>
+                      <div style={{ width:14, height:14, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
                       Analyzing...
                     </div>
                   ) : !dishRecs.length ? (
@@ -1000,8 +1000,8 @@ export default function AnalyticsPage() {
                     {hasSalesData && dayOfWeekData.some(d => d.qty>0) ? dayOfWeekData.map(d => (
                       <div key={d.day} className="an-bar-row">
                         <div className="an-bar-label">{d.day.slice(0,3)}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`, background:'#d4a020' }}/></div>
-                        <div className="an-bar-val" style={{ color:'#d4a020' }}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
+                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`, background:'var(--color-amber)' }}/></div>
+                        <div className="an-bar-val" style={{ color:'var(--color-amber)' }}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
                       </div>
                     )) : <div className="an-empty">No data yet</div>}
                   </div>
@@ -1015,16 +1015,16 @@ export default function AnalyticsPage() {
                   </div>
                   {hasSalesData && hourlyData.length > 0 ? <>
                     <div className="an-heatmap-wrap">
-                      {hourlyData.map(h => { const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'#c04040':intensity>0.4?'#d4a020':intensity>0.1?'#02a4ba':'#1a1915'; return (
+                      {hourlyData.map(h => { const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'var(--color-red)':intensity>0.4?'var(--color-amber)':intensity>0.1?'var(--accent)':'#1a1915'; return (
                         <div key={h.hour} className="an-heatmap-cell" style={{ background:bg, opacity:intensity>0?0.3+intensity*0.7:0.25 }}>
-                          <span style={{ fontSize:'clamp(7px,.55vw,9px)', color:intensity>0.5?'#0a0908':'#4a453e' }}>{formatHour(h.hour)}</span>
+                          <span style={{ fontSize:'clamp(7px,.55vw,9px)', color:intensity>0.5?'var(--bg-root)':'var(--text-muted)' }}>{formatHour(h.hour)}</span>
                           <div className="an-heatmap-tip">{formatHour(h.hour)} — {Math.round(h.qty)} items</div>
                         </div>
                       );})}
                     </div>
                     <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap', flexShrink:0 }}>
-                      {[{c:'#c04040',l:'Peak'},{c:'#d4a020',l:'Busy'},{c:'#02a4ba',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
-                        <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'#4a453e' }}><div style={{ width:7, height:7, borderRadius:2, background:c }}/>{l}</div>
+                      {[{c:'var(--color-red)',l:'Peak'},{c:'var(--color-amber)',l:'Busy'},{c:'var(--accent)',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
+                        <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)' }}><div style={{ width:7, height:7, borderRadius:2, background:c }}/>{l}</div>
                       ))}
                     </div>
                   </> : <div className="an-empty">No data yet</div>}
@@ -1045,14 +1045,14 @@ export default function AnalyticsPage() {
                       {weekOverWeek.improvers.slice(0,3).map(item => (
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,item.change)}%`, background:'#2a8a5a' }}/></div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,item.change)}%`, background:'var(--color-green)' }}/></div>
                           <div className="an-bar-val an-trend-up">+{item.change.toFixed(0)}%</div>
                         </div>
                       ))}
                       {weekOverWeek.decliners.slice(0,3).map(item => (
                         <div key={item.name} className="an-bar-row">
                           <div className="an-bar-label">{item.name}</div>
-                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,Math.abs(item.change))}%`, background:'#c04040' }}/></div>
+                          <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${Math.min(100,Math.abs(item.change))}%`, background:'var(--color-red)' }}/></div>
                           <div className="an-bar-val an-trend-dn">{item.change.toFixed(0)}%</div>
                         </div>
                       ))}
@@ -1066,12 +1066,12 @@ export default function AnalyticsPage() {
                       <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
                       Inv. Risk
                     </div>
-                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'#c04040' }}>slow + recent</div>
+                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'var(--color-red)' }}>slow + recent</div>
                   </div>
                   {!hasSalesData ? <div className="an-empty">No data yet</div> : inventoryRisk.length===0 ? <div className="an-empty">No at-risk items</div> : (
                     <div className="an-scrollable">
                       <table className="an-table"><thead><tr><th className="an-th">Ingredient</th><th className="an-th r">Risk</th></tr></thead>
-                      <tbody>{inventoryRisk.map((r,i) => <tr key={i} className="an-tr"><td className="an-td p" style={{ fontSize:'clamp(8px,.62vw,10px)' }}>{r.ingredient}<div style={{ fontSize:'clamp(7px,.55vw,8px)', color:'#4a453e' }}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
+                      <tbody>{inventoryRisk.map((r,i) => <tr key={i} className="an-tr"><td className="an-td p" style={{ fontSize:'clamp(8px,.62vw,10px)' }}>{r.ingredient}<div style={{ fontSize:'clamp(7px,.55vw,8px)', color:'var(--text-muted)' }}>{r.linkedDish}</div></td><td className="an-td r"><span className={r.riskLevel==='high'?'an-risk-h':'an-risk-m'}>{r.riskLevel==='high'?'High':'Med'}</span></td></tr>)}</tbody>
                       </table>
                     </div>
                   )}

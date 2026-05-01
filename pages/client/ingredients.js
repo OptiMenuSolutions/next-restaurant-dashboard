@@ -43,72 +43,72 @@ function isRecent(dateStr) {
 const CSS = `
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; background: #0a0908; overflow: hidden; }
+  html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
   #__next { height: 100%; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
   input::placeholder { color: #3a3630 !important; }
   ::-webkit-scrollbar { width: 3px; }
   ::-webkit-scrollbar-track { background: #0f0e0c; }
-  ::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-  .ing-root { font-family: 'Inter', sans-serif; background: #0a0908; color: #e8e2d8; width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .ing-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-  .ing-nav { background: #0f0e0c; border-bottom: 1px solid #2a2620; height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .ing-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: #e8e2d8; letter-spacing: -.3px; }
-  .ing-logo span { color: #02a4ba; }
-  .ing-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: #4a453e; border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .ing-tab.active { color: #e8e2d8; background: #1a1915; }
-  .ing-search-sm { background: #1a1915; border: 1px solid #2a2620; border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
+  .ing-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .ing-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
+  .ing-logo span { color: var(--accent); }
+  .ing-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .ing-tab.active { color: var(--text-primary); background: #1a1915; }
+  .ing-search-sm { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
 
-  .ing-ph { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .ing-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: #e8e2d8; }
-  .ing-ph-sub { font-size: clamp(9px,.65vw,11px); color: #4a453e; margin-top: 2px; }
-  .ing-search-lg { background: #1a1915; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: #e8e2d8; width: clamp(160px,16vw,300px); outline: none; font-family: 'Inter', sans-serif; }
-  .ing-add-btn { display: flex; align-items: center; gap: 6px; background: #02a4ba; border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: #0a0908; cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
+  .ing-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .ing-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
+  .ing-ph-sub { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); margin-top: 2px; }
+  .ing-search-lg { background: #1a1915; border: 1px solid var(--border); border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(160px,16vw,300px); outline: none; font-family: 'Inter', sans-serif; }
+  .ing-add-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .ing-add-btn:hover { background: #01bcd4; }
 
-  .ing-sbar { background: #13120f; border-bottom: 1px solid #2a2620; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
+  .ing-sbar { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
   .ing-sv { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
-  .ing-sl { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
+  .ing-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
   .ing-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px); flex: 1; min-height: 0; overflow: hidden; }
 
-  .ing-list { width: 55%; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .ing-list-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid #2a2620; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-  .ing-list-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; }
-  .ing-list-count { font-size: clamp(9px,.65vw,11px); color: #4a453e; background: #0f0e0c; border: 1px solid #2a2620; border-radius: 10px; padding: 1px 8px; }
+  .ing-list { width: 55%; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .ing-list-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+  .ing-list-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
+  .ing-list-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); background: #0f0e0c; border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
 
-  .ing-tbl-head { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: #0f0e0c; border-bottom: 1px solid #2a2620; flex-shrink: 0; }
-  .ing-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; cursor: pointer; display: flex; align-items: center; gap: 3px; user-select: none; }
+  .ing-tbl-head { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: #0f0e0c; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .ing-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; cursor: pointer; display: flex; align-items: center; gap: 3px; user-select: none; }
   .ing-th:hover { color: #9a9086; }
-  .ing-th.active { color: #02a4ba; }
+  .ing-th.active { color: var(--accent); }
 
   .ing-tbl-body { flex: 1; overflow-y: auto; }
   .ing-row { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(7px,.7vh,12px) clamp(10px,1vw,18px); border-bottom: 1px solid #1a1915; cursor: pointer; transition: background .15s; align-items: center; border-left: 2px solid transparent; }
   .ing-row:hover { background: #1a1915; }
-  .ing-row.selected { background: rgba(2,164,186,.08); border-left-color: #02a4ba; }
+  .ing-row.selected { background: rgba(2,164,186,.08); border-left-color: var(--accent); }
   .ing-td { font-size: clamp(10px,.75vw,12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ing-td.name { color: #e8e2d8; font-weight: 500; display: flex; align-items: center; gap: 5px; }
-  .ing-td.price { color: #02a4ba; font-weight: 600; }
-  .ing-td.no-price { color: #4a453e; font-style: italic; }
-  .ing-recent { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 6px; background: rgba(42,138,90,.1); color: #2a8a5a; flex-shrink: 0; }
+  .ing-td.name { color: var(--text-primary); font-weight: 500; display: flex; align-items: center; gap: 5px; }
+  .ing-td.price { color: var(--accent); font-weight: 600; }
+  .ing-td.no-price { color: var(--text-muted); font-style: italic; }
+  .ing-recent { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 6px; background: rgba(42,138,90,.1); color: var(--color-green); flex-shrink: 0; }
 
-  .ing-detail { flex: 1; background: #13120f; border: 1px solid #2a2620; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
-  .ing-detail-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid #2a2620; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
-  .ing-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: #e8e2d8; }
+  .ing-detail { flex: 1; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .ing-detail-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
+  .ing-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
   .ing-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,16px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); }
 
   .ing-w-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .ing-w { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,14px); }
-  .ing-wf { background: #0f0e0c; border: 1px solid #2a2620; border-radius: 7px; padding: clamp(8px,.8vw,14px); }
-  .ing-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
-  .ing-wlbl svg { width: 10px; height: 10px; stroke: #02a4ba; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .ing-w { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
+  .ing-wf { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
+  .ing-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
+  .ing-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
   .ing-trend-pills { display: flex; gap: clamp(5px,.5vw,8px); }
-  .ing-tpill { flex: 1; background: #0a0908; border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; border: 1px solid #1a1915; }
+  .ing-tpill { flex: 1; background: var(--bg-root); border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; border: 1px solid #1a1915; }
   .ing-tpill-n { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.3vw,20px); line-height: 1; }
-  .ing-tpill-l { font-size: clamp(8px,.6vw,10px); color: #4a453e; margin-top: 3px; }
+  .ing-tpill-l { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 3px; }
 
   .ing-prog-row { display: flex; align-items: center; gap: 7px; margin-bottom: clamp(4px,.4vh,7px); }
   .ing-prog-row:last-child { margin-bottom: 0; }
@@ -119,33 +119,33 @@ const CSS = `
 
   .ing-freq-item { display: flex; align-items: center; gap: clamp(5px,.5vw,8px); padding: clamp(4px,.45vh,7px) 0; border-bottom: 1px solid #1a1915; }
   .ing-freq-item:last-child { border-bottom: none; }
-  .ing-freq-rank { font-family: 'Playfair Display', serif; font-size: clamp(11px,1vw,15px); color: #4a453e; width: 16px; flex-shrink: 0; }
-  .ing-freq-name { font-size: clamp(9px,.68vw,12px); color: #e8e2d8; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ing-freq-count { font-size: clamp(9px,.65vw,11px); color: #4a453e; flex-shrink: 0; }
-  .ing-freq-price { font-size: clamp(9px,.65vw,11px); color: #02a4ba; font-weight: 600; flex-shrink: 0; margin-left: 6px; }
+  .ing-freq-rank { font-family: 'Playfair Display', serif; font-size: clamp(11px,1vw,15px); color: var(--text-muted); width: 16px; flex-shrink: 0; }
+  .ing-freq-name { font-size: clamp(9px,.68vw,12px); color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ing-freq-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); flex-shrink: 0; }
+  .ing-freq-price { font-size: clamp(9px,.65vw,11px); color: var(--accent); font-weight: 600; flex-shrink: 0; margin-left: 6px; }
 
   .ing-rise-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(4px,.4vh,6px) 0; border-bottom: 1px solid #1a1915; margin-bottom: 4px; }
-  .ing-rise-th { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .6px; }
+  .ing-rise-th { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
   .ing-rise-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid #1a1915; align-items: center; }
   .ing-rise-row:last-child { border-bottom: none; }
-  .ing-rise-name { font-size: clamp(10px,.75vw,12px); color: #e8e2d8; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ing-rise-name { font-size: clamp(10px,.75vw,12px); color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ing-rise-prev { font-size: clamp(10px,.75vw,12px); color: #6b6358; }
-  .ing-rise-curr { font-size: clamp(10px,.75vw,12px); color: #02a4ba; font-weight: 600; }
-  .ing-rise-chg { font-size: clamp(10px,.75vw,12px); color: #c04040; font-weight: 600; }
-  .ing-rise-chg.down { color: #2a8a5a; }
+  .ing-rise-curr { font-size: clamp(10px,.75vw,12px); color: var(--accent); font-weight: 600; }
+  .ing-rise-chg { font-size: clamp(10px,.75vw,12px); color: var(--color-red); font-weight: 600; }
+  .ing-rise-chg.down { color: var(--color-green); }
 
-  .ing-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed #2a2620; border-radius: 6px; }
+  .ing-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
 
   .ing-dsect { margin-bottom: clamp(8px,.8vh,14px); }
-  .ing-dsect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: #4a453e; text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
-  .ing-dsect-title::after { content: ''; flex: 1; height: 1px; background: #2a2620; }
+  .ing-dsect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
+  .ing-dsect-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
   .ing-dgrid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(5px,.5vw,8px); }
   .ing-dfield { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
-  .ing-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: #4a453e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
-  .ing-dfield-val { font-size: clamp(10px,.75vw,13px); color: #e8e2d8; font-weight: 500; }
-  .ing-dfield-val.accent { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: #02a4ba; }
-  .ing-dfield-val.up { color: #c04040; }
-  .ing-dfield-val.down { color: #2a8a5a; }
+  .ing-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+  .ing-dfield-val { font-size: clamp(10px,.75vw,13px); color: var(--text-primary); font-weight: 500; }
+  .ing-dfield-val.accent { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: var(--accent); }
+  .ing-dfield-val.up { color: var(--color-red); }
+  .ing-dfield-val.down { color: var(--color-green); }
 
   .ing-spark { display: flex; align-items: flex-end; gap: clamp(3px,.28vw,5px); height: clamp(55px,7.5vh,90px); }
   .ing-sp-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
@@ -157,15 +157,15 @@ const CSS = `
   .ing-ph-item:last-child { border-bottom: none; }
   .ing-ph-dot { width: clamp(5px,.42vw,7px); height: clamp(5px,.42vw,7px); border-radius: 50%; flex-shrink: 0; }
   .ing-ph-text { flex: 1; font-size: clamp(9px,.68vw,11px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ing-ph-text strong { color: #e8e2d8; font-weight: 500; }
+  .ing-ph-text strong { color: var(--text-primary); font-weight: 500; }
   .ing-ph-price { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; }
-  .ing-ph-date { font-size: clamp(8px,.6vw,10px); color: #4a453e; flex-shrink: 0; }
+  .ing-ph-date { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); flex-shrink: 0; }
 
   .ing-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 8px; }
   .ing-empty-title { font-size: clamp(11px,.85vw,14px); color: #6b6358; font-weight: 500; }
-  .ing-empty-sub { font-size: clamp(9px,.68vw,11px); color: #4a453e; text-align: center; max-width: 240px; }
+  .ing-empty-sub { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); text-align: center; max-width: 240px; }
 
-  .ing-back-btn { background: none; border: 1px solid #2a2620; border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(9px,.68vw,11px); color: #4a453e; cursor: pointer; font-family: 'Inter', sans-serif; align-self: flex-start; transition: all .15s; }
+  .ing-back-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(8px,.7vw,12px); font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; align-self: flex-start; transition: all .15s; }
   .ing-back-btn:hover { border-color: #3a3630; color: #9a9086; }
 `;
 
@@ -338,7 +338,7 @@ export default function ClientIngredients() {
 
   const topExpensive = [...priced].sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price)).slice(0, 5);
   const maxPrice = topExpensive[0] ? parseFloat(topExpensive[0].last_price) : 1;
-  const expColors = ['#c04040', '#d4a020', '#d4a020', '#02a4ba', '#02a4ba'];
+  const expColors = ['var(--color-red)', 'var(--color-amber)', 'var(--color-amber)', 'var(--accent)', 'var(--accent)'];
 
   const rising = [], falling = [], stable = [], noData = [];
   ingredients.forEach(ing => {
@@ -357,10 +357,10 @@ export default function ClientIngredients() {
   const sparkRange = maxSparkPrice - minSparkPrice || 1;
 
   function getSparkColor(price, prev) {
-    if (!prev) return '#02a4ba';
-    if (price > prev) return '#c04040';
-    if (price < prev) return '#2a8a5a';
-    return '#02a4ba';
+    if (!prev) return 'var(--accent)';
+    if (price > prev) return 'var(--color-red)';
+    if (price < prev) return 'var(--color-green)';
+    return 'var(--accent)';
   }
 
   return (
@@ -381,8 +381,8 @@ export default function ClientIngredients() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: '#02a4ba' }}>
-              <div style={{ width: 4, height: 4, background: '#02a4ba', borderRadius: '50%', animation: 'blink 2s infinite' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--accent)' }}>
+              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
               Active
             </div>
             <input className="ing-search-sm" placeholder="Search..." />
@@ -409,11 +409,11 @@ export default function ClientIngredients() {
 
         <div className="ing-sbar">
           {[
-            { v: ingredients.length, l: 'Total Ingredients', c: '#02a4ba' },
-            { v: unpriced.length, l: 'Unpriced', c: '#c04040' },
-            { v: priced.length, l: 'Priced', c: '#2a8a5a' },
-            { v: highest > 0 ? formatCurrencyShort(highest) : '--', l: 'Highest Price', c: '#d4a020' },
-            { v: avgPrice > 0 ? formatCurrencyShort(avgPrice) : '--', l: 'Avg Price', c: '#e8e2d8' },
+            { v: ingredients.length, l: 'Total Ingredients', c: 'var(--accent)' },
+            { v: unpriced.length, l: 'Unpriced', c: 'var(--color-red)' },
+            { v: priced.length, l: 'Priced', c: 'var(--color-green)' },
+            { v: highest > 0 ? formatCurrencyShort(highest) : '--', l: 'Highest Price', c: 'var(--color-amber)' },
+            { v: avgPrice > 0 ? formatCurrencyShort(avgPrice) : '--', l: 'Avg Price', c: 'var(--text-primary)' },
           ].map(({ v, l, c }) => (
             <div key={l}>
               <div className="ing-sv" style={{ color: c }}>{v}</div>
@@ -424,8 +424,8 @@ export default function ClientIngredients() {
 
         {loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
-            <div style={{ width: 22, height: 22, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-            <div style={{ fontSize: 'clamp(10px,.8vw,13px)', color: '#4a453e' }}>Loading ingredients...</div>
+            <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <div style={{ fontSize: 'clamp(10px,.8vw,13px)', color: 'var(--text-muted)' }}>Loading ingredients...</div>
           </div>
         ) : (
           <div className="ing-split">
@@ -462,7 +462,7 @@ export default function ClientIngredients() {
                         {hasPrice ? formatCurrency(ing.last_price) : 'No price'}
                       </div>
                       <div className="ing-td">{ing.unit || '—'}</div>
-                      <div className="ing-td">{ing.last_ordered_at ? formatDateShort(ing.last_ordered_at) : <span style={{ color: '#4a453e' }}>Never</span>}</div>
+                      <div className="ing-td">{ing.last_ordered_at ? formatDateShort(ing.last_ordered_at) : <span style={{ color: 'var(--text-muted)' }}>Never</span>}</div>
                     </div>
                   );
                 })}
@@ -473,7 +473,7 @@ export default function ClientIngredients() {
             <div className="ing-detail">
               <div className="ing-detail-hd">
                 <div className="ing-detail-title">{selectedIngredient ? 'Ingredient Detail' : 'Ingredient Overview'}</div>
-                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: selectedIngredient ? '#02a4ba' : '#4a453e' }}>
+                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: selectedIngredient ? 'var(--accent)' : 'var(--text-muted)' }}>
                   {selectedIngredient ? `${selectedIngredient.name} · ${selectedIngredient.unit || 'no unit'}` : 'Click an ingredient to view details'}
                 </div>
               </div>
@@ -488,10 +488,10 @@ export default function ClientIngredients() {
                     </div>
                     <div className="ing-trend-pills">
                       {[
-                        { n: rising.length, l: 'Rising ↑', c: '#c04040' },
-                        { n: stable.length, l: 'Stable →', c: '#2a8a5a' },
-                        { n: falling.length, l: 'Falling ↓', c: '#02a4ba' },
-                        { n: noData.length, l: 'No data', c: '#4a453e' },
+                        { n: rising.length, l: 'Rising ↑', c: 'var(--color-red)' },
+                        { n: stable.length, l: 'Stable →', c: 'var(--color-green)' },
+                        { n: falling.length, l: 'Falling ↓', c: 'var(--accent)' },
+                        { n: noData.length, l: 'No data', c: 'var(--text-muted)' },
                       ].map(({ n, l, c }) => (
                         <div key={l} className="ing-tpill">
                           <div className="ing-tpill-n" style={{ color: c }}>{n}</div>
@@ -515,7 +515,7 @@ export default function ClientIngredients() {
                           </div>
                           <div className="ing-prog-val" style={{ color: expColors[i] }}>{formatCurrencyShort(ing.last_price)}</div>
                         </div>
-                      )) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No priced ingredients yet</div>}
+                      )) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No priced ingredients yet</div>}
                     </div>
 
                     <div className="ing-w">
@@ -530,7 +530,7 @@ export default function ClientIngredients() {
                           <div className="ing-freq-price">{formatCurrencyShort(ing.last_price)}</div>
                         </div>
                       ))}
-                      {priced.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>No data yet</div>}
+                      {priced.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
                     </div>
                   </div>
 
@@ -558,7 +558,7 @@ export default function ClientIngredients() {
                         </div>
                       );
                     })}
-                    {topExpensive.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e', padding: '6px 0' }}>No price data available yet</div>}
+                    {topExpensive.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', padding: '6px 0' }}>No price data available yet</div>}
                   </div>
 
                   <div className="ing-hint">Select an ingredient to view price history and purchase records →</div>
@@ -573,7 +573,7 @@ export default function ClientIngredients() {
                     <div className="ing-dsect-title">Ingredient Information</div>
                     <div className="ing-dgrid">
                       <div className="ing-dfield"><div className="ing-dfield-lbl">Name</div><div className="ing-dfield-val">{selectedIngredient.name || 'Unnamed'}</div></div>
-                      <div className="ing-dfield"><div className="ing-dfield-lbl">Current Price</div><div className="ing-dfield-val accent">{selectedIngredient.last_price ? formatCurrency(selectedIngredient.last_price) : <span style={{ color: '#4a453e', fontStyle: 'italic' }}>No price</span>}</div></div>
+                      <div className="ing-dfield"><div className="ing-dfield-lbl">Current Price</div><div className="ing-dfield-val accent">{selectedIngredient.last_price ? formatCurrency(selectedIngredient.last_price) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No price</span>}</div></div>
                       <div className="ing-dfield"><div className="ing-dfield-lbl">Unit</div><div className="ing-dfield-val">{selectedIngredient.unit || '—'}</div></div>
                       <div className="ing-dfield"><div className="ing-dfield-lbl">Last Ordered</div><div className="ing-dfield-val">{formatDate(selectedIngredient.last_ordered_at)}</div></div>
                     </div>
@@ -582,8 +582,8 @@ export default function ClientIngredients() {
                   <div className="ing-dsect">
                     <div className="ing-dsect-title">Price Statistics</div>
                     {loadingDetail ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e' }}>
-                        <div style={{ width: 14, height: 14, border: '2px solid #2a2620', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
+                        <div style={{ width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                         Loading price history...
                       </div>
                     ) : (
@@ -613,7 +613,7 @@ export default function ClientIngredients() {
                   {!loadingDetail && priceHistory.length > 1 && (
                     <div className="ing-dsect">
                       <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)' }}>
+                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)' }}>
                         <div className="ing-spark">
                           {priceHistory.map((p, i) => {
                             const prev = i > 0 ? priceHistory[i - 1].price : null;
@@ -629,8 +629,8 @@ export default function ClientIngredients() {
                           })}
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#4a453e' }}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
-                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#02a4ba', fontWeight: 600 }}>{formatDate(priceHistory[priceHistory.length - 1].date)} — {formatCurrency(priceHistory[priceHistory.length - 1].price)}</div>
+                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
+                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--accent)', fontWeight: 600 }}>{formatDate(priceHistory[priceHistory.length - 1].date)} — {formatCurrency(priceHistory[priceHistory.length - 1].price)}</div>
                         </div>
                       </div>
                     </div>
@@ -639,7 +639,7 @@ export default function ClientIngredients() {
                   {!loadingDetail && priceHistory.length === 1 && (
                     <div className="ing-dsect">
                       <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e', textAlign: 'center' }}>
+                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', textAlign: 'center' }}>
                         Only 1 purchase recorded — chart requires 2+ data points
                       </div>
                     </div>
@@ -648,7 +648,7 @@ export default function ClientIngredients() {
                   {!loadingDetail && priceHistory.length === 0 && (
                     <div className="ing-dsect">
                       <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid #2a2620', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: '#4a453e', textAlign: 'center' }}>
+                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', textAlign: 'center' }}>
                         No price history yet — will appear after first purchase
                       </div>
                     </div>
@@ -660,7 +660,7 @@ export default function ClientIngredients() {
                       {purchaseHistory.slice(0, 8).map((p, i) => {
                         const price = parseFloat(p.unit_cost);
                         const prev = purchaseHistory[i + 1] ? parseFloat(purchaseHistory[i + 1].unit_cost) : null;
-                        const dotColor = prev === null ? '#02a4ba' : price > prev ? '#c04040' : price < prev ? '#2a8a5a' : '#6b6358';
+                        const dotColor = prev === null ? 'var(--accent)' : price > prev ? 'var(--color-red)' : price < prev ? 'var(--color-green)' : '#6b6358';
                         return (
                           <div key={p.id || i} className="ing-ph-item">
                             <div className="ing-ph-dot" style={{ background: dotColor }} />
