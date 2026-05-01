@@ -310,7 +310,15 @@ export default function UniversalSearch({ restaurantId, placeholder = "Search in
         />
         
         {/* Search Icon */}
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '0.75rem',
+          transform: 'translateY(-50%)',
+          pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
+        }}>
           {isSearching ? (
             <IconLoader size={16} style={{ color: '#4a453e' }} className="animate-spin" />
           ) : (
