@@ -157,7 +157,7 @@ const CSS = `
   .inv-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .9px; margin-bottom: clamp(5px,.5vh,8px); display: flex; align-items: center; gap: 5px; }
   .inv-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-  .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(2px,.2vw,4px); height: clamp(60px,7vh,90px); }
+  .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(2px,.2vw,4px); height: clamp(120px,14vh,180px); }
   .inv-mc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
   .inv-mc-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
   .inv-mc-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: height .3s ease; }
@@ -1430,7 +1430,7 @@ export default function ClientInvoices() {
 
                       <div className="inv-widget" style={{flex:1,display:'flex',flexDirection:'column'}}>
                         <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Top Suppliers</div>
-                        <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+                        <div style={{flex:1,display:'flex',flexDirection:'column',gap:'clamp(6px,.6vh,9px)'}}>
                           {topSuppliers.length>0?topSuppliers.map(([name,amount],i)=>{
                             const colors=['var(--accent)','var(--color-amber)','var(--color-green)','var(--text-faint)'];
                             return (
