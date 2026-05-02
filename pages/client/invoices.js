@@ -157,7 +157,7 @@ const CSS = `
   .inv-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .9px; margin-bottom: clamp(5px,.5vh,8px); display: flex; align-items: center; gap: 5px; }
   .inv-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-  .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(2px,.2vw,4px); height: clamp(50px,6vh,72px); }
+  .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(2px,.2vw,4px); height: clamp(60px,7vh,90px); }
   .inv-mc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
   .inv-mc-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
   .inv-mc-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: height .3s ease; }
@@ -1353,118 +1353,115 @@ export default function ClientInvoices() {
               {/* OVERVIEW STATE */}
               {!selectedInvoice&&(
                 <div className="inv-detail-body">
-                  <div className="inv-widget-row">
-                    <div className="inv-widget">
-                      <div className="inv-wlbl">
-                        <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                        12-Month Spend
-                      </div>
-                      <div className="inv-mini-chart">
-                        {monthlySpend.map(({month,total},idx)=>(
-                          <div key={idx} className="inv-mc-col">
-                            <div className="inv-mc-track">
-                              <div className="inv-mc-bar" style={{height:`${Math.max(2,(total/maxMonthly)*90)}%`,background:getBarColor(total)}}/>
+
+                  {/* Row 1 — Key Metrics horizontal pills */}
+                  <div className="inv-widget">
+                    <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Key Metrics</div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
+                      {[
+                        {l:'Avg Invoice Size',  v:formatCurrencyWhole(avgInvoice),       c:'var(--text-primary)'},
+                        {l:'Invoices This Month',v:invoicesThisMonthByDate,              c:'var(--text-primary)'},
+                        {l:'Uploaded This Month',v:invoicesUploadedThisMonth,            c:'var(--text-muted)'},
+                        {l:'Days Since Last',   v:daysSinceLast!==null?daysSinceLast:'—',c:daysSinceLast>7?'var(--color-amber)':'var(--color-green)'},
+                        {l:'Largest Invoice',   v:formatCurrencyWhole(largest),          c:'var(--accent)'},
+                      ].map(({l,v,c})=>(
+                        <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
+                          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:c}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Row 2 — Recent Activity + Month over Month / Top Suppliers */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,8px)',flex:1,minHeight:0}}>
+
+                    {/* Recent Activity — tall left */}
+                    <div className="inv-widget" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
+                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Recent Activity</div>
+                      <div style={{flex:1,overflowY:'auto'}}>
+                        {invoices.slice(0,8).map(inv=>{
+                          const {ok}=getStatus(inv);
+                          return (
+                            <div key={inv.id} className="inv-act-item" onClick={()=>selectInvoice(inv)}>
+                              <div className="inv-act-dot" style={{background:ok?'var(--color-green)':'var(--color-amber)'}}/>
+                              <div className="inv-act-text"><strong>{inv.number||'Invoice'}</strong>{inv.supplier?` · ${inv.supplier}`:''}</div>
+                              {inv.amount&&<div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
+                              <div className="inv-act-time">{timeAgo(inv.created_at)}</div>
                             </div>
-                            <div className="inv-mc-lbl">{month}</div>
-                          </div>
-                        ))}
+                          );
+                        })}
+                        {invoices.length===0&&<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No invoice activity yet</div>}
                       </div>
                     </div>
 
-                    <div className="inv-widget">
-                      <div className="inv-wlbl">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Month over Month
+                    {/* Right column — Month over Month + Top Suppliers stacked */}
+                    <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,8px)',minHeight:0}}>
+
+                      <div className="inv-widget">
+                        <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Month over Month</div>
+                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:8}}>
+                          <div>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
+                              {new Date().toLocaleDateString('en-US',{month:'long'})}
+                            </div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:'clamp(17px,1.5vw,24px)',color:'var(--accent)',lineHeight:1}}>
+                              {formatCurrencyWhole(thisMonthSpend)}
+                            </div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
+                              {new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'long'})}
+                            </div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(13px,1.05vw,17px)',color:'var(--text-primary)',lineHeight:1}}>
+                              {formatCurrencyWhole(lastMonthSpend)}
+                            </div>
+                          </div>
+                        </div>
+                        {monthPct!==null?(
+                          <div style={{display:'flex',alignItems:'center',gap:5,fontSize:'clamp(9px,.68vw,11px)',color:monthUp?'var(--color-red)':'var(--color-green)',fontWeight:600}}>
+                            <span>{monthUp?'▲':'▼'}</span>
+                            <span>{Math.abs(monthPct)}% {monthUp?'above':'below'} last month</span>
+                          </div>
+                        ):(
+                          <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No prior month data</div>
+                        )}
                       </div>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:10}}>
-                        <div>
-                          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
-                            {new Date().toLocaleDateString('en-US',{month:'long'})}
-                          </div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:'clamp(17px,1.5vw,24px)',color:'var(--accent)',lineHeight:1}}>
-                            {formatCurrencyWhole(thisMonthSpend)}
-                          </div>
-                        </div>
-                        <div style={{textAlign:'right'}}>
-                          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
-                            {new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'long'})}
-                          </div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(13px,1.05vw,17px)',color:'var(--text-primary)',lineHeight:1}}>
-                            {formatCurrencyWhole(lastMonthSpend)}
-                          </div>
+
+                      <div className="inv-widget" style={{flex:1,display:'flex',flexDirection:'column'}}>
+                        <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Top Suppliers</div>
+                        <div style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+                          {topSuppliers.length>0?topSuppliers.map(([name,amount],i)=>{
+                            const colors=['var(--accent)','var(--color-amber)','var(--color-green)','var(--text-faint)'];
+                            return (
+                              <div key={name} className="inv-prog-row" style={{marginBottom:0}}>
+                                <div className="inv-prog-label">{name}</div>
+                                <div className="inv-prog-track"><div className="inv-prog-fill" style={{width:`${(amount/maxSupplier)*100}%`,background:colors[i]}}/></div>
+                                <div className="inv-prog-val" style={{color:colors[i]}}>{formatCurrencyWhole(amount)}</div>
+                              </div>
+                            );
+                          }):<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No supplier data yet</div>}
                         </div>
                       </div>
-                      {monthPct!==null?(
-                        <div style={{display:'flex',alignItems:'center',gap:5,fontSize:'clamp(9px,.68vw,11px)',color:monthUp?'var(--color-red)':'var(--color-green)',fontWeight:600}}>
-                          <span>{monthUp?'▲':'▼'}</span>
-                          <span>{Math.abs(monthPct)}% {monthUp?'above':'below'} last month</span>
-                        </div>
-                      ):(
-                        <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No prior month data</div>
-                      )}
+
                     </div>
                   </div>
 
-                  <div className="inv-widget-row">
-                    <div className="inv-widget">
-                      <div className="inv-wlbl">
-                        <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-                        Key Metrics
-                      </div>
-                      <div className="inv-stat-pair">
-                        {[
-                          {l:'Avg invoice size',  v:formatCurrencyWhole(avgInvoice),       c:'var(--text-primary)'},
-                          {l:'Largest invoice',   v:formatCurrencyWhole(largest),           c:'var(--accent)'},
-                          {l:'Days since last',   v:daysSinceLast!==null?daysSinceLast:'—', c:daysSinceLast>7?'var(--color-amber)':'var(--color-green)'},
-                          {l:'This month (by date)',v:invoicesThisMonthByDate,              c:'var(--text-primary)'},
-                          {l:'Uploaded this month',v:invoicesUploadedThisMonth,             c:'var(--text-muted)'},
-                        ].map(({l,v,c})=>(
-                          <div key={l} className="inv-stat-item">
-                            <div className="inv-stat-name">{l}</div>
-                            <div className="inv-stat-val" style={{color:c}}>{v}</div>
+                  {/* Row 3 — 12-Month Spend full width */}
+                  <div className="inv-widget">
+                    <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>12-Month Spend</div>
+                    <div className="inv-mini-chart">
+                      {monthlySpend.map(({month,total},idx)=>(
+                        <div key={idx} className="inv-mc-col">
+                          <div className="inv-mc-track">
+                            <div className="inv-mc-bar" style={{height:`${Math.max(2,(total/maxMonthly)*90)}%`,background:getBarColor(total)}}/>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="inv-widget">
-                      <div className="inv-wlbl">
-                        <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                        Top Suppliers
-                      </div>
-                      {topSuppliers.length>0?topSuppliers.map(([name,amount],i)=>{
-                        const colors=['var(--accent)','var(--color-amber)','var(--color-green)','var(--text-faint)'];
-                        return (
-                          <div key={name} className="inv-prog-row">
-                            <div className="inv-prog-label">{name}</div>
-                            <div className="inv-prog-track"><div className="inv-prog-fill" style={{width:`${(amount/maxSupplier)*100}%`,background:colors[i]}}/></div>
-                            <div className="inv-prog-val" style={{color:colors[i]}}>{formatCurrencyWhole(amount)}</div>
-                          </div>
-                        );
-                      }):<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No supplier data yet</div>}
-                    </div>
-                  </div>
-
-                  <div className="inv-widget-full">
-                    <div className="inv-wlbl">
-                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      Recent Activity
-                    </div>
-                    {invoices.slice(0,6).map(inv=>{
-                      const {ok}=getStatus(inv);
-                      return (
-                        <div key={inv.id} className="inv-act-item" onClick={()=>selectInvoice(inv)}>
-                          <div className="inv-act-dot" style={{background:ok?'var(--color-green)':'var(--color-amber)'}}/>
-                          <div className="inv-act-text">
-                            <strong>{inv.number||'Invoice'}</strong>{inv.supplier?` · ${inv.supplier}`:''}
-                          </div>
-                          {inv.amount&&<div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
-                          <div className="inv-act-time">{timeAgo(inv.created_at)}</div>
+                          <div className="inv-mc-lbl">{month}</div>
                         </div>
-                      );
-                    })}
-                    {invoices.length===0&&<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No invoice activity yet</div>}
+                      ))}
+                    </div>
                   </div>
+
                 </div>
               )}
 
