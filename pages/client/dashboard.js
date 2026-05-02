@@ -114,8 +114,8 @@ const GLOBAL_CSS = `
   .db-waction-val{font-weight:600;}
   .db-section-hd{font-size:clamp(8px,.58vw,10px);font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-faint);padding:clamp(4px,.4vh,6px) 0 clamp(3px,.3vh,5px);flex-shrink:0;}
   .db-grid-wrap{flex:1;min-height:0;padding:clamp(6px,.6vw,10px) clamp(24px,3vw,60px);gap:0;display:flex;flex-direction:column;overflow:hidden;}
-  .db-row-top{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:0 0 32%;min-height:0;margin-bottom:clamp(5px,.5vw,9px);}
-  .db-row-bottom{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:1;min-height:0;}
+  .db-row-top{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:0 0 auto;min-height:clamp(220px,28vh,360px);margin-bottom:0;}
+  .db-row-bottom{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:0 0 auto;min-height:0;}
   .db-score-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;align-items:center;gap:clamp(4px,.4vh,7px);flex-shrink:0;}
   .db-stats-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
   .db-rest-icon{width:clamp(22px,1.8vw,32px);height:clamp(22px,1.8vw,32px);border-radius:50%;background:var(--accent-bg);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -990,12 +990,25 @@ export default function ClientDashboard() {
           ):(
             <div className="db-grid-wrap">
 
-              <div style={{display:'grid',gridTemplateColumns:'clamp(148px,12vw,200px) 1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',flexShrink:0}}>
-                <div/>
-                <div className="db-section-hd" style={{gridColumn:'2 / 5'}}>Tonight's Recommendations</div>
-              </div>
-
-              <div className="db-row-top">
+              <div style={{
+                background:'var(--bg-surface)',
+                border:'1px solid var(--border)',
+                borderRadius:'clamp(5px,.4vw,8px)',
+                padding:'clamp(8px,.7vw,14px)',
+                flexShrink:0,
+                marginBottom:'clamp(5px,.5vw,9px)',
+              }}>
+                <div style={{
+                  fontSize:'clamp(13px,1.1vw,18px)',
+                  fontWeight:700,
+                  color:'var(--text-primary)',
+                  fontFamily:"'Playfair Display', serif",
+                  letterSpacing:'-.2px',
+                  marginBottom:'clamp(8px,.7vh,12px)',
+                  paddingBottom:'clamp(5px,.5vh,8px)',
+                  borderBottom:'1px solid var(--border-subtle)',
+                }}>Tonight's Recommendations</div>
+                <div className="db-row-top" style={{margin:0}}>
                 <div className="db-score-card">
                   <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
                     <div className="db-rest-icon">
@@ -1081,11 +1094,12 @@ export default function ClientDashboard() {
 
               </div>
             </div>
-          )}
+          )
         </div>
+          )}
       </div>
-
-      <Analytics/><SpeedInsights/>
+      </div>
+            <Analytics/><SpeedInsights/>
       {tourProps&&<TourOverlay {...tourProps}/>}
       <TourDataBanner/>
     </>
