@@ -298,12 +298,22 @@ export default function ClientIngredients() {
     // ── REAL MODE: query Supabase ──
     const { data } = await supabase
       .from('invoice_items')
-      .select('*, invoices(date, supplier, number)')
+      .select(`
+        *,
+        invoices!invoice_items_invoice_id_fkey(
+          id,
+          date,
+          supplier,
+          number,
+          restaurant_id
+        )
+      `)
       .eq('ingredient_id', ingredient.id)
-      .not('invoices.date', 'is', null)
+      .not('unit_cost', 'is', null)
+      .gt('unit_cost', 0)
       .order('created_at', { ascending: false });
 
-    const history = data || [];
+    const history = (data || []).filter(i => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
     setPurchaseHistory(history);
     const chart = history
       .filter(i => i.invoices?.date && i.unit_cost > 0)
@@ -575,124 +585,143 @@ export default function ClientIngredients() {
 
               {/* INGREDIENT DETAIL */}
               {selectedIngredient && (
-                <div className="ing-detail-body">
+                <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
 
-                  <div className="ing-dsect">
-                    <div className="ing-dsect-title">Ingredient Information</div>
-                    <div className="ing-dgrid">
-                      <div className="ing-dfield"><div className="ing-dfield-lbl">Name</div><div className="ing-dfield-val">{selectedIngredient.name || 'Unnamed'}</div></div>
-                      <div className="ing-dfield"><div className="ing-dfield-lbl">Current Price</div><div className="ing-dfield-val accent">{selectedIngredient.last_price ? formatCurrency(selectedIngredient.last_price) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>No price</span>}</div></div>
-                      <div className="ing-dfield"><div className="ing-dfield-lbl">Unit</div><div className="ing-dfield-val">{selectedIngredient.unit || '—'}</div></div>
-                      <div className="ing-dfield"><div className="ing-dfield-lbl">Last Ordered</div><div className="ing-dfield-val">{formatDate(selectedIngredient.last_ordered_at)}</div></div>
-                    </div>
-                  </div>
-
-                  <div className="ing-dsect">
-                    <div className="ing-dsect-title">Price Statistics</div>
-                    {loadingDetail ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
-                        <div style={{ width: 14, height: 14, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                        Loading price history...
-                      </div>
-                    ) : (
-                      <div className="ing-dgrid">
-                        <div className="ing-dfield">
-                          <div className="ing-dfield-lbl">Avg Price</div>
-                          <div className="ing-dfield-val">{avgIng > 0 ? formatCurrency(avgIng) : '—'}</div>
-                        </div>
-                        <div className="ing-dfield">
-                          <div className="ing-dfield-lbl">Price Change</div>
-                          <div className={`ing-dfield-val ${priceChangePct > 0 ? 'up' : priceChangePct < 0 ? 'down' : ''}`}>
-                            {prices.length > 1 ? `${priceChangePct > 0 ? '+' : ''}${priceChangePct.toFixed(1)}% ${priceChangePct > 0 ? '↑' : priceChangePct < 0 ? '↓' : '→'}` : '—'}
-                          </div>
-                        </div>
-                        <div className="ing-dfield">
-                          <div className="ing-dfield-lbl">Total Orders</div>
-                          <div className="ing-dfield-val">{purchaseHistory.length}</div>
-                        </div>
-                        <div className="ing-dfield">
-                          <div className="ing-dfield-lbl">First Seen</div>
-                          <div className="ing-dfield-val">{priceHistory.length > 0 ? formatDate(priceHistory[0].date) : '—'}</div>
-                        </div>
-                      </div>
+                  {/* Back button strip at top */}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+                    <button
+                      onClick={()=>{setSelectedIngredient(null);setPriceHistory([]);setPurchaseHistory([]);router.replace(isTour?'/client/ingredients?tour=true':'/client/ingredients',undefined,{shallow:true});}}
+                      style={{background:'none',border:'none',cursor:'pointer',fontSize:'clamp(9px,.68vw,11px)',color:'var(--accent)',fontFamily:"'Inter',sans-serif",display:'flex',alignItems:'center',gap:4,padding:0}}>
+                      ← Back to overview
+                    </button>
+                    {isRecent(selectedIngredient.last_ordered_at)&&(
+                      <span className="ing-recent">Recent</span>
                     )}
                   </div>
 
-                  {!loadingDetail && priceHistory.length > 1 && (
-                    <div className="ing-dsect">
-                      <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)' }}>
-                        <div className="ing-spark">
-                          {priceHistory.map((p, i) => {
-                            const prev = i > 0 ? priceHistory[i - 1].price : null;
-                            const heightPct = Math.max(5, ((p.price - minSparkPrice) / sparkRange) * 85 + 5);
-                            return (
-                              <div key={i} className="ing-sp-col">
-                                <div className="ing-sp-track">
-                                  <div className="ing-sp-bar" style={{ height: `${heightPct}%`, background: getSparkColor(p.price, prev), opacity: .75 }} />
+                  <div className="ing-detail-body">
+
+                    {/* Ingredient Information — horizontal pills */}
+                    <div className="ing-wf">
+                      <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Ingredient Information</div>
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
+                        {[
+                          {l:'Name',          v:selectedIngredient.name||'Unnamed',                                                                      c:'var(--text-primary)'},
+                          {l:'Current Price', v:selectedIngredient.last_price?formatCurrency(selectedIngredient.last_price):'No price',                  c:'var(--accent)',accent:true},
+                          {l:'Unit',          v:selectedIngredient.unit||'—',                                                                            c:'var(--text-primary)'},
+                          {l:'Last Ordered',  v:formatDate(selectedIngredient.last_ordered_at),                                                          c:'var(--text-primary)'},
+                        ].map(({l,v,c,accent})=>(
+                          <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(11px,.85vw,14px)',fontWeight:accent?700:500,color:c}}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Price Statistics — horizontal pills */}
+                    <div className="ing-wf">
+                      <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Price Statistics</div>
+                      {loadingDetail?(
+                        <div style={{display:'flex',alignItems:'center',gap:8,fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)'}}>
+                          <div style={{width:14,height:14,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                          Loading price history...
+                        </div>
+                      ):(
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
+                          {[
+                            {l:'Avg Price',     v:avgIng>0?formatCurrency(avgIng):'—',                                                                                                                         c:'var(--text-primary)'},
+                            {l:'Price Change',  v:prices.length>1?`${priceChangePct>0?'+':''}${priceChangePct.toFixed(1)}% ${priceChangePct>0?'↑':priceChangePct<0?'↓':'→'}`:'—',                              c:priceChangePct>0?'var(--color-red)':priceChangePct<0?'var(--color-green)':'var(--text-muted)'},
+                            {l:'Total Orders',  v:purchaseHistory.length,                                                                                                                                       c:'var(--text-primary)'},
+                            {l:'First Seen',    v:priceHistory.length>0?formatDate(priceHistory[0].date):'—',                                                                                                   c:'var(--text-primary)'},
+                          ].map(({l,v,c})=>(
+                            <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
+                              <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
+                              <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(11px,.85vw,14px)',fontWeight:600,color:c}}>{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Price History chart */}
+                    {!loadingDetail&&priceHistory.length>1&&(
+                      <div className="ing-wf">
+                        <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Price History</div>
+                        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'clamp(8px,.8vw,14px)'}}>
+                          <div className="ing-spark">
+                            {priceHistory.map((p,i)=>{
+                              const prev=i>0?priceHistory[i-1].price:null;
+                              const heightPct=Math.max(5,((p.price-minSparkPrice)/sparkRange)*85+5);
+                              return (
+                                <div key={i} className="ing-sp-col">
+                                  <div className="ing-sp-track">
+                                    <div className="ing-sp-bar" style={{height:`${heightPct}%`,background:getSparkColor(p.price,prev),opacity:.75}}/>
+                                  </div>
+                                  <div className="ing-sp-lbl">{new Date(p.date).toLocaleDateString('en-US',{month:'short'})}</div>
                                 </div>
-                                <div className="ing-sp-lbl">{new Date(p.date).toLocaleDateString('en-US', { month: 'short' })}</div>
+                              );
+                            })}
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
+                            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-muted)'}}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
+                            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--accent)',fontWeight:600}}>{formatDate(priceHistory[priceHistory.length-1].date)} — {formatCurrency(priceHistory[priceHistory.length-1].price)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {!loadingDetail&&priceHistory.length===1&&(
+                      <div className="ing-wf">
+                        <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Price History</div>
+                        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'clamp(8px,.8vw,14px)',fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',textAlign:'center'}}>
+                          Only 1 purchase recorded — chart requires 2+ data points
+                        </div>
+                      </div>
+                    )}
+
+                    {!loadingDetail&&priceHistory.length===0&&(
+                      <div className="ing-wf">
+                        <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Price History</div>
+                        <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'clamp(8px,.8vw,14px)',fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',textAlign:'center'}}>
+                          No price history yet — will appear after first purchase
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Purchase History — scrollable card like line items */}
+                    {!loadingDetail&&purchaseHistory.length>0&&(
+                      <div className="ing-wf" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+                        <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Purchase History ({purchaseHistory.length})</div>
+                        {/* Sticky column headers */}
+                        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:5,padding:'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)',background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',marginBottom:4,flexShrink:0}}>
+                          {['Invoice','Supplier','Price','Date'].map(h=>(
+                            <div key={h} style={{fontSize:'clamp(7px,.58vw,10px)',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.6px'}}>{h}</div>
+                          ))}
+                        </div>
+                        {/* Scrollable rows */}
+                        <div style={{flex:1,overflowY:'auto',minHeight:0}}>
+                          {purchaseHistory.map((p,i)=>{
+                            const price=parseFloat(p.unit_cost);
+                            const prev=purchaseHistory[i+1]?parseFloat(purchaseHistory[i+1].unit_cost):null;
+                            const dotColor=prev===null?'var(--accent)':price>prev?'var(--color-red)':price<prev?'var(--color-green)':'var(--text-faint)';
+                            return (
+                              <div key={p.id||i} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr',gap:5,padding:'clamp(5px,.5vh,8px) clamp(8px,.7vw,12px)',borderBottom:'1px solid var(--border-subtle)',alignItems:'center'}}>
+                                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                  <div style={{width:6,height:6,borderRadius:'50%',background:dotColor,flexShrink:0}}/>
+                                  <div style={{fontSize:'clamp(9px,.65vw,11px)',color:'var(--text-primary)',fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.invoices?.number||'Invoice'}</div>
+                                </div>
+                                <div style={{fontSize:'clamp(9px,.65vw,11px)',color:'var(--text-muted)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.invoices?.supplier||'—'}</div>
+                                <div style={{fontSize:'clamp(9px,.65vw,11px)',fontWeight:600,color:dotColor}}>{formatCurrency(p.unit_cost)}</div>
+                                <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>{p.invoices?.date?formatDateShort(p.invoices.date):'—'}</div>
                               </div>
                             );
                           })}
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
-                          <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--accent)', fontWeight: 600 }}>{formatDate(priceHistory[priceHistory.length - 1].date)} — {formatCurrency(priceHistory[priceHistory.length - 1].price)}</div>
-                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {!loadingDetail && priceHistory.length === 1 && (
-                    <div className="ing-dsect">
-                      <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', textAlign: 'center' }}>
-                        Only 1 purchase recorded — chart requires 2+ data points
-                      </div>
-                    </div>
-                  )}
-
-                  {!loadingDetail && priceHistory.length === 0 && (
-                    <div className="ing-dsect">
-                      <div className="ing-dsect-title">Price History</div>
-                      <div style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: 'clamp(8px,.8vw,14px)', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', textAlign: 'center' }}>
-                        No price history yet — will appear after first purchase
-                      </div>
-                    </div>
-                  )}
-
-                  {!loadingDetail && purchaseHistory.length > 0 && (
-                    <div className="ing-dsect">
-                      <div className="ing-dsect-title">Purchase History ({purchaseHistory.length})</div>
-                      {purchaseHistory.slice(0, 8).map((p, i) => {
-                        const price = parseFloat(p.unit_cost);
-                        const prev = purchaseHistory[i + 1] ? parseFloat(purchaseHistory[i + 1].unit_cost) : null;
-                        const dotColor = prev === null ? 'var(--accent)' : price > prev ? 'var(--color-red)' : price < prev ? 'var(--color-green)' : '#6b6358';
-                        return (
-                          <div key={p.id || i} className="ing-ph-item">
-                            <div className="ing-ph-dot" style={{ background: dotColor }} />
-                            <div className="ing-ph-text">
-                              <strong>{p.invoices?.number || 'Invoice'}</strong>
-                              {p.invoices?.supplier ? ` · ${p.invoices.supplier}` : ''}
-                              {p.quantity ? ` · ${p.quantity} ${p.unit || ''}`.trim() : ''}
-                            </div>
-                            <div className="ing-ph-price" style={{ color: dotColor }}>{formatCurrency(p.unit_cost)}</div>
-                            <div className="ing-ph-date">{p.invoices?.date ? formatDateShort(p.invoices.date) : '—'}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <button className="ing-back-btn" onClick={() => {
-                    setSelectedIngredient(null);
-                    setPriceHistory([]);
-                    setPurchaseHistory([]);
-                    router.replace(isTour ? '/client/ingredients?tour=true' : '/client/ingredients', undefined, { shallow: true });
-                  }}>
-                    ← Back to overview
-                  </button>
+                  </div>
                 </div>
               )}
             </div>
