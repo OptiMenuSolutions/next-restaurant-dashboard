@@ -8,6 +8,7 @@ import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
+import UniversalSearch from '../../components/UniversalSearch';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -110,25 +111,17 @@ const CSS = `
   .inv-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: clamp(3px,.3vw,6px); font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; line-height: 1.5; transition: all .15s; }
   .inv-tab.active { color: var(--text-primary); background: var(--bg-inset); }
 
-  /* ── SUBHEADER ── */
-  .inv-subheader { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0 clamp(10px,1vw,20px); height: clamp(40px,4.5vh,56px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 12px; }
-  .inv-subheader-left { display: flex; align-items: center; gap: clamp(8px,1vw,16px); }
-  .inv-page-title { font-family: 'Inter', sans-serif; font-weight: 700; font-size: clamp(13px,1.05vw,17px); color: var(--text-primary); white-space: nowrap; }
-  .inv-page-divider { width: 1px; height: 16px; background: var(--border); flex-shrink: 0; }
-  .inv-page-sub { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); white-space: nowrap; }
-  .inv-subheader-right { display: flex; align-items: center; gap: 8px; }
-  .inv-search { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 5px; padding: clamp(4px,.4vh,6px) clamp(10px,.9vw,14px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(180px,18vw,280px); outline: none; font-family: 'Inter', sans-serif; transition: border-color .15s; }
-  .inv-search:focus { border-color: var(--accent); }
+  /* ── WBAR ── */
+  .inv-wbar { background: var(--bg-surface); border-bottom: 1px solid var(--border); height: clamp(28px,3.2vh,40px); padding: 0 clamp(10px,1vw,16px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .inv-wname { font-size: clamp(11px,.82vw,15px); font-weight: 600; color: var(--text-primary); }
+  .inv-wsub { font-size: clamp(9px,.62vw,11px); color: var(--text-muted); margin-left: 6px; }
+  .inv-wactions { display: flex; align-items: center; gap: clamp(10px,1.2vw,20px); }
+  .inv-waction-item { display: flex; align-items: center; gap: 4px; font-size: clamp(9px,.62vw,11px); color: var(--text-muted); }
+  .inv-waction-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .inv-waction-val { font-weight: 600; }
+
   .inv-upload-btn { display: flex; align-items: center; gap: 6px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(4px,.4vh,7px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; flex-shrink: 0; }
   .inv-upload-btn:hover { background: #01bcd4; }
-
-  /* ── STATS BAR ── */
-  .inv-sbar { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 0 clamp(10px,1vw,20px); height: clamp(44px,5vh,60px); display: flex; align-items: center; gap: clamp(20px,3vw,48px); flex-shrink: 0; }
-  .inv-sbar-item { display: flex; flex-direction: column; gap: 2px; }
-  .inv-sv { font-family: 'Inter', sans-serif; font-weight: 700; font-size: clamp(14px,1.2vw,20px); line-height: 1; }
-  .inv-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
-  .inv-sbar-divider { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
-  .inv-sbar-delta { font-size: clamp(8px,.6vw,10px); font-weight: 600; padding: 1px 6px; border-radius: 8px; margin-top: 2px; display: inline-block; }
 
   /* ── SPLIT LAYOUT ── */
   .inv-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px); flex: 1; min-height: 0; overflow: hidden; }
@@ -1243,60 +1236,47 @@ export default function ClientInvoices() {
             <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.62vw,11px)',color:'var(--accent)'}}>
               <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
             </div>
+              <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
+                <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
+              </div>
+            <button className="inv-upload-btn" onClick={()=>setShowParseModal(true)}>
+              <IconUpload size={11}/> Upload Invoice
+            </button>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile}/>
           </div>
         </div>
 
-        {/* SUBHEADER */}
-        <div className="inv-subheader">
-          <div className="inv-subheader-left">
-            <div className="inv-page-title">Invoice Center</div>
-            <div className="inv-page-divider"/>
-            <div className="inv-page-sub">Track expenses &amp; supplier payments</div>
-          </div>
-          <div className="inv-subheader-right">
-            <input
-              className="inv-search"
-              placeholder="Search supplier or invoice no..."
-              value={searchTerm}
-              onChange={e=>setSearchTerm(e.target.value)}
-            />
-            <button className="inv-upload-btn" onClick={()=>setShowParseModal(true)}>
-              <IconUpload size={11}/> Upload &amp; Parse Invoice
-            </button>
-          </div>
-        </div>
-
         {/* STATS BAR */}
-        <div className="inv-sbar">
-          <div className="inv-sbar-item">
-            <div className="inv-sv" style={{color:'var(--accent)'}}>{invoices.length}</div>
-            <div className="inv-sl">Total Invoices</div>
+        <div className="inv-wbar">
+          <div style={{display:'flex',alignItems:'baseline'}}>
+            <span className="inv-wname">Invoice Center</span>
+            <span className="inv-wsub">· {invoices.length} invoices · {formatCurrencyWhole(totalSpend)} total</span>
           </div>
-          <div className="inv-sbar-divider"/>
-          <div className="inv-sbar-item">
-            <div className="inv-sv" style={{color:'var(--text-primary)'}}>{formatCurrencyWhole(totalSpend)}</div>
-            <div className="inv-sl">Total Spend</div>
-          </div>
-          <div className="inv-sbar-divider"/>
-          <div className="inv-sbar-item">
-            <div className="inv-sv" style={{color:'var(--text-primary)'}}>{formatCurrencyWhole(thisMonthSpend)}</div>
-            <div className="inv-sl">{new Date().toLocaleDateString('en-US',{month:'short'})} Spend</div>
-          </div>
-          <div className="inv-sbar-divider"/>
-          <div className="inv-sbar-item">
-            <div className="inv-sv" style={{color:'var(--text-muted)'}}>{formatCurrencyWhole(lastMonthSpend)}</div>
-            <div className="inv-sl">{new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'short'})} Spend</div>
+          <div className="inv-wactions">
+            <div className="inv-waction-item">
+              <div className="inv-waction-dot" style={{background:'var(--accent)'}}/>
+              <span className="inv-waction-val" style={{color:'var(--accent)'}}>{formatCurrencyWhole(thisMonthSpend)}</span>
+              <span>{new Date().toLocaleDateString('en-US',{month:'short'})} spend</span>
+            </div>
+            <div className="inv-waction-item">
+              <div className="inv-waction-dot" style={{background:'var(--text-faint)'}}/>
+              <span className="inv-waction-val" style={{color:'var(--text-muted)'}}>{formatCurrencyWhole(lastMonthSpend)}</span>
+              <span>{new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'short'})} spend</span>
+            </div>
             {monthPct!==null&&(
-              <div className="inv-sbar-delta" style={{background:monthUp?'rgba(192,64,64,.1)':'rgba(42,138,90,.1)',color:monthUp?'var(--color-red)':'var(--color-green)'}}>
-                {monthUp?'▲':'▼'} {Math.abs(monthPct)}% vs prior
+              <div className="inv-waction-item">
+                <div className="inv-waction-dot" style={{background:monthUp?'var(--color-red)':'var(--color-green)'}}/>
+                <span className="inv-waction-val" style={{color:monthUp?'var(--color-red)':'var(--color-green)'}}>
+                  {monthUp?'▲':'▼'} {Math.abs(monthPct)}%
+                </span>
+                <span>vs prior month</span>
               </div>
             )}
-          </div>
-          <div className="inv-sbar-divider"/>
-          <div className="inv-sbar-item">
-            <div className="inv-sv" style={{color:avgInvoice>3000?'var(--color-amber)':'var(--text-primary)'}}>{formatCurrencyWhole(avgInvoice)}</div>
-            <div className="inv-sl">Avg Invoice</div>
+            <div className="inv-waction-item">
+              <div className="inv-waction-dot" style={{background:'var(--color-amber)'}}/>
+              <span className="inv-waction-val" style={{color:'var(--color-amber)'}}>{formatCurrencyWhole(avgInvoice)}</span>
+              <span>avg invoice</span>
+            </div>
           </div>
         </div>
 
