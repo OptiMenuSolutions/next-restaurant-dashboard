@@ -989,111 +989,103 @@ export default function ClientDashboard() {
             </div>
           ):(
             <div className="db-grid-wrap">
+              <div style={{display:'flex',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,padding:'clamp(6px,.6vw,10px) clamp(24px,3vw,60px)',overflow:'hidden'}}>
 
-              <div style={{
-                background:'var(--bg-surface)',
-                border:'1px solid var(--border)',
-                borderRadius:'clamp(5px,.4vw,8px)',
-                padding:'clamp(8px,.7vw,14px)',
-                flexShrink:0,
-                marginBottom:'clamp(5px,.5vw,9px)',
-              }}>
-                <div style={{
-                  fontSize:'clamp(13px,1.1vw,18px)',
-                  fontWeight:700,
-                  color:'var(--text-primary)',
-                  fontFamily:"'Playfair Display', serif",
-                  letterSpacing:'-.2px',
-                  marginBottom:'clamp(8px,.7vh,12px)',
-                  paddingBottom:'clamp(5px,.5vh,8px)',
-                  borderBottom:'1px solid var(--border-subtle)',
-                }}>Tonight's Recommendations</div>
-                <div className="db-row-top" style={{margin:0}}>
-                <div className="db-score-card">
-                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
-                    <div className="db-rest-icon">
-                      <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                {/* LEFT SIDEBAR — OptiScore + Key Metrics */}
+                <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',width:'clamp(148px,12vw,200px)',flexShrink:0}}>
+                  <div className="db-score-card" style={{flex:'0 0 auto'}}>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
+                      <div className="db-rest-icon">
+                        <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
+                      </div>
+                      <div className="db-rest-name">{restaurantName}</div>
+                      <div className="db-rest-sub">Management Dashboard</div>
                     </div>
-                    <div className="db-rest-name">{restaurantName}</div>
-                    <div className="db-rest-sub">Management Dashboard</div>
+                    <ScoreRing score={data.aiProfitScore.score}/>
                   </div>
-                  <ScoreRing score={data.aiProfitScore.score}/>
+
+                  <div className="db-stats-card" style={{flex:1}}>
+                    <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
+                    {[
+                      {l:'YTD Spend',        v:fmt(data.totalSpending),                          c:'var(--color-amber)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
+                      {l:'Avg Margin',       v:`${data.averageMargin.toFixed(1)}%`,              c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
+                      {l:'High Margin Items',v:data.highMarginCount||0,                          c:'var(--color-green)', sub:'Above 60% margin'},
+                      {l:'Low Margin Items', v:data.lowMarginCount,                              c:'var(--color-red)',   sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}% threshold`:'All items healthy'},
+                      {l:'Menu Items',       v:data.totalMenuItems,                              c:'var(--accent)',      sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
+                      {l:'Ingredients',      v:data.totalIngredients,                            c:'var(--text-primary)',sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
+                      {l:'Waste Alerts',     v:data.wasteRisk.length,                            c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)',sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
+                    ].map(({l,v,c,sub})=>(
+                      <div key={l} className="db-pill" style={{flex:1}}>
+                        <div className="db-pill-left"><div className="db-pill-l">{l}</div><div className="db-pill-sub">{sub}</div></div>
+                        <div className="db-pill-v" style={{color:c}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                {aiLoading?[0,1,2].map(i=>(
-                  <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center',gap:8}}>
-                    <div className="db-spinner"/>
-                    <div style={{fontSize:'clamp(9px,.62vw,11px)',color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing menu...</div>
+                {/* RIGHT COLUMN — stacked cards */}
+                <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
+
+                  {/* Tonight's Recommendations card */}
+                  <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flexShrink:0}}>
+                    <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)'}}>Tonight's Recommendations</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',minHeight:'clamp(200px,24vh,320px)'}}>
+                      {aiLoading?[0,1,2].map(i=>(
+                        <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center',gap:8}}>
+                          <div className="db-spinner"/>
+                          <div style={{fontSize:'clamp(9px,.62vw,11px)',color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing menu...</div>
+                        </div>
+                      )):(data.aiRecommendations||[]).length>0
+                        ?(data.aiRecommendations||[]).slice(0,3).map((rec,i)=>(
+                          <ThermalTicket key={i} rec={rec} index={i} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
+                        ))
+                        :[0,1,2].map(i=>(
+                          <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center'}}>
+                            <div className="db-empty">No recommendations yet</div>
+                          </div>
+                        ))
+                      }
+                    </div>
                   </div>
-                )):(data.aiRecommendations||[]).length>0
-                  ?(data.aiRecommendations||[]).slice(0,3).map((rec,i)=>(
-                    <ThermalTicket key={i} rec={rec} index={i} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
-                  ))
-                  :[0,1,2].map(i=>(
-                    <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center'}}>
-                      <div className="db-empty">No recommendations yet</div>
+
+                  {/* Operations card */}
+                  <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+                    <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>Operations</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
+                      <WeekInReviewCard restaurantId={restaurantId}/>
+
+                      <div className="db-card">
+                        <div className="db-card-hd">
+                          <div className="db-card-title">
+                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            Waste Risk
+                          </div>
+                          <span className="db-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
+                        </div>
+                        <div className="db-waste-list">
+                          {data.wasteRisk.length===0&&<div className="db-empty">No expiring items detected</div>}
+                          {wasteVisible.map((item,i)=><WasteRow key={i} item={item} router={router}/>)}
+                        </div>
+                        {data.wasteRisk.length>WASTE_PREVIEW&&(
+                          <button className="db-waste-view-all" onClick={()=>setWasteShowAll(prev=>!prev)}>
+                            {wasteShowAll?'↑ Show fewer':`↓ View all ${data.wasteRisk.length} at risk`}
+                          </button>
+                        )}
+                        {data.wasteRisk.length>0&&(
+                          <div className="db-legend-strip">
+                            <span><span className="db-legend-dot" style={{background:'var(--color-red)'}}/>Expired / today</span>
+                            <span><span className="db-legend-dot" style={{background:'var(--color-amber)'}}/>2 days</span>
+                            <span><span className="db-legend-dot" style={{background:'var(--accent)'}}/>3–7 days</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <PriceMovementCard priceByCategory={data.priceByCategory}/>
                     </div>
-                  ))
-                }
-              </div>
+                  </div>
 
-              <div style={{display:'grid',gridTemplateColumns:'clamp(148px,12vw,200px) 1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',flexShrink:0,margin:'clamp(3px,.3vh,5px) 0'}}>
-                <div/>
-                <div className="db-section-hd" style={{gridColumn:'2 / 5'}}>Operations</div>
-              </div>
-
-              <div className="db-row-bottom">
-
-                <div className="db-stats-card">
-                  <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
-                  {[
-                    {l:'YTD Spend',       v:fmt(data.totalSpending),                                            c:'var(--color-amber)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
-                    {l:'Avg Margin',      v:`${data.averageMargin.toFixed(1)}%`,                               c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                    {l:'High Margin Items',v:data.highMarginCount||0,                                          c:'var(--color-green)', sub:'Above 60% margin'},
-                    {l:'Low Margin Items', v:data.lowMarginCount,                                              c:'var(--color-red)',   sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}% threshold`:'All items healthy'},
-                    {l:'Menu Items',      v:data.totalMenuItems,                                               c:'var(--accent)',      sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
-                    {l:'Ingredients',     v:data.totalIngredients,                                             c:'var(--text-primary)',sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
-                    {l:'Waste Alerts',    v:data.wasteRisk.length,                                            c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)',sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
-                  ].map(({l,v,c,sub})=>(
-                    <div key={l} className="db-pill" style={{flex:1}}>
-                      <div className="db-pill-left"><div className="db-pill-l">{l}</div><div className="db-pill-sub">{sub}</div></div>
-                      <div className="db-pill-v" style={{color:c}}>{v}</div>
-                    </div>
-                  ))}
                 </div>
-
-                <WeekInReviewCard restaurantId={restaurantId}/>
-
-                <div className="db-card">
-                  <div className="db-card-hd">
-                    <div className="db-card-title">
-                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      Waste Risk
-                    </div>
-                    <span className="db-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
-                  </div>
-                  <div className="db-waste-list">
-                    {data.wasteRisk.length===0&&<div className="db-empty">No expiring items detected</div>}
-                    {wasteVisible.map((item,i)=><WasteRow key={i} item={item} router={router}/>)}
-                  </div>
-                  {data.wasteRisk.length>WASTE_PREVIEW&&(
-                    <button className="db-waste-view-all" onClick={()=>setWasteShowAll(prev=>!prev)}>
-                      {wasteShowAll?'↑ Show fewer':`↓ View all ${data.wasteRisk.length} at risk`}
-                    </button>
-                  )}
-                  {data.wasteRisk.length>0&&(
-                    <div className="db-legend-strip">
-                      <span><span className="db-legend-dot" style={{background:'var(--color-red)'}}/>Expired / today</span>
-                      <span><span className="db-legend-dot" style={{background:'var(--color-amber)'}}/>2 days</span>
-                      <span><span className="db-legend-dot" style={{background:'var(--accent)'}}/>3–7 days</span>
-                    </div>
-                  )}
-                </div>
-
-                <PriceMovementCard priceByCategory={data.priceByCategory}/>
-
               </div>
-            </div>
           )
         </div>
         )}
