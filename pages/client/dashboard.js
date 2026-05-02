@@ -1007,11 +1007,11 @@ export default function ClientDashboard() {
                   <div className="db-stats-card" style={{flex:1}}>
                     <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
                     {[
-                      {l:'YTD Spend',        v:fmt(data.totalSpending),                          c:'var(--color-amber)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
+                      {l:'YTD Spend',        v:fmt(data.totalSpending),                          c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
                       {l:'Avg Margin',       v:`${data.averageMargin.toFixed(1)}%`,              c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                      {l:'High Margin Items',v:data.highMarginCount||0,                          c:'var(--color-green)', sub:'Above 60% margin'},
-                      {l:'Low Margin Items', v:data.lowMarginCount,                              c:'var(--color-red)',   sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}% threshold`:'All items healthy'},
-                      {l:'Menu Items',       v:data.totalMenuItems,                              c:'var(--accent)',      sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
+                      {l:'High Margin Items',v:data.highMarginCount||0,                          c:'var(--text-primary)', sub:'Above 60% margin'},
+                      {l:'Low Margin Items', v:data.lowMarginCount,                              c:'var(--text-primary)',   sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}% threshold`:'All items healthy'},
+                      {l:'Menu Items',       v:data.totalMenuItems,                              c:'var(--text-primary)',      sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
                       {l:'Ingredients',      v:data.totalIngredients,                            c:'var(--text-primary)',sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
                       {l:'Waste Alerts',     v:data.wasteRisk.length,                            c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)',sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
                     ].map(({l,v,c,sub})=>(
@@ -1086,7 +1086,6 @@ export default function ClientDashboard() {
 
                 </div>
               </div>
-          )
         </div>
         )}
       </div>
