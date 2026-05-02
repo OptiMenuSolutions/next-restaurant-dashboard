@@ -150,8 +150,8 @@ const GLOBAL_CSS = `
   .db-ticket-left{flex:1;padding:clamp(5px,.55vh,8px) clamp(7px,.7vw,11px);display:flex;flex-direction:column;gap:0;border-right:1px dashed var(--border);overflow:hidden;}
   .db-ticket-right{width:45%;padding:clamp(5px,.55vh,8px) clamp(6px,.6vw,10px);display:flex;flex-direction:column;overflow:hidden;}
   .db-receipt-divider{border:none;border-top:1px dashed var(--border);margin:clamp(2px,.2vh,3px) 0;flex-shrink:0;}
-  .db-receipt-component{font-size:clamp(9px,.72vw,12px);color:var(--text-secondary);margin-top:4px;font-weight:600;flex-shrink:0;}
-  .db-receipt-ingredient{font-size:clamp(8px,.65vw,11px);color:var(--text-muted);padding-left:10px;line-height:1.7;flex-shrink:0;}
+  .db-receipt-component{font-size:clamp(9px,.72vw,12px);color:var(--text-primary);margin-top:4px;font-weight:600;flex-shrink:0;}
+  .db-receipt-ingredient{font-size:clamp(8px,.65vw,11px);color:var(--text-secondary);padding-left:10px;line-height:1.7;flex-shrink:0;}
   .db-receipt-ingredient.at-risk{color:var(--color-red);font-weight:600;}
   .db-receipt-footer{font-size:clamp(7px,.52vw,9px);color:var(--text-disabled);text-align:center;margin-top:auto;padding-top:clamp(4px,.4vh,6px);flex-shrink:0;}
   .db-waste-list{flex:1;overflow-y:auto;min-height:0;}
@@ -193,9 +193,9 @@ const GLOBAL_CSS = `
   .wir-stat-lbl{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
   .wir-stat-val{font-family:'Playfair Display',serif;font-size:clamp(14px,1.3vw,20px);line-height:1;}
   .wir-stat-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);margin-top:2px;}
-  .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);}
+  .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);justify-content:space-between;}
   .wir-days::-webkit-scrollbar{width:2px;}
-  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;flex-shrink:0;overflow:hidden;}
+  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;flex-shrink:0;overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column;}
   .wir-day-row.open{border-color:var(--accent);}
   .wir-day-row:hover:not(.open){border-color:var(--text-faint);}
   .wir-day-header{display:flex;align-items:center;gap:clamp(5px,.5vw,8px);padding:clamp(5px,.5vh,8px) clamp(8px,.7vw,12px);}
@@ -321,11 +321,11 @@ function ThermalTicket({ rec, index, menuItems, wasteRisk }) {
             <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)'}}>#{index+1}</div>
           </div>
           <div className="db-receipt-divider"/>
-          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(11px,.95vw,15px)',fontWeight:700,color:'var(--text-primary)',lineHeight:1.2,marginBottom:'clamp(2px,.2vh,3px)',flexShrink:0}}>{dishName||'—'}</div>
+          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(13px,1.1vw,17px)',fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:'clamp(2px,.2vh,3px)',flexShrink:0}}>{dishName||'—'}</div>
           <div className="db-receipt-divider"/>
           {description && <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',lineHeight:1.4,marginBottom:'clamp(2px,.2vh,4px)',flexShrink:0}}>{description}</div>}
           <div className="db-receipt-divider"/>
-          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-secondary)',fontStyle:'italic',lineHeight:1.45,flex:1,overflow:'hidden'}}>
+          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.45,flex:1,overflow:'hidden'}}>
             <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
           </div>
           <div className="db-receipt-footer" style={{marginTop:'clamp(3px,.3vh,5px)'}}>#{String(index+1).padStart(3,'0')} · opti-menu.com</div>
