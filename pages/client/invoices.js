@@ -1476,7 +1476,6 @@ export default function ClientInvoices() {
                       style={{background:'none',border:'none',cursor:'pointer',fontSize:'clamp(9px,.68vw,11px)',color:'var(--accent)',fontFamily:"'Inter',sans-serif",display:'flex',alignItems:'center',gap:4,padding:0}}>
                       ← Back to overview
                     </button>
-                    <span className={`inv-pill ${getStatus(selectedInvoice).ok?'ok':'pend'}`}>{getStatus(selectedInvoice).label}</span>
                   </div>
 
                   <div className="inv-detail-body">
