@@ -8,6 +8,7 @@ import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
+import UniversalSearch from '../../components/UniversalSearch';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
@@ -54,11 +55,21 @@ const CSS = `
 
   .ing-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-  .ing-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .ing-nav { background: var(--bg-elevated); border-bottom: 1px solid var(--border); height: clamp(36px,4vh,48px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .ing-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
   .ing-logo span { color: var(--accent); }
   .ing-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .ing-tab.active { color: var(--text-primary); background: #1a1915; }
+  .ing-tab.active { color: var(--text-primary); background: var(--bg-inset); }
+
+  /* ── WBAR ── */
+  .ing-wbar { background: var(--bg-surface); border-bottom: 1px solid var(--border); height: clamp(28px,3.2vh,40px); padding: 0 clamp(10px,1vw,16px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .ing-wname { font-size: clamp(11px,.82vw,15px); font-weight: 600; color: var(--text-primary); }
+  .ing-wsub { font-size: clamp(9px,.62vw,11px); color: var(--text-muted); margin-left: 6px; }
+  .ing-wactions { display: flex; align-items: center; gap: clamp(10px,1.2vw,20px); }
+  .ing-waction-item { display: flex; align-items: center; gap: 4px; font-size: clamp(9px,.62vw,11px); color: var(--text-muted); }
+  .ing-waction-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .ing-waction-val { font-weight: 600; }
+
   .ing-search-sm { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,6px) clamp(8px,.7vw,13px); font-size: clamp(10px,.75vw,13px); color: var(--text-primary); width: clamp(120px,12vw,220px); outline: none; font-family: 'Inter', sans-serif; }
 
   .ing-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
@@ -72,21 +83,21 @@ const CSS = `
   .ing-sv { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
   .ing-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
-  .ing-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px); flex: 1; min-height: 0; overflow: hidden; }
+  .ing-split { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px) clamp(24px,3vw,60px); flex: 1; min-height: 0; overflow: hidden; }
 
-  .ing-list { width: 55%; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .ing-list { width: 55%; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
   .ing-list-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .ing-list-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
-  .ing-list-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); background: #0f0e0c; border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
+  .ing-list-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
 
-  .ing-tbl-head { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: #0f0e0c; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .ing-tbl-head { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,18px); background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .ing-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; cursor: pointer; display: flex; align-items: center; gap: 3px; user-select: none; }
   .ing-th:hover { color: #9a9086; }
   .ing-th.active { color: var(--accent); }
 
   .ing-tbl-body { flex: 1; overflow-y: auto; }
-  .ing-row { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(7px,.7vh,12px) clamp(10px,1vw,18px); border-bottom: 1px solid #1a1915; cursor: pointer; transition: background .15s; align-items: center; border-left: 2px solid transparent; }
-  .ing-row:hover { background: #1a1915; }
+  .ing-row { display: grid; grid-template-columns: 2fr 1.2fr .8fr 1.2fr; gap: 8px; padding: clamp(7px,.7vh,12px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background .15s; align-items: center; border-left: 2px solid transparent; }
+  .ing-row:hover { background: var(--bg-elevated); }
   .ing-row.selected { background: rgba(2,164,186,.08); border-left-color: var(--accent); }
   .ing-td { font-size: clamp(10px,.75vw,12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ing-td.name { color: var(--text-primary); font-weight: 500; display: flex; align-items: center; gap: 5px; }
@@ -94,39 +105,39 @@ const CSS = `
   .ing-td.no-price { color: var(--text-muted); font-style: italic; }
   .ing-recent { font-size: clamp(7px,.55vw,9px); padding: 1px 5px; border-radius: 6px; background: rgba(42,138,90,.1); color: var(--color-green); flex-shrink: 0; }
 
-  .ing-detail { flex: 1; background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+  .ing-detail { flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
   .ing-detail-hd { padding: clamp(8px,.8vh,14px) clamp(10px,1vw,18px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
   .ing-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
   .ing-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,16px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); }
 
   .ing-w-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .ing-w { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
-  .ing-wf { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,14px); }
+  .ing-w { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; padding: clamp(7px,.7vw,10px); }
+  .ing-wf { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; padding: clamp(7px,.7vw,10px); }
   .ing-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
   .ing-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
   .ing-trend-pills { display: flex; gap: clamp(5px,.5vw,8px); }
-  .ing-tpill { flex: 1; background: var(--bg-root); border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; border: 1px solid #1a1915; }
+  .ing-tpill { flex: 1; background: var(--bg-surface); border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; border: 1px solid var(--border-subtle); }
   .ing-tpill-n { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.3vw,20px); line-height: 1; }
   .ing-tpill-l { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 3px; }
 
   .ing-prog-row { display: flex; align-items: center; gap: 7px; margin-bottom: clamp(4px,.4vh,7px); }
   .ing-prog-row:last-child { margin-bottom: 0; }
   .ing-prog-label { font-size: clamp(8px,.62vw,11px); color: #6b6358; width: clamp(60px,6vw,90px); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ing-prog-track { flex: 1; background: #1a1915; border-radius: 3px; height: clamp(4px,.35vh,6px); }
+  .ing-prog-track { flex: 1; background: var(--border-subtle); border-radius: 3px; height: clamp(4px,.35vh,6px); }
   .ing-prog-fill { height: 100%; border-radius: 3px; }
   .ing-prog-val { font-size: clamp(8px,.62vw,11px); font-weight: 600; width: clamp(38px,3.8vw,55px); text-align: right; flex-shrink: 0; }
 
-  .ing-freq-item { display: flex; align-items: center; gap: clamp(5px,.5vw,8px); padding: clamp(4px,.45vh,7px) 0; border-bottom: 1px solid #1a1915; }
+  .ing-freq-item { display: flex; align-items: center; gap: clamp(5px,.5vw,8px); padding: clamp(4px,.45vh,7px) 0; border-bottom: 1px solid var(--border-subtle); }
   .ing-freq-item:last-child { border-bottom: none; }
   .ing-freq-rank { font-family: 'Playfair Display', serif; font-size: clamp(11px,1vw,15px); color: var(--text-muted); width: 16px; flex-shrink: 0; }
   .ing-freq-name { font-size: clamp(9px,.68vw,12px); color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ing-freq-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); flex-shrink: 0; }
   .ing-freq-price { font-size: clamp(9px,.65vw,11px); color: var(--accent); font-weight: 600; flex-shrink: 0; margin-left: 6px; }
 
-  .ing-rise-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(4px,.4vh,6px) 0; border-bottom: 1px solid #1a1915; margin-bottom: 4px; }
+  .ing-rise-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(4px,.4vh,6px) 0; border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px; }
   .ing-rise-th { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
-  .ing-rise-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid #1a1915; align-items: center; }
+  .ing-rise-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 6px; padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid var(--border-subtle); align-items: center; }
   .ing-rise-row:last-child { border-bottom: none; }
   .ing-rise-name { font-size: clamp(10px,.75vw,12px); color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ing-rise-prev { font-size: clamp(10px,.75vw,12px); color: #6b6358; }
@@ -140,7 +151,7 @@ const CSS = `
   .ing-dsect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 5px; }
   .ing-dsect-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
   .ing-dgrid { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(5px,.5vw,8px); }
-  .ing-dfield { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
+  .ing-dfield { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
   .ing-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
   .ing-dfield-val { font-size: clamp(10px,.75vw,13px); color: var(--text-primary); font-weight: 500; }
   .ing-dfield-val.accent { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: var(--accent); }
@@ -153,7 +164,7 @@ const CSS = `
   .ing-sp-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; }
   .ing-sp-lbl { font-size: clamp(7px,.55vw,9px); color: #3a3630; }
 
-  .ing-ph-item { display: flex; align-items: center; gap: clamp(6px,.6vw,10px); padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid #1a1915; }
+  .ing-ph-item { display: flex; align-items: center; gap: clamp(6px,.6vw,10px); padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid var(--border-subtle); }
   .ing-ph-item:last-child { border-bottom: none; }
   .ing-ph-dot { width: clamp(5px,.42vw,7px); height: clamp(5px,.42vw,7px); border-radius: 50%; flex-shrink: 0; }
   .ing-ph-text { flex: 1; font-size: clamp(9px,.68vw,11px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -368,58 +379,53 @@ export default function ClientIngredients() {
       <style>{CSS}</style>
       <div className="ing-root">
 
+        {/* TOPBAR */}
         <div className="ing-nav">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
+          <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
             <div className="ing-logo">Opti<span>Menu</span></div>
-            <div style={{ display: 'flex', gap: 2 }}>
-              {tabs.map(t => (
-                <button key={t} className={`ing-tab${t === 'Ingredients' ? ' active' : ''}`}
-                  onClick={() => router.push(t === 'Dashboard' ? '/client/dashboard' : `/client/${t.toLowerCase().replace(' ', '-')}`)}>
+            <div style={{display:'flex',gap:2}}>
+              {tabs.map(t=>(
+                <button key={t} className={`ing-tab${t==='Ingredients'?' active':''}`}
+                  onClick={()=>router.push(t==='Dashboard'?'/client/dashboard':`/client/${t.toLowerCase().replace(' ','-')}`)}>
                   {t}
                 </button>
               ))}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,.7vw,12px)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--accent)' }}>
-              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
-              Active
+          <div style={{display:'flex',alignItems:'center',gap:'clamp(6px,.7vw,12px)'}}>
+            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.62vw,11px)',color:'var(--accent)'}}>
+              <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
             </div>
-            <input className="ing-search-sm" placeholder="Search..." />
-            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />
+            <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
+              <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
+            </div>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false}/>
           </div>
         </div>
 
-        <div className="ing-ph">
-          <div>
-            <div className="ing-ph-title">Ingredient Inventory</div>
-            <div className="ing-ph-sub">Monitor costs and price trends</div>
+        {/* WBAR */}
+        <div className="ing-wbar">
+          <div style={{display:'flex',alignItems:'baseline'}}>
+            <span className="ing-wname">Ingredient Inventory</span>
+            <span className="ing-wsub">· {ingredients.length} ingredients · {priced.length} priced</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input className="ing-search-lg" placeholder="Search by name or unit..."
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-            <button className="ing-add-btn">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Add Ingredient
-            </button>
-          </div>
-        </div>
-
-        <div className="ing-sbar">
-          {[
-            { v: ingredients.length, l: 'Total Ingredients', c: 'var(--accent)' },
-            { v: unpriced.length, l: 'Unpriced', c: 'var(--color-red)' },
-            { v: priced.length, l: 'Priced', c: 'var(--color-green)' },
-            { v: highest > 0 ? formatCurrencyShort(highest) : '--', l: 'Highest Price', c: 'var(--color-amber)' },
-            { v: avgPrice > 0 ? formatCurrencyShort(avgPrice) : '--', l: 'Avg Price', c: 'var(--text-primary)' },
-          ].map(({ v, l, c }) => (
-            <div key={l}>
-              <div className="ing-sv" style={{ color: c }}>{v}</div>
-              <div className="ing-sl">{l}</div>
+          <div className="ing-wactions">
+            <div className="ing-waction-item">
+              <div className="ing-waction-dot" style={{background:'var(--color-red)'}}/>
+              <span className="ing-waction-val" style={{color:'var(--color-red)'}}>{unpriced.length}</span>
+              <span>unpriced</span>
             </div>
-          ))}
+            <div className="ing-waction-item">
+              <div className="ing-waction-dot" style={{background:'var(--color-amber)'}}/>
+              <span className="ing-waction-val" style={{color:'var(--color-amber)'}}>{highest>0?formatCurrencyShort(highest):'—'}</span>
+              <span>highest price</span>
+            </div>
+            <div className="ing-waction-item">
+              <div className="ing-waction-dot" style={{background:'var(--accent)'}}/>
+              <span className="ing-waction-val" style={{color:'var(--accent)'}}>{avgPrice>0?formatCurrencyShort(avgPrice):'—'}</span>
+              <span>avg price</span>
+            </div>
+          </div>
         </div>
 
         {loading ? (
@@ -481,26 +487,26 @@ export default function ClientIngredients() {
               {/* OVERVIEW */}
               {!selectedIngredient && (
                 <div className="ing-detail-body">
+
+                  {/* Row 1 — Key Metrics horizontal pills */}
                   <div className="ing-wf">
-                    <div className="ing-wlbl">
-                      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                      Price Trend Overview
-                    </div>
-                    <div className="ing-trend-pills">
+                    <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Key Metrics</div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
                       {[
-                        { n: rising.length, l: 'Rising ↑', c: 'var(--color-red)' },
-                        { n: stable.length, l: 'Stable →', c: 'var(--color-green)' },
-                        { n: falling.length, l: 'Falling ↓', c: 'var(--accent)' },
-                        { n: noData.length, l: 'No data', c: 'var(--text-muted)' },
-                      ].map(({ n, l, c }) => (
-                        <div key={l} className="ing-tpill">
-                          <div className="ing-tpill-n" style={{ color: c }}>{n}</div>
-                          <div className="ing-tpill-l">{l}</div>
+                        {l:'Total Ingredients', v:ingredients.length,                          c:'var(--text-primary)'},
+                        {l:'Priced',           v:priced.length,                                c:'var(--color-green)'},
+                        {l:'Unpriced',         v:unpriced.length,                              c:unpriced.length>0?'var(--color-red)':'var(--color-green)'},
+                        {l:'Avg Price',        v:avgPrice>0?formatCurrencyShort(avgPrice):'—', c:'var(--accent)'},
+                      ].map(({l,v,c})=>(
+                        <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
+                          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
+                          <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:c}}>{v}</div>
                         </div>
                       ))}
                     </div>
                   </div>
 
+                  {/* Row 2 — Most Expensive + Most Purchased */}
                   <div className="ing-w-row">
                     <div className="ing-w">
                       <div className="ing-wlbl">
@@ -534,6 +540,7 @@ export default function ClientIngredients() {
                     </div>
                   </div>
 
+                  {/* Row 3 — Rising Prices Watch List */}
                   <div className="ing-wf">
                     <div className="ing-wlbl">
                       <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
@@ -562,6 +569,7 @@ export default function ClientIngredients() {
                   </div>
 
                   <div className="ing-hint">Select an ingredient to view price history and purchase records →</div>
+
                 </div>
               )}
 
