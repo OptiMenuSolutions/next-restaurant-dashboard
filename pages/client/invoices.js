@@ -1467,73 +1467,91 @@ export default function ClientInvoices() {
 
               {/* DETAIL STATE */}
               {selectedInvoice&&(
-                <div className="inv-detail-body">
-                  <div className="inv-dsection">
-                    <div className="inv-dsection-title">Invoice Information</div>
-                    <div className="inv-dgrid">
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice No.</div><div className="inv-dfield-val">{selectedInvoice.number||<span style={{color:'var(--text-faint)',fontStyle:'italic'}}>Pending</span>}</div></div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Invoice Date</div><div className="inv-dfield-val">{selectedInvoice.date?formatDate(selectedInvoice.date):<span style={{color:'var(--text-faint)',fontStyle:'italic'}}>Pending</span>}</div></div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Supplier</div><div className="inv-dfield-val">{selectedInvoice.supplier||<span style={{color:'var(--text-faint)',fontStyle:'italic'}}>Pending</span>}</div></div>
-                      <div className="inv-dfield"><div className="inv-dfield-lbl">Upload Date</div><div className="inv-dfield-val">{formatDate(selectedInvoice.created_at)}</div></div>
-                      <div className="inv-dfield">
-                        <div className="inv-dfield-lbl">File</div>
-                        {selectedInvoice.file_url
-                          ?<a className="inv-dfield-val link" href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer">View File ↗</a>
-                          :<div className="inv-dfield-val" style={{color:'var(--text-faint)',fontStyle:'italic'}}>No file</div>}
-                      </div>
-                      <div className="inv-dfield">
-                        <div className="inv-dfield-lbl">Total Amount</div>
-                        <div className="inv-dfield-val accent">{selectedInvoice.amount?formatCurrency(selectedInvoice.amount):<span style={{color:'var(--text-faint)',fontStyle:'italic',fontFamily:'Inter,sans-serif',fontSize:'13px'}}>Pending</span>}</div>
-                      </div>
-                    </div>
+                <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
+
+                  {/* Back button + status at top */}
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
+                    <button
+                      onClick={()=>{setSelectedInvoice(null);setInvoiceItems([]);router.replace('/client/invoices',undefined,{shallow:true});}}
+                      style={{background:'none',border:'none',cursor:'pointer',fontSize:'clamp(9px,.68vw,11px)',color:'var(--accent)',fontFamily:"'Inter',sans-serif",display:'flex',alignItems:'center',gap:4,padding:0}}>
+                      ← Back to overview
+                    </button>
+                    <span className={`inv-pill ${getStatus(selectedInvoice).ok?'ok':'pend'}`}>{getStatus(selectedInvoice).label}</span>
                   </div>
 
-                  {loadingDetail?(
-                    <div style={{display:'flex',alignItems:'center',gap:8,padding:'16px 0',color:'var(--text-muted)',fontSize:'clamp(10px,.75vw,12px)'}}>
-                      <div style={{width:16,height:16,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-                      Loading items...
-                    </div>
-                  ):invoiceItems.length>0?(
-                    <div className="inv-dsection">
-                      <div className="inv-dsection-title">Line Items ({invoiceItems.length})</div>
-                      <div className="inv-items-head">
-                        <div className="inv-ith">Item</div>
-                        <div className="inv-ith">Qty</div>
-                        <div className="inv-ith">Unit Cost</div>
-                        <div className="inv-ith">Total</div>
-                        <div className="inv-ith">Status</div>
-                      </div>
-                      {invoiceItems.map(item=>(
-                        <div key={item.id} className="inv-item-row">
-                          <div className="inv-itd name">{item.item_name||'—'}</div>
-                          <div className="inv-itd">{item.quantity?`${item.quantity} ${item.unit||''}`.trim():'—'}</div>
-                          <div className="inv-itd">{formatCurrency(item.unit_cost)}</div>
-                          <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
-                          <div>{item.ingredients?<span className="inv-linked">Linked</span>:<span className="inv-unlinked">Unlinked</span>}</div>
-                        </div>
-                      ))}
-                      <div className="inv-total-bar">
-                        <div className="inv-total-label">Calculated Total</div>
-                        <div>
-                          <div className="inv-total-val">{formatCurrency(totalCalculated)}</div>
-                          {selectedInvoice.amount&&Math.abs(totalCalculated-parseFloat(selectedInvoice.amount))>0.01&&(
-                            <div className="inv-diff">Diff: {formatCurrency(Math.abs(totalCalculated-parseFloat(selectedInvoice.amount)))}</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ):(
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:8}}>
-                      <IconFile size={36}/>
-                      <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'var(--text-muted)',fontWeight:500}}>No line items recorded</div>
-                    </div>
-                  )}
+                  <div className="inv-detail-body">
 
-                  <button
-                    onClick={()=>{setSelectedInvoice(null);setInvoiceItems([]);router.replace('/client/invoices',undefined,{shallow:true});}}
-                    style={{background:'none',border:'1px solid var(--border)',borderRadius:5,padding:'clamp(5px,.5vh,8px) clamp(10px,.9vw,14px)',fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',cursor:'pointer',fontFamily:"'Inter',sans-serif",marginTop:'auto',alignSelf:'flex-start',transition:'color .15s'}}>
-                    ← Back to overview
-                  </button>
+                    {/* Invoice Information — horizontal pills like Key Metrics */}
+                    <div className="inv-widget">
+                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Invoice Information</div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr auto',gap:'clamp(5px,.5vw,8px)',alignItems:'stretch'}}>
+                        {[
+                          {l:'Invoice No.',  v:selectedInvoice.number||'—'},
+                          {l:'Invoice Date', v:selectedInvoice.date?formatDate(selectedInvoice.date):'—'},
+                          {l:'Supplier',     v:selectedInvoice.supplier||'—'},
+                          {l:'Upload Date',  v:formatDate(selectedInvoice.created_at)},
+                          {l:'Total Amount', v:selectedInvoice.amount?formatCurrency(selectedInvoice.amount):'—', accent:true},
+                        ].map(({l,v,accent})=>(
+                          <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(11px,.85vw,14px)',fontWeight:accent?700:500,color:accent?'var(--accent)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v}</div>
+                          </div>
+                        ))}
+                        {/* Open file button */}
+                        {selectedInvoice.file_url?(
+                          <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
+                            style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,textDecoration:'none',cursor:'pointer',flexShrink:0,minWidth:'clamp(44px,4vw,60px)'}}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/></svg>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--accent)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>Open</div>
+                          </a>
+                        ):(
+                          <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,flexShrink:0,minWidth:'clamp(44px,4vw,60px)'}}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>No file</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Line Items card — only the rows scroll */}
+                    <div className="inv-widget" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
+                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Line Items {invoiceItems.length>0&&`(${invoiceItems.length})`}</div>
+
+                      {loadingDetail?(
+                        <div style={{display:'flex',alignItems:'center',gap:8,color:'var(--text-muted)',fontSize:'clamp(10px,.75vw,12px)'}}>
+                          <div style={{width:16,height:16,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                          Loading items...
+                        </div>
+                      ):invoiceItems.length>0?(
+                        <>
+                          {/* Sticky column headers */}
+                          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 80px',gap:5,padding:'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)',background:'var(--bg-elevated)',borderRadius:'clamp(4px,.3vw,6px)',marginBottom:4,flexShrink:0}}>
+                            {['Item','Qty','Unit Cost','Total','Status'].map(h=>(
+                              <div key={h} style={{fontSize:'clamp(7px,.58vw,10px)',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.6px'}}>{h}</div>
+                            ))}
+                          </div>
+                          {/* Scrollable rows only */}
+                          <div style={{flex:1,overflowY:'auto',minHeight:0}}>
+                            {invoiceItems.map(item=>(
+                              <div key={item.id} className="inv-item-row">
+                                <div className="inv-itd name">{item.item_name||'—'}</div>
+                                <div className="inv-itd">{item.quantity?`${item.quantity} ${item.unit||''}`.trim():'—'}</div>
+                                <div className="inv-itd">{formatCurrency(item.unit_cost)}</div>
+                                <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
+                                <div>{item.ingredients?<span className="inv-linked">Linked</span>:<span className="inv-unlinked">Unlinked</span>}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ):(
+                        <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:8}}>
+                          <IconFile size={36}/>
+                          <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'var(--text-muted)',fontWeight:500}}>No line items recorded</div>
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
                 </div>
               )}
             </div>
