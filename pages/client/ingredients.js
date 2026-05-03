@@ -296,7 +296,7 @@ export default function ClientIngredients() {
     }
 
     // ── REAL MODE: query Supabase ──
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('invoice_items')
       .select(`
         *,
@@ -312,6 +312,11 @@ export default function ClientIngredients() {
       .not('unit_cost', 'is', null)
       .gt('unit_cost', 0)
       .order('created_at', { ascending: false });
+
+    console.log('ingredient id:', ingredient.id);
+    console.log('restaurant id:', restaurantId);
+    console.log('raw data:', data);
+    console.log('error:', error);
 
     const history = (data || []).filter(i => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
     setPurchaseHistory(history);
