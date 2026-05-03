@@ -311,7 +311,7 @@ export default function ClientIngredients() {
       .eq('ingredient_id', ingredient.id)
       .not('unit_cost', 'is', null)
       .gt('unit_cost', 0)
-      .order('created_at', { ascending: false });
+      .order('invoices(date)', { ascending: false });
 
     console.log('ingredient id:', ingredient.id);
     console.log('restaurant id:', restaurantId);
