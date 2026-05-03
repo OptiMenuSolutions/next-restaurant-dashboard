@@ -141,7 +141,7 @@ const CSS = `
   .mi-ph-action-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
   .mi-ph-action-val { font-weight: 600; }
 
-  .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px); flex: 1; min-height: 0; overflow: hidden; }
+  .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px) clamp(16px,1.8vw,28px); flex: 1; min-height: 0; overflow: hidden; }
 
   .mi-container { flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .mi-container-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -162,7 +162,7 @@ const CSS = `
   .mi-add-btn:hover { background: #01bcd4; }
 
   .mi-grid-wrap { flex: 1; overflow-y: auto; padding: clamp(8px,.8vw,12px); }
-  .mi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(155px,16vw,225px), 1fr)); gap: clamp(6px,.6vw,10px); }
+  .mi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(6px,.6vw,10px); }
 
   .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; }
   .mi-card:hover { border-color: #3a3630; background: #1a1915; }
@@ -202,7 +202,7 @@ const CSS = `
   .mi-list-margin-fill { height: 100%; border-radius: 3px; }
   .mi-list-margin-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; width: 38px; text-align: right; }
 
-  .mi-detail { width: clamp(280px,32vw,440px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; position: relative; }
+  .mi-detail { width: clamp(320px,38vw,540px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; position: relative; }
   .mi-detail-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-detail-hd-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .mi-detail-title { font-family: 'Playfair Display', serif; font-size: clamp(12px,1vw,16px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
@@ -316,6 +316,7 @@ export default function ClientMenuItems() {
   const [ingSearch, setIngSearch] = useState({});
   const [ingDropdownOpen, setIngDropdownOpen] = useState({});
   const [editDirty, setEditDirty] = useState(false);
+  const [editingCompIdx, setEditingCompIdx] = useState(null); // which component is expanded for editing
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [unsavedCallback, setUnsavedCallback] = useState(null);
 
@@ -470,7 +471,7 @@ export default function ClientMenuItems() {
     setEditDirty(false);
     if (!itemData) return;
     setEditComponents(itemData.components.map(c => ({ id: c.id, name: c.name, isNew: false, ingredients: c.ingredients.map(ing => ({ ciId: ing.id, ingredientId: ing.ingredientId, name: ing.name, quantity: ing.quantity, unit: ing.unit, unitCost: ing.unitCost, isEstimated: ing.isEstimated, isNew: false })) })));
-    setIngSearch({}); setIngDropdownOpen({}); setEditSaveMsg(null);
+    setIngSearch({}); setIngDropdownOpen({}); setEditSaveMsg(null); setEditingCompIdx(null);
   }
 
   function addEditComponent() { setEditDirty(true); setEditComponents(prev => [...prev, { id: `new-${Date.now()}`, name: 'New Component', isNew: true, ingredients: [] }]); }
@@ -759,60 +760,111 @@ export default function ClientMenuItems() {
   function renderEditTab() {
     return (
       <>
-        <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>Edit components and ingredients. Confirming a price clears the estimated flag.</div>
-        {editComponents.map((comp, compIdx) => {
-          const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
-          return (
-            <div key={comp.id} className="mi-edit-comp">
-              <div className="mi-edit-comp-hd">
-                <input className="mi-edit-comp-name" value={comp.name} onChange={e => updateEditComponentName(compIdx, e.target.value)} />
-                <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(compCost)}</span>
-                <button className="mi-edit-del" onClick={() => removeEditComponent(compIdx)}>✕</button>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 68px 68px auto', gap: 5, padding: '5px clamp(8px,.8vw,12px)', borderBottom: '1px solid var(--border-subtle)' }}>
-                {['Ingredient','Qty','Unit',''].map(h => <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: "'Inter', sans-serif" }}>{h}</div>)}
-              </div>
-              {comp.ingredients.map((ing, ingIdx) => {
-                const key = `${compIdx}-${ingIdx}`;
-                const searchVal = ingSearch[key] ?? ing.name;
-                const isOpen = ingDropdownOpen[key] || false;
-                const filteredLib = ingredientLibrary.filter(lib => lib.name.toLowerCase().includes((ingSearch[key] || '').toLowerCase())).slice(0, 8);
-                const ingCost = parseFloat(ing.quantity || 0) * parseFloat(ing.unitCost || 0);
-                return (
-                  <div key={ing.ciId} className="mi-edit-ing-grid">
-                    <div className="mi-ing-search-wrap">
-                      <input className="mi-edit-input" value={searchVal} style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : 'var(--border)' }} placeholder="Search ingredient..."
-                        onChange={e => { setIngSearch(prev => ({ ...prev, [key]: e.target.value })); setIngDropdownOpen(prev => ({ ...prev, [key]: true })); }}
-                        onFocus={() => setIngDropdownOpen(prev => ({ ...prev, [key]: true }))}
-                        onBlur={() => setTimeout(() => setIngDropdownOpen(prev => ({ ...prev, [key]: false })), 150)}
-                      />
-                      {isOpen && filteredLib.length > 0 && (
-                        <div className="mi-ing-dropdown">
-                          {filteredLib.map(lib => (
-                            <div key={lib.id} className="mi-ing-option" onMouseDown={() => selectLibraryIngredient(compIdx, ingIdx, lib)}>
-                              {lib.name}
-                              <div className="mi-ing-option-sub">{lib.unit} · {lib.last_price ? formatCurrency(lib.last_price) : 'no price'}{lib.is_estimated ? ' ~est' : ''}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <input className="mi-edit-input" type="number" min="0" step="0.01" value={ing.quantity} onChange={e => updateEditIngredient(compIdx, ingIdx, 'quantity', e.target.value)} />
-                    <input className="mi-edit-input" value={ing.unit} onChange={e => updateEditIngredient(compIdx, ingIdx, 'unit', e.target.value)} />
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                      <div className="mi-edit-ing-cost">{formatCurrency(ingCost)}</div>
-                      <button className="mi-edit-del" onClick={() => removeEditIngredient(compIdx, ingIdx)}>✕</button>
-                    </div>
+        {/* Component list — click to expand */}
+        <div style={S.wf}>
+          <div style={S.wlbl}><div style={S.dot} />Components</div>
+          {editComponents.length === 0 && (
+            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif", padding: '4px 0' }}>No components yet. Add one below.</div>
+          )}
+          {editComponents.map((comp, compIdx) => {
+            const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+            const isExpanded = editingCompIdx === compIdx;
+            return (
+              <div key={comp.id} style={{ marginBottom: 5 }}>
+                {/* Component row — always visible */}
+                <div
+                  onClick={() => setEditingCompIdx(isExpanded ? null : compIdx)}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'clamp(7px,.7vh,10px) clamp(8px,.7vw,12px)', background: isExpanded ? 'var(--bg-surface)' : 'var(--bg-elevated)', border: `1px solid ${isExpanded ? 'var(--accent)' : 'var(--border-subtle)'}`, borderRadius: isExpanded ? '6px 6px 0 0' : 6, cursor: 'pointer', transition: 'all .15s' }}
+                >
+                  <div style={{ display: 'flex', align: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 'clamp(10px,.78vw,12px)', fontWeight: 600, color: isExpanded ? 'var(--accent)' : 'var(--text-primary)', fontFamily: "'Inter', sans-serif", overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{comp.name || 'Unnamed'}</span>
                   </div>
-                );
-              })}
-              <div style={{ padding: '0 clamp(8px,.8vw,12px) 7px' }}>
-                <button className="mi-edit-add-ing" onClick={() => addEditIngredient(compIdx)}>+ Add Ingredient</button>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <span style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>{comp.ingredients.length} ing.</span>
+                    <span style={{ fontSize: 'clamp(9px,.68vw,11px)', fontWeight: 600, color: 'var(--accent)', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(compCost)}</span>
+                    <span style={{ fontSize: 10, color: isExpanded ? 'var(--accent)' : 'var(--text-muted)' }}>{isExpanded ? '▴' : '▾'}</span>
+                  </div>
+                </div>
+
+                {/* Expanded edit area */}
+                {isExpanded && (
+                  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--accent)', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: 'clamp(8px,.8vw,12px)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+                    {/* Component name edit */}
+                    <div>
+                      <div style={{ fontSize: 'clamp(7px,.58vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: "'Inter', sans-serif", marginBottom: 4 }}>Component Name</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          className="mi-edit-input"
+                          style={{ flex: 1 }}
+                          value={comp.name}
+                          onChange={e => updateEditComponentName(compIdx, e.target.value)}
+                        />
+                        <button
+                          onClick={() => { removeEditComponent(compIdx); setEditingCompIdx(null); }}
+                          style={{ background: 'rgba(192,64,64,.08)', border: '1px solid rgba(192,64,64,.2)', borderRadius: 4, padding: '4px 10px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-red)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}
+                        >Remove</button>
+                      </div>
+                    </div>
+
+                    {/* Ingredient column headers */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 62px 62px 48px auto', gap: 5 }}>
+                      {['Ingredient','Qty','Unit','Cost',''].map(h => (
+                        <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: "'Inter', sans-serif" }}>{h}</div>
+                      ))}
+                    </div>
+
+                    {/* Ingredient rows */}
+                    {comp.ingredients.length === 0 && (
+                      <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif", fontStyle: 'italic' }}>No ingredients. Add one below.</div>
+                    )}
+                    {comp.ingredients.map((ing, ingIdx) => {
+                      const key = `${compIdx}-${ingIdx}`;
+                      const searchVal = ingSearch[key] ?? ing.name;
+                      const isOpen = ingDropdownOpen[key] || false;
+                      const filteredLib = ingredientLibrary.filter(lib => lib.name.toLowerCase().includes((ingSearch[key] || '').toLowerCase())).slice(0, 8);
+                      const ingCost = parseFloat(ing.quantity || 0) * parseFloat(ing.unitCost || 0);
+                      return (
+                        <div key={ing.ciId} style={{ display: 'grid', gridTemplateColumns: '1fr 62px 62px 48px auto', gap: 5, alignItems: 'center' }}>
+                          <div className="mi-ing-search-wrap">
+                            <input
+                              className="mi-edit-input"
+                              value={searchVal}
+                              style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.35)' : 'var(--border)' }}
+                              placeholder="Search..."
+                              onChange={e => { setIngSearch(prev => ({ ...prev, [key]: e.target.value })); setIngDropdownOpen(prev => ({ ...prev, [key]: true })); }}
+                              onFocus={() => setIngDropdownOpen(prev => ({ ...prev, [key]: true }))}
+                              onBlur={() => setTimeout(() => setIngDropdownOpen(prev => ({ ...prev, [key]: false })), 150)}
+                            />
+                            {isOpen && filteredLib.length > 0 && (
+                              <div className="mi-ing-dropdown">
+                                {filteredLib.map(lib => (
+                                  <div key={lib.id} className="mi-ing-option" onMouseDown={() => selectLibraryIngredient(compIdx, ingIdx, lib)}>
+                                    {lib.name}
+                                    <div className="mi-ing-option-sub">{lib.unit} · {lib.last_price ? formatCurrency(lib.last_price) : 'no price'}{lib.is_estimated ? ' ~est' : ''}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <input className="mi-edit-input" type="number" min="0" step="0.01" value={ing.quantity} onChange={e => updateEditIngredient(compIdx, ingIdx, 'quantity', e.target.value)} />
+                          <input className="mi-edit-input" value={ing.unit} onChange={e => updateEditIngredient(compIdx, ingIdx, 'unit', e.target.value)} />
+                          <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif", textAlign: 'right' }}>{formatCurrency(ingCost)}</div>
+                          <button className="mi-edit-del" onClick={() => removeEditIngredient(compIdx, ingIdx)}>✕</button>
+                        </div>
+                      );
+                    })}
+
+                    <button className="mi-edit-add-ing" onClick={() => addEditIngredient(compIdx)}>+ Add Ingredient</button>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
-        <button className="mi-edit-add-comp" onClick={addEditComponent}>+ Add Component</button>
+            );
+          })}
+        </div>
+
+        <button className="mi-edit-add-comp" onClick={() => { addEditComponent(); setEditingCompIdx(editComponents.length); }}>+ Add Component</button>
+
         {editSaveMsg && (
           <div style={{ fontSize: 'clamp(9px,.68vw,11px)', padding: '7px 10px', borderRadius: 6, textAlign: 'center', fontFamily: "'Inter', sans-serif", background: editSaveMsg.type === 'success' ? 'rgba(42,138,90,.1)' : 'rgba(192,64,64,.1)', color: editSaveMsg.type === 'success' ? 'var(--color-green)' : 'var(--color-red)', border: `1px solid ${editSaveMsg.type === 'success' ? 'rgba(42,138,90,.2)' : 'rgba(192,64,64,.2)'}` }}>
             {editSaveMsg.text}
