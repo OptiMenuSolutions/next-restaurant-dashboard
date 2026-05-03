@@ -56,15 +56,14 @@ function NavIcon({ path }) {
 }
 
 // ── TrendLine ─────────────────────────────────────────────────────────────────
-// ── TrendLine ─────────────────────────────────────────────────────────────────
 const PAD = { left: 52, right: 12, top: 10, bottom: 26 };
 const FONT_SIZE = 10;
-const DOT_RADIUS = 3;
 
 function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
   const wrapRef = useRef(null);
   const [dims, setDims] = useState({ width: 0, height: 0 });
   const [tip, setTip] = useState(null);
+  const [activeIdx, setActiveIdx] = useState(null);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -76,10 +75,15 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
     return () => ro.disconnect();
   }, []);
 
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 30);
-  const cutoffStr = cutoff.toISOString().split('T')[0];
-  const pts = data.filter(d => d.date >= cutoffStr && d[valueKey] >= 0);
+  // Group purely by date string — no timezone math
+  const dateMap = {};
+  for (const d of data) {
+    const dateKey = typeof d.date === 'string' ? d.date.slice(0, 10) : d.date;
+    if (!dateMap[dateKey]) dateMap[dateKey] = { date: dateKey, rev: 0, qty: 0 };
+    dateMap[dateKey].rev += d.rev || 0;
+    dateMap[dateKey].qty += d.qty || 0;
+  }
+  const pts = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
 
   const { width: W, height: H } = dims;
   const cW = W - PAD.left - PAD.right;
@@ -109,7 +113,7 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
   const areaPath = pts.length < 2 ? '' :
     `${linePath} L${xOf(pts.length - 1).toFixed(1)},${yOf(yMin).toFixed(1)} L${xOf(0).toFixed(1)},${yOf(yMin).toFixed(1)} Z`;
 
-  const yTicks = [0, yMax / 2, yMax];
+  const yTicks = [yMin, (yMin + yMax) / 2, yMax];
 
   const xLabelIdxs = (() => {
     if (pts.length <= 6) return pts.map((_, i) => i);
@@ -122,6 +126,7 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
 
   const gradId = `tg_${valueKey}`;
   const clipId = `tc_${valueKey}`;
+  const HIT_RADIUS = 24;
 
   if (!W || !H) {
     return (
@@ -169,37 +174,50 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
           );
         })}
 
-        <line x1={PAD.left} y1={yOf(0)} x2={W - PAD.right} y2={yOf(0)} stroke="var(--border)" strokeWidth={0.75} />
+        <line x1={PAD.left} y1={yOf(yMin)} x2={W - PAD.right} y2={yOf(yMin)} stroke="var(--border)" strokeWidth={0.75} />
 
         {areaPath && <path d={areaPath} fill={`url(#${gradId})`} clipPath={`url(#${clipId})`} />}
-
         {linePath && (
           <path d={linePath} fill="none" stroke={color} strokeWidth={1.75}
             strokeLinecap="round" strokeLinejoin="round" clipPath={`url(#${clipId})`} />
         )}
 
-        {pts.length <= 20 && pts.map((d, i) => (
-          <circle key={i} cx={xOf(i)} cy={yOf(d[valueKey])} r={DOT_RADIUS} fill={color}
-            style={{ cursor: 'pointer' }}
-            onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
-            onMouseLeave={() => setTip(null)} />
+        {/* Visible dots */}
+        {pts.map((d, i) => (
+          <circle key={`dot-${i}`}
+            cx={xOf(i)} cy={yOf(d[valueKey])} r={activeIdx === i ? 5 : 3}
+            fill={activeIdx === i ? color : color}
+            stroke={activeIdx === i ? 'var(--bg-root)' : 'none'}
+            strokeWidth={activeIdx === i ? 2 : 0}
+            style={{ transition: 'r .1s', pointerEvents: 'none' }}
+          />
         ))}
 
-        {pts.length > 20 && pts.map((d, i) => {
-          const x = xOf(i);
-          const halfGap = pts.length > 1 ? (xOf(1) - xOf(0)) / 2 : 6;
-          return (
-            <rect key={i} x={x - halfGap} y={PAD.top} width={halfGap * 2} height={cH}
-              fill="transparent" style={{ cursor: 'crosshair' }}
-              onMouseEnter={e => setTip({ x: e.clientX, y: e.clientY, d })}
-              onMouseLeave={() => setTip(null)} />
-          );
-        })}
+        {/* Large invisible hit areas */}
+        {pts.map((d, i) => (
+          <circle key={`hit-${i}`}
+            cx={xOf(i)} cy={yOf(d[valueKey])} r={HIT_RADIUS}
+            fill="transparent"
+            style={{ cursor: 'crosshair' }}
+            onMouseEnter={e => { setActiveIdx(i); setTip({ x: e.clientX, y: e.clientY, d }); }}
+            onMouseMove={e => setTip(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
+            onMouseLeave={() => { setActiveIdx(null); setTip(null); }}
+          />
+        ))}
+
+        {/* Vertical guide line on hover */}
+        {activeIdx !== null && (
+          <line
+            x1={xOf(activeIdx)} y1={PAD.top}
+            x2={xOf(activeIdx)} y2={PAD.top + cH}
+            stroke={color} strokeWidth={1} strokeDasharray="3 3" opacity={0.4}
+          />
+        )}
 
         {xLabelIdxs.map(i => (
           <text key={i} x={xOf(i)} y={H - 6}
             textAnchor={i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
-            fontSize={FONT_SIZE} fill="#3a3630" fontFamily="Inter, sans-serif">
+            fontSize={FONT_SIZE} fill={activeIdx === i ? color : '#3a3630'} fontFamily="Inter, sans-serif">
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
@@ -214,7 +232,7 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
           boxShadow: '0 2px 8px rgba(0,0,0,.45)',
         }}>
           <div style={{ fontWeight: 600, color, marginBottom: 2 }}>
-            {valueKey === 'rev' ? formatCurrency(tip.d[valueKey]) : Math.round(tip.d[valueKey])}
+            {valueKey === 'rev' ? formatCurrencyDetailed(tip.d[valueKey]) : Math.round(tip.d[valueKey])}
           </div>
           <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{formatDateLabel(tip.d.date)}</div>
         </div>
@@ -223,31 +241,174 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
   );
 }
 
-// ── DonutChart ───────────────────────────────────────────────────────────────
-function DonutChart({ data }) {
-  const total = data.reduce((s,d) => s+d.value, 0);
-  if (!total) return <div style={{ textAlign:'center', padding:'8px 0', fontSize:11, color:'var(--text-muted)' }}>No category data</div>;
-  const circ = 2*Math.PI*40; let off = circ*0.25;
-  const slices = data.map((d,i) => { const pct=d.value/total, dash=pct*circ; const s={...d,pct,dash,off,color:CAT_COLORS[i%CAT_COLORS.length]}; off+=dash; return s; });
+// ── CategoryBars ─────────────────────────────────────────────────────────────
+function CategoryBars({ data, valueKey = 'rev' }) {
+  if (!data || !data.length) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, fontSize:11, color:'var(--text-muted)' }}>No category data</div>;
+  const max = Math.max(...data.map(d => d.value), 1);
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:'clamp(10px,1vw,18px)', flex:1, minHeight:0 }}>
-      <div style={{ position:'relative', width:'clamp(60px,6vw,90px)', height:'clamp(60px,6vw,90px)', flexShrink:0 }}>
-        <svg viewBox="0 0 100 100" style={{ width:'100%', height:'100%' }}>
-          <circle cx="50" cy="50" r="40" fill="none" stroke="#1a1915" strokeWidth="12"/>
-          {slices.map((s,i) => <circle key={i} cx="50" cy="50" r="40" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.dash} ${circ}`} strokeDashoffset={-s.off+circ*0.25}/>)}
-        </svg>
-        <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
-          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(10px,.9vw,14px)', color:'var(--text-primary)', lineHeight:1 }}>{formatCurrency(total)}</div>
-          <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)', marginTop:1 }}>total</div>
+    <div style={{ display:'flex', flexDirection:'column', gap:'clamp(5px,.5vh,9px)', flex:1, minHeight:0, justifyContent:'space-evenly' }}>
+      {data.map((d, i) => (
+        <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
+          <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(4px,.35vh,6px)', overflow:'hidden' }}>
+            <div style={{ height:'100%', borderRadius:3, background: CAT_COLORS[i % CAT_COLORS.length], width:`${(d.value/max)*100}%`, transition:'width .4s ease' }}/>
+          </div>
+          <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color: CAT_COLORS[i % CAT_COLORS.length], minWidth:'clamp(40px,4vw,65px)', textAlign:'right', flexShrink:0 }}>{formatCurrency(d.value)}</div>
+          <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', minWidth:28, textAlign:'right', flexShrink:0 }}>{((d.value/data.reduce((s,x)=>s+x.value,0))*100).toFixed(0)}%</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── ByDayCards ────────────────────────────────────────────────────────────────
+function ByDayCards({ dayOfWeekData, allSales, dateRange, dayView }) {
+  const [selectedDay, setSelectedDay] = useState(null);
+
+  const maxQty = Math.max(...dayOfWeekData.map(d => d.qty), 1);
+  const maxRev = Math.max(...dayOfWeekData.map(d => d.rev), 1);
+
+  // Compute category breakdown for selected day
+  const dayCatData = selectedDay ? (() => {
+    const daySales = allSales.filter(s => s.day_of_week === selectedDay);
+    const catMap = {};
+    for (const s of daySales) {
+      const cat = s.category || 'Uncategorized';
+      catMap[cat] = (catMap[cat] || 0) + parseFloat(s.revenue || 0);
+    }
+    return Object.entries(catMap).sort((a,b) => b[1]-a[1]).map(([name,value]) => ({name,value}));
+  })() : [];
+
+  if (selectedDay) {
+    const dayData = dayOfWeekData.find(d => d.day === selectedDay);
+    const max = Math.max(...dayOfWeekData.map(d => d.qty), 1);
+    return (
+      <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, gap:'clamp(5px,.5vh,8px)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          <button onClick={() => setSelectedDay(null)} style={{ background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'3px 8px', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif", display:'flex', alignItems:'center', gap:4 }}>
+            ← Back
+          </button>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(12px,.95vw,16px)', color:'var(--text-primary)' }}>{selectedDay}</div>
+          <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginLeft:'auto' }}>{formatCurrency(dayData?.rev||0)} · {Math.round(dayData?.qty||0)} items</div>
+        </div>
+        <div style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:'clamp(4px,.4vh,7px)', justifyContent:'space-evenly' }}>
+          {dayCatData.map((d,i) => {
+            const max = Math.max(...dayOfWeekData.map(x => x.rev), 1);
+            return (
+              <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
+                <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(4px,.35vh,6px)' }}>
+                  <div style={{ height:'100%', borderRadius:3, background:CAT_COLORS[i%CAT_COLORS.length], width:`${(d.value/Math.max(...dayOfWeekData.map(x=>x.rev),1))*100}%`, transition:'width .4s' }}/>
+                </div>
+                <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:CAT_COLORS[i%CAT_COLORS.length], minWidth:'clamp(40px,4vw,60px)', textAlign:'right' }}>{formatCurrency(d.value)}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
-      <div style={{ display:'flex', flexDirection:'column', gap:'clamp(3px,.35vh,6px)', flex:1, overflow:'hidden' }}>
-        {slices.slice(0,5).map((s,i) => (
-          <div key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <div style={{ width:'clamp(6px,.5vw,8px)', height:'clamp(6px,.5vw,8px)', borderRadius:'50%', background:s.color, flexShrink:0 }}/>
-            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</div>
-            <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'var(--text-primary)' }}>{formatCurrency(s.value)}</div>
-            <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', minWidth:30, textAlign:'right' }}>{(s.pct*100).toFixed(0)}%</div>
+    );
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0, gap:'clamp(4px,.4vh,6px)' }}>
+      {dayOfWeekData.map((d, i) => {
+        const barPct = dayView === 'qty' ? (d.qty / maxQty) * 100 : (d.rev / maxRev) * 100;
+        const val = dayView === 'qty' ? Math.round(d.qty) : formatCurrency(d.rev);
+        const hasData = d.qty > 0;
+        return (
+          <div key={d.day}
+            onClick={() => hasData && setSelectedDay(d.day)}
+            style={{
+              background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 7,
+              padding: 'clamp(6px,.6vw,10px)', display: 'flex', alignItems: 'center', gap: 8,
+              cursor: hasData ? 'pointer' : 'default', flex: 1,
+              transition: 'border-color .15s, background .15s',
+            }}
+            onMouseEnter={e => { if (hasData) { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = '#131210'; }}}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = '#0f0e0c'; }}
+          >
+            <div style={{ width:'clamp(26px,2.5vw,36px)', fontSize:'clamp(9px,.68vw,11px)', color: hasData ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight:600, flexShrink:0 }}>{d.day.slice(0,3)}</div>
+            <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(3px,.3vh,5px)' }}>
+              <div style={{ height:'100%', borderRadius:3, background:'var(--color-amber)', width:`${barPct}%`, transition:'width .4s ease' }}/>
+            </div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'var(--color-amber)', minWidth:'clamp(36px,3.5vw,56px)', textAlign:'right', flexShrink:0 }}>{hasData ? val : '—'}</div>
+            {hasData && <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--accent)', flexShrink:0 }}>›</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── ByTimeCard ────────────────────────────────────────────────────────────────
+function ByTimeCard({ hourlyData, maxHourQty }) {
+  const [expandedHour, setExpandedHour] = useState(null);
+
+  const expanded = expandedHour !== null ? hourlyData.find(h => h.hour === expandedHour) : null;
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+      {/* Time boxes */}
+      <div style={{ display:'flex', gap:3, flex: expandedHour !== null ? '0 0 auto' : 1, minHeight:0, alignItems:'stretch', transition:'flex .2s' }}>
+        {hourlyData.map(h => {
+          const intensity = maxHourQty > 0 ? h.qty / maxHourQty : 0;
+          const bg = intensity > 0.7 ? 'var(--color-red)' : intensity > 0.4 ? 'var(--color-amber)' : intensity > 0.1 ? 'var(--accent)' : '#1a1915';
+          const isActive = expandedHour === h.hour;
+          return (
+            <div key={h.hour}
+              onClick={() => setExpandedHour(isActive ? null : h.hour)}
+              style={{
+                flex: 1, borderRadius: 5, display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+                background: bg, opacity: intensity > 0 ? 0.3 + intensity * 0.7 : 0.25,
+                cursor: 'pointer', minHeight: expandedHour !== null ? 'clamp(28px,3vh,40px)' : 'clamp(32px,4vh,56px)',
+                transition: 'min-height .2s, opacity .15s, outline .15s',
+                outline: isActive ? `2px solid ${bg}` : '2px solid transparent',
+                outlineOffset: 2,
+                position: 'relative',
+              }}
+            >
+              <span style={{ fontSize:'clamp(7px,.52vw,9px)', color: intensity > 0.5 ? 'var(--bg-root)' : 'var(--text-muted)', paddingBottom: 3, fontFamily:"'Inter',sans-serif" }}>
+                {formatHour(h.hour)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Expanded detail panel */}
+      {expanded && (
+        <div style={{ marginTop: 8, background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:7, padding:'clamp(8px,.75vw,12px)', flexShrink:0 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+            <div style={{ fontSize:'clamp(11px,.85vw,14px)', fontWeight:600, color:'var(--text-primary)', fontFamily:"'Playfair Display',serif" }}>{formatHour(expanded.hour)}</div>
+            <button onClick={() => setExpandedHour(null)} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:14, lineHeight:1 }}>×</button>
+          </div>
+          <div style={{ display:'flex', gap:'clamp(12px,1.5vw,24px)' }}>
+            <div>
+              <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:2 }}>Items Sold</div>
+              <div style={{ fontSize:'clamp(13px,1.1vw,18px)', fontWeight:600, color:'var(--accent)', fontFamily:"'Playfair Display',serif" }}>{Math.round(expanded.qty)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:2 }}>% of Day</div>
+              <div style={{ fontSize:'clamp(13px,1.1vw,18px)', fontWeight:600, color:'var(--color-amber)', fontFamily:"'Playfair Display',serif" }}>
+                {maxHourQty > 0 ? ((expanded.qty / hourlyData.reduce((s,h)=>s+h.qty,0))*100).toFixed(1) : 0}%
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px', marginBottom:2 }}>vs Peak</div>
+              <div style={{ fontSize:'clamp(13px,1.1vw,18px)', fontWeight:600, color:'var(--color-green)', fontFamily:"'Playfair Display',serif" }}>
+                {maxHourQty > 0 ? ((expanded.qty / maxHourQty)*100).toFixed(0) : 0}%
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Legend */}
+      <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap', flexShrink:0 }}>
+        {[{c:'var(--color-red)',l:'Peak'},{c:'var(--color-amber)',l:'Busy'},{c:'var(--accent)',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
+          <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)' }}>
+            <div style={{ width:7, height:7, borderRadius:2, background:c }}/>
+            {l}
           </div>
         ))}
       </div>
@@ -255,9 +416,184 @@ function DonutChart({ data }) {
   );
 }
 
+// ── Upload Manager Modal ───────────────────────────────────────────────────────
+function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(null);
+  const [deleteStep, setDeleteStep] = useState(0); // 0=idle, 1=confirm, 2=type
+  const [deleteInput, setDeleteInput] = useState('');
+
+  useEffect(() => { loadSessions(); }, []);
+
+  async function loadSessions() {
+    setLoading(true);
+    const { data } = await supabase.from('upload_sessions')
+      .select('*').eq('restaurant_id', restaurantId).order('uploaded_at', { ascending: false });
+    setSessions(data || []);
+    setLoading(false);
+  }
+
+  function startDelete(session) {
+    setDeleting(session);
+    setDeleteStep(1);
+    setDeleteInput('');
+  }
+
+  function cancelDelete() {
+    setDeleting(null);
+    setDeleteStep(0);
+    setDeleteInput('');
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    // Deleting the session cascades to pos_sales via upload_session_id
+    const { error } = await supabase.from('upload_sessions').delete().eq('id', deleting.id);
+    if (!error) {
+      await supabase.from('activity_logs').insert({
+        restaurant_id: restaurantId,
+        activity_type: 'pos_upload_deleted',
+        title: 'POS Upload Deleted',
+        subtitle: deleting.filename || 'Unknown file',
+        details: `Deleted ${deleting.row_count} records from ${deleting.date_from} to ${deleting.date_to}`,
+        metadata: { session_id: deleting.id, row_count: deleting.row_count }
+      }).catch(() => {});
+      cancelDelete();
+      await loadSessions();
+      onDeleted();
+    }
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:50, background:'rgba(10,9,8,.88)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:'#13120f', border:'1px solid var(--border)', borderRadius:12, width:'min(640px,92%)', maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* Header */}
+        <div style={{ padding:'clamp(14px,1.4vw,22px)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <div>
+            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(14px,1.1vw,18px)', color:'var(--text-primary)' }}>Upload History</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginTop:2 }}>Manage your uploaded POS files</div>
+          </div>
+          <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:20, lineHeight:1, padding:4 }}>×</button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex:1, overflowY:'auto', padding:'clamp(10px,1vw,18px)' }}>
+          {loading ? (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:40, gap:10, color:'var(--text-muted)', fontSize:13 }}>
+              <div style={{ width:16, height:16, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
+              Loading...
+            </div>
+          ) : sessions.length === 0 ? (
+            <div style={{ textAlign:'center', padding:40, fontSize:13, color:'var(--text-muted)' }}>No uploads yet</div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {sessions.map(s => (
+                <div key={s.id} style={{ background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+                  {deleting?.id === s.id ? (
+                    // Delete flow
+                    <div>
+                      {deleteStep === 1 && (
+                        <>
+                          <div style={{ fontSize:'clamp(11px,.85vw,14px)', fontWeight:600, color:'var(--color-red)', marginBottom:6 }}>Delete this upload?</div>
+                          <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginBottom:12, lineHeight:1.5 }}>
+                            This will permanently remove <strong style={{ color:'var(--text-primary)' }}>{s.row_count.toLocaleString()} records</strong> from {s.date_from} to {s.date_to}. This cannot be undone.
+                          </div>
+                          <div style={{ display:'flex', gap:8 }}>
+                            <button onClick={() => setDeleteStep(2)} style={{ background:'rgba(192,64,64,.1)', border:'1px solid rgba(192,64,64,.3)', borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-red)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Yes, continue</button>
+                            <button onClick={cancelDelete} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Cancel</button>
+                          </div>
+                        </>
+                      )}
+                      {deleteStep === 2 && (
+                        <>
+                          <div style={{ fontSize:'clamp(11px,.85vw,14px)', fontWeight:600, color:'var(--color-red)', marginBottom:6 }}>Final confirmation</div>
+                          <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginBottom:10 }}>Type <strong style={{ color:'var(--text-primary)', fontFamily:'monospace' }}>DELETE</strong> to permanently remove this data.</div>
+                          <input
+                            autoFocus
+                            value={deleteInput}
+                            onChange={e => setDeleteInput(e.target.value)}
+                            placeholder="Type DELETE"
+                            style={{ background:'#13120f', border:`1px solid ${deleteInput==='DELETE'?'var(--color-red)':'var(--border)'}`, borderRadius:6, padding:'6px 10px', fontSize:'clamp(10px,.78vw,12px)', color:'var(--text-primary)', outline:'none', fontFamily:'monospace', width:'100%', marginBottom:10 }}
+                          />
+                          <div style={{ display:'flex', gap:8 }}>
+                            <button
+                              disabled={deleteInput !== 'DELETE'}
+                              onClick={confirmDelete}
+                              style={{ background: deleteInput==='DELETE' ? 'rgba(192,64,64,.15)' : '#1a1915', border:`1px solid ${deleteInput==='DELETE'?'rgba(192,64,64,.4)':'var(--border)'}`, borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color: deleteInput==='DELETE' ? 'var(--color-red)' : 'var(--text-muted)', cursor: deleteInput==='DELETE' ? 'pointer' : 'not-allowed', fontFamily:"'Inter',sans-serif", transition:'all .15s' }}>
+                              Permanently Delete
+                            </button>
+                            <button onClick={cancelDelete} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Cancel</button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    // Normal display
+                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:'clamp(10px,.78vw,13px)', fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.filename || 'Uploaded file'}</div>
+                        <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--text-muted)', marginTop:2 }}>
+                          {s.date_from} → {s.date_to} · {s.row_count.toLocaleString()} records · {s.pos_system || 'unknown POS'}
+                        </div>
+                        <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'#3a3630', marginTop:1 }}>
+                          {new Date(s.uploaded_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                        </div>
+                      </div>
+                      <button onClick={() => startDelete(s)} style={{ background:'none', border:'1px solid rgba(192,64,64,.2)', borderRadius:6, padding:'4px 10px', fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-red)', cursor:'pointer', fontFamily:"'Inter',sans-serif", flexShrink:0, transition:'all .15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background='rgba(192,64,64,.08)'}
+                        onMouseLeave={e => e.currentTarget.style.background='none'}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Duplicate Detection Modal ──────────────────────────────────────────────────
+function DuplicateModal({ incoming, existing, onProceed, onCancel }) {
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:60, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div style={{ background:'#13120f', border:'1px solid rgba(212,160,32,.3)', borderRadius:12, width:'min(700px,95%)', maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ padding:'clamp(14px,1.4vw,22px)', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
+          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(14px,1.1vw,18px)', color:'var(--color-amber)', marginBottom:4 }}>⚠ Duplicate Upload Detected</div>
+          <div style={{ fontSize:'clamp(9px,.68vw,12px)', color:'var(--text-muted)' }}>This file covers dates that overlap with an existing upload. Please confirm this is intentional.</div>
+        </div>
+        <div style={{ flex:1, overflowY:'auto', padding:'clamp(10px,1vw,18px)', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+          <div style={{ background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+            <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.7px', marginBottom:8 }}>Existing Upload</div>
+            <div style={{ fontSize:'clamp(10px,.78vw,13px)', color:'var(--text-primary)', fontWeight:600, marginBottom:4 }}>{existing.filename || 'Previous upload'}</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{existing.date_from} → {existing.date_to}</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{existing.row_count?.toLocaleString()} records</div>
+            <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'#3a3630', marginTop:4 }}>{new Date(existing.uploaded_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</div>
+          </div>
+          <div style={{ background:'#0f0e0c', border:'1px solid rgba(212,160,32,.2)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+            <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-amber)', textTransform:'uppercase', letterSpacing:'.7px', marginBottom:8 }}>New Upload</div>
+            <div style={{ fontSize:'clamp(10px,.78vw,13px)', color:'var(--text-primary)', fontWeight:600, marginBottom:4 }}>{incoming.filename}</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{incoming.dateFrom} → {incoming.dateTo}</div>
+            <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{incoming.rowCount?.toLocaleString()} records</div>
+            <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-amber)', marginTop:4 }}>Pending import</div>
+          </div>
+        </div>
+        <div style={{ padding:'clamp(10px,1vw,16px)', borderTop:'1px solid var(--border)', display:'flex', gap:10, flexShrink:0 }}>
+          <button onClick={onProceed} style={{ background:'var(--accent)', border:'none', borderRadius:6, padding:'7px 16px', fontSize:'clamp(10px,.78vw,12px)', fontWeight:600, color:'var(--bg-root)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Import Anyway</button>
+          <button onClick={onCancel} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'7px 16px', fontSize:'clamp(10px,.78vw,12px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Cancel Upload</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── CSS ──────────────────────────────────────────────────────────────────────
 const CSS = `
-
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html,body{height:100%;background:var(--bg-root);overflow:hidden;}
   #__next{height:100%;}
@@ -294,7 +630,7 @@ const CSS = `
   .an-trend-card{grid-column:1/4;grid-row:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-r1-col4{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 
-  .an-dish-col{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+  .an-day-col{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-cat-col{grid-column:2;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .an-time-col{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
   .an-wow-col{grid-column:4;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
@@ -309,31 +645,12 @@ const CSS = `
   .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
   .an-toggle-btn.active{background:#1a1915;color:var(--text-primary);}
 
-  .an-dish-stack{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
-  .an-dish-card{background:#0f0e0c;border:1px solid var(--border);border-radius:8px;padding:clamp(8px,.75vw,13px);display:flex;flex-direction:column;gap:clamp(4px,.4vh,7px);position:relative;overflow:hidden;flex:1;min-height:0;}
-  .an-dish-top-bar{position:absolute;top:0;left:0;right:0;height:2px;border-radius:8px 8px 0 0;}
-  .an-dish-badge{display:inline-flex;align-items:center;gap:4px;font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 8px;border-radius:10px;align-self:flex-start;text-transform:uppercase;letter-spacing:.5px;}
-  .an-dish-name{font-family:'Playfair Display',serif;font-size:clamp(13px,1.15vw,18px);color:var(--text-primary);line-height:1.2;}
-  .an-dish-reason{font-size:clamp(9px,.68vw,11px);color:#6b6358;line-height:1.4;flex:1;overflow:hidden;}
-  .an-dish-talking{background:var(--bg-root);border-left:2px solid var(--border);border-radius:0 5px 5px 0;padding:clamp(4px,.4vw,7px) clamp(6px,.55vw,10px);font-size:clamp(8px,.62vw,10px);color:#9a9086;line-height:1.4;font-style:italic;overflow:hidden;}
-  .an-dish-talking-lbl{font-size:clamp(7px,.55vw,8px);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:2px;font-style:normal;}
-  .an-dish-meta{display:flex;gap:clamp(8px,.75vw,14px);padding-top:clamp(5px,.5vh,8px);border-top:1px solid var(--border);align-items:flex-end;flex-wrap:wrap;flex-shrink:0;}
-  .an-dish-meta-lbl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;}
-  .an-dish-meta-val{font-size:clamp(10px,.8vw,13px);font-weight:600;margin-top:1px;}
-  .an-conf-bar{height:2px;border-radius:2px;background:#1a1915;flex:1;overflow:hidden;margin:3px 0;}
-  .an-conf-fill{height:100%;border-radius:2px;}
-
   .an-bar-row{display:flex;align-items:center;gap:clamp(5px,.45vw,8px);margin-bottom:clamp(4px,.4vh,7px);}
   .an-bar-row:last-child{margin-bottom:0;}
   .an-bar-label{font-size:clamp(8px,.62vw,11px);color:#9a9086;width:clamp(65px,6.5vw,110px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .an-bar-track{flex:1;background:#1a1915;border-radius:3px;height:clamp(3px,.3vh,5px);}
   .an-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
   .an-bar-val{font-size:clamp(8px,.62vw,11px);font-weight:600;width:clamp(38px,3.5vw,60px);text-align:right;flex-shrink:0;}
-
-  .an-heatmap-wrap{display:flex;gap:3px;flex-wrap:wrap;flex:1;align-content:flex-start;}
-  .an-heatmap-cell{border-radius:3px;display:flex;align-items:center;justify-content:center;position:relative;width:clamp(24px,2.2vw,34px);height:clamp(24px,2.2vw,34px);}
-  .an-heatmap-cell:hover .an-heatmap-tip{display:block;}
-  .an-heatmap-tip{display:none;position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);background:#1a1915;border:1px solid var(--border);border-radius:4px;padding:3px 7px;font-size:clamp(8px,.6vw,10px);color:var(--text-primary);white-space:nowrap;z-index:20;pointer-events:none;}
 
   .an-table{width:100%;border-collapse:collapse;}
   .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
@@ -355,8 +672,6 @@ const CSS = `
   .an-btn-p:hover{background:#01bcd4;}
   .an-btn-g{background:none;border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:var(--text-muted);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
   .an-btn-g:hover{color:var(--text-primary);border-color:#3a3630;}
-  .an-btn-d{background:none;border:1px solid rgba(192,64,64,.25);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:var(--color-red);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
-  .an-btn-d:hover{background:rgba(192,64,64,.08);}
 
   .an-mapper{background:#13120f;border:1px solid var(--border);border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
   .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:var(--text-primary);margin-bottom:4px;}
@@ -368,8 +683,6 @@ const CSS = `
   .an-mapper-select:focus{border-color:var(--accent);}
 
   .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:var(--text-muted);padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
-  .an-note-input{width:100%;background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-size:clamp(10px,.78vw,12px);color:var(--text-primary);outline:none;font-family:'Inter',sans-serif;resize:none;transition:border-color .15s;}
-  .an-note-input:focus{border-color:var(--accent);}
   .an-scrollable{overflow-y:auto;flex:1;min-height:0;}
   .an-scrollable::-webkit-scrollbar{width:3px;}
 
@@ -404,12 +717,12 @@ export default function AnalyticsPage() {
   const { isMobile: _isMobile, width } = useWindowSize();
   const isMobile = width < 480;
   const fileInputRef = useRef(null);
+  const pendingUploadRef = useRef(null);
 
   const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
   const [loading, setLoading] = useState(true);
-  const [dragOver, setDragOver] = useState(false);
   const [selectedPOS, setSelectedPOS] = useState('other');
   const [detectedPOS, setDetectedPOS] = useState(null);
   const [uploadStep, setUploadStep] = useState('idle');
@@ -418,6 +731,7 @@ export default function AnalyticsPage() {
   const [columnMapping, setColumnMapping] = useState({});
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadMsg, setUploadMsg] = useState('');
+  const [pendingFilename, setPendingFilename] = useState('');
   const [dateRange, setDateRange] = useState('14d');
   const [dayView, setDayView] = useState('qty');
   const [trendView, setTrendView] = useState('rev');
@@ -428,16 +742,15 @@ export default function AnalyticsPage() {
   const [slowMovers, setSlowMovers] = useState([]);
   const [dayOfWeekData, setDayOfWeekData] = useState([]);
   const [hourlyData, setHourlyData] = useState([]);
-  const [openHours, setOpenHours] = useState([]);
   const [inventoryRisk, setInventoryRisk] = useState([]);
   const [categoryData, setCategoryData] = useState([]);
   const [trendData, setTrendData] = useState([]);
   const [weekOverWeek, setWeekOverWeek] = useState({ improvers: [], decliners: [] });
-  const [voidsComps, setVoidsComps] = useState([]);
   const [stats, setStats] = useState({ totalDays: 0, totalRevenue: 0, avgDailyRevenue: 0 });
-  const [dishRecs, setDishRecs] = useState([]);
-  const [dishLoading, setDishLoading] = useState(false);
-  const [mobileSection, setMobileSection] = useState('recs');
+  const [mobileSection, setMobileSection] = useState('sales');
+  const [showUploadManager, setShowUploadManager] = useState(false);
+  const [duplicateInfo, setDuplicateInfo] = useState(null); // { incoming, existing }
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState('');
 
   const { tourProps } = useTour('analytics', restaurantId);
   const isTour = router.isReady && router.query.tour === 'true';
@@ -452,7 +765,6 @@ export default function AnalyticsPage() {
       setAllSales(sample.posSales);
       setHasSalesData(true);
       setSalesMeta({ lastSync: sample.posSales[0]?.sale_date || null, posSystem: 'tour' });
-      if (sample.dishRecs?.length) setDishRecs(sample.dishRecs);
     });
   }, [router.isReady, isTour]);
 
@@ -483,15 +795,19 @@ export default function AnalyticsPage() {
     const days = dateRange === '7d' ? 7 : dateRange === '14d' ? 14 : 30;
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days);
     const cutoffStr = cutoff.toISOString().split('T')[0];
-    return sales.filter(s => s.sale_date >= cutoffStr);
+    return sales.filter(s => {
+      const dateStr = typeof s.sale_date === 'string' ? s.sale_date.slice(0, 10) : s.sale_date;
+      return dateStr >= cutoffStr;
+    });
   }
 
   async function computeAnalytics(sales) {
     const filtered = getFilteredSales(sales);
     if (!filtered.length) return;
-    const dates = [...new Set(filtered.map(s => s.sale_date))];
+    const dates = [...new Set(filtered.map(s => typeof s.sale_date === 'string' ? s.sale_date.slice(0,10) : s.sale_date))];
     const totalRevenue = filtered.reduce((t, s) => t + parseFloat(s.revenue||0), 0);
     setStats({ totalDays: dates.length, totalRevenue, avgDailyRevenue: dates.length > 0 ? totalRevenue/dates.length : 0 });
+
     const itemMap = {};
     for (const s of filtered) {
       if (!itemMap[s.item_name]) itemMap[s.item_name] = { name: s.item_name, qty: 0, rev: 0, category: s.category };
@@ -500,39 +816,51 @@ export default function AnalyticsPage() {
     }
     const items = Object.values(itemMap).sort((a,b) => b.qty-a.qty);
     setTopSellers(items.slice(0,8));
+
     const sevenAgo = new Date(); sevenAgo.setDate(sevenAgo.getDate()-7);
     const sevenAgoStr = sevenAgo.toISOString().split('T')[0];
     const recentMap = {};
-    for (const s of filtered.filter(s => s.sale_date >= sevenAgoStr))
+    for (const s of filtered.filter(s => s.sale_date.slice(0,10) >= sevenAgoStr))
       recentMap[s.item_name] = (recentMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
     setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,6).map(i => ({...i, recentQty: recentMap[i.name]||0})));
+
     const dayMap = {};
     for (const d of DAYS) dayMap[d] = { day: d, qty: 0, rev: 0 };
     for (const s of filtered) { if (s.day_of_week && dayMap[s.day_of_week]) { dayMap[s.day_of_week].qty += parseFloat(s.quantity_sold||0); dayMap[s.day_of_week].rev += parseFloat(s.revenue||0); } }
     setDayOfWeekData(DAYS.map(d => dayMap[d]));
+
     const hourMap = {};
     for (const s of filtered) { if (s.hour_of_day !== null && s.hour_of_day !== undefined) { const h = parseInt(s.hour_of_day); hourMap[h] = (hourMap[h]||0) + parseFloat(s.quantity_sold||0); } }
     const hoursWithData = Object.keys(hourMap).map(Number).filter(h => hourMap[h]>0).sort((a,b) => a-b);
     const minH = hoursWithData[0]??0, maxH = hoursWithData[hoursWithData.length-1]??23;
     const openHrs = Array.from({ length: maxH-minH+1 }, (_,i) => minH+i);
-    setOpenHours(openHrs);
     setHourlyData(openHrs.map(h => ({ hour: h, qty: hourMap[h]||0 })));
+
     const catMap = {};
     for (const s of filtered) { const cat = s.category||'Uncategorized'; catMap[cat] = (catMap[cat]||0) + parseFloat(s.revenue||0); }
     setCategoryData(Object.entries(catMap).sort((a,b) => b[1]-a[1]).map(([name,value]) => ({name,value})));
+
+    // Daily trend — group purely by date string, no timezone
     const dailyMap = {};
-    for (const s of filtered) { if (!dailyMap[s.sale_date]) dailyMap[s.sale_date] = { date: s.sale_date, rev: 0, qty: 0 }; dailyMap[s.sale_date].rev += parseFloat(s.revenue||0); dailyMap[s.sale_date].qty += parseFloat(s.quantity_sold||0); }
+    for (const s of filtered) {
+      const dateKey = typeof s.sale_date === 'string' ? s.sale_date.slice(0,10) : s.sale_date;
+      if (!dailyMap[dateKey]) dailyMap[dateKey] = { date: dateKey, rev: 0, qty: 0 };
+      dailyMap[dateKey].rev += parseFloat(s.revenue||0);
+      dailyMap[dateKey].qty += parseFloat(s.quantity_sold||0);
+    }
     setTrendData(Object.values(dailyMap).sort((a,b) => a.date.localeCompare(b.date)));
-    const thisWk = new Date(); thisWk.setDate(thisWk.getDate()-7);
-    const lastWk = new Date(); lastWk.setDate(lastWk.getDate()-14);
-    const thisWkStr = thisWk.toISOString().split('T')[0], lastWkStr = lastWk.toISOString().split('T')[0];
+
+    const thisWkStr = new Date(Date.now()-7*864e5).toISOString().split('T')[0];
+    const lastWkStr = new Date(Date.now()-14*864e5).toISOString().split('T')[0];
     const twMap = {}, lwMap = {};
     for (const s of sales) {
-      if (s.sale_date >= thisWkStr) twMap[s.item_name] = (twMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
-      else if (s.sale_date >= lastWkStr) lwMap[s.item_name] = (lwMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
+      const d = s.sale_date.slice(0,10);
+      if (d >= thisWkStr) twMap[s.item_name] = (twMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
+      else if (d >= lastWkStr) lwMap[s.item_name] = (lwMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
     }
     const wowItems = Object.keys({...twMap,...lwMap}).map(name => { const tw=twMap[name]||0, lw=lwMap[name]||0, change=lw>0?((tw-lw)/lw)*100:tw>0?100:0; return {name,tw,lw,change}; });
     setWeekOverWeek({ improvers: wowItems.filter(i => i.change>0&&i.tw>0).sort((a,b) => b.change-a.change).slice(0,4), decliners: wowItems.filter(i => i.change<0&&i.lw>0).sort((a,b) => a.change-b.change).slice(0,4) });
+
     if (restaurantId) {
       const { data: ings } = await supabase.from('ingredients').select('name,last_ordered_at,unit').eq('restaurant_id', restaurantId).not('last_ordered_at','is',null);
       const risk = (ings||[]).filter(ing => ing.last_ordered_at >= sevenAgoStr).map(ing => {
@@ -545,31 +873,9 @@ export default function AnalyticsPage() {
     }
   }
 
-  async function fetchDishRecs(restId) {
-    setDishLoading(true);
-    try {
-      const res = await fetch('/api/dish-recommendations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ restaurantId: restId }) });
-      const json = await res.json();
-      setDishRecs(json.recommendations||[]);
-    } catch(e) { console.error(e); }
-    setDishLoading(false);
-  }
-
-  function handlePrint() {
-    const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
-    const w = window.open('','_blank');
-    w.document.write(`<html><head><title>Dish Picks ${today}</title><style>body{font-family:Georgia,serif;padding:32px;}.cards{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px;}.card{border:1px solid #ddd;border-radius:8px;padding:16px;}.dish{font-size:18px;font-weight:bold;margin-bottom:8px;}.reason{font-size:13px;color:#555;margin-bottom:10px;line-height:1.5;}.talking{font-size:12px;color:#777;font-style:italic;border-top:1px solid #eee;padding-top:8px;line-height:1.5;}</style></head><body><h2>Today's Dish Picks — ${today}</h2><div class="cards">${dishRecs.map((r,i)=>`<div class="card"><div class="dish">${r.dish}</div><div class="reason">${r.reason}</div>${r.talking_point?`<div class="talking">"${r.talking_point}"</div>`:''}</div>`).join('')}</div></body></html>`);
-    w.document.close(); w.print();
-  }
-
-  function handleShare() {
-    const today = new Date().toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
-    const text = `OptiMenu Dish Picks — ${today}\n\n${dishRecs.map((r,i) => `#${i+1} ${r.dish}\n${r.reason}${r.talking_point?`\n"${r.talking_point}"`:''}`).join('\n\n')}`;
-    navigator.clipboard.writeText(text).catch(()=>{});
-  }
-
   function handleFileSelect(files) {
     const file = files[0]; if (!file) return;
+    setPendingFilename(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
@@ -585,40 +891,102 @@ export default function AnalyticsPage() {
     reader.readAsText(file);
   }
 
-    async function handleUploadConfirm() {
-      if (!restaurantId || isTour) return;
+  async function checkForDuplicates(normalized) {
+    if (!restaurantId) return null;
+    const dates = normalized.map(r => r.sale_date).sort();
+    const dateFrom = dates[0];
+    const dateTo = dates[dates.length - 1];
+    const { data: overlapping } = await supabase.from('upload_sessions')
+      .select('*')
+      .eq('restaurant_id', restaurantId)
+      .lte('date_from', dateTo)
+      .gte('date_to', dateFrom)
+      .limit(1);
+    return overlapping?.length ? overlapping[0] : null;
+  }
+
+  async function handleUploadConfirm() {
+    if (!restaurantId || isTour) return;
     setUploadStep('uploading'); setUploadProgress(0);
     try {
       const normalized = normalizeRows(csvRows, columnMapping, restaurantId, selectedPOS);
       if (!normalized.length) throw new Error('No valid rows found. Check your column selections.');
-      const dates = [...new Set(normalized.map(r => r.sale_date))];
-      await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId).gte('sale_date', dates.sort()[0]).lte('sale_date', [...dates].sort().pop());
-      const CHUNK = 500;
-      for (let i = 0; i < normalized.length; i += CHUNK) {
-        const { error } = await supabase.from('pos_sales').insert(normalized.slice(i, i+CHUNK));
-        if (error) throw error;
-        setUploadProgress(Math.min(99, Math.round(((i+CHUNK)/normalized.length)*100)));
+
+      // Check for duplicates
+      const duplicate = await checkForDuplicates(normalized);
+      if (duplicate) {
+        const dates = normalized.map(r => r.sale_date).sort();
+        setDuplicateInfo({
+          incoming: { filename: pendingFilename, dateFrom: dates[0], dateTo: dates[dates.length-1], rowCount: normalized.length },
+          existing: duplicate,
+        });
+        pendingUploadRef.current = normalized;
+        setUploadStep('mapping'); // step back so modal can show
+        return;
       }
-      setUploadProgress(100);
-      setUploadMsg(`Successfully imported ${normalized.length} records across ${dates.length} days.`);
-      setUploadStep('done'); setHasSalesData(true);
-      await loadSalesData(restaurantId);
+
+      await executeUpload(normalized);
     } catch(err) { setUploadMsg('Upload failed: '+err.message); setUploadStep('mapping'); }
   }
 
-  async function handleClearData() {
-    if (!restaurantId || !confirm('Delete all uploaded sales data? This cannot be undone.')) return;
-    await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId);
-    setAllSales([]); setHasSalesData(false); setUploadStep('idle'); setUploadMsg('');
-    setTopSellers([]); setSlowMovers([]); setDayOfWeekData([]); setHourlyData([]);
-    setCategoryData([]); setTrendData([]); setInventoryRisk([]); setVoidsComps([]);
-    setDishRecs([]); setStats({ totalDays:0, totalRevenue:0, avgDailyRevenue:0 });
+  async function executeUpload(normalized) {
+    try {
+      const dates = normalized.map(r => r.sale_date).sort();
+      const dateFrom = dates[0];
+      const dateTo = dates[dates.length - 1];
+
+      // Create upload session
+      const { data: session, error: sessionErr } = await supabase.from('upload_sessions').insert({
+        restaurant_id: restaurantId,
+        filename: pendingFilename,
+        row_count: normalized.length,
+        date_from: dateFrom,
+        date_to: dateTo,
+        pos_system: selectedPOS,
+      }).select().single();
+      if (sessionErr) throw sessionErr;
+
+      // Tag rows with session id
+      const taggedRows = normalized.map(r => ({ ...r, upload_session_id: session.id }));
+
+      // Delete existing records in this date range before inserting
+      await supabase.from('pos_sales').delete()
+        .eq('restaurant_id', restaurantId)
+        .gte('sale_date', dateFrom)
+        .lte('sale_date', dateTo);
+
+      const CHUNK = 500;
+      for (let i = 0; i < taggedRows.length; i += CHUNK) {
+        const { error } = await supabase.from('pos_sales').insert(taggedRows.slice(i, i+CHUNK));
+        if (error) throw error;
+        setUploadProgress(Math.min(99, Math.round(((i+CHUNK)/taggedRows.length)*100)));
+      }
+
+      // Log to activity_logs
+      await supabase.from('activity_logs').insert({
+        restaurant_id: restaurantId,
+        activity_type: 'pos_upload',
+        title: 'POS Data Uploaded',
+        subtitle: pendingFilename,
+        details: `Imported ${normalized.length} records from ${dateFrom} to ${dateTo}`,
+        metadata: { session_id: session.id, row_count: normalized.length, date_from: dateFrom, date_to: dateTo }
+      }).catch(() => {});
+
+      setUploadProgress(100);
+      setUploadSuccessMsg(`Successfully imported ${normalized.length} records across ${[...new Set(normalized.map(r=>r.sale_date))].length} days.`);
+      setUploadStep('done');
+      setHasSalesData(true);
+      setDuplicateInfo(null);
+      pendingUploadRef.current = null;
+      await loadSalesData(restaurantId);
+    } catch(err) {
+      setUploadMsg('Upload failed: '+err.message);
+      setUploadStep('mapping');
+    }
   }
 
   const maxTopQty = topSellers[0]?.qty||1;
   const maxTopRev = Math.max(...topSellers.map(i => i.rev), 1);
-  const maxDayQty = Math.max(...dayOfWeekData.map(d => d.qty), 1);
-  const maxDayRev = Math.max(...dayOfWeekData.map(d => d.rev), 1);
   const maxHourQty = Math.max(...hourlyData.map(h => h.qty), 1);
 
   const MAPPER_FIELDS = [
@@ -641,7 +1009,7 @@ export default function AnalyticsPage() {
             <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
           </div>
           <div style={{ background:'#13120f', borderBottom:'1px solid var(--border)', display:'flex', flexShrink:0 }}>
-            {[{id:'recs',label:'Dish Picks'},{id:'sales',label:'Sales'},{id:'risk',label:'Risk'},{id:'upload',label:'Upload'}].map(t => (
+            {[{id:'sales',label:'Sales'},{id:'risk',label:'Risk'},{id:'upload',label:'Upload'}].map(t => (
               <button key={t.id} className={`mob-stab${mobileSection===t.id?' active':''}`} onClick={() => setMobileSection(t.id)}>{t.label}</button>
             ))}
           </div>
@@ -649,37 +1017,9 @@ export default function AnalyticsPage() {
             {loading ? (
               <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:10 }}>
                 <div style={{ width:22, height:22, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
-                <div style={{ fontSize:12, color:'var(--text-muted)' }}>Loading...</div>
               </div>
             ) : (
               <>
-                {mobileSection==='recs' && (
-                  <div className="mob-card">
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                      <div className="mob-card-title" style={{ marginBottom:0 }}>Today's Dish Picks</div>
-                      {dishRecs.length>0 && <button style={{ fontSize:11, color:'var(--accent)', background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'4px 8px', cursor:'pointer', fontFamily:"'Inter',sans-serif" }} onClick={handleShare}>⎘ Copy</button>}
-                    </div>
-                    {dishLoading ? (
-                      <div style={{ display:'flex', alignItems:'center', gap:8, color:'var(--text-muted)', fontSize:12 }}><div style={{ width:16, height:16, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>Analyzing...</div>
-                    ) : !hasSalesData ? (
-                      <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>Upload POS data to get dish picks</div>
-                    ) : dishRecs.length>0 ? dishRecs.map((rec,i) => {
-                      const color = getUrgencyColor(rec.urgency);
-                      return (
-                        <div key={i} style={{ background:'#0f0e0c', borderRadius:8, borderLeft:`3px solid ${color}`, padding:12, marginBottom:10 }}>
-                          <div style={{ fontSize:10, fontWeight:600, color:'var(--text-muted)', marginBottom:4, textTransform:'uppercase', letterSpacing:'.5px' }}>#{i+1} Push Today · {getTypeLabel(rec.type)}</div>
-                          <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, color:'var(--text-primary)', marginBottom:5 }}>{rec.dish}</div>
-                          <div style={{ fontSize:12, color:'#6b6358', lineHeight:1.45, marginBottom:8 }}>{rec.reason}</div>
-                          {rec.talking_point && <div style={{ fontSize:11, color:'var(--text-muted)', fontStyle:'italic', borderTop:'1px solid #1a1915', paddingTop:8, marginBottom:8, lineHeight:1.4 }}>"{rec.talking_point}"</div>}
-                          <div style={{ display:'flex', gap:12 }}>
-                            {rec.margin && <div><div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px' }}>Margin</div><div style={{ fontSize:13, fontWeight:600, color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
-                            {rec.confidence && <div><div style={{ fontSize:9, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.5px' }}>Confidence</div><div style={{ fontSize:13, fontWeight:600, color }}>{rec.confidence}%</div></div>}
-                          </div>
-                        </div>
-                      );
-                    }) : <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>No recommendations yet</div>}
-                  </div>
-                )}
                 {mobileSection==='sales' && (
                   <>
                     {!hasSalesData ? <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:32 }}>Upload POS data to see analytics</div> : (
@@ -731,7 +1071,7 @@ export default function AnalyticsPage() {
                       <div style={{ fontSize:12, color:'var(--text-muted)', marginBottom:14 }}>Export from your POS and upload here</div>
                       <button style={{ background:'var(--accent)', border:'none', borderRadius:7, padding:'10px 20px', fontSize:13, fontWeight:600, color:'var(--bg-root)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Choose File</button>
                     </div>
-                    {hasSalesData && <button className="an-btn-d" style={{ width:'100%' }} onClick={handleClearData}>Clear All Sales Data</button>}
+                    {hasSalesData && <button className="an-btn-g" style={{ width:'100%' }} onClick={() => setShowUploadManager(true)}>Manage Uploads</button>}
                   </div>
                 )}
               </>
@@ -773,9 +1113,18 @@ export default function AnalyticsPage() {
         <div className="an-ph">
           <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-            {uploadStep==='done' && <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>✓ {uploadMsg}<button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>×</button></div>}
+            {uploadStep==='done' && uploadSuccessMsg && (
+              <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>
+                ✓ {uploadSuccessMsg}
+                <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadSuccessMsg(''); }}>×</button>
+              </div>
+            )}
             <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
-            {hasSalesData && <button className="an-btn-d" style={{ padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)', fontSize:'clamp(9px,.68vw,11px)' }} onClick={handleClearData}>✕ Clear Data</button>}
+            {hasSalesData && (
+              <button className="an-btn-g" style={{ padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)', fontSize:'clamp(9px,.68vw,11px)' }} onClick={() => setShowUploadManager(true)}>
+                ↑ Uploads
+              </button>
+            )}
             <button className="an-btn-p" onClick={() => fileInputRef.current?.click()}>
               <input ref={fileInputRef} type="file" accept=".csv" style={{ display:'none' }} onChange={e => handleFileSelect(e.target.files)}/>
               ↑ Upload CSV
@@ -798,7 +1147,7 @@ export default function AnalyticsPage() {
             </div>
           ))}
           {hasSalesData && salesMeta.lastSync && (
-            <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {salesMeta.lastSync}</div>
+            <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {typeof salesMeta.lastSync === 'string' ? salesMeta.lastSync.slice(0,10) : salesMeta.lastSync}</div>
           )}
         </div>
 
@@ -810,7 +1159,8 @@ export default function AnalyticsPage() {
         ) : (
           <div style={{ flex:1, minHeight:0, position:'relative', display:'flex', flexDirection:'column' }}>
 
-            {uploadStep === 'mapping' && (
+            {/* Column mapping overlay */}
+            {uploadStep === 'mapping' && !duplicateInfo && (
               <div style={{ position:'absolute', inset:0, zIndex:10, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', padding:'clamp(12px,1.2vw,20px)' }}>
                 <div className="an-mapper" style={{ flex:'none', width:'min(720px,90%)', maxHeight:'90%', overflowY:'auto' }}>
                   <div className="an-mapper-title">Map your columns</div>
@@ -827,11 +1177,15 @@ export default function AnalyticsPage() {
                     ))}
                   </div>
                   {uploadMsg && <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'var(--color-red)', marginBottom:10 }}>{uploadMsg}</div>}
-                  <div style={{ display:'flex', gap:10 }}><button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button><button className="an-btn-g" onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>Cancel</button></div>
+                  <div style={{ display:'flex', gap:10 }}>
+                    <button className="an-btn-p" onClick={handleUploadConfirm}>Import {csvRows.length} rows</button>
+                    <button className="an-btn-g" onClick={() => { setUploadStep('idle'); setUploadMsg(''); }}>Cancel</button>
+                  </div>
                 </div>
               </div>
             )}
 
+            {/* Uploading progress overlay */}
             {uploadStep === 'uploading' && (
               <div style={{ position:'absolute', inset:0, zIndex:10, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:12 }}>
                 <div style={{ width:28, height:28, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
@@ -841,12 +1195,21 @@ export default function AnalyticsPage() {
               </div>
             )}
 
-            <div className="an-body"
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); handleFileSelect(e.dataTransfer.files); }}
-              style={dragOver ? { outline:'2px dashed var(--accent)', outlineOffset:'-4px', borderRadius:8 } : undefined}
-            >
+            {/* Duplicate modal */}
+            {duplicateInfo && (
+              <DuplicateModal
+                incoming={duplicateInfo.incoming}
+                existing={duplicateInfo.existing}
+                onProceed={async () => {
+                  setDuplicateInfo(null);
+                  setUploadStep('uploading');
+                  await executeUpload(pendingUploadRef.current);
+                }}
+                onCancel={() => { setDuplicateInfo(null); setUploadStep('idle'); pendingUploadRef.current = null; }}
+              />
+            )}
+
+            <div className="an-body">
 
               {/* Row 1, Cols 1-3: Daily Revenue */}
               <div className="an-trend-card">
@@ -854,7 +1217,7 @@ export default function AnalyticsPage() {
                   <div className="an-card-hd">
                     <div className="an-card-title">
                       <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                      Daily Revenue <span style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', fontWeight:400, marginLeft:4 }}>last 30 days</span>
+                      Daily Revenue <span style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', fontWeight:400, marginLeft:4 }}>last {dateRange === 'All' ? 'all' : dateRange}</span>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       {trendData.length>1 && (()=>{ const first=trendData[0]?.rev||0, last=trendData[trendData.length-1]?.rev||0, pct=first>0?((last-first)/first*100).toFixed(1):0; return <span className={parseFloat(pct)>=0?'an-trend-up':'an-trend-dn'}>{parseFloat(pct)>=0?'↑':'↓'}{Math.abs(pct)}%</span>; })()}
@@ -909,82 +1272,8 @@ export default function AnalyticsPage() {
                 </div>
               </div>
 
-              {/* Row 2, Col 1: Today's Dish Picks */}
-              <div className="an-dish-col">
-                <div className="an-card" style={{ flex:1 }}>
-                  <div className="an-card-hd" style={{ flexShrink:0 }}>
-                    <div className="an-card-title">
-                      <svg viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                      Today's Dish Picks
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                      {dishLoading && <div style={{ width:10, height:10, border:'1.5px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>}
-                      {dishRecs.length>0 && <>
-                        <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handleShare}>⎘ Copy</button>
-                        <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={handlePrint}>⎙ Print</button>
-                      </>}
-                      <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'3px 8px' }} onClick={() => fetchDishRecs(restaurantId)}>↻ Refresh</button>
-                    </div>
-                  </div>
-                  {!hasSalesData ? (
-                    <div className="an-empty" style={{ flexDirection:'column', gap:6 }}>
-                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--border)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
-                      <div>Upload POS data to generate dish picks</div>
-                    </div>
-                  ) : dishLoading ? (
-                    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, flex:1, color:'var(--text-muted)', fontSize:'clamp(10px,.78vw,12px)' }}>
-                      <div style={{ width:14, height:14, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
-                      Analyzing...
-                    </div>
-                  ) : !dishRecs.length ? (
-                    <div className="an-empty" style={{ flexDirection:'column', gap:8 }}>
-                      <div>No recommendations yet</div>
-                      <button className="an-btn-g" style={{ fontSize:'clamp(9px,.68vw,11px)', padding:'4px 10px' }} onClick={() => fetchDishRecs(restaurantId)}>Generate now</button>
-                    </div>
-                  ) : (
-                    <div className="an-dish-stack">
-                      {dishRecs.map((rec,i) => {
-                        const color = getUrgencyColor(rec.urgency);
-                        return (
-                          <div key={i} className="an-dish-card">
-                            <div className="an-dish-top-bar" style={{ background:color }}/>
-                            <div className="an-dish-badge" style={{ background:`${color}18`, color }}>{getTypeLabel(rec.type)}</div>
-                            <div className="an-dish-name">{rec.dish}</div>
-                            <div className="an-dish-reason">{rec.reason}</div>
-                            {rec.talking_point && (
-                              <div className="an-dish-talking">
-                                <div className="an-dish-talking-lbl">Suggest to guests</div>
-                                "{rec.talking_point}"
-                              </div>
-                            )}
-                            <div className="an-dish-meta">
-                              {rec.margin && <div><div className="an-dish-meta-lbl">Margin</div><div className="an-dish-meta-val" style={{ color:getMarginColor(rec.margin) }}>{rec.margin.toFixed(1)}%</div></div>}
-                              {rec.confidence && <div style={{ flex:1 }}><div className="an-dish-meta-lbl">Confidence</div><div className="an-conf-bar"><div className="an-conf-fill" style={{ width:`${rec.confidence}%`, background:color }}/></div><div style={{ fontSize:'clamp(8px,.62vw,10px)', color, fontWeight:600 }}>{rec.confidence}%</div></div>}
-                              <div><div className="an-dish-meta-lbl">Urgency</div><div className="an-dish-meta-val" style={{ color, fontSize:'clamp(10px,.78vw,12px)' }}>{rec.urgency.charAt(0).toUpperCase()+rec.urgency.slice(1)}</div></div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Row 2, Col 2: By Category */}
-              <div className="an-cat-col">
-                <div className="an-card" style={{ flex:1 }}>
-                  <div className="an-card-hd">
-                    <div className="an-card-title">
-                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 12 l4 2"/></svg>
-                      By Category
-                    </div>
-                  </div>
-                  {hasSalesData ? <DonutChart data={categoryData}/> : <div className="an-empty">No data yet</div>}
-                </div>
-              </div>
-
-              {/* Row 2, Col 3: By Day + Hourly */}
-              <div className="an-time-col">
+              {/* Row 2, Col 1: By Day (replaced Dish Picks) */}
+              <div className="an-day-col">
                 <div className="an-card" style={{ flex:1 }}>
                   <div className="an-card-hd">
                     <div className="an-card-title">
@@ -996,43 +1285,39 @@ export default function AnalyticsPage() {
                       <button className={`an-toggle-btn${dayView==='rev'?' active':''}`} onClick={() => setDayView('rev')}>Rev</button>
                     </div>
                   </div>
-                  <div className="an-scrollable">
-                    {hasSalesData && dayOfWeekData.some(d => d.qty>0) ? dayOfWeekData.map(d => (
-                      <div key={d.day} className="an-bar-row">
-                        <div className="an-bar-label">{d.day.slice(0,3)}</div>
-                        <div className="an-bar-track"><div className="an-bar-fill" style={{ width:`${dayView==='qty'?(d.qty/maxDayQty)*100:(d.rev/maxDayRev)*100}%`, background:'var(--color-amber)' }}/></div>
-                        <div className="an-bar-val" style={{ color:'var(--color-amber)' }}>{dayView==='qty'?Math.round(d.qty):formatCurrency(d.rev)}</div>
-                      </div>
-                    )) : <div className="an-empty">No data yet</div>}
-                  </div>
+                  {hasSalesData && dayOfWeekData.some(d => d.qty>0)
+                    ? <ByDayCards dayOfWeekData={dayOfWeekData} allSales={allSales} dateRange={dateRange} dayView={dayView} />
+                    : <div className="an-empty">No data yet</div>}
                 </div>
+              </div>
+
+              {/* Row 2, Col 2: By Category (horizontal bars) */}
+              <div className="an-cat-col">
+                <div className="an-card" style={{ flex:1 }}>
+                  <div className="an-card-hd">
+                    <div className="an-card-title">
+                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2v10l4 2"/></svg>
+                      By Category
+                    </div>
+                  </div>
+                  {hasSalesData ? <CategoryBars data={categoryData}/> : <div className="an-empty">No category data</div>}
+                </div>
+              </div>
+
+              {/* Row 2, Col 3: By Time + Week vs Week */}
+              <div className="an-time-col">
                 <div className="an-card" style={{ flex:1 }}>
                   <div className="an-card-hd">
                     <div className="an-card-title">
                       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                       By Time
                     </div>
+                    <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)' }}>click to expand</div>
                   </div>
-                  {hasSalesData && hourlyData.length > 0 ? <>
-                    <div className="an-heatmap-wrap">
-                      {hourlyData.map(h => { const intensity=maxHourQty>0?h.qty/maxHourQty:0; const bg=intensity>0.7?'var(--color-red)':intensity>0.4?'var(--color-amber)':intensity>0.1?'var(--accent)':'#1a1915'; return (
-                        <div key={h.hour} className="an-heatmap-cell" style={{ background:bg, opacity:intensity>0?0.3+intensity*0.7:0.25 }}>
-                          <span style={{ fontSize:'clamp(7px,.55vw,9px)', color:intensity>0.5?'var(--bg-root)':'var(--text-muted)' }}>{formatHour(h.hour)}</span>
-                          <div className="an-heatmap-tip">{formatHour(h.hour)} — {Math.round(h.qty)} items</div>
-                        </div>
-                      );})}
-                    </div>
-                    <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap', flexShrink:0 }}>
-                      {[{c:'var(--color-red)',l:'Peak'},{c:'var(--color-amber)',l:'Busy'},{c:'var(--accent)',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
-                        <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)' }}><div style={{ width:7, height:7, borderRadius:2, background:c }}/>{l}</div>
-                      ))}
-                    </div>
-                  </> : <div className="an-empty">No data yet</div>}
+                  {hasSalesData && hourlyData.length > 0
+                    ? <ByTimeCard hourlyData={hourlyData} maxHourQty={maxHourQty}/>
+                    : <div className="an-empty">No data yet</div>}
                 </div>
-              </div>
-
-              {/* Row 2, Col 4: Week vs Week + Inventory Risk */}
-              <div className="an-wow-col">
                 <div className="an-card" style={{ flex:1 }}>
                   <div className="an-card-hd">
                     <div className="an-card-title">
@@ -1060,6 +1345,10 @@ export default function AnalyticsPage() {
                     </>}
                   </div>
                 </div>
+              </div>
+
+              {/* Row 2, Col 4: Inv. Risk */}
+              <div className="an-wow-col">
                 <div className="an-card" style={{ flex:1 }}>
                   <div className="an-card-hd">
                     <div className="an-card-title">
@@ -1081,6 +1370,16 @@ export default function AnalyticsPage() {
             </div>
           </div>
         )}
+
+        {/* Upload Manager Modal */}
+        {showUploadManager && restaurantId && (
+          <UploadManagerModal
+            restaurantId={restaurantId}
+            onClose={() => setShowUploadManager(false)}
+            onDeleted={async () => { await loadSalesData(restaurantId); if (allSales.length === 0) setHasSalesData(false); }}
+          />
+        )}
+
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
       <TourDataBanner />
