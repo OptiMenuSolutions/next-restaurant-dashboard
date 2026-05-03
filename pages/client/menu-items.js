@@ -125,13 +125,9 @@ const CSS = `
   .mi-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
   .mi-tab.active { color: var(--text-primary); background: #1a1915; }
 
-  .mi-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .mi-ph { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(8px,.8vh,14px) clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 16px; }
   .mi-ph-title { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
   .mi-ph-sub { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); margin-top: 2px; }
-
-  .mi-sbar { background: #13120f; border-bottom: 1px solid var(--border); padding: clamp(6px,.6vh,10px) clamp(10px,1vw,20px); display: flex; gap: clamp(16px,2vw,36px); flex-shrink: 0; }
-  .mi-sv { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); line-height: 1; }
-  .mi-sl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .5px; }
 
   .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px); flex: 1; min-height: 0; overflow: hidden; }
 
@@ -725,7 +721,20 @@ export default function ClientMenuItems() {
             <div className="mi-ph-title">Menu Engineering</div>
             <div className="mi-ph-sub">Optimize pricing and profitability</div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(16px,2vw,36px)' }}>
+            {[
+              { v: menuItems.length, l: 'Menu Items', c: 'var(--accent)' },
+              { v: `${avgMargin.toFixed(1)}%`, l: 'Avg Margin', c: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' },
+              { v: belowTarget, l: 'Below Target', c: 'var(--color-red)' },
+            ].map(({ v, l, c }) => (
+              <div key={l}>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.1vw,18px)', color: c, lineHeight: 1 }}>{v}</div>
+                <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)', marginTop: 2, textTransform: 'uppercase', letterSpacing: '.5px' }}>{l}</div>
+              </div>
+            ))}
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* Import + Add buttons stay here */}
             <button
               onClick={() => setShowImportModal(true)}
               style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid var(--accent)', borderRadius: 5, padding: 'clamp(5px,.5vh,8px) clamp(10px,.9vw,16px)', fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', transition: 'all .2s' }}
@@ -737,30 +746,11 @@ export default function ClientMenuItems() {
               </svg>
               Import Menu
             </button>
-            <button className="mi-add-btn">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-              Add Item
-            </button>
+            <button className="mi-add-btn">Add Item</button>
           </div>
         </div>
 
         {/* STATS BAR */}
-        <div className="mi-sbar">
-          {[
-            { v: menuItems.length, l: 'Menu Items', c: 'var(--accent)' },
-            { v: `${avgMargin.toFixed(1)}%`, l: 'Avg Margin', c: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' },
-            { v: belowTarget, l: 'Below Target', c: 'var(--color-red)' },
-            { v: incomplete, l: 'Incomplete Cost', c: 'var(--color-amber)' },
-            { v: avgPrice > 0 ? formatCurrency(avgPrice) : '--', l: 'Avg Price', c: 'var(--text-primary)' },
-          ].map(({ v, l, c }) => (
-            <div key={l}>
-              <div className="mi-sv" style={{ color: c }}>{v}</div>
-              <div className="mi-sl">{l}</div>
-            </div>
-          ))}
-        </div>
 
         {loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
