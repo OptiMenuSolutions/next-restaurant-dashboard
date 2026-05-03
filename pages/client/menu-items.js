@@ -141,7 +141,7 @@ const CSS = `
   .mi-ph-action-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
   .mi-ph-action-val { font-weight: 600; }
 
-  .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px) clamp(16px,1.8vw,28px); flex: 1; min-height: 0; overflow: hidden; }
+  .mi-body { display: flex; gap: clamp(6px,.6vw,10px); padding: clamp(6px,.6vw,10px) clamp(24px,3vw,60px); flex: 1; min-height: 0; overflow: hidden; }
 
   .mi-container { flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .mi-container-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -161,10 +161,10 @@ const CSS = `
   .mi-add-btn { display: flex; align-items: center; gap: 5px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .mi-add-btn:hover { background: #01bcd4; }
 
-  .mi-grid-wrap { flex: 1; overflow-y: auto; padding: clamp(8px,.8vw,12px); }
-  .mi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(6px,.6vw,10px); }
+  .mi-grid-wrap { flex: 1; overflow-y: auto; padding: clamp(8px,.8vw,12px); min-width: 0; }
+  .mi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(6px,.6vw,10px); }
 
-  .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; }
+  .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; min-width: 0; overflow: hidden; }
   .mi-card:hover { border-color: #3a3630; background: #1a1915; }
   .mi-card.selected { border-color: var(--accent); background: rgba(2,164,186,.06); border-left-color: var(--accent); }
   .mi-card-status { position: absolute; top: 10px; right: 10px; font-size: clamp(7px,.58vw,9px); font-weight: 600; padding: 2px 6px; border-radius: 8px; }
