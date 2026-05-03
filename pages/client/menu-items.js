@@ -103,6 +103,16 @@ function getIncompleteIngredients(itemData) {
   return missing;
 }
 
+// Shared card style objects matching ingredient detail
+const S = {
+  wf: { background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 7, padding: 'clamp(7px,.7vw,10px)', fontFamily: "'Inter', sans-serif" },
+  wlbl: { fontSize: 'clamp(8px,.6vw,10px)', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.8px', marginBottom: 'clamp(6px,.6vh,10px)', display: 'flex', alignItems: 'center', gap: 4 },
+  dot: { width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 },
+  pill: { background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)' },
+  pillLbl: { fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4, fontFamily: "'Inter', sans-serif" },
+  pillVal: { fontFamily: "'Inter', sans-serif", fontSize: 'clamp(11px,.85vw,14px)', fontWeight: 600 },
+};
+
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
@@ -118,7 +128,6 @@ const CSS = `
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
 
   .mi-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-
   .mi-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .mi-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
   .mi-logo span { color: var(--accent); }
@@ -128,14 +137,12 @@ const CSS = `
   .mi-ph { background: var(--bg-surface); border-bottom: 1px solid var(--border); height: clamp(28px,3.2vh,40px); padding: 0 clamp(10px,1vw,16px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .mi-ph-title { font-size: clamp(11px,.82vw,15px); font-weight: 600; color: var(--text-primary); }
   .mi-ph-sub { font-size: clamp(9px,.62vw,11px); color: var(--text-muted); margin-left: 6px; }
-  .mi-ph-actions { display: flex; align-items: center; gap: clamp(10px,1.2vw,20px); }
   .mi-ph-action-item { display: flex; align-items: center; gap: 4px; font-size: clamp(9px,.62vw,11px); color: var(--text-muted); }
   .mi-ph-action-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
   .mi-ph-action-val { font-weight: 600; }
 
   .mi-body { display: flex; gap: clamp(8px,.8vw,12px); padding: clamp(8px,.8vw,12px); flex: 1; min-height: 0; overflow: hidden; }
 
-  /* ── Container card (like ing-list) ── */
   .mi-container { flex: 1; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .mi-container-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .mi-container-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
@@ -145,40 +152,32 @@ const CSS = `
   .mi-search { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,12px); color: var(--text-primary); width: clamp(120px,13vw,200px); outline: none; font-family: 'Inter', sans-serif; }
   .mi-sort-sel { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(6px,.5vw,10px); font-size: clamp(9px,.68vw,11px); color: #9a9086; font-family: 'Inter', sans-serif; outline: none; cursor: pointer; }
 
-  /* Toggle grid/list */
   .mi-view-toggle { display: flex; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; flex-shrink: 0; }
   .mi-toggle-btn { background: none; border: none; cursor: pointer; padding: clamp(3px,.3vh,5px) clamp(7px,.6vw,10px); color: var(--text-muted); transition: all .15s; display: flex; align-items: center; justify-content: center; }
   .mi-toggle-btn.active { background: #1a1915; color: var(--accent); }
   .mi-toggle-btn:first-child { border-right: 1px solid var(--border); }
   .mi-toggle-btn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
-  /* Action buttons in page header */
-  .mi-add-btn { display: flex; align-items: center; gap: 5px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(5px,.5vh,8px) clamp(10px,.9vw,16px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
+  .mi-add-btn { display: flex; align-items: center; gap: 5px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .mi-add-btn:hover { background: #01bcd4; }
 
-  /* Grid view */
   .mi-grid-wrap { flex: 1; overflow-y: auto; padding: clamp(8px,.8vw,12px); }
   .mi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(155px,16vw,225px), 1fr)); gap: clamp(6px,.6vw,10px); }
 
   .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; }
   .mi-card:hover { border-color: #3a3630; background: #1a1915; }
   .mi-card.selected { border-color: var(--accent); background: rgba(2,164,186,.06); border-left-color: var(--accent); }
-
   .mi-card-status { position: absolute; top: 10px; right: 10px; font-size: clamp(7px,.58vw,9px); font-weight: 600; padding: 2px 6px; border-radius: 8px; }
   .cs-complete { background: rgba(42,138,90,.1); color: var(--color-green); }
   .cs-incomplete { background: rgba(192,64,64,.1); color: var(--color-red); }
   .cs-partial { background: rgba(212,160,32,.1); color: var(--color-amber); }
-
   .mi-card-icon { width: clamp(26px,2.4vw,36px); height: clamp(26px,2.4vw,36px); border-radius: 7px; background: rgba(2,164,186,.08); border: 1px solid rgba(2,164,186,.15); display: flex; align-items: center; justify-content: center; margin-bottom: clamp(8px,.8vh,12px); }
   .mi-card-icon svg { width: 55%; height: 55%; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-
   .mi-card-name { font-size: clamp(11px,.88vw,14px); font-weight: 600; color: var(--text-primary); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 40px; }
   .mi-card-sub { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-bottom: clamp(8px,.8vh,12px); }
-
   .mi-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(4px,.4vw,6px); margin-bottom: clamp(6px,.6vh,9px); }
   .mi-metric-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 2px; }
   .mi-metric-val { font-size: clamp(10px,.8vw,13px); font-weight: 600; color: var(--text-primary); }
-
   .mi-margin-bar { margin-top: clamp(6px,.6vh,9px); padding-top: clamp(6px,.6vh,9px); border-top: 1px solid var(--border); }
   .mi-margin-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .mi-margin-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
@@ -186,7 +185,6 @@ const CSS = `
   .mi-track { background: #1a1915; border-radius: 3px; height: clamp(3px,.28vh,5px); }
   .mi-fill { height: 100%; border-radius: 3px; transition: width .3s; }
 
-  /* List view — mirrors ingredients table */
   .mi-list-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1.4fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,16px); background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-list-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; cursor: pointer; display: flex; align-items: center; gap: 3px; user-select: none; }
   .mi-list-th:hover { color: #9a9086; }
@@ -204,76 +202,78 @@ const CSS = `
   .mi-list-margin-fill { height: 100%; border-radius: 3px; }
   .mi-list-margin-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; width: 38px; text-align: right; }
 
-  /* Detail panel */
-  .mi-detail { width: clamp(280px,32vw,440px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  .mi-detail { width: clamp(280px,32vw,440px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; position: relative; }
   .mi-detail-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-detail-hd-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .mi-detail-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 65%; }
+  .mi-detail-title { font-family: 'Playfair Display', serif; font-size: clamp(12px,1vw,16px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
   .mi-close-btn { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; }
   .mi-close-btn:hover { color: var(--text-primary); border-color: #3a3630; }
-
   .mi-view-tabs { display: flex; background: #0f0e0c; border-radius: 5px; padding: 2px; gap: 2px; }
   .mi-vtab { flex: 1; padding: clamp(3px,.3vh,5px); border-radius: 3px; font-size: clamp(8px,.65vw,11px); font-weight: 500; cursor: pointer; border: none; font-family: 'Inter', sans-serif; color: var(--text-muted); background: transparent; text-align: center; transition: all .15s; }
   .mi-vtab.active { background: #1a1915; color: var(--text-primary); }
+  .mi-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,14px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); font-family: 'Inter', sans-serif; }
 
-  .mi-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,14px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); }
-
-  .mi-d-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(5px,.5vw,8px); }
-  .mi-d-metric { background: #0f0e0c; border: 1px solid #1a1915; border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(8px,.8vw,12px); text-align: center; }
-  .mi-d-metric-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .mi-d-metric-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,19px); color: var(--text-primary); line-height: 1; }
-
-  .mi-sect-title { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,9px); display: flex; align-items: center; gap: 5px; }
-  .mi-sect-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-
-  .mi-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
+  .mi-comp { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
   .mi-comp:last-child { margin-bottom: 0; }
-  .mi-comp-hd { padding: clamp(6px,.6vh,10px) clamp(8px,.8vw,12px); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background .15s; }
-  .mi-comp-hd:hover { background: #1a1915; }
-  .mi-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); }
-  .mi-comp-sub { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; }
-  .mi-comp-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--accent); }
-  .mi-comp-pct { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; text-align: right; }
-  .mi-comp-ings { background: #13120f; border-top: 1px solid var(--border); padding: clamp(5px,.5vh,8px) clamp(8px,.8vw,12px); }
-  .mi-comp-ing-row { display: flex; align-items: center; justify-content: space-between; padding: clamp(3px,.3vh,5px) 0; border-bottom: 1px solid #1a1915; }
+  .mi-comp-hd { padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: background .15s; }
+  .mi-comp-hd:hover { background: var(--bg-elevated); }
+  .mi-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); font-family: 'Inter', sans-serif; }
+  .mi-comp-sub { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; font-family: 'Inter', sans-serif; }
+  .mi-comp-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--accent); font-family: 'Inter', sans-serif; }
+  .mi-comp-pct { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); margin-top: 1px; font-family: 'Inter', sans-serif; }
+  .mi-comp-ings { background: var(--bg-elevated); border-top: 1px solid var(--border-subtle); padding: clamp(5px,.5vh,8px) clamp(8px,.8vw,12px); }
+  .mi-comp-ing-row { display: flex; align-items: center; padding: clamp(4px,.4vh,6px) 0; border-bottom: 1px solid var(--border-subtle); }
   .mi-comp-ing-row:last-child { border-bottom: none; }
   .mi-comp-ing-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-right: 6px; }
-  .mi-comp-ing-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; }
-  .mi-comp-ing-qty { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin: 0 8px; }
-  .mi-comp-ing-cost { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #9a9086; }
-
-  .mi-total-bar { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; }
-  .mi-total-lbl { font-size: clamp(9px,.68vw,12px); color: #6b6358; font-weight: 500; }
-  .mi-total-val { font-family: 'Playfair Display', serif; font-size: clamp(14px,1.2vw,18px); color: var(--accent); }
-
-  .mi-price-recs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: clamp(4px,.4vw,7px); }
-  .mi-price-rec { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(6px,.6vh,10px); text-align: center; }
-  .mi-price-rec-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; line-height: 1.4; }
-  .mi-price-rec-val { font-family: 'Playfair Display', serif; font-size: clamp(12px,1.1vw,16px); color: var(--text-primary); }
-  .mi-price-rec-val.highlight { color: var(--color-green); }
+  .mi-comp-ing-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; font-family: 'Inter', sans-serif; }
+  .mi-comp-ing-qty { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin: 0 8px; font-family: 'Inter', sans-serif; }
+  .mi-comp-ing-cost { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #9a9086; font-family: 'Inter', sans-serif; }
 
   .mi-opt-compare { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .mi-opt-card { border-radius: 6px; padding: clamp(8px,.8vw,12px); }
-  .mi-opt-orig { background: #0f0e0c; border: 1px solid var(--border); }
+  .mi-opt-card { border-radius: 7px; padding: clamp(8px,.8vw,12px); font-family: 'Inter', sans-serif; }
+  .mi-opt-orig { background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
   .mi-opt-new { background: rgba(42,138,90,.05); border: 1px solid rgba(42,138,90,.2); }
-  .mi-opt-card-title { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
-  .mi-opt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-  .mi-opt-row:last-child { margin-bottom: 0; padding-top: 5px; border-top: 1px solid var(--border); }
-  .mi-opt-label { font-size: clamp(9px,.68vw,11px); color: #6b6358; }
-  .mi-opt-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--text-primary); }
-  .mi-opt-price-input { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: clamp(55px,5.5vw,80px); text-align: right; outline: none; font-family: 'Inter', sans-serif; }
+  .mi-opt-card-title { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; }
+  .mi-opt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .mi-opt-row:last-child { margin-bottom: 0; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+  .mi-opt-label { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
+  .mi-opt-val { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
+  .mi-opt-price-input { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: clamp(55px,5.5vw,80px); text-align: right; outline: none; font-family: 'Inter', sans-serif; }
   .mi-opt-price-input:focus { border-color: var(--accent); }
-
-  .mi-opt-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; padding: clamp(8px,.8vw,12px); margin-bottom: 6px; }
+  .mi-opt-comp { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; padding: clamp(8px,.8vw,12px); margin-bottom: 6px; font-family: 'Inter', sans-serif; }
   .mi-opt-comp:last-child { margin-bottom: 0; }
-  .mi-opt-comp-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .mi-opt-comp-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .mi-opt-comp-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); }
   .mi-opt-cost { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--accent); }
   .mi-opt-slider-wrap { display: flex; align-items: center; gap: 7px; }
-  .mi-opt-slider-lbl { font-size: clamp(8px,.6vw,10px); color: #6b6358; flex-shrink: 0; width: clamp(50px,5vw,70px); }
+  .mi-opt-slider-lbl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); flex-shrink: 0; width: clamp(50px,5vw,70px); }
   .mi-opt-pct { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--accent); width: 35px; text-align: right; flex-shrink: 0; }
   .mi-opt-reset { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
   .mi-opt-reset:hover { color: var(--text-primary); border-color: #3a3630; }
+
+  .mi-edit-comp { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; overflow: hidden; margin-bottom: 8px; }
+  .mi-edit-comp-hd { background: var(--bg-surface); padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border-subtle); }
+  .mi-edit-comp-name { flex: 1; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); font-family: 'Inter', sans-serif; outline: none; }
+  .mi-edit-comp-name:focus { border-color: var(--accent); }
+  .mi-edit-ing-grid { display: grid; grid-template-columns: 1fr 68px 68px auto; gap: 5px; align-items: center; padding: clamp(5px,.5vh,8px) clamp(8px,.8vw,12px); border-bottom: 1px solid var(--border-subtle); }
+  .mi-edit-input { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 4px; padding: 4px 7px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: 100%; outline: none; font-family: 'Inter', sans-serif; }
+  .mi-edit-input:focus { border-color: var(--accent); }
+  .mi-edit-ing-cost { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-align: right; font-family: 'Inter', sans-serif; }
+  .mi-edit-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 2px 4px; border-radius: 3px; transition: color .15s; line-height: 1; }
+  .mi-edit-del:hover { color: var(--color-red); }
+  .mi-edit-add-ing { background: none; border: 1px dashed var(--border); border-radius: 4px; padding: 5px 10px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin: 6px 0 4px; transition: all .15s; }
+  .mi-edit-add-ing:hover { border-color: var(--accent); color: var(--accent); }
+  .mi-edit-add-comp { background: none; border: 1px dashed var(--border); border-radius: 7px; padding: 9px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; transition: all .15s; text-align: center; }
+  .mi-edit-add-comp:hover { border-color: var(--accent); color: var(--accent); }
+  .mi-edit-save { background: var(--accent); border: none; border-radius: 6px; padding: clamp(7px,.7vh,10px) clamp(12px,1.1vw,18px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; width: 100%; margin-top: 4px; }
+  .mi-edit-save:hover { background: #01bcd4; }
+  .mi-edit-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
+  .mi-ing-search-wrap { position: relative; }
+  .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: #1a1915; border: 1px solid #3a3630; border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
+  .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); cursor: pointer; border-bottom: 1px solid var(--border); font-family: 'Inter', sans-serif; }
+  .mi-ing-option:last-child { border-bottom: none; }
+  .mi-ing-option:hover { background: var(--border); }
+  .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-top: 1px; }
 
   .mi-ov-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
   .mi-ov-w { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
@@ -285,33 +285,7 @@ const CSS = `
   .mi-ov-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mi-ov-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; }
   .mi-ov-pill { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; flex-shrink: 0; margin-left: 5px; }
-
   .mi-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
-
-  .mi-edit-comp { background: #0f0e0c; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
-  .mi-edit-comp-hd { background: #13120f; padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border); }
-  .mi-edit-comp-name { flex: 1; background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); font-family: 'Inter', sans-serif; outline: none; }
-  .mi-edit-comp-name:focus { border-color: var(--accent); }
-  .mi-edit-ing-grid { display: grid; grid-template-columns: 1fr 72px 72px auto; gap: 5px; align-items: center; padding: clamp(4px,.4vh,6px) clamp(8px,.8vw,12px); border-bottom: 1px solid #1a1915; }
-  .mi-edit-ing-grid:last-child { border-bottom: none; }
-  .mi-edit-input { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: 3px 6px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); width: 100%; outline: none; font-family: 'Inter', sans-serif; }
-  .mi-edit-input:focus { border-color: var(--accent); }
-  .mi-edit-ing-cost { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-align: right; }
-  .mi-edit-del { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 3px; transition: color .15s; }
-  .mi-edit-del:hover { color: var(--color-red); }
-  .mi-edit-add-ing { background: none; border: 1px dashed var(--border); border-radius: 4px; padding: 4px 10px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; margin: 6px 0 4px; transition: all .15s; }
-  .mi-edit-add-ing:hover { border-color: var(--accent); color: var(--accent); }
-  .mi-edit-add-comp { background: none; border: 1px dashed var(--border); border-radius: 6px; padding: 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; width: 100%; transition: all .15s; text-align: center; }
-  .mi-edit-add-comp:hover { border-color: var(--accent); color: var(--accent); }
-  .mi-edit-save { background: var(--accent); border: none; border-radius: 5px; padding: clamp(6px,.6vh,9px) clamp(12px,1.1vw,18px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; width: 100%; }
-  .mi-edit-save:hover { background: #01bcd4; }
-  .mi-edit-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
-  .mi-ing-search-wrap { position: relative; }
-  .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: #1a1915; border: 1px solid #3a3630; border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
-  .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); cursor: pointer; border-bottom: 1px solid var(--border); }
-  .mi-ing-option:last-child { border-bottom: none; }
-  .mi-ing-option:hover { background: var(--border); }
-  .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-top: 1px; }
 `;
 
 export default function ClientMenuItems() {
@@ -329,8 +303,8 @@ export default function ClientMenuItems() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedItemData, setSelectedItemData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailTab, setDetailTab] = useState('details');       // renamed from viewMode
-  const [displayMode, setDisplayMode] = useState('grid');       // 'grid' | 'list'
+  const [detailTab, setDetailTab] = useState('details');
+  const [displayMode, setDisplayMode] = useState('grid');
   const [expandedComponents, setExpandedComponents] = useState(new Set());
   const [multipliers, setMultipliers] = useState({});
   const [optimizedPrice, setOptimizedPrice] = useState(null);
@@ -342,12 +316,11 @@ export default function ClientMenuItems() {
   const [ingSearch, setIngSearch] = useState({});
   const [ingDropdownOpen, setIngDropdownOpen] = useState({});
   const [editDirty, setEditDirty] = useState(false);
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [unsavedCallback, setUnsavedCallback] = useState(null);
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
-
-  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
-  const [unsavedCallback, setUnsavedCallback] = useState(null);
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId && !isTour) fetchMenuItems(); }, [restaurantId]);
@@ -401,7 +374,6 @@ export default function ClientMenuItems() {
       supabase.from('menu_item_components').select('id, name, cost, component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, last_price, unit, last_ordered_at))').eq('menu_item_id', itemId).order('name'),
       supabase.from('menu_item_cost_history').select('*').eq('menu_item_id', itemId).order('created_at', { ascending: false }).limit(10),
     ]);
-
     const processedComps = (comps || []).map(c => {
       const processedIngs = (c.component_ingredients || []).map(ci => {
         const ing = ci.ingredients;
@@ -409,9 +381,7 @@ export default function ClientMenuItems() {
         let totalCost = 0;
         if (unitCost > 0) {
           try {
-            const calc = typeof calculateStandardizedCost === 'function'
-              ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name)
-              : null;
+            const calc = typeof calculateStandardizedCost === 'function' ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name) : null;
             totalCost = (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : 0;
           } catch { totalCost = 0; }
         }
@@ -421,21 +391,14 @@ export default function ClientMenuItems() {
       const effectiveCost = (c.cost > 0 && calculatedCost > c.cost * 3) ? c.cost : calculatedCost;
       return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: effectiveCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
     });
-
     setSelectedItemData({ item, ingredients: ings || [], components: processedComps, costHistory: history || [] });
-    setOptimizedPrice(null);
-    setMultipliers({});
-    setExpandedComponents(new Set());
+    setOptimizedPrice(null); setMultipliers({}); setExpandedComponents(new Set());
     setDetailLoading(false);
   }
 
   function selectItem(id) {
-    setSelectedItem(id);
-    setDetailTab('details');
-    setOptimizedPrice(null);
-    setMultipliers({});
-    setExpandedComponents(new Set());
-
+    setSelectedItem(id); setDetailTab('details');
+    setOptimizedPrice(null); setMultipliers({}); setExpandedComponents(new Set());
     if (isTour) {
       const item = menuItems.find(i => i.id === id);
       if (!item) return;
@@ -443,11 +406,9 @@ export default function ClientMenuItems() {
         const processedIngs = (c.component_ingredients || []).map(ci => {
           const ing = ci.ingredients;
           const unitCost = parseFloat(ing?.last_price || 0);
-          const totalIngCost = parseFloat(ci.quantity || 0) * unitCost;
-          return { id: ci.id || `ci-${Math.random()}`, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit || ing?.unit || 'unit', unitCost, standardUnit: ing?.unit || 'unit', totalCost: totalIngCost, hasPrice: unitCost > 0 };
+          return { id: ci.id || `ci-${Math.random()}`, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit || ing?.unit || 'unit', unitCost, standardUnit: ing?.unit || 'unit', totalCost: parseFloat(ci.quantity || 0) * unitCost, hasPrice: unitCost > 0 };
         });
-        const calculatedCost = processedIngs.reduce((s, i) => s + i.totalCost, 0) || parseFloat(c.cost || 0);
-        return { id: c.id, name: c.name, storedCost: parseFloat(c.cost || 0), calculatedCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
+        return { id: c.id, name: c.name, storedCost: parseFloat(c.cost || 0), calculatedCost: processedIngs.reduce((s, i) => s + i.totalCost, 0) || parseFloat(c.cost || 0), ingredients: processedIngs, ingredientCount: processedIngs.length };
       });
       setSelectedItemData({ item, ingredients: item.menu_item_ingredients || [], components: comps, costHistory: [] });
       return;
@@ -455,10 +416,7 @@ export default function ClientMenuItems() {
     fetchItemDetail(id).then(() => fetchIngredientLibrary());
   }
 
-  function handleSortChange(e) {
-    const [field, dir] = e.target.value.split('-');
-    setSortBy(field); setSortOrder(dir);
-  }
+  function handleSortChange(e) { const [field, dir] = e.target.value.split('-'); setSortBy(field); setSortOrder(dir); }
 
   const filtered = menuItems
     .filter(i => (i.name || '').toLowerCase().includes(searchTerm.toLowerCase()))
@@ -479,43 +437,28 @@ export default function ClientMenuItems() {
   const itemsWithMargins = menuItems.filter(i => getMarginNum(i.price, i.cost) !== null);
   const avgMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + getMarginNum(i.price, i.cost), 0) / itemsWithMargins.length : 0;
   const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).length;
-  const incomplete = menuItems.filter(i => hasIncompleteCosting(i)).length;
-  const avgPrice = menuItems.filter(i => i.price).length > 0 ? menuItems.filter(i => i.price).reduce((s, i) => s + parseFloat(i.price), 0) / menuItems.filter(i => i.price).length : 0;
-
   const topMargin = [...itemsWithMargins].sort((a, b) => getMarginNum(b.price, b.cost) - getMarginNum(a.price, a.cost)).slice(0, 4);
   const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).slice(0, 3);
   const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
-
   const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
   const maxBucket = Math.max(bucket(0, 40), bucket(40, 60), bucket(60, 75), bucket(75, 100), 1);
 
   const totalCost = selectedItemData
     ? selectedItemData.components.length > 0
-      ? (() => {
-          const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0);
-          const stored = parseFloat(selectedItemData.item?.cost || 0);
-          return (stored > 0 && compSum > stored * 3) ? stored : compSum;
-        })()
+      ? (() => { const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0); const stored = parseFloat(selectedItemData.item?.cost || 0); return (stored > 0 && compSum > stored * 3) ? stored : compSum; })()
       : selectedItemData.ingredients.length > 0
         ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
         : parseFloat(selectedItemData.item?.cost || 0)
     : 0;
 
   const profitMargin = selectedItemData ? getMarginNum(selectedItemData.item?.price, totalCost) : null;
-
   function getMultiplier(id) { return multipliers[id] ?? 1.0; }
   function setMultiplier(id, val) { setMultipliers(prev => ({ ...prev, [id]: Math.max(0, Math.min(2, val)) })); }
-
-  const optimizedCost = selectedItemData ? (selectedItemData.components.length > 0
-    ? selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0) * getMultiplier(c.id), 0)
-    : totalCost * getMultiplier('all')) : 0;
-
+  const optimizedCost = selectedItemData ? (selectedItemData.components.length > 0 ? selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0) * getMultiplier(c.id), 0) : totalCost * getMultiplier('all')) : 0;
   const effectivePrice = parseFloat(optimizedPrice ?? selectedItemData?.item?.price ?? 0);
   const optimizedMargin = effectivePrice > 0 ? ((effectivePrice - optimizedCost) / effectivePrice) * 100 : null;
 
-  function toggleComp(id) {
-    setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  }
+  function toggleComp(id) { setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }
 
   async function fetchIngredientLibrary() {
     if (!restaurantId || ingredientLibrary.length > 0) return;
@@ -524,69 +467,35 @@ export default function ClientMenuItems() {
   }
 
   function initEditComponents(itemData) {
-    setEditDirty(true);
+    setEditDirty(false);
     if (!itemData) return;
-    const comps = itemData.components.map(c => ({
-      id: c.id, name: c.name, isNew: false,
-      ingredients: c.ingredients.map(ing => ({ ciId: ing.id, ingredientId: ing.ingredientId, name: ing.name, quantity: ing.quantity, unit: ing.unit, unitCost: ing.unitCost, isEstimated: ing.isEstimated, isNew: false })),
-    }));
-    setEditComponents(comps);
-    setIngSearch({});
-    setIngDropdownOpen({});
-    setEditSaveMsg(null);
+    setEditComponents(itemData.components.map(c => ({ id: c.id, name: c.name, isNew: false, ingredients: c.ingredients.map(ing => ({ ciId: ing.id, ingredientId: ing.ingredientId, name: ing.name, quantity: ing.quantity, unit: ing.unit, unitCost: ing.unitCost, isEstimated: ing.isEstimated, isNew: false })) })));
+    setIngSearch({}); setIngDropdownOpen({}); setEditSaveMsg(null);
   }
 
-  function addEditComponent() {
-    setEditDirty(true);
-    setEditComponents(prev => [...prev, { id: `new-${Date.now()}`, name: 'New Component', isNew: true, ingredients: [] }]);
-  }
-
-  function removeEditComponent(compIdx) {
-    setEditDirty(true);
-    setEditComponents(prev => prev.filter((_, i) => i !== compIdx));
-  }
-
-  function updateEditComponentName(compIdx, name) {
-    setEditDirty(true);
-    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, name } : c));
-  }
-
-  function addEditIngredient(compIdx) {
-    setEditDirty(true);
-    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, ingredients: [...c.ingredients, { ciId: `new-${Date.now()}`, ingredientId: null, name: '', quantity: 1, unit: 'oz', unitCost: 0, isEstimated: true, isNew: true }] } : c));
-  }
-
-  function removeEditIngredient(compIdx, ingIdx) {
-    setEditDirty(true);
-    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, ingredients: c.ingredients.filter((_, j) => j !== ingIdx) } : c));
-  }
-
-  function updateEditIngredient(compIdx, ingIdx, field, value) {
-    setEditDirty(true);
-    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, ingredients: c.ingredients.map((ing, j) => j === ingIdx ? { ...ing, [field]: value } : ing) } : c));
-  }
+  function addEditComponent() { setEditDirty(true); setEditComponents(prev => [...prev, { id: `new-${Date.now()}`, name: 'New Component', isNew: true, ingredients: [] }]); }
+  function removeEditComponent(i) { setEditDirty(true); setEditComponents(prev => prev.filter((_, idx) => idx !== i)); }
+  function updateEditComponentName(i, name) { setEditDirty(true); setEditComponents(prev => prev.map((c, idx) => idx === i ? { ...c, name } : c)); }
+  function addEditIngredient(ci) { setEditDirty(true); setEditComponents(prev => prev.map((c, i) => i === ci ? { ...c, ingredients: [...c.ingredients, { ciId: `new-${Date.now()}`, ingredientId: null, name: '', quantity: 1, unit: 'oz', unitCost: 0, isEstimated: true, isNew: true }] } : c)); }
+  function removeEditIngredient(ci, ii) { setEditDirty(true); setEditComponents(prev => prev.map((c, i) => i === ci ? { ...c, ingredients: c.ingredients.filter((_, j) => j !== ii) } : c)); }
+  function updateEditIngredient(ci, ii, field, value) { setEditDirty(true); setEditComponents(prev => prev.map((c, i) => i === ci ? { ...c, ingredients: c.ingredients.map((ing, j) => j === ii ? { ...ing, [field]: value } : ing) } : c)); }
 
   function guardEditNavigation(callback) {
-    if (detailTab === 'edit' && editDirty) {
-      setUnsavedCallback(() => callback);
-      setShowUnsavedModal(true);
-    } else {
-      callback();
-    }
+    if (detailTab === 'edit' && editDirty) { setUnsavedCallback(() => callback); setShowUnsavedModal(true); }
+    else callback();
   }
 
-  function selectLibraryIngredient(compIdx, ingIdx, libIng) {
+  function selectLibraryIngredient(ci, ii, libIng) {
     setEditDirty(true);
-    setEditComponents(prev => prev.map((c, i) => i === compIdx ? { ...c, ingredients: c.ingredients.map((ing, j) => j === ingIdx ? { ...ing, ingredientId: libIng.id, name: libIng.name, unit: libIng.unit, unitCost: libIng.last_price || 0, isEstimated: libIng.is_estimated === true } : ing) } : c));
-    const key = `${compIdx}-${ingIdx}`;
+    setEditComponents(prev => prev.map((c, i) => i === ci ? { ...c, ingredients: c.ingredients.map((ing, j) => j === ii ? { ...ing, ingredientId: libIng.id, name: libIng.name, unit: libIng.unit, unitCost: libIng.last_price || 0, isEstimated: libIng.is_estimated === true } : ing) } : c));
+    const key = `${ci}-${ii}`;
     setIngDropdownOpen(prev => ({ ...prev, [key]: false }));
     setIngSearch(prev => ({ ...prev, [key]: '' }));
   }
 
   async function saveItemEdits() {
     if (!selectedItemData) return;
-    setEditSaving(true);
-    setEditSaveMsg(null);
+    setEditSaving(true); setEditSaveMsg(null);
     const menuItemId = selectedItemData.item.id;
     const errors = [];
     for (const comp of editComponents) {
@@ -602,30 +511,19 @@ export default function ClientMenuItems() {
       }
       for (const ing of comp.ingredients) {
         if (!ing.ingredientId) { errors.push(`"${ing.name}" has no ingredient selected`); continue; }
-        if (!ing.isEstimated && ing.unitCost > 0) {
-          await supabase.from('ingredients').update({ last_price: ing.unitCost, is_estimated: false }).eq('id', ing.ingredientId);
-        }
-        if (ing.isNew) {
-          await supabase.from('component_ingredients').insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
-        } else {
-          await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
-        }
+        if (!ing.isEstimated && ing.unitCost > 0) await supabase.from('ingredients').update({ last_price: ing.unitCost, is_estimated: false }).eq('id', ing.ingredientId);
+        if (ing.isNew) await supabase.from('component_ingredients').insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
+        else await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
       }
     }
     const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => ss + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0), 0);
     await supabase.from('menu_items').update({ cost: Math.round(newTotalCost * 100) / 100 }).eq('id', menuItemId);
     setEditSaving(false);
-    if (errors.length > 0) {
-      setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` });
-    } else {
-      setEditSaveMsg({ type: 'success', text: 'Saved successfully' });
-      setEditDirty(false);
-      await fetchItemDetail(menuItemId);
-      await fetchMenuItems();
-    }
+    if (errors.length > 0) { setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` }); }
+    else { setEditSaveMsg({ type: 'success', text: 'Saved successfully' }); setEditDirty(false); await fetchItemDetail(menuItemId); await fetchMenuItems(); }
   }
 
-  // ── Grid/List item renderers ──────────────────────────────────────────────
+  // ── Card renderers ────────────────────────────────────────────────────────
 
   function renderGridItem(item) {
     const margin = getMarginNum(item.price, item.cost);
@@ -636,34 +534,19 @@ export default function ClientMenuItems() {
     return (
       <div key={item.id} className={`mi-card${isSelected ? ' selected' : ''}`} onClick={() => guardEditNavigation(() => selectItem(item.id))}>
         <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 4, alignItems: 'center' }}>
-          {hasEstimatedCosts(item) && (
-            <span style={{ fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600, padding: '1px 5px', borderRadius: 6, background: 'rgba(212,160,32,.12)', color: 'var(--color-amber)', border: '1px solid rgba(212,160,32,.2)' }}>est. costs</span>
-          )}
+          {hasEstimatedCosts(item) && <span style={{ fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600, padding: '1px 5px', borderRadius: 6, background: 'rgba(212,160,32,.12)', color: 'var(--color-amber)', border: '1px solid rgba(212,160,32,.2)' }}>est. costs</span>}
           <span className={`mi-card-status ${cls}`} style={{ position: 'static' }}>{label}</span>
         </div>
-        <div className="mi-card-icon">
-          <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
-        </div>
+        <div className="mi-card-icon"><svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg></div>
         <div className="mi-card-name">{item.name || 'Unnamed'}</div>
         <div className="mi-card-sub">{ingCount} ingredient{ingCount !== 1 ? 's' : ''}</div>
         <div className="mi-card-metrics">
-          <div>
-            <div className="mi-metric-lbl">Price</div>
-            <div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-          </div>
-          <div>
-            <div className="mi-metric-lbl">Cost</div>
-            <div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-          </div>
+          <div><div className="mi-metric-lbl">Price</div><div className="mi-metric-val">{item.price ? formatCurrency(item.price) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div></div>
+          <div><div className="mi-metric-lbl">Cost</div><div className="mi-metric-val">{item.cost ? formatCurrency(item.cost) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div></div>
         </div>
         <div className="mi-margin-bar">
-          <div className="mi-margin-hd">
-            <span className="mi-margin-lbl">Margin</span>
-            <span className="mi-margin-val" style={{ color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</span>
-          </div>
-          <div className="mi-track">
-            <div className="mi-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} />
-          </div>
+          <div className="mi-margin-hd"><span className="mi-margin-lbl">Margin</span><span className="mi-margin-val" style={{ color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</span></div>
+          <div className="mi-track"><div className="mi-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} /></div>
         </div>
       </div>
     );
@@ -678,19 +561,13 @@ export default function ClientMenuItems() {
       <div key={item.id} className={`mi-list-row${isSelected ? ' selected' : ''}`} onClick={() => guardEditNavigation(() => selectItem(item.id))}>
         <div className="mi-list-td name">
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name || 'Unnamed'}</span>
-          <span className={`${cls}`} style={{ fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600, padding: '1px 5px', borderRadius: 6, flexShrink: 0 }}>{getStatus(item).label}</span>
+          <span className={cls} style={{ fontSize: 'clamp(7px,.55vw,9px)', fontWeight: 600, padding: '1px 5px', borderRadius: 6, flexShrink: 0 }}>{getStatus(item).label}</span>
         </div>
-        <div className={`mi-list-td ${item.price ? 'price' : 'no-price'}`}>
-          {item.price ? formatCurrency(item.price) : '—'}
-        </div>
-        <div className="mi-list-td" style={{ color: item.cost ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: item.cost ? 'normal' : 'italic' }}>
-          {item.cost ? formatCurrency(item.cost) : '—'}
-        </div>
+        <div className={`mi-list-td ${item.price ? 'price' : 'no-price'}`}>{item.price ? formatCurrency(item.price) : '—'}</div>
+        <div className="mi-list-td" style={{ color: item.cost ? 'var(--text-primary)' : 'var(--text-muted)', fontStyle: item.cost ? 'normal' : 'italic' }}>{item.cost ? formatCurrency(item.cost) : '—'}</div>
         <div className="mi-list-td">
           <div className="mi-list-margin">
-            <div className="mi-list-margin-track">
-              <div className="mi-list-margin-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} />
-            </div>
+            <div className="mi-list-margin-track"><div className="mi-list-margin-fill" style={{ width: `${Math.max(0, Math.min(100, margin || 0))}%`, background: mc }} /></div>
             <div className="mi-list-margin-val" style={{ color: mc }}>{margin !== null ? `${margin.toFixed(1)}%` : '—'}</div>
           </div>
         </div>
@@ -698,12 +575,261 @@ export default function ClientMenuItems() {
     );
   }
 
+  // ── Detail tab renders ────────────────────────────────────────────────────
+
+  function renderDetailsTab() {
+    if (!selectedItemData) return null;
+    const inc = getIncompleteIngredients(selectedItemData);
+    return (
+      <>
+        {/* Menu Item pills */}
+        <div style={S.wf}>
+          <div style={S.wlbl}><div style={S.dot} />Menu Item</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 'clamp(5px,.5vw,8px)' }}>
+            {[
+              { l: 'Menu Price', v: selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—', c: 'var(--accent)' },
+              { l: 'Total Cost', v: formatCurrency(totalCost), c: 'var(--text-primary)' },
+              { l: 'Profit Margin', v: profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—', c: getMarginColor(profitMargin), est: hasEstimatedCosts(selectedItemData.item) },
+              { l: 'Ingredients', v: getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}), c: 'var(--text-primary)' },
+            ].map(({ l, v, c, est }) => (
+              <div key={l} style={S.pill}>
+                <div style={S.pillLbl}>{l}{est && <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--color-amber)' }}>~est</span>}</div>
+                <div style={{ ...S.pillVal, color: c }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Pricing Recommendations */}
+        {totalCost > 0 && (
+          <div style={S.wf}>
+            <div style={S.wlbl}><div style={S.dot} />Pricing Recommendations</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(4px,.4vw,7px)' }}>
+              {[
+                { l: 'Break-even\n30% cost', v: formatCurrency(totalCost / 0.30), highlight: false },
+                { l: 'Recommended\n25% cost', v: formatCurrency(totalCost / 0.25), highlight: true },
+                { l: 'Premium\n20% cost', v: formatCurrency(totalCost / 0.20), highlight: false },
+              ].map(({ l, v, highlight }) => (
+                <div key={l} style={{ ...S.pill, textAlign: 'center' }}>
+                  <div style={{ ...S.pillLbl, whiteSpace: 'pre-line', lineHeight: 1.4, marginBottom: 5 }}>{l}</div>
+                  <div style={{ ...S.pillVal, color: highlight ? 'var(--color-green)' : 'var(--text-primary)', fontSize: 'clamp(12px,1vw,15px)' }}>{v}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recipe */}
+        {selectedItemData.components.length > 0 && (
+          <div style={S.wf}>
+            <div style={S.wlbl}><div style={S.dot} />Recipe</div>
+            {selectedItemData.components.map(c => (
+              <div key={c.id} className="mi-comp">
+                <div className="mi-comp-hd" onClick={() => toggleComp(c.id)}>
+                  <div>
+                    <div className="mi-comp-name">{c.name}</div>
+                    <div className="mi-comp-sub">{c.ingredientCount} ingredient{c.ingredientCount !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ textAlign: 'right' }}>
+                      <div className="mi-comp-cost">{formatCurrency(c.calculatedCost)}</div>
+                      <div className="mi-comp-pct">{totalCost > 0 ? ((c.calculatedCost / totalCost) * 100).toFixed(0) : 0}% of total</div>
+                    </div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>{expandedComponents.has(c.id) ? '▴' : '▾'}</span>
+                  </div>
+                </div>
+                {expandedComponents.has(c.id) && (
+                  <div className="mi-comp-ings">
+                    {c.ingredients.map(ing => (
+                      <div key={ing.id} className="mi-comp-ing-row">
+                        <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? 'var(--color-green)' : 'var(--color-red)' }} />
+                        <div className="mi-comp-ing-name">{ing.name}</div>
+                        <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
+                        <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? 'var(--color-amber)' : '#9a9086' }}>{formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
+              <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>Total Food Cost</div>
+              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(13px,1.1vw,17px)', color: 'var(--accent)' }}>{formatCurrency(totalCost)}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Cost Change History */}
+        {selectedItemData.costHistory.length > 0 && (
+          <div style={S.wf}>
+            <div style={S.wlbl}><div style={S.dot} />Cost Change History</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'clamp(55px,5vw,70px) 1fr 1fr 1fr', gap: 5, padding: '0 clamp(8px,.7vw,10px) clamp(5px,.5vh,7px)', marginBottom: 2 }}>
+              {['Date','Previous','New','Change'].map(h => <div key={h} style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: "'Inter', sans-serif" }}>{h}</div>)}
+            </div>
+            {selectedItemData.costHistory.slice(0, 6).map(r => {
+              const change = parseFloat(r.new_cost || 0) - parseFloat(r.old_cost || 0);
+              return (
+                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'clamp(55px,5vw,70px) 1fr 1fr 1fr', gap: 5, padding: 'clamp(5px,.5vh,7px) clamp(8px,.7vw,10px)', borderTop: '1px solid var(--border-subtle)', alignItems: 'center' }}>
+                  <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>{formatDate(r.created_at)}</div>
+                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#9a9086', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(r.old_cost)}</div>
+                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(r.new_cost)}</div>
+                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', fontWeight: 600, color: change > 0 ? 'var(--color-red)' : 'var(--color-green)', fontFamily: "'Inter', sans-serif" }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Incomplete warning */}
+        {inc.length > 0 && (
+          <div style={{ background: 'rgba(192,64,64,.05)', border: '1px solid rgba(192,64,64,.2)', borderRadius: 7, padding: 'clamp(8px,.8vw,12px)' }}>
+            <div style={{ ...S.wlbl, color: 'var(--color-red)', marginBottom: 8 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-red)', flexShrink: 0 }} />Why Incomplete?</div>
+            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#9a9086', marginBottom: 8, fontFamily: "'Inter', sans-serif" }}>{inc.length} ingredient{inc.length !== 1 ? 's are' : ' is'} missing a price.</div>
+            {inc.map((ing, idx) => (
+              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'clamp(3px,.3vh,5px) 0', borderBottom: '1px solid rgba(192,64,64,.1)' }}>
+                <div>
+                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{ing.name}</div>
+                  {ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>in {ing.component}</div>}
+                </div>
+                <span style={{ fontSize: 'clamp(7px,.58vw,9px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(192,64,64,.1)', color: 'var(--color-red)', fontFamily: "'Inter', sans-serif" }}>{ing.reason}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderOptimizeTab() {
+    if (!selectedItemData) return null;
+    return (
+      <>
+        <div style={S.wf}>
+          <div style={S.wlbl}><div style={S.dot} />Scenario Comparison</div>
+          <div className="mi-opt-compare">
+            <div className="mi-opt-card mi-opt-orig">
+              <div className="mi-opt-card-title">Original</div>
+              <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(totalCost)}</span></div>
+              <div className="mi-opt-row"><span className="mi-opt-label">Price</span><span className="mi-opt-val">{formatCurrency(selectedItemData.item?.price)}</span></div>
+              <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</span></div>
+            </div>
+            <div className="mi-opt-card mi-opt-new">
+              <div className="mi-opt-card-title">Optimized</div>
+              <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(optimizedCost)}</span></div>
+              <div className="mi-opt-row">
+                <span className="mi-opt-label">Price</span>
+                <input className="mi-opt-price-input" type="number" step="0.01" min="0" value={optimizedPrice ?? selectedItemData.item?.price ?? ''} onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} />
+              </div>
+              <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
+            </div>
+          </div>
+        </div>
+        <div style={S.wf}>
+          <div style={{ ...S.wlbl, justifyContent: 'space-between' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><div style={S.dot} />Adjust Portions</span>
+            <button className="mi-opt-reset" onClick={() => { setMultipliers({}); setOptimizedPrice(null); }}>Reset</button>
+          </div>
+          {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
+            const m = getMultiplier(c.id);
+            return (
+              <div key={c.id} className="mi-opt-comp">
+                <div className="mi-opt-comp-hd"><div><div className="mi-opt-comp-name">{c.name}</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{c.ingredientCount} ingredients</div></div><div className="mi-opt-cost">{formatCurrency((c.calculatedCost || c.storedCost || 0) * m)}</div></div>
+                <div className="mi-opt-slider-wrap">
+                  <div className="mi-opt-slider-lbl">Portion</div>
+                  <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }} min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
+                  <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
+                </div>
+              </div>
+            );
+          }) : (
+            <div className="mi-opt-comp">
+              <div className="mi-opt-comp-hd"><div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{selectedItemData.ingredients.length} ingredients</div></div><div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div></div>
+              <div className="mi-opt-slider-wrap">
+                <div className="mi-opt-slider-lbl">Portion</div>
+                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }} min="0" max="2" step="0.01" value={getMultiplier('all')} onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
+                <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  function renderEditTab() {
+    return (
+      <>
+        <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>Edit components and ingredients. Confirming a price clears the estimated flag.</div>
+        {editComponents.map((comp, compIdx) => {
+          const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+          return (
+            <div key={comp.id} className="mi-edit-comp">
+              <div className="mi-edit-comp-hd">
+                <input className="mi-edit-comp-name" value={comp.name} onChange={e => updateEditComponentName(compIdx, e.target.value)} />
+                <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', whiteSpace: 'nowrap', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(compCost)}</span>
+                <button className="mi-edit-del" onClick={() => removeEditComponent(compIdx)}>✕</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 68px 68px auto', gap: 5, padding: '5px clamp(8px,.8vw,12px)', borderBottom: '1px solid var(--border-subtle)' }}>
+                {['Ingredient','Qty','Unit',''].map(h => <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px', fontFamily: "'Inter', sans-serif" }}>{h}</div>)}
+              </div>
+              {comp.ingredients.map((ing, ingIdx) => {
+                const key = `${compIdx}-${ingIdx}`;
+                const searchVal = ingSearch[key] ?? ing.name;
+                const isOpen = ingDropdownOpen[key] || false;
+                const filteredLib = ingredientLibrary.filter(lib => lib.name.toLowerCase().includes((ingSearch[key] || '').toLowerCase())).slice(0, 8);
+                const ingCost = parseFloat(ing.quantity || 0) * parseFloat(ing.unitCost || 0);
+                return (
+                  <div key={ing.ciId} className="mi-edit-ing-grid">
+                    <div className="mi-ing-search-wrap">
+                      <input className="mi-edit-input" value={searchVal} style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : 'var(--border)' }} placeholder="Search ingredient..."
+                        onChange={e => { setIngSearch(prev => ({ ...prev, [key]: e.target.value })); setIngDropdownOpen(prev => ({ ...prev, [key]: true })); }}
+                        onFocus={() => setIngDropdownOpen(prev => ({ ...prev, [key]: true }))}
+                        onBlur={() => setTimeout(() => setIngDropdownOpen(prev => ({ ...prev, [key]: false })), 150)}
+                      />
+                      {isOpen && filteredLib.length > 0 && (
+                        <div className="mi-ing-dropdown">
+                          {filteredLib.map(lib => (
+                            <div key={lib.id} className="mi-ing-option" onMouseDown={() => selectLibraryIngredient(compIdx, ingIdx, lib)}>
+                              {lib.name}
+                              <div className="mi-ing-option-sub">{lib.unit} · {lib.last_price ? formatCurrency(lib.last_price) : 'no price'}{lib.is_estimated ? ' ~est' : ''}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input className="mi-edit-input" type="number" min="0" step="0.01" value={ing.quantity} onChange={e => updateEditIngredient(compIdx, ingIdx, 'quantity', e.target.value)} />
+                    <input className="mi-edit-input" value={ing.unit} onChange={e => updateEditIngredient(compIdx, ingIdx, 'unit', e.target.value)} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                      <div className="mi-edit-ing-cost">{formatCurrency(ingCost)}</div>
+                      <button className="mi-edit-del" onClick={() => removeEditIngredient(compIdx, ingIdx)}>✕</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ padding: '0 clamp(8px,.8vw,12px) 7px' }}>
+                <button className="mi-edit-add-ing" onClick={() => addEditIngredient(compIdx)}>+ Add Ingredient</button>
+              </div>
+            </div>
+          );
+        })}
+        <button className="mi-edit-add-comp" onClick={addEditComponent}>+ Add Component</button>
+        {editSaveMsg && (
+          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', padding: '7px 10px', borderRadius: 6, textAlign: 'center', fontFamily: "'Inter', sans-serif", background: editSaveMsg.type === 'success' ? 'rgba(42,138,90,.1)' : 'rgba(192,64,64,.1)', color: editSaveMsg.type === 'success' ? 'var(--color-green)' : 'var(--color-red)', border: `1px solid ${editSaveMsg.type === 'success' ? 'rgba(42,138,90,.2)' : 'rgba(192,64,64,.2)'}` }}>
+            {editSaveMsg.text}
+          </div>
+        )}
+        <button className="mi-edit-save" onClick={saveItemEdits} disabled={editSaving}>{editSaving ? 'Saving...' : 'Save Changes'}</button>
+      </>
+    );
+  }
+
+  // ── Main render ───────────────────────────────────────────────────────────
+
   return (
     <>
       <style>{CSS}</style>
       <div className="mi-root">
 
-        {/* TOPBAR */}
         <div className="mi-nav">
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
             <div className="mi-logo">Opti<span>Menu</span></div>
@@ -718,58 +844,23 @@ export default function ClientMenuItems() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,.7vw,12px)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--accent)' }}>
-              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />
-              Active
+              <div style={{ width: 4, height: 4, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />Active
             </div>
             <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false} />
           </div>
         </div>
 
-        {/* PAGE HEADER */}
         <div className="mi-ph">
           <div style={{ display: 'flex', alignItems: 'baseline' }}>
             <span className="mi-ph-title">Menu Engineering</span>
             <span className="mi-ph-sub">· {menuItems.length} items</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(10px,1.2vw,20px)' }}>
-            <div className="mi-ph-action-item">
-              <div className="mi-ph-action-dot" style={{ background: 'var(--accent)' }} />
-              <span className="mi-ph-action-val" style={{ color: 'var(--accent)' }}>{menuItems.length}</span>
-              <span>menu items</span>
-            </div>
-            <div className="mi-ph-action-item">
-              <div className="mi-ph-action-dot" style={{ background: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' }} />
-              <span className="mi-ph-action-val" style={{ color: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' }}>{avgMargin.toFixed(1)}%</span>
-              <span>avg margin</span>
-            </div>
-            <div className="mi-ph-action-item">
-              <div className="mi-ph-action-dot" style={{ background: 'var(--color-red)' }} />
-              <span className="mi-ph-action-val" style={{ color: 'var(--color-red)' }}>{belowTarget}</span>
-              <span>below target</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button
-                onClick={() => setShowImportModal(true)}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid var(--accent)', borderRadius: 5, padding: 'clamp(3px,.3vh,5px) clamp(8px,.7vw,12px)', fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', transition: 'all .2s' }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(2,164,186,.08)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-              >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                </svg>
-                Import Menu
-              </button>
-              <button className="mi-add-btn">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                </svg>
-                Add Item
-              </button>
-            </div>
+            <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background: 'var(--accent)' }} /><span className="mi-ph-action-val" style={{ color: 'var(--accent)' }}>{menuItems.length}</span><span>menu items</span></div>
+            <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' }} /><span className="mi-ph-action-val" style={{ color: avgMargin >= 60 ? 'var(--color-green)' : avgMargin >= 40 ? 'var(--accent)' : 'var(--color-amber)' }}>{avgMargin.toFixed(1)}%</span><span>avg margin</span></div>
+            <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background: 'var(--color-red)' }} /><span className="mi-ph-action-val" style={{ color: 'var(--color-red)' }}>{belowTarget}</span><span>below target</span></div>
           </div>
         </div>
-
-        {/* STATS BAR */}
 
         {loading ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
@@ -779,23 +870,14 @@ export default function ClientMenuItems() {
         ) : (
           <div className="mi-body">
 
-            {/* ── CONTAINER CARD ── */}
             <div className="mi-container">
-
-              {/* Container header with search, sort, toggle */}
               <div className="mi-container-hd">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                   <div className="mi-container-title">Menu Items</div>
                   <div className="mi-container-count">{filtered.length} item{filtered.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div className="mi-container-controls">
-                  {/* Left: search, sort, toggle */}
-                  <input
-                    className="mi-search"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value)}
-                  />
+                  <input className="mi-search" placeholder="Search..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                   <select className="mi-sort-sel" value={`${sortBy}-${sortOrder}`} onChange={handleSortChange}>
                     <option value="name-asc">Name (A–Z)</option>
                     <option value="name-desc">Name (Z–A)</option>
@@ -812,30 +894,21 @@ export default function ClientMenuItems() {
                       <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                     </button>
                   </div>
-                  {/* Divider */}
                   <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
-                  {/* Right: action buttons */}
-                  <button
-                    onClick={() => setShowImportModal(true)}
+                  <button onClick={() => setShowImportModal(true)}
                     style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid var(--accent)', borderRadius: 5, padding: 'clamp(3px,.3vh,5px) clamp(8px,.7vw,12px)', fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', transition: 'all .2s' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'rgba(2,164,186,.08)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-                    </svg>
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                     Import Menu
                   </button>
                   <button className="mi-add-btn">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                    </svg>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                     Add Item
                   </button>
                 </div>
               </div>
 
-              {/* List view column headers */}
               {displayMode === 'list' && (
                 <div className="mi-list-head">
                   {[['name','Name'],['price','Price'],['cost','Cost'],['margin','Margin']].map(([col, label]) => (
@@ -847,46 +920,30 @@ export default function ClientMenuItems() {
                 </div>
               )}
 
-              {/* Items */}
               {displayMode === 'grid' ? (
                 <div className="mi-grid-wrap">
                   {filtered.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 }}>
-                      <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>
-                        {searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}
-                      </div>
-                      {!searchTerm && (
-                        <button onClick={() => setShowImportModal(true)}
-                          style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>
-                          ↑ Import Your Menu
-                        </button>
-                      )}
+                      <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
+                      {!searchTerm && <button onClick={() => setShowImportModal(true)} style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>↑ Import Your Menu</button>}
                     </div>
-                  ) : (
-                    <div className="mi-grid">{filtered.map(renderGridItem)}</div>
-                  )}
+                  ) : <div className="mi-grid">{filtered.map(renderGridItem)}</div>}
                 </div>
               ) : (
                 <div className="mi-list-body">
                   {filtered.length === 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358' }}>
-                      {searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}
-                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358' }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
                   ) : filtered.map(renderListItem)}
                 </div>
               )}
             </div>
 
-            {/* ── DETAIL PANEL ── */}
-            <div className="mi-detail" style={{ position: 'relative' }}>
+            {/* DETAIL PANEL */}
+            <div className="mi-detail">
               <div className="mi-detail-hd">
                 <div className="mi-detail-hd-top">
-                  <div className="mi-detail-title">
-                    {selectedItem && selectedItemData ? selectedItemData.item?.name : 'Menu Overview'}
-                  </div>
-                  {selectedItem && (
-                    <button className="mi-close-btn" onClick={() => { setSelectedItem(null); setSelectedItemData(null); setDetailTab('details'); }}>✕ Close</button>
-                  )}
+                  <div className="mi-detail-title">{selectedItem && selectedItemData ? selectedItemData.item?.name : 'Menu Overview'}</div>
+                  {selectedItem && <button className="mi-close-btn" onClick={() => guardEditNavigation(() => { setSelectedItem(null); setSelectedItemData(null); setDetailTab('details'); })}>✕ Close</button>}
                 </div>
                 <div className="mi-view-tabs">
                   {selectedItem ? (
@@ -895,13 +952,9 @@ export default function ClientMenuItems() {
                       <button className={`mi-vtab${detailTab === 'optimize' ? ' active' : ''}`} onClick={() => guardEditNavigation(() => setDetailTab('optimize'))}>Optimize</button>
                       <button className={`mi-vtab${detailTab === 'edit' ? ' active' : ''}`}
                         onClick={() => { setDetailTab('edit'); initEditComponents(selectedItemData); fetchIngredientLibrary(); }}
-                        style={{ color: detailTab === 'edit' ? 'var(--text-primary)' : 'var(--color-amber)' }}>
-                        Edit
-                      </button>
+                        style={{ color: detailTab === 'edit' ? 'var(--text-primary)' : 'var(--color-amber)' }}>Edit</button>
                     </>
-                  ) : (
-                    <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
-                  )}
+                  ) : <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>}
                 </div>
               </div>
 
@@ -910,64 +963,24 @@ export default function ClientMenuItems() {
                 <div className="mi-detail-body">
                   <div className="mi-ov-row">
                     <div className="mi-ov-w">
-                      <div className="mi-ov-lbl">
-                        <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                        Top Margin Items
-                      </div>
-                      {topMargin.length > 0 ? topMargin.map(i => {
-                        const m = getMarginNum(i.price, i.cost);
-                        return (
-                          <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                            <span className="mi-ov-name">{i.name}</span>
-                            <span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span>
-                          </div>
-                        );
-                      }) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
+                      <div className="mi-ov-lbl"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Top Margin Items</div>
+                      {topMargin.length > 0 ? topMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
                     </div>
                     <div className="mi-ov-w">
-                      <div className="mi-ov-lbl">
-                        <svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                        Needs Attention
-                      </div>
-                      {lowMargin.map(i => {
-                        const m = getMarginNum(i.price, i.cost);
-                        return (
-                          <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                            <span className="mi-ov-name">{i.name}</span>
-                            <span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: 'var(--color-red)' }}>{m?.toFixed(1)}%</span>
-                          </div>
-                        );
-                      })}
-                      {noData.map(i => (
-                        <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}>
-                          <span className="mi-ov-name">{i.name}</span>
-                          <span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: 'var(--color-amber)' }}>No cost</span>
-                        </div>
-                      ))}
-                      {lowMargin.length === 0 && noData.length === 0 && (
-                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>
-                      )}
+                      <div className="mi-ov-lbl"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Needs Attention</div>
+                      {lowMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-pill" style={{ background: 'rgba(192,64,64,.1)', color: 'var(--color-red)' }}>{m?.toFixed(1)}%</span></div>; })}
+                      {noData.map(i => <div key={i.id} className="mi-ov-item" style={{ cursor: 'pointer' }} onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-pill" style={{ background: 'rgba(212,160,32,.1)', color: 'var(--color-amber)' }}>No cost</span></div>)}
+                      {lowMargin.length === 0 && noData.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>}
                     </div>
                   </div>
-
                   <div className="mi-ov-wf">
-                    <div className="mi-ov-lbl">
-                      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                      Margin Distribution
-                    </div>
+                    <div className="mi-ov-lbl"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Margin Distribution</div>
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 'clamp(50px,7vh,80px)' }}>
-                      {[
-                        { lo: 0, hi: 40, label: '<40%', c: 'var(--color-red)' },
-                        { lo: 40, hi: 60, label: '40–60%', c: 'var(--color-amber)' },
-                        { lo: 60, hi: 75, label: '60–75%', c: 'var(--accent)' },
-                        { lo: 75, hi: 101, label: '>75%', c: 'var(--color-green)' },
-                      ].map(({ lo, hi, label, c }) => {
+                      {[{lo:0,hi:40,label:'<40%',c:'var(--color-red)'},{lo:40,hi:60,label:'40–60%',c:'var(--color-amber)'},{lo:60,hi:75,label:'60–75%',c:'var(--accent)'},{lo:75,hi:101,label:'>75%',c:'var(--color-green)'}].map(({ lo, hi, label, c }) => {
                         const count = bucket(lo, hi);
                         return (
                           <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
-                            <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
-                              <div style={{ width: '100%', height: `${Math.max(5, (count / maxBucket) * 100)}%`, background: c, opacity: .7, borderRadius: '2px 2px 0 0' }} />
-                            </div>
+                            <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}><div style={{ width: '100%', height: `${Math.max(5,(count/maxBucket)*100)}%`, background: c, opacity:.7, borderRadius:'2px 2px 0 0' }} /></div>
                             <div style={{ fontSize: 'clamp(7px,.58vw,9px)', color: 'var(--text-muted)', textAlign: 'center' }}>{label}</div>
                             <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: c, fontWeight: 600 }}>{count}</div>
                           </div>
@@ -975,7 +988,6 @@ export default function ClientMenuItems() {
                       })}
                     </div>
                   </div>
-
                   <div className="mi-hint">Click any menu item to view details and optimize the recipe →</div>
                 </div>
               )}
@@ -984,323 +996,38 @@ export default function ClientMenuItems() {
               {selectedItem && (
                 <div className="mi-detail-body">
                   {detailLoading ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 'clamp(10px,.75vw,12px)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 'clamp(10px,.75vw,12px)', fontFamily: "'Inter', sans-serif" }}>
                       <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                       Loading details...
                     </div>
-                  ) : selectedItemData && detailTab === 'details' ? (
-                    <>
-                      <div className="mi-d-metrics">
-                        <div className="mi-d-metric">
-                          <div className="mi-d-metric-lbl">Menu Price</div>
-                          <div className="mi-d-metric-val" style={{ color: 'var(--accent)' }}>{selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—'}</div>
-                        </div>
-                        <div className="mi-d-metric">
-                          <div className="mi-d-metric-lbl">Total Cost</div>
-                          <div className="mi-d-metric-val">{formatCurrency(totalCost)}</div>
-                        </div>
-                        <div className="mi-d-metric">
-                          <div className="mi-d-metric-lbl">
-                            Profit Margin
-                            {selectedItemData && hasEstimatedCosts(selectedItemData.item) && (
-                              <span style={{ marginLeft: 4, fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--color-amber)' }}>~est</span>
-                            )}
-                          </div>
-                          <div className="mi-d-metric-val" style={{ color: getMarginColor(profitMargin) }}>
-                            {profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}
-                          </div>
-                        </div>
-                        <div className="mi-d-metric">
-                          <div className="mi-d-metric-lbl">Ingredients</div>
-                          <div className="mi-d-metric-val">{selectedItem ? getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}) : 0}</div>
-                        </div>
-                      </div>
-
-                      {selectedItemData.components.length > 0 && (
-                        <div>
-                          <div className="mi-sect-title">Component Breakdown</div>
-                          {selectedItemData.components.map(c => (
-                            <div key={c.id} className="mi-comp">
-                              <div className="mi-comp-hd" onClick={() => toggleComp(c.id)}>
-                                <div>
-                                  <div className="mi-comp-name">{c.name}</div>
-                                  <div className="mi-comp-sub">{c.ingredientCount} ingredient{c.ingredientCount !== 1 ? 's' : ''}</div>
-                                </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <div className="mi-comp-cost">{formatCurrency(c.calculatedCost)}</div>
-                                  <div className="mi-comp-pct">{totalCost > 0 ? ((c.calculatedCost / totalCost) * 100).toFixed(0) : 0}% of total</div>
-                                </div>
-                              </div>
-                              {expandedComponents.has(c.id) && (
-                                <div className="mi-comp-ings">
-                                  {c.ingredients.map(ing => (
-                                    <div key={ing.id} className="mi-comp-ing-row">
-                                      <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? 'var(--color-green)' : 'var(--color-red)' }} />
-                                      <div className="mi-comp-ing-name">{ing.name}</div>
-                                      <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
-                                      <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? 'var(--color-amber)' : '#9a9086' }}>
-                                        {formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          <div className="mi-total-bar">
-                            <div className="mi-total-lbl">Total Food Cost</div>
-                            <div className="mi-total-val">{formatCurrency(totalCost)}</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {totalCost > 0 && (
-                        <div>
-                          <div className="mi-sect-title">Pricing Recommendations</div>
-                          <div className="mi-price-recs">
-                            <div className="mi-price-rec">
-                              <div className="mi-price-rec-lbl">Break-even<br />30% cost</div>
-                              <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.30)}</div>
-                            </div>
-                            <div className="mi-price-rec">
-                              <div className="mi-price-rec-lbl">Recommended<br />25% cost</div>
-                              <div className="mi-price-rec-val highlight">{formatCurrency(totalCost / 0.25)}</div>
-                            </div>
-                            <div className="mi-price-rec">
-                              <div className="mi-price-rec-lbl">Premium<br />20% cost</div>
-                              <div className="mi-price-rec-val">{formatCurrency(totalCost / 0.20)}</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      {selectedItemData.costHistory.length > 0 && (
-                        <div>
-                          <div className="mi-sect-title">Cost Change History</div>
-                          {selectedItemData.costHistory.slice(0, 5).map(r => {
-                            const change = parseFloat(r.new_cost || 0) - parseFloat(r.old_cost || 0);
-                            return (
-                              <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, padding: 'clamp(5px,.5vh,8px) 0', borderBottom: '1px solid #1a1915' }}>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--text-muted)' }}>{formatDate(r.created_at)}</div>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: '#9a9086' }}>{formatCurrency(r.old_cost)}</div>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', color: 'var(--text-primary)' }}>{formatCurrency(r.new_cost)}</div>
-                                <div style={{ fontSize: 'clamp(9px,.65vw,11px)', fontWeight: 600, color: change > 0 ? 'var(--color-red)' : 'var(--color-green)' }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {(() => {
-                        const inc = getIncompleteIngredients(selectedItemData);
-                        if (inc.length === 0) return null;
-                        return (
-                          <div>
-                            <div className="mi-sect-title" style={{ color: 'var(--color-red)' }}>Why is this item Incomplete?</div>
-                            <div style={{ background: 'rgba(192,64,64,.05)', border: '1px solid rgba(192,64,64,.15)', borderRadius: 6, padding: 'clamp(8px,.8vw,12px)' }}>
-                              <div style={{ fontSize: 'clamp(8px,.65vw,11px)', color: '#9a9086', marginBottom: 8 }}>
-                                {inc.length} ingredient{inc.length !== 1 ? 's are' : ' is'} missing a price.
-                              </div>
-                              {inc.map((ing, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'clamp(3px,.3vh,5px) 0', borderBottom: '1px solid #1a1915' }}>
-                                  <div>
-                                    <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)' }}>{ing.name}</div>
-                                    {ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>in {ing.component}</div>}
-                                  </div>
-                                  <span style={{ fontSize: 'clamp(7px,.58vw,9px)', padding: '1px 6px', borderRadius: 8, background: 'rgba(192,64,64,.1)', color: 'var(--color-red)' }}>{ing.reason}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  ) : selectedItemData && detailTab === 'optimize' ? (
-                    <>
-                      <div className="mi-opt-compare">
-                        <div className="mi-opt-card mi-opt-orig">
-                          <div className="mi-opt-card-title">Original</div>
-                          <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(totalCost)}</span></div>
-                          <div className="mi-opt-row"><span className="mi-opt-label">Price</span><span className="mi-opt-val">{formatCurrency(selectedItemData.item?.price)}</span></div>
-                          <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</span></div>
-                        </div>
-                        <div className="mi-opt-card mi-opt-new">
-                          <div className="mi-opt-card-title">Optimized</div>
-                          <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(optimizedCost)}</span></div>
-                          <div className="mi-opt-row">
-                            <span className="mi-opt-label">Price</span>
-                            <input className="mi-opt-price-input" type="number" step="0.01" min="0"
-                              value={optimizedPrice ?? selectedItemData.item?.price ?? ''}
-                              onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} />
-                          </div>
-                          <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
-                        </div>
-                      </div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'clamp(6px,.6vh,9px)' }}>
-                          <div className="mi-sect-title" style={{ marginBottom: 0, flex: 1 }}>Adjust Component Portions</div>
-                          <button className="mi-opt-reset" onClick={() => { setMultipliers({}); setOptimizedPrice(null); }}>Reset</button>
-                        </div>
-                        {selectedItemData.components.length > 0 ? selectedItemData.components.map(c => {
-                          const m = getMultiplier(c.id);
-                          const newCost = (c.calculatedCost || c.storedCost || 0) * m;
-                          return (
-                            <div key={c.id} className="mi-opt-comp">
-                              <div className="mi-opt-comp-hd">
-                                <div>
-                                  <div className="mi-opt-comp-name">{c.name}</div>
-                                  <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{c.ingredientCount} ingredients</div>
-                                </div>
-                                <div className="mi-opt-cost">{formatCurrency(newCost)}</div>
-                              </div>
-                              <div className="mi-opt-slider-wrap">
-                                <div className="mi-opt-slider-lbl">Portion Size</div>
-                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }}
-                                  min="0" max="2" step="0.01" value={m}
-                                  onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
-                                <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
-                              </div>
-                            </div>
-                          );
-                        }) : (
-                          <div className="mi-opt-comp">
-                            <div className="mi-opt-comp-hd">
-                              <div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{selectedItemData.ingredients.length} ingredients</div></div>
-                              <div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div>
-                            </div>
-                            <div className="mi-opt-slider-wrap">
-                              <div className="mi-opt-slider-lbl">Portion Size</div>
-                              <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }}
-                                min="0" max="2" step="0.01" value={getMultiplier('all')}
-                                onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
-                              <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : selectedItemData && detailTab === 'edit' ? (
-                    <>
-                      <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', marginBottom: 4 }}>
-                        Edit components and ingredients. Confirming a price clears the estimated flag.
-                      </div>
-                      {editComponents.map((comp, compIdx) => {
-                        const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
-                        return (
-                          <div key={comp.id} className="mi-edit-comp">
-                            <div className="mi-edit-comp-hd">
-                              <input className="mi-edit-comp-name" value={comp.name} onChange={e => updateEditComponentName(compIdx, e.target.value)} />
-                              <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', whiteSpace: 'nowrap' }}>{formatCurrency(compCost)}</span>
-                              <button className="mi-edit-del" onClick={() => removeEditComponent(compIdx)}>✕</button>
-                            </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 72px 72px auto', gap: 5, padding: '4px clamp(8px,.8vw,12px)', borderBottom: '1px solid #1a1915' }}>
-                              {['Ingredient', 'Qty', 'Unit', ''].map(h => (
-                                <div key={h} style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{h}</div>
-                              ))}
-                            </div>
-                            {comp.ingredients.map((ing, ingIdx) => {
-                              const key = `${compIdx}-${ingIdx}`;
-                              const searchVal = ingSearch[key] ?? ing.name;
-                              const isOpen = ingDropdownOpen[key] || false;
-                              const filteredLib = ingredientLibrary.filter(lib => lib.name.toLowerCase().includes((ingSearch[key] || '').toLowerCase())).slice(0, 8);
-                              const ingCost = parseFloat(ing.quantity || 0) * parseFloat(ing.unitCost || 0);
-                              return (
-                                <div key={ing.ciId} className="mi-edit-ing-grid">
-                                  <div className="mi-ing-search-wrap">
-                                    <input className="mi-edit-input" value={searchVal}
-                                      style={{ borderColor: ing.isEstimated ? 'rgba(212,160,32,.3)' : 'var(--border)' }}
-                                      placeholder="Search ingredient..."
-                                      onChange={e => { setIngSearch(prev => ({ ...prev, [key]: e.target.value })); setIngDropdownOpen(prev => ({ ...prev, [key]: true })); }}
-                                      onFocus={() => setIngDropdownOpen(prev => ({ ...prev, [key]: true }))}
-                                      onBlur={() => setTimeout(() => setIngDropdownOpen(prev => ({ ...prev, [key]: false })), 150)}
-                                    />
-                                    {isOpen && filteredLib.length > 0 && (
-                                      <div className="mi-ing-dropdown">
-                                        {filteredLib.map(lib => (
-                                          <div key={lib.id} className="mi-ing-option" onMouseDown={() => selectLibraryIngredient(compIdx, ingIdx, lib)}>
-                                            {lib.name}
-                                            <div className="mi-ing-option-sub">{lib.unit} · {lib.last_price ? formatCurrency(lib.last_price) : 'no price'}{lib.is_estimated ? ' ~est' : ''}</div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                  <input className="mi-edit-input" type="number" min="0" step="0.01" value={ing.quantity} onChange={e => updateEditIngredient(compIdx, ingIdx, 'quantity', e.target.value)} />
-                                  <input className="mi-edit-input" value={ing.unit} onChange={e => updateEditIngredient(compIdx, ingIdx, 'unit', e.target.value)} />
-                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                                    <div className="mi-edit-ing-cost">{formatCurrency(ingCost)}</div>
-                                    <button className="mi-edit-del" onClick={() => removeEditIngredient(compIdx, ingIdx)}>✕</button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            <div style={{ padding: '0 clamp(8px,.8vw,12px) 6px' }}>
-                              <button className="mi-edit-add-ing" onClick={() => addEditIngredient(compIdx)}>+ Add Ingredient</button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <button className="mi-edit-add-comp" onClick={addEditComponent}>+ Add Component</button>
-                      {editSaveMsg && (
-                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', padding: '6px 10px', borderRadius: 5, textAlign: 'center', background: editSaveMsg.type === 'success' ? 'rgba(42,138,90,.1)' : 'rgba(192,64,64,.1)', color: editSaveMsg.type === 'success' ? 'var(--color-green)' : 'var(--color-red)', border: `1px solid ${editSaveMsg.type === 'success' ? 'rgba(42,138,90,.2)' : 'rgba(192,64,64,.2)'}` }}>
-                          {editSaveMsg.text}
-                        </div>
-                      )}
-                      <button className="mi-edit-save" onClick={saveItemEdits} disabled={editSaving}>
-                        {editSaving ? 'Saving...' : 'Save Changes'}
-                      </button>
-                    </>
-                  ) : null}
+                  ) : selectedItemData && detailTab === 'details' ? renderDetailsTab()
+                    : selectedItemData && detailTab === 'optimize' ? renderOptimizeTab()
+                    : selectedItemData && detailTab === 'edit' ? renderEditTab()
+                    : null}
                 </div>
               )}
+
+              {/* Unsaved modal */}
               {showUnsavedModal && (
-                <div style={{
-                  position: 'absolute', inset: 0, background: 'rgba(0,0,0,.65)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  zIndex: 100, borderRadius: 8,
-                }}>
-                  <div style={{
-                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
-                    borderRadius: 10, padding: '28px', width: 'min(300px,90%)',
-                    display: 'flex', flexDirection: 'column', gap: 20,
-                  }}>
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, borderRadius: 8 }}>
+                  <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '28px', width: 'min(300px,90%)', display: 'flex', flexDirection: 'column', gap: 20 }}>
                     <div>
-                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(15px,1.2vw,19px)', color: 'var(--text-primary)', marginBottom: 8 }}>
-                        Leave without saving?
-                      </div>
-                      <div style={{ fontSize: 'clamp(11px,.82vw,13px)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                        Your unsaved changes will be lost.
-                      </div>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(15px,1.2vw,19px)', color: 'var(--text-primary)', marginBottom: 8 }}>Leave without saving?</div>
+                      <div style={{ fontSize: 'clamp(11px,.82vw,13px)', color: 'var(--text-muted)', lineHeight: 1.5, fontFamily: "'Inter', sans-serif" }}>Your unsaved changes will be lost.</div>
                     </div>
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                      <button
-                        onClick={() => setShowUnsavedModal(false)}
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
-                      >
-                        Stay
-                      </button>
-                      <button
-                        onClick={() => { setShowUnsavedModal(false); setEditDirty(false); unsavedCallback?.(); }}
-                        style={{ background: 'var(--color-red)', border: 'none', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: '#fff', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}
-                      >
-                        Leave
-                      </button>
+                      <button onClick={() => setShowUnsavedModal(false)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}>Stay</button>
+                      <button onClick={() => { setShowUnsavedModal(false); setEditDirty(false); unsavedCallback?.(); }} style={{ background: 'var(--color-red)', border: 'none', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: '#fff', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>Leave</button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
+
           </div>
         )}
 
-        {showImportModal && (
-          <MenuImportModal
-            restaurantId={restaurantId}
-            onClose={() => setShowImportModal(false)}
-            onImported={() => { setShowImportModal(false); fetchMenuItems(); }}
-          />
-        )}
-
+        {showImportModal && <MenuImportModal restaurantId={restaurantId} onClose={() => setShowImportModal(false)} onImported={() => { setShowImportModal(false); fetchMenuItems(); }} />}
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
       <TourDataBanner />
