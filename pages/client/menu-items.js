@@ -346,6 +346,9 @@ export default function ClientMenuItems() {
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
 
+  const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [unsavedCallback, setUnsavedCallback] = useState(null);
+
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId && !isTour) fetchMenuItems(); }, [restaurantId]);
   useEffect(() => {
@@ -564,9 +567,12 @@ export default function ClientMenuItems() {
   }
 
   function guardEditNavigation(callback) {
-    if (editDirty) {
-      if (window.confirm('You have unsaved changes. Leave without saving?')) { setEditDirty(false); callback(); }
-    } else { callback(); }
+    if (detailTab === 'edit' && editDirty) {
+      setUnsavedCallback(() => callback);
+      setShowUnsavedModal(true);
+    } else {
+      callback();
+    }
   }
 
   function selectLibraryIngredient(compIdx, ingIdx, libIng) {
@@ -783,6 +789,7 @@ export default function ClientMenuItems() {
                   <div className="mi-container-count">{filtered.length} item{filtered.length !== 1 ? 's' : ''}</div>
                 </div>
                 <div className="mi-container-controls">
+                  {/* Left: search, sort, toggle */}
                   <input
                     className="mi-search"
                     placeholder="Search..."
@@ -797,7 +804,6 @@ export default function ClientMenuItems() {
                     <option value="price-desc">Price (High–Low)</option>
                     <option value="cost-desc">Cost (High–Low)</option>
                   </select>
-                  {/* Grid / List toggle */}
                   <div className="mi-view-toggle">
                     <button className={`mi-toggle-btn${displayMode === 'grid' ? ' active' : ''}`} onClick={() => setDisplayMode('grid')} title="Grid view">
                       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
@@ -806,6 +812,26 @@ export default function ClientMenuItems() {
                       <svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
                     </button>
                   </div>
+                  {/* Divider */}
+                  <div style={{ width: 1, height: 16, background: 'var(--border)', flexShrink: 0 }} />
+                  {/* Right: action buttons */}
+                  <button
+                    onClick={() => setShowImportModal(true)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid var(--accent)', borderRadius: 5, padding: 'clamp(3px,.3vh,5px) clamp(8px,.7vw,12px)', fontSize: 'clamp(10px,.75vw,13px)', fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap', transition: 'all .2s' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(2,164,186,.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    Import Menu
+                  </button>
+                  <button className="mi-add-btn">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                    </svg>
+                    Add Item
+                  </button>
                 </div>
               </div>
 
@@ -852,7 +878,7 @@ export default function ClientMenuItems() {
             </div>
 
             {/* ── DETAIL PANEL ── */}
-            <div className="mi-detail">
+            <div className="mi-detail" style={{ position: 'relative' }}>
               <div className="mi-detail-hd">
                 <div className="mi-detail-hd-top">
                   <div className="mi-detail-title">
@@ -872,7 +898,6 @@ export default function ClientMenuItems() {
                         style={{ color: detailTab === 'edit' ? 'var(--text-primary)' : 'var(--color-amber)' }}>
                         Edit
                       </button>
-                      <button className="mi-close-btn" onClick={() => guardEditNavigation(() => { setSelectedItem(null); setSelectedItemData(null); setDetailTab('details'); })}>✕ Close</button>
                     </>
                   ) : (
                     <button className="mi-vtab active" style={{ cursor: 'default' }}>Overview</button>
@@ -1228,8 +1253,43 @@ export default function ClientMenuItems() {
                   ) : null}
                 </div>
               )}
+              {showUnsavedModal && (
+                <div style={{
+                  position: 'absolute', inset: 0, background: 'rgba(0,0,0,.65)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  zIndex: 100, borderRadius: 8,
+                }}>
+                  <div style={{
+                    background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: '28px', width: 'min(300px,90%)',
+                    display: 'flex', flexDirection: 'column', gap: 20,
+                  }}>
+                    <div>
+                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 'clamp(15px,1.2vw,19px)', color: 'var(--text-primary)', marginBottom: 8 }}>
+                        Leave without saving?
+                      </div>
+                      <div style={{ fontSize: 'clamp(11px,.82vw,13px)', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                        Your unsaved changes will be lost.
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => setShowUnsavedModal(false)}
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: 'var(--text-muted)', cursor: 'pointer', fontFamily: "'Inter', sans-serif" }}
+                      >
+                        Stay
+                      </button>
+                      <button
+                        onClick={() => { setShowUnsavedModal(false); setEditDirty(false); unsavedCallback?.(); }}
+                        style={{ background: 'var(--color-red)', border: 'none', borderRadius: 6, padding: '7px 18px', fontSize: 'clamp(10px,.75vw,13px)', color: '#fff', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}
+                      >
+                        Leave
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-
           </div>
         )}
 
