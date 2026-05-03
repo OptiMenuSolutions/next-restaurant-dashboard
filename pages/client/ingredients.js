@@ -9,6 +9,7 @@ import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
 import UniversalSearch from '../../components/UniversalSearch';
+import { LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer } from 'recharts';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
