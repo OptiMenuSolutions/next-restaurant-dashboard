@@ -313,11 +313,6 @@ export default function ClientIngredients() {
       .gt('unit_cost', 0)
       .order('invoices(date)', { ascending: false });
 
-    console.log('ingredient id:', ingredient.id);
-    console.log('restaurant id:', restaurantId);
-    console.log('raw data:', data);
-    console.log('error:', error);
-
     const history = (data || []).filter(i => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
     setPurchaseHistory(history);
     const chart = history
