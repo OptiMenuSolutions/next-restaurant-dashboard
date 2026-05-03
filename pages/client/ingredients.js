@@ -649,21 +649,26 @@ export default function ClientIngredients() {
                       <div className="ing-wf">
                         <div className="ing-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Price History</div>
                         <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'clamp(8px,.8vw,14px)'}}>
-                          <div className="ing-spark">
-                            {priceHistory.map((p,i)=>{
-                              const prev=i>0?priceHistory[i-1].price:null;
-                              const heightPct=Math.max(5,((p.price-minSparkPrice)/sparkRange)*85+5);
-                              return (
-                                <div key={i} className="ing-sp-col">
-                                  <div className="ing-sp-track">
-                                    <div className="ing-sp-bar" style={{height:`${heightPct}%`,background:getSparkColor(p.price,prev),opacity:.75}}/>
-                                  </div>
-                                  <div className="ing-sp-lbl">{new Date(p.date).toLocaleDateString('en-US',{month:'short'})}</div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{display:'flex',justifyContent:'space-between',marginTop:6}}>
+                          <ResponsiveContainer width="100%" height={80}>
+                            <LineChart data={priceHistory} margin={{top:4,right:4,bottom:0,left:4}}>
+                              <Line
+                                type="monotone"
+                                dataKey="price"
+                                stroke="#02a4ba"
+                                strokeWidth={1.5}
+                                dot={{ r: 2.5, fill: '#02a4ba', strokeWidth: 0 }}
+                                activeDot={{ r: 4, fill: '#02a4ba' }}
+                              />
+                              <Tooltip
+                                contentStyle={{background:'#1a1915',border:'1px solid #2a2520',borderRadius:4,fontSize:'clamp(9px,.65vw,11px)',color:'#9a9086'}}
+                                formatter={(v) => [formatCurrency(v), 'Price']}
+                                labelFormatter={(_, payload) => payload?.[0]?.payload?.date ? formatDateShort(payload[0].payload.date) : ''}
+                              />
+                              <YAxis domain={['auto','auto']} hide />
+                              <XAxis dataKey="date" hide />
+                            </LineChart>
+                          </ResponsiveContainer>
+                          <div style={{display:'flex',justifyContent:'space-between',marginTop:4}}>
                             <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-muted)'}}>{formatDate(priceHistory[0].date)} — {formatCurrency(priceHistory[0].price)}</div>
                             <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--accent)',fontWeight:600}}>{formatDate(priceHistory[priceHistory.length-1].date)} — {formatCurrency(priceHistory[priceHistory.length-1].price)}</div>
                           </div>
