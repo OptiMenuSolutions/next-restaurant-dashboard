@@ -11,6 +11,7 @@ import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from "../../components/TourDataBanner";
 import UniversalSearch from '../../components/UniversalSearch';
+import Head from "next/head";
 
 const SHELF_LIFE = {
   fish:2,salmon:2,tuna:2,halibut:2,cod:2,tilapia:2,mahi:2,shrimp:2,scallop:2,
@@ -984,6 +985,9 @@ export default function ClientDashboard() {
 
     return (
       <>
+      <Head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+      </Head>
         <style>{GLOBAL_CSS}</style>
         <style>{`
           @keyframes spin { to { transform: rotate(360deg); } }
@@ -1002,7 +1006,7 @@ export default function ClientDashboard() {
           .mob2-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
           .mob2-card-title { font-size:11px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:.7px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
           .mob2-card-title svg { width:12px; height:12px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
-          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0; padding-bottom:max(8px,env(safe-area-inset-bottom)); display:flex; flex-shrink:0; }
+          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0 0; padding-bottom:env(safe-area-inset-bottom, 8px); display:flex; flex-shrink:0; position:sticky; bottom:0; z-index:50; }
           .mob2-nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px 0; -webkit-tap-highlight-color:transparent; }
           .mob2-nav-icon svg { width:20px; height:20px; stroke:var(--text-muted); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
           .mob2-nav-icon.active svg { stroke:var(--accent); }
