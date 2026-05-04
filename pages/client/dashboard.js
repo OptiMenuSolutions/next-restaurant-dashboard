@@ -57,7 +57,6 @@ function getWasteUrgencyColor(daysLeft) {
   return "var(--accent)";
 }
 
-// Ticket label/color by position only. RED is never used on tickets — only on waste/expiry.
 function getTicketMeta(index) {
   if (index === 0) return { label:'PUSH TONIGHT', color:'var(--accent)' };
   if (index === 1) return { label:'RECOMMEND',    color:'var(--color-green)' };
@@ -226,48 +225,6 @@ const GLOBAL_CSS = `
   .wir-detail-footer{display:flex;justify-content:space-between;padding-top:clamp(5px,.5vh,8px);border-top:1px solid var(--border-subtle);margin-top:clamp(5px,.5vh,8px);}
   .wir-detail-footer-lbl{font-size:clamp(8px,.58vw,10px);color:var(--text-faint);}
   .wir-detail-footer-val{font-size:clamp(8px,.58vw,10px);font-weight:600;color:var(--color-green);}
-  .mob-root{font-family:'Inter',sans-serif;background:var(--bg-root);color:var(--text-primary);width:100%;height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
-  .mob-header{background:var(--bg-elevated);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;padding-top:env(safe-area-inset-top,10px);}
-  .mob-logo{font-family:'Playfair Display',serif;font-size:20px;color:var(--text-primary);letter-spacing:-.3px;}
-  .mob-logo span{color:var(--accent);}
-  .mob-titlebar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:10px 16px;flex-shrink:0;}
-  .mob-page-title{font-family:'Playfair Display',serif;font-size:20px;color:var(--text-primary);line-height:1;}
-  .mob-page-sub{font-size:11px;color:var(--text-muted);margin-top:3px;}
-  .mob-stats{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:8px 16px;display:flex;flex-shrink:0;overflow-x:auto;}
-  .mob-stats::-webkit-scrollbar{display:none;}
-  .mob-stat{flex:1;min-width:0;text-align:center;padding:0 6px;border-right:1px solid var(--border);}
-  .mob-stat:last-child{border-right:none;}
-  .mob-stat-v{font-family:'Playfair Display',serif;font-size:16px;line-height:1;}
-  .mob-stat-l{font-size:9px;color:var(--text-muted);margin-top:2px;text-transform:uppercase;letter-spacing:.4px;}
-  .mob-content{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch;}
-  .mob-content::-webkit-scrollbar{display:none;}
-  .mob-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:14px;flex-shrink:0;}
-  .mob-card-title{font-size:11px;font-weight:600;color:var(--text-primary);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
-  .mob-card-title svg{width:12px;height:12px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .mob-pill-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-  .mob-pill{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:8px;padding:10px 12px;}
-  .mob-pill-l{font-size:10px;color:var(--text-muted);margin-bottom:4px;}
-  .mob-pill-v{font-family:'Playfair Display',serif;font-size:18px;line-height:1;}
-  .mob-score-row{display:flex;align-items:center;gap:16px;}
-  .mob-score-ring{position:relative;width:64px;height:64px;flex-shrink:0;}
-  .mob-score-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
-  .mob-score-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .mob-score-num{font-family:'Playfair Display',serif;font-size:18px;color:var(--text-primary);line-height:1;}
-  .mob-score-sub{font-size:9px;color:var(--text-muted);}
-  .mob-score-badge{display:inline-block;font-size:11px;font-weight:600;padding:3px 10px;border-radius:10px;margin-top:5px;}
-  .mob-ai-item{background:var(--bg-elevated);border-radius:7px;border-left:2px solid var(--accent);padding:10px 12px;margin-bottom:8px;font-family:'Courier New',monospace;}
-  .mob-ai-item:last-child{margin-bottom:0;}
-  .mob-ai-title{font-size:13px;font-weight:700;color:var(--text-primary);margin-bottom:3px;}
-  .mob-ai-desc{font-size:11px;color:var(--text-muted);line-height:1.45;}
-  .mob-ai-sell{font-size:11px;color:var(--text-secondary);font-style:italic;margin-top:5px;line-height:1.45;}
-  .mob-bottom-nav{background:var(--bg-elevated);border-top:1px solid var(--border);padding:8px 0;padding-bottom:max(8px,env(safe-area-inset-bottom));display:flex;flex-shrink:0;}
-  .mob-nav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;padding:4px 0;-webkit-tap-highlight-color:transparent;}
-  .mob-nav-icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center;}
-  .mob-nav-icon svg{width:20px;height:20px;stroke:var(--text-muted);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .mob-nav-icon.active svg{stroke:var(--accent);}
-  .mob-nav-label{font-size:10px;color:var(--text-muted);}
-  .mob-nav-label.active{color:var(--accent);}
-  .mob-nav-dot{width:4px;height:4px;border-radius:50%;background:var(--accent);}
 `;
 
 function ScoreRing({ score }) {
@@ -619,6 +576,203 @@ function WeekInReviewCard({ restaurantId }) {
   );
 }
 
+// ── MOBILE WEEK IN REVIEW ────────────────────────────────────────────────────
+function MobileWeekInReview({ restaurantId }) {
+  const [weekData, setWeekData] = useState([]);
+  const [openDay, setOpenDay] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { if (restaurantId) loadWeekData(); }, [restaurantId]);
+
+  async function loadWeekData() {
+    setLoading(true);
+    try {
+      const days = Array.from({length:7},(_,i) => { const d=new Date(); d.setDate(d.getDate()-i); return d.toISOString().split('T')[0]; }).reverse();
+      const fromDate = days[0];
+      const [{ data: recs },{ data: sales }] = await Promise.all([
+        supabase.from('ai_recommendations').select('generated_date,recommendations').eq('restaurant_id',restaurantId).gte('generated_date',fromDate).order('generated_date',{ascending:false}),
+        supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',fromDate),
+      ]);
+      const sixtyAgo=new Date(); sixtyAgo.setDate(sixtyAgo.getDate()-67);
+      const { data: historicSales } = await supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',sixtyAgo.toISOString().split('T')[0]).lt('sale_date',fromDate);
+      const avgByItemDay={};
+      (historicSales||[]).forEach(s => {
+        const dow=new Date(s.sale_date+'T12:00:00').getDay();
+        if(!avgByItemDay[s.item_name])avgByItemDay[s.item_name]={};
+        if(!avgByItemDay[s.item_name][dow])avgByItemDay[s.item_name][dow]=[];
+        avgByItemDay[s.item_name][dow].push(parseFloat(s.quantity_sold||0));
+      });
+      const salesByDateItem={};
+      (sales||[]).forEach(s => {
+        if(!salesByDateItem[s.sale_date])salesByDateItem[s.sale_date]={};
+        salesByDateItem[s.sale_date][s.item_name]=(salesByDateItem[s.sale_date][s.item_name]||0)+parseFloat(s.quantity_sold||0);
+      });
+      const recsMap={};
+      (recs||[]).forEach(r => { recsMap[r.generated_date]=r.recommendations||[]; });
+      const DAY_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const built=days.map(date => {
+        const dow=new Date(date+'T12:00:00').getDay();
+        const daySales=salesByDateItem[date]||{};
+        const dayRecs=recsMap[date]||[];
+        const dishes=dayRecs.slice(0,3).map((rec,i) => {
+          const name=rec.title||rec.dish||'';
+          const sold=daySales[name]||0;
+          const hist=avgByItemDay[name]?.[dow]||[];
+          const avg=hist.length>0?hist.reduce((a,b)=>a+b,0)/hist.length:null;
+          const diff=avg!==null?sold-avg:null;
+          const pct=avg!==null&&avg>0?Math.round((diff/avg)*100):null;
+          return {name,sold,avg,diff,pct,type:rec.type,ticketColor:TICKET_COLORS[i]};
+        });
+        const extraSold=Math.round(dishes.reduce((s,d)=>s+(d.diff||0),0)*10)/10;
+        const wasteSaved=Math.round(dayRecs.reduce((s,r,i)=>{
+          if(r.type==='inventory'){const dish=dishes[i];return s+Math.max(0,(dish?.diff||0))*8;}
+          return s;
+        },0));
+        return {date,dayLabel:DAY_NAMES[dow],dishes,extraSold,wasteSaved};
+      });
+      setWeekData(built);
+    } catch(e){ console.error('[MobileWeekInReview]',e); }
+    finally { setLoading(false); }
+  }
+
+  const weekExtraSold  = Math.round(weekData.reduce((s,d)=>s+Math.max(0,d.extraSold),0)*10)/10;
+  const weekWasteSaved = weekData.reduce((s,d)=>s+d.wasteSaved,0);
+  const daysWithData   = weekData.filter(d=>d.dishes.length>0).length;
+  const hitRate        = daysWithData>0?Math.round((weekData.filter(d=>d.extraSold>0).length/daysWithData)*100):0;
+  const openDayData    = weekData.find(d=>d.date===openDay);
+
+  if (loading) return (
+    <div style={{padding:'20px',textAlign:'center'}}>
+      <div style={{width:18,height:18,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite',margin:'0 auto'}}/>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Summary stats */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
+        {[
+          {l:'Extra Sold',v:`${weekExtraSold>=0?'+':''}${weekExtraSold}`,c:weekExtraSold>=0?'var(--color-green)':'var(--color-red)',sub:'vs avg'},
+          {l:'Waste Saved',v:`$${weekWasteSaved}`,c:'var(--color-green)',sub:'est.'},
+          {l:'Hit Rate',v:`${hitRate}%`,c:'var(--accent)',sub:'days above avg'},
+        ].map(({l,v,c,sub})=>(
+          <div key={l} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 8px'}}>
+            <div style={{fontSize:9,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.6,marginBottom:4}}>{l}</div>
+            <div style={{fontSize:18,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
+            <div style={{fontSize:9,color:'var(--text-faint)',marginTop:3}}>{sub}</div>
+          </div>
+        ))}
+      </div>
+      {/* Day rows */}
+      {weekData.map(day => {
+        const isOpen = openDay === day.date;
+        const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
+        return (
+          <div key={day.date} style={{background:'var(--bg-elevated)',border:`1px solid ${isOpen?'var(--accent)':'var(--border-subtle)'}`,borderRadius:8,marginBottom:8,overflow:'hidden',transition:'border-color .15s'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',cursor:'pointer'}} onClick={()=>setOpenDay(prev=>prev===day.date?null:day.date)}>
+              <span style={{fontSize:11,fontWeight:600,color:'var(--text-primary)',width:28,flexShrink:0}}>{day.dayLabel}</span>
+              <span style={{fontSize:10,color:'var(--text-faint)',width:32,flexShrink:0}}>{day.date.slice(5).replace('-','/')}</span>
+              <div style={{flex:1,display:'flex',gap:4,overflow:'hidden'}}>
+                {day.dishes.length>0?day.dishes.map((d,i)=>(
+                  <span key={i} style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:80}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
+                )):<span style={{fontSize:9,color:'var(--text-faint)'}}>No recs</span>}
+              </div>
+              <span style={{fontSize:12,fontWeight:700,color:extraColor,flexShrink:0}}>{day.extraSold>0?'+':''}{day.extraSold}</span>
+              <span style={{fontSize:9,color:'var(--text-faint)',flexShrink:0}}>{isOpen?'▴':'▾'}</span>
+            </div>
+            {isOpen && openDayData && (
+              <div style={{padding:'0 12px 12px',borderTop:'1px solid var(--border-subtle)'}}>
+                <div style={{fontSize:9,fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.7,margin:'10px 0 8px'}}>Dish Performance</div>
+                {openDayData.dishes.length===0 && <div style={{fontSize:11,color:'var(--text-muted)'}}>No recommendations for this day.</div>}
+                {openDayData.dishes.map((dish,i) => {
+                  const diff=dish.diff;
+                  const diffColor=diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
+                  const maxBar=Math.max(dish.sold,dish.avg||0,1);
+                  return (
+                    <div key={i} style={{marginBottom:12}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{fontSize:9,fontWeight:600,color:dish.ticketColor,textTransform:'uppercase'}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:'var(--text-primary)'}}>{dish.name}</span>
+                        </div>
+                        <span style={{fontSize:11,fontWeight:700,color:diffColor}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)}`:'—'}</span>
+                      </div>
+                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                        <div style={{display:'flex',alignItems:'center',gap:6}}>
+                          <span style={{fontSize:9,color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
+                          <div style={{flex:1,height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${(dish.sold/maxBar)*100}%`,height:'100%',background:'var(--accent)',borderRadius:2}}/></div>
+                          <span style={{fontSize:9,fontWeight:600,color:'var(--accent)',width:20,textAlign:'right'}}>{dish.sold}</span>
+                        </div>
+                        {dish.avg!==null&&(
+                          <div style={{display:'flex',alignItems:'center',gap:6}}>
+                            <span style={{fontSize:9,color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
+                            <div style={{flex:1,height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${(dish.avg/maxBar)*100}%`,height:'100%',background:'var(--border)',borderRadius:2}}/></div>
+                            <span style={{fontSize:9,fontWeight:600,color:'var(--text-faint)',width:20,textAlign:'right'}}>{dish.avg.toFixed(1)}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div style={{display:'flex',justifyContent:'space-between',paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
+                  <span style={{fontSize:10,color:'var(--text-faint)'}}>Est. waste prevented</span>
+                  <span style={{fontSize:10,fontWeight:600,color:'var(--color-green)'}}>${openDayData.wasteSaved}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── MOBILE PRICE MOVEMENT ────────────────────────────────────────────────────
+function MobilePriceMovement({ priceByCategory }) {
+  const [selectedCat, setSelectedCat] = useState(null);
+  const categories = Object.keys(priceByCategory).sort();
+  let globalMin=Infinity, globalMax=-Infinity;
+  Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<globalMin)globalMin=p; if(p>globalMax)globalMax=p; })));
+  if (globalMin===Infinity){globalMin=0;globalMax=1;}
+  const catData = selectedCat ? priceByCategory[selectedCat] : null;
+
+  return (
+    <div>
+      {selectedCat && (
+        <button onClick={()=>setSelectedCat(null)} style={{background:'none',border:'none',color:'var(--accent)',fontSize:12,fontFamily:'Inter,sans-serif',cursor:'pointer',padding:'0 0 10px',display:'flex',alignItems:'center',gap:4}}>← Back</button>
+      )}
+      {categories.length===0 && <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',padding:16}}>No price history yet</div>}
+      {!selectedCat && categories.map(cat => {
+        const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
+        const maxLen=Math.max(...d.ingredients.map(i=>i.history.length));
+        const avgHistory=Array.from({length:maxLen},(_,idx) => { const vals=d.ingredients.map(i=>i.history[idx]??i.history[i.history.length-1]).filter(Boolean); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; });
+        return (
+          <div key={cat} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,marginBottom:8,cursor:'pointer'}} onClick={()=>setSelectedCat(cat)}>
+            <div style={{flex:1,fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cat||'Uncategorized'}</div>
+            {avgHistory.length>=2&&<Sparkline points={avgHistory} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={50} height={18}/>}
+            <div style={{fontSize:12,fontWeight:600,color:deltaColor,whiteSpace:'nowrap'}}>{isUp?'↑':'↓'} {Math.abs(d.avgDelta).toFixed(1)}%</div>
+            <div style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap'}}>{d.ingredients.length} items</div>
+            <span style={{fontSize:10,color:'var(--text-faint)'}}>›</span>
+          </div>
+        );
+      })}
+      {selectedCat && catData && catData.ingredients.map((ing,i) => {
+        const isUp=ing.deltaPct>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
+        return (
+          <div key={i} style={{padding:'10px 12px',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,marginBottom:8}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+              <div style={{flex:1,fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textTransform:'capitalize'}}>{ing.name}</div>
+              {ing.history.length>=2&&<Sparkline points={ing.history} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={50} height={18}/>}
+              <div style={{fontSize:12,fontWeight:600,color:deltaColor}}>{isUp?'↑':'↓'} {Math.abs(ing.deltaPct).toFixed(1)}%</div>
+            </div>
+            <div style={{fontSize:10,color:'var(--text-muted)'}}>{fmtD(ing.firstPrice)} → {fmtD(ing.lastPrice)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ClientDashboard() {
   const router = useRouter();
   const { isMobile } = useWindowSize();
@@ -631,6 +785,7 @@ export default function ClientDashboard() {
   const [aiLoading, setAiLoading]       = useState(false);
   const [menuItemsFull, setMenuItemsFull] = useState([]);
   const [wasteShowAll, setWasteShowAll] = useState(false);
+  const [mobTab, setMobTab]             = useState('tonight');
   const [data, setData] = useState({
     totalInvoices:0,totalIngredients:0,totalMenuItems:0,
     ingredientTrends:[],menuItemAnalysis:[],
@@ -812,15 +967,54 @@ export default function ClientDashboard() {
 
   // ── MOBILE ──────────────────────────────────────────────────────────────────
   if (isMobile) {
-    const circumference=2*Math.PI*40;
-    const scoreDash=(data.aiProfitScore.score/100)*circumference;
-    const {color:scoreColor,label:scoreLabel}=getScoreInfo(data.aiProfitScore.score);
+    const { color: scoreColor, label: scoreLabel } = getScoreInfo(data.aiProfitScore.score);
+    const circumference = 2 * Math.PI * 40;
+    const scoreDash = (data.aiProfitScore.score / 100) * circumference;
+    const wasteProteins = data.wasteRisk.filter(w => w.protein);
+    const wasteOther = data.wasteRisk.filter(w => !w.protein);
+    const allWaste = [...wasteProteins, ...wasteOther];
+
+    const MOB_TABS = [
+      { id: 'tonight', label: "Tonight's Picks" },
+      { id: 'metrics', label: 'Metrics' },
+      { id: 'waste',   label: 'Waste Risk' },
+      { id: 'week',    label: 'Week Review' },
+      { id: 'prices',  label: 'Prices' },
+    ];
+
     return (
       <>
         <style>{GLOBAL_CSS}</style>
-        <div className="mob-root">
-          <div className="mob-header">
-            <div className="mob-logo">Opti<span>Menu</span></div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+          .mob2-root { font-family:'Inter',sans-serif; background:var(--bg-root); color:var(--text-primary); width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+          .mob2-header { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-logo { font-family:'Inter',sans-serif; font-size:18px; font-weight:700; color:var(--text-primary); letter-spacing:-.3px; }
+          .mob2-logo span { color:var(--accent); }
+          .mob2-subbar { background:var(--bg-surface); border-bottom:1px solid var(--border); padding:8px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-tabs { background:var(--bg-elevated); border-bottom:1px solid var(--border); display:flex; overflow-x:auto; flex-shrink:0; -webkit-overflow-scrolling:touch; }
+          .mob2-tabs::-webkit-scrollbar { display:none; }
+          .mob2-tab { flex-shrink:0; padding:10px 14px; font-size:12px; font-weight:500; color:var(--text-muted); border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; border-bottom:2px solid transparent; white-space:nowrap; -webkit-tap-highlight-color:transparent; }
+          .mob2-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+          .mob2-scroll { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:12px; -webkit-overflow-scrolling:touch; }
+          .mob2-scroll::-webkit-scrollbar { display:none; }
+          .mob2-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
+          .mob2-card-title { font-size:11px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:.7px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+          .mob2-card-title svg { width:12px; height:12px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0; padding-bottom:max(8px,env(safe-area-inset-bottom)); display:flex; flex-shrink:0; }
+          .mob2-nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px 0; -webkit-tap-highlight-color:transparent; }
+          .mob2-nav-icon svg { width:20px; height:20px; stroke:var(--text-muted); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+          .mob2-nav-icon.active svg { stroke:var(--accent); }
+          .mob2-nav-label { font-size:10px; color:var(--text-muted); }
+          .mob2-nav-label.active { color:var(--accent); }
+        `}</style>
+
+        <div className="mob2-root">
+
+          {/* Header */}
+          <div className="mob2-header">
+            <div className="mob2-logo">Opti<span>Menu</span></div>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
               <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'var(--accent)'}}>
                 <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
@@ -828,78 +1022,190 @@ export default function ClientDashboard() {
               <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true}/>
             </div>
           </div>
-          <div className="mob-titlebar">
-            <div className="mob-page-title">Dashboard</div>
-            <div className="mob-page-sub">{new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {restaurantName}</div>
-          </div>
-          <div className="mob-stats">
-            {[{v:data.totalInvoices,l:'Invoices',c:'var(--accent)'},{v:data.totalIngredients,l:'Ingredients',c:'var(--text-primary)'},{v:data.totalMenuItems,l:'Menu',c:'var(--text-primary)'},{v:`${data.averageMargin.toFixed(1)}%`,l:'Margin',c:getMarginColor(data.averageMargin)},{v:fmt(data.totalSpending),l:'YTD',c:'var(--color-amber)'}].map(({v,l,c})=>(
-              <div key={l} className="mob-stat"><div className="mob-stat-v" style={{color:c}}>{v}</div><div className="mob-stat-l">{l}</div></div>
-            ))}
-          </div>
-          {loading?(
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
-              <div style={{width:24,height:24,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-              <div style={{fontSize:12,color:'var(--text-muted)'}}>Loading...</div>
+
+          {/* Sub bar — restaurant + date */}
+          <div className="mob2-subbar">
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{restaurantName}</div>
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
             </div>
-          ):(
-            <div className="mob-content">
-              <div className="mob-card">
-                <div className="mob-card-title">OptiScore</div>
-                <div className="mob-score-row">
-                  <div className="mob-score-ring">
-                    <svg viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="9" fill="none"/>
-                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="9" fill="none" strokeDasharray={`${scoreDash} ${circumference}`} strokeLinecap="round"/>
-                    </svg>
-                    <div className="mob-score-inner"><div className="mob-score-num">{data.aiProfitScore.score}</div><div className="mob-score-sub">/100</div></div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:4}}>{restaurantName}</div>
-                    <div className="mob-score-badge" style={{background:`color-mix(in srgb, ${scoreColor} 15%, transparent)`,color:scoreColor}}>{scoreLabel}</div>
-                  </div>
+            {/* OptiScore inline */}
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{position:'relative',width:36,height:36,flexShrink:0}}>
+                <svg viewBox="0 0 100 100" width={36} height={36} style={{transform:'rotate(-90deg)'}}>
+                  <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="12" fill="none"/>
+                  <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="12" fill="none" strokeDasharray={`${scoreDash} ${circumference}`} strokeLinecap="round"/>
+                </svg>
+                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:10,fontWeight:700,color:'var(--text-primary)'}}>{data.aiProfitScore.score}</span>
                 </div>
               </div>
-              <div className="mob-pill-grid">
-                {[{l:'Invoices',v:data.totalInvoices,c:'var(--accent)'},{l:'Low Margin',v:data.lowMarginCount,c:'var(--color-red)'},{l:'Avg Food Cost',v:`${data.averageMargin>0?(100-data.averageMargin).toFixed(1):0}%`,c:'var(--color-green)'},{l:'YTD Spend',v:fmt(data.totalSpending),c:'var(--color-amber)'}].map(({l,v,c})=>(
-                  <div key={l} className="mob-pill"><div className="mob-pill-l">{l}</div><div className="mob-pill-v" style={{color:c}}>{v}</div></div>
-                ))}
+              <div>
+                <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:.5}}>OptiScore</div>
+                <div style={{fontSize:11,fontWeight:600,color:scoreColor}}>{scoreLabel}</div>
               </div>
-              <div className="mob-card">
-                <div className="mob-card-title">Tonight's Picks</div>
-                {(data.aiRecommendations||[]).slice(0,3).map((rec,i)=>{
-                  const {color:tc}=getTicketMeta(i);
-                  return (
-                    <div key={i} className="mob-ai-item" style={{borderLeftColor:tc}}>
-                      <div className="mob-ai-title">{rec.title}</div>
-                      <div className="mob-ai-desc">{rec.description}</div>
-                      <div className="mob-ai-sell">"{rec.sellCopy||SELL_COPY[i%SELL_COPY.length]}"</div>
+            </div>
+          </div>
+
+          {/* Tab bar */}
+          <div className="mob2-tabs">
+            {MOB_TABS.map(t=>(
+              <button key={t.id} className={`mob2-tab${mobTab===t.id?' active':''}`} onClick={()=>setMobTab(t.id)}>
+                {t.label}
+                {t.id==='waste'&&data.wasteRisk.length>0&&<span style={{marginLeft:4,background:'var(--color-red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 5px'}}>{data.wasteRisk.length}</span>}
+              </button>
+            ))}
+          </div>
+
+          {/* Content */}
+          {loading ? (
+            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
+              <div style={{width:22,height:22,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+              <div style={{fontSize:12,color:'var(--text-muted)'}}>Loading...</div>
+            </div>
+          ) : (
+            <div className="mob2-scroll">
+
+              {/* ── TONIGHT'S PICKS ── */}
+              {mobTab==='tonight' && (
+                <>
+                  {aiLoading ? (
+                    <div style={{textAlign:'center',padding:24}}>
+                      <div style={{width:20,height:20,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite',margin:'0 auto 8px'}}/>
+                      <div style={{fontSize:12,color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing menu...</div>
                     </div>
-                  );
-                })}
-              </div>
+                  ) : (data.aiRecommendations||[]).length > 0 ? (
+                    (data.aiRecommendations||[]).slice(0,3).map((rec,i) => {
+                      const {label:ticketLabel,color:ticketColor}=getTicketMeta(i);
+                      const sellCopy=rec.sellCopy||rec.talking_point||SELL_COPY[i%SELL_COPY.length];
+                      return (
+                        <div key={i} style={{background:'var(--ticket-bg)',border:'1px solid var(--ticket-border)',borderRadius:8,padding:'14px',fontFamily:'Courier New,monospace',animation:'fadeIn .3s ease both',animationDelay:`${i*.08}s`}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                            <span style={{fontSize:10,fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</span>
+                            <span style={{fontSize:9,color:'var(--text-faint)'}}>#{String(i+1).padStart(3,'0')}</span>
+                          </div>
+                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
+                          <div style={{fontSize:17,fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:8}}>{rec.title}</div>
+                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
+                          {rec.description&&<div style={{fontSize:12,color:'var(--text-primary)',lineHeight:1.5,marginBottom:8}}>{rec.description}</div>}
+                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
+                          <div style={{fontSize:12,color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.5,marginBottom:8}}>
+                            <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
+                          </div>
+                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
+                          <div style={{fontSize:10,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Why Tonight</div>
+                          <div style={{fontSize:11,color:'var(--text-muted)',lineHeight:1.5}}>{rec.reason_selected||rec.description}</div>
+                          <div style={{fontSize:9,color:'var(--text-disabled)',textAlign:'center',marginTop:10}}>opti-menu.com</div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{textAlign:'center',padding:24,color:'var(--text-muted)',fontSize:13}}>No recommendations yet for today.</div>
+                  )}
+                </>
+              )}
+
+              {/* ── METRICS ── */}
+              {mobTab==='metrics' && (
+                <>
+                  {/* Key metrics grid */}
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">
+                      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                      Key Metrics
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                      {[
+                        {l:'YTD Spend',        v:fmt(data.totalSpending),                         c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
+                        {l:'Avg Margin',        v:`${data.averageMargin.toFixed(1)}%`,             c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
+                        {l:'High Margin Items', v:data.highMarginCount||0,                         c:'var(--color-green)', sub:'Above 60% margin'},
+                        {l:'Low Margin Items',  v:data.lowMarginCount,                             c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)', sub:`Below ${LOW_MARGIN_THRESHOLD}% threshold`},
+                        {l:'Menu Items',        v:data.totalMenuItems,                             c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
+                        {l:'Ingredients',       v:data.totalIngredients,                           c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
+                      ].map(({l,v,c,sub})=>(
+                        <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',gap:8}}>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{l}</div>
+                            <div style={{fontSize:10,color:'var(--text-faint)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
+                          </div>
+                          <div style={{fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ── WASTE RISK ── */}
+              {mobTab==='waste' && (
+                <div className="mob2-card">
+                  <div className="mob2-card-title">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    Waste Risk
+                    <span style={{marginLeft:'auto',fontSize:10,color:'var(--text-muted)',fontWeight:400,textTransform:'none',letterSpacing:0}}>{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
+                  </div>
+                  {allWaste.length===0 ? (
+                    <div style={{textAlign:'center',padding:16,fontSize:13,color:'var(--text-muted)'}}>No expiring items detected</div>
+                  ) : (
+                    allWaste.map((item,i) => <WasteRow key={i} item={item} router={router}/>)
+                  )}
+                  {data.wasteRisk.length>0&&(
+                    <div style={{display:'flex',alignItems:'center',gap:10,fontSize:10,color:'var(--text-faint)',paddingTop:8,borderTop:'1px solid var(--border-subtle)',marginTop:4}}>
+                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--color-red)',marginRight:3}}/>Expired/today</span>
+                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--color-amber)',marginRight:3}}/>2 days</span>
+                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--accent)',marginRight:3}}/>3–7 days</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── WEEK IN REVIEW ── */}
+              {mobTab==='week' && (
+                <div className="mob2-card">
+                  <div className="mob2-card-title">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Week in Review
+                  </div>
+                  <MobileWeekInReview restaurantId={restaurantId}/>
+                </div>
+              )}
+
+              {/* ── PRICE MOVEMENT ── */}
+              {mobTab==='prices' && (
+                <div className="mob2-card">
+                  <div className="mob2-card-title">
+                    <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                    Price Movement
+                    <span style={{marginLeft:'auto',fontSize:10,color:'var(--text-muted)',fontWeight:400,textTransform:'none',letterSpacing:0}}>6-month trend</span>
+                  </div>
+                  <MobilePriceMovement priceByCategory={data.priceByCategory}/>
+                </div>
+              )}
+
               <div style={{height:8}}/>
             </div>
           )}
-          <div className="mob-bottom-nav">
+
+          {/* Bottom nav */}
+          <div className="mob2-bottom-nav">
             {[
-              {label:'Dashboard',path:'/client/dashboard',icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>},
-              {label:'Invoices',path:'/client/invoices',icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>},
-              {label:'Ingredients',path:'/client/ingredients',icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg>},
-              {label:'Menu',path:'/client/menu-items',icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>},
-              {label:'Analytics',path:'/client/analytics',icon:<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
+              {label:'Dashboard', path:'/client/dashboard',     icon:<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>},
+              {label:'Invoices',  path:'/client/invoices',      icon:<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>},
+              {label:'Ingredients',path:'/client/ingredients',  icon:<svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg>},
+              {label:'Menu',      path:'/client/menu-items',    icon:<svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>},
+              {label:'Analytics', path:'/client/analytics',     icon:<svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
             ].map(({label,path,icon})=>{
-              const active=path==='/client/dashboard';
+              const active = path==='/client/dashboard';
               return (
-                <div key={label} className="mob-nav-item" onClick={()=>router.push(path)}>
-                  <div className={`mob-nav-icon${active?' active':''}`}>{icon}</div>
-                  <div className={`mob-nav-label${active?' active':''}`}>{label}</div>
-                  {active&&<div className="mob-nav-dot"/>}
+                <div key={label} className="mob2-nav-item" onClick={()=>router.push(path)}>
+                  <div className={`mob2-nav-icon${active?' active':''}`}>{icon}</div>
+                  <div className={`mob2-nav-label${active?' active':''}`}>{label}</div>
                 </div>
               );
             })}
           </div>
         </div>
+
         <Analytics/><SpeedInsights/>
         {tourProps&&<TourOverlay {...tourProps}/>}
         <TourDataBanner/>
@@ -932,7 +1238,6 @@ export default function ClientDashboard() {
     <>
       <style>{GLOBAL_CSS}</style>
       <div className="db-root">
-
         <div className="db-topbar">
           <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
             <div className="db-logo">Opti<span>Menu</span></div>
@@ -990,8 +1295,6 @@ export default function ClientDashboard() {
           ):(
             <div className="db-grid-wrap">
               <div style={{display:'flex',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,padding:'clamp(6px,.6vw,10px) clamp(24px,3vw,60px)',overflow:'hidden'}}>
-
-                {/* LEFT SIDEBAR — OptiScore + Key Metrics */}
                 <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',width:'clamp(148px,12vw,200px)',flexShrink:0}}>
                   <div className="db-score-card" style={{flex:'0 0 auto'}}>
                     <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
@@ -1003,7 +1306,6 @@ export default function ClientDashboard() {
                     </div>
                     <ScoreRing score={data.aiProfitScore.score}/>
                   </div>
-
                   <div className="db-stats-card" style={{flex:1}}>
                     <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
                     {[
@@ -1023,10 +1325,7 @@ export default function ClientDashboard() {
                   </div>
                 </div>
 
-                {/* RIGHT COLUMN — stacked cards */}
                 <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
-
-                  {/* Tonight's Recommendations card */}
                   <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flexShrink:0}}>
                     <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)'}}>Tonight's Recommendations</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',minHeight:'clamp(200px,24vh,320px)'}}>
@@ -1048,12 +1347,10 @@ export default function ClientDashboard() {
                     </div>
                   </div>
 
-                  {/* Operations card */}
                   <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
                     <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>Operations</div>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
                       <WeekInReviewCard restaurantId={restaurantId}/>
-
                       <div className="db-card">
                         <div className="db-card-hd">
                           <div className="db-card-title">
@@ -1079,18 +1376,16 @@ export default function ClientDashboard() {
                           </div>
                         )}
                       </div>
-
                       <PriceMovementCard priceByCategory={data.priceByCategory}/>
                     </div>
                   </div>
-
                 </div>
               </div>
+            </div>
+          )}
         </div>
-        )}
       </div>
-      </div>
-            <Analytics/><SpeedInsights/>
+      <Analytics/><SpeedInsights/>
       {tourProps&&<TourOverlay {...tourProps}/>}
       <TourDataBanner/>
     </>
