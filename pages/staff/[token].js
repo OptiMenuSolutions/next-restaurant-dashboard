@@ -332,17 +332,33 @@ export async function getServerSideProps({ params }) {
   }
 
   // 2. Fetch today's recommendations
-  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  // 'en-CA' gives YYYY-MM-DD format natively
 
-  const { data: recRow, error: recError } = await supabase
+  const { data: recRow } = await supabase
     .from('ai_recommendations')
     .select('recommendations')
     .eq('restaurant_id', restaurant.id)
     .eq('generated_date', today)
-    .eq('type', 'general')
     .single();
 
-  const recommendations = recRow?.recommendations ?? [];
+  let recommendations = recRow?.recommendations ?? [];
+
+  // If no cached rec for today, generate now (first NFC tap triggers it)
+  if (!recommendations.length) {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://opti-menu.com';
+      const genRes = await fetch(`${baseUrl}/api/ai-recommendations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantId: restaurant.id }),
+      });
+      const genData = await genRes.json();
+      recommendations = genData.recommendations ?? [];
+    } catch (e) {
+      console.error('[staff/token] on-demand generation failed:', e);
+    }
+  }
 
   return {
     props: {

@@ -388,7 +388,7 @@ export default async function handler(req, res) {
     try {
       await supabase
         .from('ai_recommendations')
-        .upsert({ restaurant_id: restaurantId, generated_date: currentDate, recommendations });
+        .upsert({ restaurant_id: restaurantId, generated_date: currentDate, recommendations, type: 'general' });
     } catch (cacheWriteErr) {
       console.error('[ai-recommendations] Cache write error:', cacheWriteErr.message);
     }
