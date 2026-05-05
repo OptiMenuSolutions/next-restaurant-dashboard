@@ -461,21 +461,16 @@ input::placeholder,textarea::placeholder{color:var(--text-faint)!important;}
 .an-logo span{color:var(--accent);}
 .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
 .an-tab.active{color:var(--text-primary);background:var(--text-inset);}
-.an-ph{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:0 clamp(10px,1vw,20px);height:clamp(28px,3.2vh,40px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
+.an-ph{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:0 clamp(10px,1vw,20px);min-height:clamp(36px,4vh,48px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
 .an-ph-title{font-size:clamp(11px,.82vw,15px);font-weight:600;color:var(--text-primary);font-family:'Inter',sans-serif;}
 .an-ph-sub{font-size:clamp(9px,.62vw,11px);color:var(--text-muted);margin-left:6px;font-family:'Inter',sans-serif;}
 .mi-ph-action-item{display:flex;align-items:center;gap:4px;font-size:clamp(9px,.62vw,11px);color:var(--text-muted);}
 .mi-ph-action-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
 .mi-ph-action-val{font-weight:600;font-family:'Inter',sans-serif;}
-.an-range-toggle{display:flex;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;}
-.an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
+.an-range-toggle{display:flex;background:var(--bg-elevated);border:1px solid var(--border);border-radius:5px;padding:2px;gap:2px;}
+.an-range-btn{padding:2px clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(9px,.65vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
 .an-range-btn.active{background:var(--text-inset);color:var(--text-primary);}
-.an-sbar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(24px,3vw,60px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
-.an-sbar::-webkit-scrollbar{display:none;}
-.an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
-.an-sl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
-.an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:var(--color-green);background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
-.an-sync-dot{width:5px;height:5px;border-radius:50%;background:var(--color-green);animation:blink 2s infinite;}
+.an-sync-dot{width:4px;height:4px;border-radius:50%;background:var(--color-green);animation:blink 2s infinite;flex-shrink:0;}
 .an-body{flex:1;min-height:0;padding:clamp(6px,.6vw,10px) clamp(24px,3vw,60px);gap:clamp(6px,.6vw,10px);display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:1fr 1fr;overflow:hidden;}
 .an-trend-card{grid-column:1/4;grid-row:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 .an-r1-col4{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
@@ -1233,53 +1228,43 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* ── FIX 1: Header bar — Inter font, stats right-justified on same row ── */}
+        {/* ── Header bar — Inter font, stats + last sync + controls all on one row ── */}
         <div className="an-ph">
           <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
             <span className="an-ph-title">Sales Analytics</span>
             <span className="an-ph-sub">· POS intelligence · inventory risk</span>
           </div>
-          <div style={{ display:'flex', alignItems:'center', gap:'clamp(10px,1.2vw,20px)', flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:'clamp(8px,1vw,16px)', flexWrap:'wrap' }}>
             {hasSalesData && (
               <>
                 <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--accent)' }}/><span className="mi-ph-action-val" style={{ color:'var(--accent)' }}>{stats.totalDays}</span><span>days</span></div>
                 <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-green)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-green)' }}>{formatCurrency(stats.totalRevenue)}</span><span>total rev</span></div>
                 <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-amber)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-amber)' }}>{formatCurrency(stats.avgDailyRevenue)}</span><span>avg daily</span></div>
                 <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-red)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-red)' }}>{slowMovers.length}</span><span>slow movers</span></div>
+                {salesMeta.lastSync && (
+                  <div style={{ display:'flex', alignItems:'center', gap:4, fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-green)', background:'rgba(42,138,90,.08)', border:'1px solid rgba(42,138,90,.15)', borderRadius:12, padding:'2px 7px', flexShrink:0 }}>
+                    <div style={{ width:4, height:4, borderRadius:'50%', background:'var(--color-green)', animation:'blink 2s infinite', flexShrink:0 }}/>
+                    {typeof salesMeta.lastSync === 'string' ? salesMeta.lastSync.slice(0,10) : salesMeta.lastSync}
+                  </div>
+                )}
               </>
             )}
             {uploadStep==='done' && uploadSuccessMsg && (
-              <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'2px 8px', display:'flex', alignItems:'center', gap:6 }}>
                 ✓ {uploadSuccessMsg}
-                <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'2px 8px', marginLeft:4 }} onClick={() => { setUploadStep('idle'); setUploadSuccessMsg(''); }}>×</button>
+                <button className="an-btn-g" style={{ fontSize:'clamp(8px,.62vw,10px)', padding:'1px 6px', marginLeft:2 }} onClick={() => { setUploadStep('idle'); setUploadSuccessMsg(''); }}>×</button>
               </div>
             )}
+            <div style={{ width:1, height:14, background:'var(--border)', flexShrink:0 }}/>
             <div className="an-range-toggle">{DATE_RANGES.map(r => <button key={r} className={`an-range-btn${dateRange===r?' active':''}`} onClick={() => setDateRange(r)}>{r}</button>)}</div>
-            {hasSalesData && <button className="an-btn-g" style={{ padding:'clamp(4px,.4vw,6px) clamp(8px,.7vw,12px)', fontSize:'clamp(9px,.68vw,11px)' }} onClick={() => setShowUploadManager(true)}>↑ Uploads</button>}
-            <button className="an-btn-p" onClick={() => fileInputRef.current?.click()}>
+            {hasSalesData && (
+              <button style={{ background:'none', border:'1px solid var(--border)', borderRadius:5, padding:'3px 8px', fontSize:'clamp(9px,.65vw,11px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif", whiteSpace:'nowrap', transition:'all .15s' }} onClick={() => setShowUploadManager(true)} onMouseEnter={e => { e.currentTarget.style.color='var(--text-primary)'; e.currentTarget.style.borderColor='var(--text-faint)'; }} onMouseLeave={e => { e.currentTarget.style.color='var(--text-muted)'; e.currentTarget.style.borderColor='var(--border)'; }}>↑ Uploads</button>
+            )}
+            <button style={{ background:'var(--accent)', border:'none', borderRadius:5, padding:'3px 10px', fontSize:'clamp(9px,.65vw,11px)', fontWeight:600, color:'var(--bg-root)', cursor:'pointer', fontFamily:"'Inter',sans-serif", whiteSpace:'nowrap', transition:'background .2s' }} onClick={() => fileInputRef.current?.click()} onMouseEnter={e => e.currentTarget.style.background='#01bcd4'} onMouseLeave={e => e.currentTarget.style.background='var(--accent)'}>
               <input ref={fileInputRef} type="file" accept=".csv" style={{ display:'none' }} onChange={e => handleFileSelect(e.target.files)}/>
               ↑ Upload CSV
             </button>
           </div>
-        </div>
-
-        <div className="an-sbar">
-          {[
-            { v: hasSalesData ? stats.totalDays : '—',                       l: 'Days of Data',  c: 'var(--accent)' },
-            { v: hasSalesData ? topSellers.length : '—',                     l: 'Items Tracked', c: 'var(--text-primary)' },
-            { v: hasSalesData ? formatCurrency(stats.totalRevenue) : '—',    l: 'Total Revenue', c: 'var(--color-green)' },
-            { v: hasSalesData ? formatCurrency(stats.avgDailyRevenue) : '—', l: 'Avg Daily',     c: 'var(--color-amber)' },
-            { v: hasSalesData ? (topSellers[0]?.name || '—') : '—',          l: 'Top Seller',    c: 'var(--text-primary)' },
-            { v: hasSalesData ? slowMovers.length : '—',                     l: 'Slow Movers',   c: 'var(--color-red)' },
-          ].map(({ v, l, c }) => (
-            <div key={l} style={{ flexShrink:0 }}>
-              <div className="an-sv" style={{ color:c }}>{v}</div>
-              <div className="an-sl">{l}</div>
-            </div>
-          ))}
-          {hasSalesData && salesMeta.lastSync && (
-            <div className="an-sync-badge"><div className="an-sync-dot"/>Last sync: {typeof salesMeta.lastSync === 'string' ? salesMeta.lastSync.slice(0,10) : salesMeta.lastSync}</div>
-          )}
         </div>
 
         {loading ? (
