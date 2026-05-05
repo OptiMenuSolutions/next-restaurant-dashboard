@@ -592,11 +592,30 @@ export default function AnalyticsPage() {
   }
 
   async function loadSalesData(restId) {
-    const { data: sales } = await supabase.from('pos_sales').select('*').eq('restaurant_id', restId).order('sale_date', { ascending: false });
-    if (!sales?.length) { setHasSalesData(false); return; }
+    const PAGE_SIZE = 1000;
+    let allRows = [];
+    let from = 0;
+    let keepGoing = true;
+
+    while (keepGoing) {
+      const { data, error } = await supabase
+        .from('pos_sales')
+        .select('*')
+        .eq('restaurant_id', restId)
+        .order('sale_date', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error || !data?.length) break;
+
+      allRows = allRows.concat(data);
+      keepGoing = data.length === PAGE_SIZE;
+      from += PAGE_SIZE;
+    }
+
+    if (!allRows.length) { setHasSalesData(false); return; }
     setHasSalesData(true);
-    setAllSales(sales);
-    setSalesMeta({ lastSync: sales[0]?.sale_date || null, posSystem: sales[0]?.pos_system || null });
+    setAllSales(allRows);
+    setSalesMeta({ lastSync: allRows[0]?.sale_date || null, posSystem: allRows[0]?.pos_system || null });
   }
 
   function getFilteredSales(sales) {
