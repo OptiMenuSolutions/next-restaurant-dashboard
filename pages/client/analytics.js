@@ -158,8 +158,8 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
           const y = yOf(t);
           return (
             <g key={i}>
-              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="#1a1815" strokeWidth={0.75} />
-              <text x={PAD.left - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize={FONT_SIZE} fill="#3a3630" fontFamily="Inter, sans-serif">
+              <line x1={PAD.left} y1={y} x2={W - PAD.right} y2={y} stroke="var(--text-inset)" strokeWidth={0.75} />
+              <text x={PAD.left - 6} y={y} textAnchor="end" dominantBaseline="middle" fontSize={FONT_SIZE} fill="var(--text-faint)" fontFamily="Inter, sans-serif">
                 {valueKey === 'rev' ? formatCurrency(t) : Math.round(t)}
               </text>
             </g>
@@ -186,13 +186,13 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
         {xLabelIdxs.map(i => (
           <text key={i} x={xOf(i)} y={H - 6}
             textAnchor={i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
-            fontSize={FONT_SIZE} fill={activeIdx === i ? color : '#3a3630'} fontFamily="Inter, sans-serif">
+            fontSize={FONT_SIZE} fill={activeIdx === i ? color : 'var(--text-faint)'} fontFamily="Inter, sans-serif">
             {formatDateLabel(pts[i].date)}
           </text>
         ))}
       </svg>
       {tip && (
-        <div style={{ position: 'fixed', left: tip.x + 14, top: tip.y - 52, background: '#1a1915', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: 'var(--text-primary)', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 999, boxShadow: '0 2px 8px rgba(0,0,0,.45)' }}>
+        <div style={{ position: 'fixed', left: tip.x + 14, top: tip.y - 52, background: 'var(--text-inset)', border: '1px solid var(--border)', borderRadius: 6, padding: '6px 10px', fontSize: 11, color: 'var(--text-primary)', pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 999, boxShadow: '0 2px 8px rgba(0,0,0,.45)' }}>
           <div style={{ fontWeight: 600, color, marginBottom: 2 }}>{valueKey === 'rev' ? formatCurrencyDetailed(tip.d[valueKey]) : Math.round(tip.d[valueKey])}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>{formatDateLabel(tip.d.date)}</div>
         </div>
@@ -209,8 +209,8 @@ function CategoryBars({ data }) {
     <div style={{ display:'flex', flexDirection:'column', gap:'clamp(5px,.5vh,9px)', flex:1, minHeight:0, justifyContent:'space-evenly' }}>
       {data.map((d, i) => (
         <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
-          <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(4px,.35vh,6px)', overflow:'hidden' }}>
+          <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
+          <div style={{ flex:1, background:'var(--text-inset)', borderRadius:3, height:'clamp(4px,.35vh,6px)', overflow:'hidden' }}>
             <div style={{ height:'100%', borderRadius:3, background: CAT_COLORS[i % CAT_COLORS.length], width:`${(d.value/max)*100}%`, transition:'width .4s ease' }}/>
           </div>
           <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color: CAT_COLORS[i % CAT_COLORS.length], minWidth:'clamp(40px,4vw,65px)', textAlign:'right', flexShrink:0 }}>{formatCurrency(d.value)}</div>
@@ -246,8 +246,8 @@ function ByDayCards({ dayOfWeekData, allSales, dateRange, dayView }) {
         <div style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:'clamp(4px,.4vh,7px)', justifyContent:'space-evenly' }}>
           {dayCatData.map((d,i) => (
             <div key={d.name} style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'#9a9086', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
-              <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(4px,.35vh,6px)' }}>
+              <div style={{ width:'clamp(70px,7vw,110px)', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{d.name}</div>
+              <div style={{ flex:1, background:'var(--text-inset)', borderRadius:3, height:'clamp(4px,.35vh,6px)' }}>
                 <div style={{ height:'100%', borderRadius:3, background:CAT_COLORS[i%CAT_COLORS.length], width:`${(d.value/Math.max(...dayOfWeekData.map(x=>x.rev),1))*100}%`, transition:'width .4s' }}/>
               </div>
               <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:CAT_COLORS[i%CAT_COLORS.length], minWidth:'clamp(40px,4vw,60px)', textAlign:'right' }}>{formatCurrency(d.value)}</div>
@@ -266,11 +266,11 @@ function ByDayCards({ dayOfWeekData, allSales, dateRange, dayView }) {
         const hasData = d.qty > 0;
         return (
           <div key={d.day} onClick={() => hasData && setSelectedDay(d.day)}
-            style={{ background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:7, padding:'clamp(6px,.6vw,10px)', display:'flex', alignItems:'center', gap:8, cursor:hasData?'pointer':'default', flex:1, transition:'border-color .15s, background .15s' }}
+            style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:7, padding:'clamp(6px,.6vw,10px)', display:'flex', alignItems:'center', gap:8, cursor:hasData?'pointer':'default', flex:1, transition:'border-color .15s, background .15s' }}
             onMouseEnter={e => { if (hasData) { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='#131210'; }}}
-            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='#0f0e0c'; }}>
+            onMouseLeave={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.background='var(--bg-elevated)'; }}>
             <div style={{ width:'clamp(26px,2.5vw,36px)', fontSize:'clamp(9px,.68vw,11px)', color:hasData?'var(--text-primary)':'var(--text-muted)', fontWeight:600, flexShrink:0 }}>{d.day.slice(0,3)}</div>
-            <div style={{ flex:1, background:'#1a1915', borderRadius:3, height:'clamp(3px,.3vh,5px)' }}>
+            <div style={{ flex:1, background:'var(--text-inset)', borderRadius:3, height:'clamp(3px,.3vh,5px)' }}>
               <div style={{ height:'100%', borderRadius:3, background:'var(--color-amber)', width:`${barPct}%`, transition:'width .4s ease' }}/>
             </div>
             <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color:'var(--color-amber)', minWidth:'clamp(36px,3.5vw,56px)', textAlign:'right', flexShrink:0 }}>{hasData?val:'—'}</div>
@@ -292,7 +292,7 @@ function ByTimeCard({ hourlyData, maxHourQty }) {
       <div style={{ display:'flex', gap:3, flex: expandedHour !== null ? '0 0 auto' : 1, minHeight:0, alignItems:'stretch', transition:'flex .2s' }}>
         {hourlyData.map(h => {
           const intensity = maxHourQty > 0 ? h.qty / maxHourQty : 0;
-          const bg = intensity > 0.7 ? 'var(--color-red)' : intensity > 0.4 ? 'var(--color-amber)' : intensity > 0.1 ? 'var(--accent)' : '#1a1915';
+          const bg = intensity > 0.7 ? 'var(--color-red)' : intensity > 0.4 ? 'var(--color-amber)' : intensity > 0.1 ? 'var(--accent)' : 'var(--text-inset)';
           const isActive = expandedHour === h.hour;
           return (
             <div key={h.hour} onClick={() => setExpandedHour(isActive ? null : h.hour)}
@@ -303,7 +303,7 @@ function ByTimeCard({ hourlyData, maxHourQty }) {
         })}
       </div>
       {expanded && (
-        <div style={{ marginTop:8, background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:7, padding:'clamp(8px,.75vw,12px)', flexShrink:0 }}>
+        <div style={{ marginTop:8, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:7, padding:'clamp(8px,.75vw,12px)', flexShrink:0 }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
             <div style={{ fontSize:'clamp(11px,.85vw,14px)', fontWeight:600, color:'var(--text-primary)', fontFamily:"'Playfair Display',serif" }}>{formatHour(expanded.hour)}</div>
             <button onClick={() => setExpandedHour(null)} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:14, lineHeight:1 }}>×</button>
@@ -316,7 +316,7 @@ function ByTimeCard({ hourlyData, maxHourQty }) {
         </div>
       )}
       <div style={{ display:'flex', gap:8, marginTop:6, flexWrap:'wrap', flexShrink:0 }}>
-        {[{c:'var(--color-red)',l:'Peak'},{c:'var(--color-amber)',l:'Busy'},{c:'var(--accent)',l:'Steady'},{c:'#1a1915',l:'Quiet'}].map(({c,l}) => (
+        {[{c:'var(--color-red)',l:'Peak'},{c:'var(--color-amber)',l:'Busy'},{c:'var(--accent)',l:'Steady'},{c:'var(--text-inset)',l:'Quiet'}].map(({c,l}) => (
           <div key={l} style={{ display:'flex', alignItems:'center', gap:3, fontSize:'clamp(7px,.55vw,9px)', color:'var(--text-muted)' }}>
             <div style={{ width:7, height:7, borderRadius:2, background:c }}/>{l}
           </div>
@@ -359,7 +359,7 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:50, background:'rgba(10,9,8,.88)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }} onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:'#13120f', border:'1px solid var(--border)', borderRadius:12, width:'min(640px,92%)', maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:12, width:'min(640px,92%)', maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <div style={{ padding:'clamp(14px,1.4vw,22px)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
           <div><div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(14px,1.1vw,18px)', color:'var(--text-primary)' }}>Upload History</div><div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginTop:2 }}>Manage your uploaded POS files</div></div>
           <button onClick={onClose} style={{ background:'none', border:'none', color:'var(--text-muted)', cursor:'pointer', fontSize:20, lineHeight:1, padding:4 }}>×</button>
@@ -372,7 +372,7 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
           ) : sessions.length === 0 ? <div style={{ textAlign:'center', padding:40, fontSize:13, color:'var(--text-muted)' }}>No uploads yet</div> : (
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
               {sessions.map(s => (
-                <div key={s.id} style={{ background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+                <div key={s.id} style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
                   {deleting?.id === s.id ? (
                     <div>
                       {deleteStep === 1 && (<>
@@ -386,9 +386,9 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
                       {deleteStep === 2 && (<>
                         <div style={{ fontSize:'clamp(11px,.85vw,14px)', fontWeight:600, color:'var(--color-red)', marginBottom:6 }}>Final confirmation</div>
                         <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', marginBottom:10 }}>Type <strong style={{ color:'var(--text-primary)', fontFamily:'monospace' }}>DELETE</strong> to permanently remove this data.</div>
-                        <input autoFocus value={deleteInput} onChange={e => setDeleteInput(e.target.value)} placeholder="Type DELETE" style={{ background:'#13120f', border:`1px solid ${deleteInput==='DELETE'?'var(--color-red)':'var(--border)'}`, borderRadius:6, padding:'6px 10px', fontSize:'clamp(10px,.78vw,12px)', color:'var(--text-primary)', outline:'none', fontFamily:'monospace', width:'100%', marginBottom:10 }} />
+                        <input autoFocus value={deleteInput} onChange={e => setDeleteInput(e.target.value)} placeholder="Type DELETE" style={{ background:'var(--bg-surface)', border:`1px solid ${deleteInput==='DELETE'?'var(--color-red)':'var(--border)'}`, borderRadius:6, padding:'6px 10px', fontSize:'clamp(10px,.78vw,12px)', color:'var(--text-primary)', outline:'none', fontFamily:'monospace', width:'100%', marginBottom:10 }} />
                         <div style={{ display:'flex', gap:8 }}>
-                          <button disabled={deleteInput !== 'DELETE'} onClick={confirmDelete} style={{ background:deleteInput==='DELETE'?'rgba(192,64,64,.15)':'#1a1915', border:`1px solid ${deleteInput==='DELETE'?'rgba(192,64,64,.4)':'var(--border)'}`, borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:deleteInput==='DELETE'?'var(--color-red)':'var(--text-muted)', cursor:deleteInput==='DELETE'?'pointer':'not-allowed', fontFamily:"'Inter',sans-serif" }}>Permanently Delete</button>
+                          <button disabled={deleteInput !== 'DELETE'} onClick={confirmDelete} style={{ background:deleteInput==='DELETE'?'rgba(192,64,64,.15)':'var(--text-inset)', border:`1px solid ${deleteInput==='DELETE'?'rgba(192,64,64,.4)':'var(--border)'}`, borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:deleteInput==='DELETE'?'var(--color-red)':'var(--text-muted)', cursor:deleteInput==='DELETE'?'pointer':'not-allowed', fontFamily:"'Inter',sans-serif" }}>Permanently Delete</button>
                           <button onClick={cancelDelete} style={{ background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px', fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)', cursor:'pointer', fontFamily:"'Inter',sans-serif" }}>Cancel</button>
                         </div>
                       </>)}
@@ -398,7 +398,7 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:'clamp(10px,.78vw,13px)', fontWeight:600, color:'var(--text-primary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.filename || 'Uploaded file'}</div>
                         <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--text-muted)', marginTop:2 }}>{s.date_from} → {s.date_to} · {s.row_count.toLocaleString()} records · {s.pos_system || 'unknown POS'}</div>
-                        <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'#3a3630', marginTop:1 }}>{new Date(s.uploaded_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
+                        <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--text-faint)', marginTop:1 }}>{new Date(s.uploaded_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' })}</div>
                       </div>
                       <button onClick={() => startDelete(s)} style={{ background:'none', border:'1px solid rgba(192,64,64,.2)', borderRadius:6, padding:'4px 10px', fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-red)', cursor:'pointer', fontFamily:"'Inter',sans-serif", flexShrink:0 }} onMouseEnter={e => e.currentTarget.style.background='rgba(192,64,64,.08)'} onMouseLeave={e => e.currentTarget.style.background='none'}>Delete</button>
                     </div>
@@ -417,19 +417,19 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
 function DuplicateModal({ incoming, existing, onProceed, onCancel }) {
   return (
     <div style={{ position:'fixed', inset:0, zIndex:60, background:'rgba(10,9,8,.92)', display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
-      <div style={{ background:'#13120f', border:'1px solid rgba(212,160,32,.3)', borderRadius:12, width:'min(700px,95%)', maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ background:'var(--bg-surface)', border:'1px solid rgba(212,160,32,.3)', borderRadius:12, width:'min(700px,95%)', maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <div style={{ padding:'clamp(14px,1.4vw,22px)', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
           <div style={{ fontFamily:"'Playfair Display',serif", fontSize:'clamp(14px,1.1vw,18px)', color:'var(--color-amber)', marginBottom:4 }}>⚠ Duplicate Upload Detected</div>
           <div style={{ fontSize:'clamp(9px,.68vw,12px)', color:'var(--text-muted)' }}>This file covers dates that overlap with an existing upload.</div>
         </div>
         <div style={{ flex:1, overflowY:'auto', padding:'clamp(10px,1vw,18px)', display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div style={{ background:'#0f0e0c', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+          <div style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
             <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.7px', marginBottom:8 }}>Existing Upload</div>
             <div style={{ fontSize:'clamp(10px,.78vw,13px)', color:'var(--text-primary)', fontWeight:600, marginBottom:4 }}>{existing.filename || 'Previous upload'}</div>
             <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{existing.date_from} → {existing.date_to}</div>
             <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{existing.row_count?.toLocaleString()} records</div>
           </div>
-          <div style={{ background:'#0f0e0c', border:'1px solid rgba(212,160,32,.2)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
+          <div style={{ background:'var(--bg-elevated)', border:'1px solid rgba(212,160,32,.2)', borderRadius:8, padding:'clamp(10px,1vw,16px)' }}>
             <div style={{ fontSize:'clamp(8px,.62vw,10px)', color:'var(--color-amber)', textTransform:'uppercase', letterSpacing:'.7px', marginBottom:8 }}>New Upload</div>
             <div style={{ fontSize:'clamp(10px,.78vw,13px)', color:'var(--text-primary)', fontWeight:600, marginBottom:4 }}>{incoming.filename}</div>
             <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--text-muted)' }}>{incoming.dateFrom} → {incoming.dateTo}</div>
@@ -452,22 +452,22 @@ html,body{height:100%;background:var(--bg-root);overflow:hidden;}
 #__next{height:100%;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-input::placeholder,textarea::placeholder{color:#3a3630!important;}
-::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:#0f0e0c;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+input::placeholder,textarea::placeholder{color:var(--text-faint)!important;}
+::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:var(--bg-elevated);}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
 
 .an-root{font-family:'Inter',sans-serif;background:var(--bg-root);color:var(--text-primary);width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
-.an-nav{background:#0f0e0c;border-bottom:1px solid var(--border);height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.an-nav{background:var(--bg-elevated);border-bottom:1px solid var(--border);height:clamp(36px,4vh,52px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
 .an-logo{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:var(--text-primary);letter-spacing:-.3px;}
 .an-logo span{color:var(--accent);}
 .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
-.an-tab.active{color:var(--text-primary);background:#1a1915;}
-.an-ph{background:#13120f;border-bottom:1px solid var(--border);padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
+.an-tab.active{color:var(--text-primary);background:var(--text-inset);}
+.an-ph{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
 .an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:var(--text-primary);}
 .an-ph-sub{font-size:clamp(9px,.65vw,10px);color:var(--text-muted);}
-.an-range-toggle{display:flex;background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;}
+.an-range-toggle{display:flex;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;}
 .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
-.an-range-btn.active{background:#1a1915;color:var(--text-primary);}
-.an-sbar{background:#13120f;border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
+.an-range-btn.active{background:var(--text-inset);color:var(--text-primary);}
+.an-sbar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
 .an-sbar::-webkit-scrollbar{display:none;}
 .an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
 .an-sl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
@@ -480,24 +480,24 @@ input::placeholder,textarea::placeholder{color:#3a3630!important;}
 .an-cat-col{grid-column:2;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 .an-time-col{grid-column:3;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 .an-wow-col{grid-column:4;grid-row:2;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
-.an-card{background:#13120f;border:1px solid var(--border);border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
+.an-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:clamp(8px,.8vw,14px);display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 .an-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(6px,.6vh,10px);flex-shrink:0;gap:6px;flex-wrap:wrap;}
 .an-card-title{font-size:clamp(9px,.72vw,13px);font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:5px;}
 .an-card-title svg{width:clamp(10px,.8vw,13px);height:clamp(10px,.8vw,13px);stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
 .an-badge{font-size:clamp(7px,.58vw,9px);font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;}
-.an-toggle{display:flex;background:#0f0e0c;border-radius:5px;padding:2px;gap:2px;}
+.an-toggle{display:flex;background:var(--bg-elevated);border-radius:5px;padding:2px;gap:2px;}
 .an-toggle-btn{padding:clamp(1px,.15vh,3px) clamp(6px,.5vw,10px);border-radius:3px;font-size:clamp(8px,.6vw,10px);cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
-.an-toggle-btn.active{background:#1a1915;color:var(--text-primary);}
+.an-toggle-btn.active{background:var(--text-inset);color:var(--text-primary);}
 .an-bar-row{display:flex;align-items:center;gap:clamp(5px,.45vw,8px);margin-bottom:clamp(4px,.4vh,7px);}
 .an-bar-row:last-child{margin-bottom:0;}
-.an-bar-label{font-size:clamp(8px,.62vw,11px);color:#9a9086;width:clamp(65px,6.5vw,110px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.an-bar-track{flex:1;background:#1a1915;border-radius:3px;height:clamp(3px,.3vh,5px);}
+.an-bar-label{font-size:clamp(8px,.62vw,11px);color:var(--text-muted);width:clamp(65px,6.5vw,110px);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.an-bar-track{flex:1;background:var(--text-inset);border-radius:3px;height:clamp(3px,.3vh,5px);}
 .an-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;}
 .an-bar-val{font-size:clamp(8px,.62vw,11px);font-weight:600;width:clamp(38px,3.5vw,60px);text-align:right;flex-shrink:0;}
 .an-table{width:100%;border-collapse:collapse;}
 .an-th{font-size:clamp(7px,.58vw,9px);font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;padding:clamp(4px,.4vh,6px) clamp(6px,.55vw,10px);border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
 .an-th.r{text-align:right;}
-.an-td{font-size:clamp(9px,.68vw,11px);color:#9a9086;padding:clamp(5px,.5vh,8px) clamp(6px,.55vw,10px);border-bottom:1px solid #1a1915;}
+.an-td{font-size:clamp(9px,.68vw,11px);color:var(--text-muted);padding:clamp(5px,.5vh,8px) clamp(6px,.55vw,10px);border-bottom:1px solid var(--text-inset);}
 .an-td.p{color:var(--text-primary);font-weight:500;}
 .an-td.a{color:var(--accent);font-weight:600;}
 .an-td.r{text-align:right;}
@@ -511,14 +511,14 @@ input::placeholder,textarea::placeholder{color:#3a3630!important;}
 .an-btn-p{background:var(--accent);border:none;border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);font-weight:600;color:var(--bg-root);cursor:pointer;font-family:'Inter',sans-serif;transition:background .2s;white-space:nowrap;}
 .an-btn-p:hover{background:#01bcd4;}
 .an-btn-g{background:none;border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(10px,.9vw,16px);font-size:clamp(10px,.78vw,12px);color:var(--text-muted);cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;white-space:nowrap;}
-.an-btn-g:hover{color:var(--text-primary);border-color:#3a3630;}
-.an-mapper{background:#13120f;border:1px solid var(--border);border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
+.an-btn-g:hover{color:var(--text-primary);border-color:var(--text-faint);}
+.an-mapper{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(12px,1.2vw,20px);flex:1;overflow-y:auto;}
 .an-mapper-title{font-size:clamp(12px,.95vw,16px);font-weight:600;color:var(--text-primary);margin-bottom:4px;}
 .an-mapper-sub{font-size:clamp(10px,.75vw,13px);color:var(--text-muted);margin-bottom:12px;}
 .an-mapper-grid{display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,.6vw,10px);margin-bottom:12px;}
 .an-mapper-lbl{font-size:clamp(9px,.65vw,10px);color:#6b6358;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px;}
 .an-mapper-lbl.req::after{content:' *';color:var(--color-red);}
-.an-mapper-select{background:#0f0e0c;border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:var(--text-primary);outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
+.an-mapper-select{background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:clamp(5px,.5vw,8px) clamp(7px,.65vw,10px);font-size:clamp(10px,.78vw,12px);color:var(--text-primary);outline:none;font-family:'Inter',sans-serif;width:100%;cursor:pointer;}
 .an-mapper-select:focus{border-color:var(--accent);}
 .an-empty{display:flex;align-items:center;justify-content:center;flex:1;font-size:clamp(9px,.72vw,12px);color:var(--text-muted);padding:clamp(10px,1.5vh,20px) 0;text-align:center;}
 .an-scrollable{overflow-y:auto;flex:1;min-height:0;}
@@ -778,20 +778,20 @@ export default function AnalyticsPage() {
           @keyframes spin { to { transform: rotate(360deg); } }
           @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
           .mob2-root { font-family:'Inter',sans-serif; background:var(--bg-root); color:var(--text-primary); width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
-          .mob2-header { background:#0f0e0c; border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-header { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
           .mob2-logo { font-family:'Inter',sans-serif; font-size:18px; font-weight:700; color:var(--text-primary); letter-spacing:-.3px; }
           .mob2-logo span { color:var(--accent); }
-          .mob2-subbar { background:#13120f; border-bottom:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-          .mob2-tabs { background:#13120f; border-bottom:1px solid var(--border); display:flex; overflow-x:auto; flex-shrink:0; -webkit-overflow-scrolling:touch; }
+          .mob2-subbar { background:var(--bg-surface); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-tabs { background:var(--bg-surface); border-bottom:1px solid var(--border); display:flex; overflow-x:auto; flex-shrink:0; -webkit-overflow-scrolling:touch; }
           .mob2-tabs::-webkit-scrollbar { display:none; }
           .mob2-tab { flex-shrink:0; padding:10px 14px; font-size:12px; font-weight:500; color:var(--text-muted); border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; border-bottom:2px solid transparent; white-space:nowrap; -webkit-tap-highlight-color:transparent; }
           .mob2-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
           .mob2-content { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:12px; -webkit-overflow-scrolling:touch; }
           .mob2-content::-webkit-scrollbar { display:none; }
-          .mob2-card { background:#13120f; border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
+          .mob2-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
           .mob2-card-title { font-size:11px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:.7px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
           .mob2-card-title svg { width:12px; height:12px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
-          .mob2-bottom-nav { background:#0f0e0c; border-top:1px solid var(--border); padding:8px 0 0; padding-bottom:env(safe-area-inset-bottom,8px); display:flex; flex-shrink:0; position:sticky; bottom:0; z-index:50; }
+          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0 0; padding-bottom:env(safe-area-inset-bottom,8px); display:flex; flex-shrink:0; position:sticky; bottom:0; z-index:50; }
           .mob2-nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px 0; -webkit-tap-highlight-color:transparent; }
           .mob2-nav-icon svg { width:20px; height:20px; stroke:var(--text-muted); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
           .mob2-nav-icon.active svg { stroke:var(--accent); }
@@ -862,7 +862,7 @@ export default function AnalyticsPage() {
                           { l: 'Avg Daily', v: formatCurrency(stats.avgDailyRevenue), c: 'var(--color-amber)' },
                           { l: 'Items Tracked', v: topSellers.length, c: 'var(--text-primary)' },
                         ].map(({ l, v, c }) => (
-                          <div key={l} style={{ background: '#13120f', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+                          <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
                             <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 6 }}>{l}</div>
                             <div style={{ fontSize: 20, fontWeight: 700, color: c, lineHeight: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</div>
                           </div>
@@ -898,8 +898,8 @@ export default function AnalyticsPage() {
                             const total = categoryData.reduce((s, x) => s + x.value, 0);
                             return (
                               <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                                <div style={{ fontSize: 12, color: '#9a9086', width: 110, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
-                                <div style={{ flex: 1, background: '#1a1915', borderRadius: 3, height: 5, overflow: 'hidden' }}>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted)', width: 110, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</div>
+                                <div style={{ flex: 1, background: 'var(--text-inset)', borderRadius: 3, height: 5, overflow: 'hidden' }}>
                                   <div style={{ height: '100%', borderRadius: 3, background: CAT_COLORS[i % CAT_COLORS.length], width: `${(d.value / max) * 100}%` }} />
                                 </div>
                                 <div style={{ fontSize: 12, fontWeight: 600, color: CAT_COLORS[i % CAT_COLORS.length], width: 55, textAlign: 'right', flexShrink: 0 }}>{formatCurrency(d.value)}</div>
@@ -936,7 +936,7 @@ export default function AnalyticsPage() {
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', width: 20, textAlign: 'right', flexShrink: 0 }}>{i + 1}</div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                              <div style={{ marginTop: 4, height: 4, background: '#1a1915', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ marginTop: 4, height: 4, background: 'var(--text-inset)', borderRadius: 2, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', borderRadius: 2, background: 'var(--accent)', width: `${dayView === 'qty' ? (item.qty / maxTopQty) * 100 : (item.rev / maxTopRev) * 100}%` }} />
                               </div>
                             </div>
@@ -954,7 +954,7 @@ export default function AnalyticsPage() {
                             Slow Movers (&lt;3 this week)
                           </div>
                           {slowMovers.map(item => (
-                            <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #1a1915' }}>
+                            <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--text-inset)' }}>
                               <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{item.name}</div>
                               <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
                                 <div style={{ textAlign: 'right' }}>
@@ -981,7 +981,7 @@ export default function AnalyticsPage() {
                           {weekOverWeek.improvers.slice(0, 3).map(item => (
                             <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                               <div style={{ flex: 1, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                              <div style={{ width: 60, height: 4, background: '#1a1915', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ width: 60, height: 4, background: 'var(--text-inset)', borderRadius: 2, overflow: 'hidden' }}>
                                 <div style={{ width: `${Math.min(100, item.change)}%`, height: '100%', background: 'var(--color-green)', borderRadius: 2 }} />
                               </div>
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-green)', width: 40, textAlign: 'right' }}>+{item.change.toFixed(0)}%</div>
@@ -990,7 +990,7 @@ export default function AnalyticsPage() {
                           {weekOverWeek.decliners.slice(0, 3).map(item => (
                             <div key={item.name} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
                               <div style={{ flex: 1, fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
-                              <div style={{ width: 60, height: 4, background: '#1a1915', borderRadius: 2, overflow: 'hidden' }}>
+                              <div style={{ width: 60, height: 4, background: 'var(--text-inset)', borderRadius: 2, overflow: 'hidden' }}>
                                 <div style={{ width: `${Math.min(100, Math.abs(item.change))}%`, height: '100%', background: 'var(--color-red)', borderRadius: 2 }} />
                               </div>
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-red)', width: 40, textAlign: 'right' }}>{item.change.toFixed(0)}%</div>
@@ -1029,7 +1029,7 @@ export default function AnalyticsPage() {
                           return (
                             <div key={d.day} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                               <div style={{ width: 32, fontSize: 12, fontWeight: 600, color: hasData ? 'var(--text-primary)' : 'var(--text-muted)', flexShrink: 0 }}>{d.day.slice(0, 3)}</div>
-                              <div style={{ flex: 1, background: '#1a1915', borderRadius: 3, height: 5, overflow: 'hidden' }}>
+                              <div style={{ flex: 1, background: 'var(--text-inset)', borderRadius: 3, height: 5, overflow: 'hidden' }}>
                                 <div style={{ height: '100%', borderRadius: 3, background: 'var(--color-amber)', width: hasData ? `${(val / maxVal) * 100}%` : '0%' }} />
                               </div>
                               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-amber)', width: 55, textAlign: 'right', flexShrink: 0 }}>
@@ -1050,7 +1050,7 @@ export default function AnalyticsPage() {
                           <div style={{ display: 'flex', gap: 3, marginBottom: 8 }}>
                             {hourlyData.map(h => {
                               const intensity = maxHourQty > 0 ? h.qty / maxHourQty : 0;
-                              const bg = intensity > 0.7 ? 'var(--color-red)' : intensity > 0.4 ? 'var(--color-amber)' : intensity > 0.1 ? 'var(--accent)' : '#1a1915';
+                              const bg = intensity > 0.7 ? 'var(--color-red)' : intensity > 0.4 ? 'var(--color-amber)' : intensity > 0.1 ? 'var(--accent)' : 'var(--text-inset)';
                               return (
                                 <div key={h.hour} style={{ flex: 1, height: 32, borderRadius: 4, background: bg, opacity: intensity > 0 ? 0.3 + intensity * 0.7 : 0.25, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 2 }}>
                                   <span style={{ fontSize: 7, color: intensity > 0.5 ? '#0a0908' : 'var(--text-muted)' }}>{formatHour(h.hour).replace('am','').replace('pm','')}</span>
@@ -1059,7 +1059,7 @@ export default function AnalyticsPage() {
                             })}
                           </div>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                            {[{ c: 'var(--color-red)', l: 'Peak' }, { c: 'var(--color-amber)', l: 'Busy' }, { c: 'var(--accent)', l: 'Steady' }, { c: '#1a1915', l: 'Quiet' }].map(({ c, l }) => (
+                            {[{ c: 'var(--color-red)', l: 'Peak' }, { c: 'var(--color-amber)', l: 'Busy' }, { c: 'var(--accent)', l: 'Steady' }, { c: 'var(--text-inset)', l: 'Quiet' }].map(({ c, l }) => (
                               <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: 'var(--text-muted)' }}>
                                 <div style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}
                               </div>
@@ -1084,7 +1084,7 @@ export default function AnalyticsPage() {
                   ) : inventoryRisk.length === 0 ? (
                     <div style={{ fontSize: 12, color: 'var(--color-green)', textAlign: 'center', padding: '16px 0' }}>No at-risk ingredients identified ✓</div>
                   ) : inventoryRisk.map((r, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #1a1915' }}>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--text-inset)' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ingredient}</div>
                         {r.linkedDish && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>Used in: {r.linkedDish}</div>}
@@ -1156,7 +1156,7 @@ export default function AnalyticsPage() {
                 <div key={f} style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 10, color: '#6b6358', textTransform: 'uppercase', letterSpacing: .5, fontWeight: 600, marginBottom: 4 }}>{f.replace(/_/g, ' ')}{req && <span style={{ color: 'var(--color-red)' }}> *</span>}</div>
                   <select value={columnMapping[f] || ''} onChange={e => setColumnMapping(prev => ({ ...prev, [f]: e.target.value || null }))}
-                    style={{ background: '#0f0e0c', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 13, color: 'var(--text-primary)', outline: 'none', fontFamily: 'Inter,sans-serif', width: '100%' }}>
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, padding: '8px 10px', fontSize: 13, color: 'var(--text-primary)', outline: 'none', fontFamily: 'Inter,sans-serif', width: '100%' }}>
                     <option value="">— not in CSV —</option>
                     {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
@@ -1176,7 +1176,7 @@ export default function AnalyticsPage() {
             <div style={{ width: 28, height: 28, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Importing...</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{uploadProgress}%</div>
-            <div style={{ width: 220, background: '#1a1915', borderRadius: 4, height: 4 }}><div style={{ height: 4, borderRadius: 4, background: 'var(--accent)', width: `${uploadProgress}%`, transition: 'width .3s' }} /></div>
+            <div style={{ width: 220, background: 'var(--text-inset)', borderRadius: 4, height: 4 }}><div style={{ height: 4, borderRadius: 4, background: 'var(--accent)', width: `${uploadProgress}%`, transition: 'width .3s' }} /></div>
           </div>
         )}
 
@@ -1289,7 +1289,7 @@ export default function AnalyticsPage() {
                 <div style={{ width:28, height:28, border:'2px solid var(--border)', borderTopColor:'var(--accent)', borderRadius:'50%', animation:'spin .7s linear infinite' }}/>
                 <div style={{ fontSize:'clamp(12px,.95vw,16px)', color:'var(--text-primary)', fontWeight:600 }}>Importing sales data...</div>
                 <div style={{ fontSize:'clamp(10px,.75vw,13px)', color:'var(--text-muted)' }}>{uploadProgress}%</div>
-                <div style={{ width:280, background:'#1a1915', borderRadius:4, height:4 }}><div style={{ height:4, borderRadius:4, background:'var(--accent)', width:`${uploadProgress}%`, transition:'width .3s' }}/></div>
+                <div style={{ width:280, background:'var(--text-inset)', borderRadius:4, height:4 }}><div style={{ height:4, borderRadius:4, background:'var(--accent)', width:`${uploadProgress}%`, transition:'width .3s' }}/></div>
               </div>
             )}
 

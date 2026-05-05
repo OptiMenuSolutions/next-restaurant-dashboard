@@ -104,20 +104,20 @@ const CSS = `
   #__next { height: 100%; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-  input::placeholder { color: #3a3630 !important; }
-  select option { background: #1a1915; color: var(--text-primary); }
+  input::placeholder { color: var(--text-faint) !important; }
+  select option { background: var(--bg-inset); color: var(--text-primary); }
   ::-webkit-scrollbar { width: 3px; }
-  ::-webkit-scrollbar-track { background: #0f0e0c; }
+  ::-webkit-scrollbar-track { background: var(--bg-elevated); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-  input[type=range] { -webkit-appearance: none; height: 4px; border-radius: 2px; background: #1a1915; outline: none; cursor: pointer; }
+  input[type=range] { -webkit-appearance: none; height: 4px; border-radius: 2px; background: var(--bg-inset); outline: none; cursor: pointer; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer; }
 
   .mi-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  .mi-nav { background: #0f0e0c; border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .mi-nav { background: var(--bg-elevated); border-bottom: 1px solid var(--border); height: clamp(36px,4vh,52px); padding: 0 clamp(10px,1vw,20px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .mi-logo { font-family: 'Playfair Display', serif; font-size: clamp(13px,1.1vw,18px); color: var(--text-primary); letter-spacing: -.3px; }
   .mi-logo span { color: var(--accent); }
   .mi-tab { padding: clamp(2px,.3vh,4px) clamp(6px,.6vw,11px); border-radius: 4px; font-size: clamp(10px,.75vw,13px); color: var(--text-muted); border: none; background: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .mi-tab.active { color: var(--text-primary); background: #1a1915; }
+  .mi-tab.active { color: var(--text-primary); background: var(--bg-inset); }
   .mi-ph { background: var(--bg-surface); border-bottom: 1px solid var(--border); height: clamp(28px,3.2vh,40px); padding: 0 clamp(10px,1vw,16px); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .mi-ph-title { font-size: clamp(11px,.82vw,15px); font-weight: 600; color: var(--text-primary); }
   .mi-ph-sub { font-size: clamp(9px,.62vw,11px); color: var(--text-muted); margin-left: 6px; }
@@ -130,19 +130,19 @@ const CSS = `
   .mi-container-title { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
   .mi-container-count { font-size: clamp(9px,.65vw,11px); color: var(--text-muted); background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; white-space: nowrap; }
   .mi-container-controls { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end; }
-  .mi-search { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,12px); color: var(--text-primary); width: clamp(120px,13vw,200px); outline: none; font-family: 'Inter', sans-serif; }
-  .mi-sort-sel { background: #1a1915; border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(6px,.5vw,10px); font-size: clamp(9px,.68vw,11px); color: #9a9086; font-family: 'Inter', sans-serif; outline: none; cursor: pointer; }
+  .mi-search { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,12px); color: var(--text-primary); width: clamp(120px,13vw,200px); outline: none; font-family: 'Inter', sans-serif; }
+  .mi-sort-sel { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 4px; padding: clamp(3px,.3vh,5px) clamp(6px,.5vw,10px); font-size: clamp(9px,.68vw,11px); color: var(--text-muted); font-family: 'Inter', sans-serif; outline: none; cursor: pointer; }
   .mi-view-toggle { display: flex; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 5px; overflow: hidden; flex-shrink: 0; }
   .mi-toggle-btn { background: none; border: none; cursor: pointer; padding: clamp(3px,.3vh,5px) clamp(7px,.6vw,10px); color: var(--text-muted); transition: all .15s; display: flex; align-items: center; justify-content: center; }
-  .mi-toggle-btn.active { background: #1a1915; color: var(--accent); }
+  .mi-toggle-btn.active { background: var(--bg-inset); color: var(--accent); }
   .mi-toggle-btn:first-child { border-right: 1px solid var(--border); }
   .mi-toggle-btn svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .mi-add-btn { display: flex; align-items: center; gap: 5px; background: var(--accent); border: none; border-radius: 5px; padding: clamp(3px,.3vh,5px) clamp(8px,.7vw,12px); font-size: clamp(10px,.75vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; transition: background .2s; }
   .mi-add-btn:hover { background: #01bcd4; }
   .mi-grid-wrap { flex: 1; overflow-y: auto; padding: clamp(8px,.8vw,12px); min-width: 0; }
   .mi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(6px,.6vw,10px); }
-  .mi-card { background: #13120f; border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; min-width: 0; overflow: hidden; }
-  .mi-card:hover { border-color: #3a3630; background: #1a1915; }
+  .mi-card { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); cursor: pointer; transition: all .15s; position: relative; border-left: 3px solid transparent; min-width: 0; overflow: hidden; }
+  .mi-card:hover { border-color: var(--text-faint); background: var(--bg-inset); }
   .mi-card.selected { border-color: var(--accent); background: rgba(2,164,186,.06); border-left-color: var(--accent); }
   .mi-card-status { position: absolute; top: 10px; right: 10px; font-size: clamp(7px,.58vw,9px); font-weight: 600; padding: 2px 6px; border-radius: 8px; }
   .cs-complete { background: rgba(42,138,90,.1); color: var(--color-green); }
@@ -159,33 +159,33 @@ const CSS = `
   .mi-margin-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .mi-margin-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
   .mi-margin-val { font-size: clamp(10px,.8vw,13px); font-weight: 700; }
-  .mi-track { background: #1a1915; border-radius: 3px; height: clamp(3px,.28vh,5px); }
+  .mi-track { background: var(--bg-inset); border-radius: 3px; height: clamp(3px,.28vh,5px); }
   .mi-fill { height: 100%; border-radius: 3px; transition: width .3s; }
   .mi-list-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1.4fr; gap: 8px; padding: clamp(6px,.6vh,10px) clamp(10px,1vw,16px); background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-list-th { font-size: clamp(8px,.62vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; cursor: pointer; display: flex; align-items: center; gap: 3px; user-select: none; }
-  .mi-list-th:hover { color: #9a9086; }
+  .mi-list-th:hover { color: var(--text-muted); }
   .mi-list-th.active { color: var(--accent); }
   .mi-list-body { flex: 1; overflow-y: auto; }
   .mi-list-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1.4fr; gap: 8px; padding: clamp(7px,.7vh,11px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background .15s; align-items: center; border-left: 2px solid transparent; }
   .mi-list-row:hover { background: var(--bg-elevated); }
   .mi-list-row.selected { background: rgba(2,164,186,.08); border-left-color: var(--accent); }
-  .mi-list-td { font-size: clamp(10px,.75vw,12px); color: #9a9086; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mi-list-td { font-size: clamp(10px,.75vw,12px); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mi-list-td.name { color: var(--text-primary); font-weight: 500; display: flex; align-items: center; gap: 6px; }
   .mi-list-td.price { color: var(--accent); font-weight: 600; }
   .mi-list-td.no-price { color: var(--text-muted); font-style: italic; }
   .mi-list-margin { display: flex; align-items: center; gap: 6px; }
-  .mi-list-margin-track { flex: 1; background: #1a1915; border-radius: 3px; height: 4px; }
+  .mi-list-margin-track { flex: 1; background: var(--bg-inset); border-radius: 3px; height: 4px; }
   .mi-list-margin-fill { height: 100%; border-radius: 3px; }
   .mi-list-margin-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; width: 38px; text-align: right; }
-  .mi-detail { width: clamp(320px,38vw,540px); background: #13120f; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; position: relative; }
+  .mi-detail { width: clamp(320px,38vw,540px); background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; position: relative; }
   .mi-detail-hd { padding: clamp(8px,.8vh,13px) clamp(10px,1vw,16px); border-bottom: 1px solid var(--border); flex-shrink: 0; }
   .mi-detail-hd-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .mi-detail-title { font-family: 'Playfair Display', serif; font-size: clamp(12px,1vw,16px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 70%; }
   .mi-close-btn { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; }
-  .mi-close-btn:hover { color: var(--text-primary); border-color: #3a3630; }
-  .mi-view-tabs { display: flex; background: #0f0e0c; border-radius: 5px; padding: 2px; gap: 2px; }
+  .mi-close-btn:hover { color: var(--text-primary); border-color: var(--text-faint); }
+  .mi-view-tabs { display: flex; background: var(--bg-elevated); border-radius: 5px; padding: 2px; gap: 2px; }
   .mi-vtab { flex: 1; padding: clamp(3px,.3vh,5px); border-radius: 3px; font-size: clamp(8px,.65vw,11px); font-weight: 500; cursor: pointer; border: none; font-family: 'Inter', sans-serif; color: var(--text-muted); background: transparent; text-align: center; transition: all .15s; }
-  .mi-vtab.active { background: #1a1915; color: var(--text-primary); }
+  .mi-vtab.active { background: var(--bg-inset); color: var(--text-primary); }
   .mi-detail-body { flex: 1; overflow-y: auto; padding: clamp(10px,1vw,14px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); font-family: 'Inter', sans-serif; }
   .mi-comp { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 6px; overflow: hidden; margin-bottom: 5px; }
   .mi-comp:last-child { margin-bottom: 0; }
@@ -201,7 +201,7 @@ const CSS = `
   .mi-comp-ing-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; margin-right: 6px; }
   .mi-comp-ing-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; font-family: 'Inter', sans-serif; }
   .mi-comp-ing-qty { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin: 0 8px; font-family: 'Inter', sans-serif; }
-  .mi-comp-ing-cost { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: #9a9086; font-family: 'Inter', sans-serif; }
+  .mi-comp-ing-cost { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--text-muted); font-family: 'Inter', sans-serif; }
   .mi-opt-compare { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
   .mi-opt-card { border-radius: 7px; padding: clamp(8px,.8vw,12px); font-family: 'Inter', sans-serif; }
   .mi-opt-orig { background: var(--bg-elevated); border: 1px solid var(--border-subtle); }
@@ -222,7 +222,7 @@ const CSS = `
   .mi-opt-slider-lbl { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); flex-shrink: 0; width: clamp(50px,5vw,70px); }
   .mi-opt-pct { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--accent); width: 35px; text-align: right; flex-shrink: 0; }
   .mi-opt-reset { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
-  .mi-opt-reset:hover { color: var(--text-primary); border-color: #3a3630; }
+  .mi-opt-reset:hover { color: var(--text-primary); border-color: var(--text-faint); }
   .mi-edit-comp { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; overflow: hidden; margin-bottom: 8px; }
   .mi-edit-comp-hd { background: var(--bg-surface); padding: clamp(6px,.6vh,9px) clamp(8px,.8vw,12px); display: flex; align-items: center; gap: 6px; border-bottom: 1px solid var(--border-subtle); }
   .mi-edit-comp-name { flex: 1; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); font-family: 'Inter', sans-serif; outline: none; }
@@ -240,22 +240,22 @@ const CSS = `
   .mi-edit-save:hover { background: #01bcd4; }
   .mi-edit-save:disabled { background: var(--border); color: var(--text-muted); cursor: not-allowed; }
   .mi-ing-search-wrap { position: relative; }
-  .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: #1a1915; border: 1px solid #3a3630; border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
+  .mi-ing-dropdown { position: absolute; top: 100%; left: 0; right: 0; z-index: 50; background: var(--bg-inset); border: 1px solid var(--text-faint); border-radius: 4px; max-height: 140px; overflow-y: auto; margin-top: 2px; }
   .mi-ing-option { padding: 5px 8px; font-size: clamp(9px,.68vw,11px); color: var(--text-primary); cursor: pointer; border-bottom: 1px solid var(--border); font-family: 'Inter', sans-serif; }
   .mi-ing-option:last-child { border-bottom: none; }
   .mi-ing-option:hover { background: var(--border); }
   .mi-ing-option-sub { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-top: 1px; }
   .mi-ov-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
-  .mi-ov-w { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
-  .mi-ov-wf { background: #0f0e0c; border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
+  .mi-ov-w { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
+  .mi-ov-wf { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 7px; padding: clamp(8px,.8vw,13px); }
   .mi-ov-lbl { font-size: clamp(8px,.6vw,10px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 4px; }
   .mi-ov-lbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .mi-ov-item { display: flex; align-items: center; justify-content: space-between; padding: clamp(4px,.4vh,7px) 0; border-bottom: 1px solid #1a1915; }
+  .mi-ov-item { display: flex; align-items: center; justify-content: space-between; padding: clamp(4px,.4vh,7px) 0; border-bottom: 1px solid var(--bg-inset); }
   .mi-ov-item:last-child { border-bottom: none; }
   .mi-ov-name { font-size: clamp(9px,.68vw,11px); color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mi-ov-val { font-size: clamp(9px,.68vw,11px); font-weight: 600; flex-shrink: 0; }
   .mi-ov-pill { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; flex-shrink: 0; margin-left: 5px; }
-  .mi-hint { font-size: clamp(8px,.62vw,10px); color: #3a3630; text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
+  .mi-hint { font-size: clamp(8px,.62vw,10px); color: var(--text-faint); text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
 `;
 
 export default function ClientMenuItems() {
@@ -538,7 +538,7 @@ export default function ClientMenuItems() {
                         <div className="mi-comp-ing-dot" style={{ background: ing.hasPrice ? 'var(--color-green)' : 'var(--color-red)' }} />
                         <div className="mi-comp-ing-name">{ing.name}</div>
                         <div className="mi-comp-ing-qty">{ing.quantity} {ing.unit}</div>
-                        <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? 'var(--color-amber)' : '#9a9086' }}>{formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}</div>
+                        <div className="mi-comp-ing-cost" style={{ color: ing.isEstimated ? 'var(--color-amber)' : 'var(--text-muted)' }}>{formatCurrency(ing.totalCost)}{ing.isEstimated ? ' ~' : ''}</div>
                       </div>
                     ))}
                   </div>
@@ -562,7 +562,7 @@ export default function ClientMenuItems() {
               return (
                 <div key={r.id} style={{ display: 'grid', gridTemplateColumns: 'clamp(55px,5vw,70px) 1fr 1fr 1fr', gap: 5, padding: 'clamp(5px,.5vh,7px) clamp(8px,.7vw,10px)', borderTop: '1px solid var(--border-subtle)', alignItems: 'center' }}>
                   <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>{formatDate(r.created_at)}</div>
-                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#9a9086', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(r.old_cost)}</div>
+                  <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(r.old_cost)}</div>
                   <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{formatCurrency(r.new_cost)}</div>
                   <div style={{ fontSize: 'clamp(9px,.68vw,11px)', fontWeight: 600, color: change > 0 ? 'var(--color-red)' : 'var(--color-green)', fontFamily: "'Inter', sans-serif" }}>{change > 0 ? '+' : ''}{formatCurrency(change)}</div>
                 </div>
@@ -573,7 +573,7 @@ export default function ClientMenuItems() {
         {inc.length > 0 && (
           <div style={{ background: 'rgba(192,64,64,.05)', border: '1px solid rgba(192,64,64,.2)', borderRadius: 7, padding: 'clamp(8px,.8vw,12px)' }}>
             <div style={{ ...S.wlbl, color: 'var(--color-red)', marginBottom: 8 }}><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-red)', flexShrink: 0 }} />Why Incomplete?</div>
-            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: '#9a9086', marginBottom: 8, fontFamily: "'Inter', sans-serif" }}>{inc.length} ingredient{inc.length !== 1 ? 's are' : ' is'} missing a price.</div>
+            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', marginBottom: 8, fontFamily: "'Inter', sans-serif" }}>{inc.length} ingredient{inc.length !== 1 ? 's are' : ' is'} missing a price.</div>
             {inc.map((ing, idx) => (
               <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'clamp(3px,.3vh,5px) 0', borderBottom: '1px solid rgba(192,64,64,.1)' }}>
                 <div><div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: "'Inter', sans-serif" }}>{ing.name}</div>{ing.component && <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)', fontFamily: "'Inter', sans-serif" }}>in {ing.component}</div>}</div>
@@ -619,7 +619,7 @@ export default function ClientMenuItems() {
                 <div className="mi-opt-comp-hd"><div><div className="mi-opt-comp-name">{c.name}</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{c.ingredientCount} ingredients</div></div><div className="mi-opt-cost">{formatCurrency((c.calculatedCost || c.storedCost || 0) * m)}</div></div>
                 <div className="mi-opt-slider-wrap">
                   <div className="mi-opt-slider-lbl">Portion</div>
-                  <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }} min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
+                  <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,var(--bg-inset) ${m * 50}%,var(--bg-inset) 100%)` }} min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
                   <div className="mi-opt-pct">{Math.round(m * 100)}%</div>
                 </div>
               </div>
@@ -629,7 +629,7 @@ export default function ClientMenuItems() {
               <div className="mi-opt-comp-hd"><div><div className="mi-opt-comp-name">Recipe Portion</div><div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{selectedItemData.ingredients.length} ingredients</div></div><div className="mi-opt-cost">{formatCurrency(totalCost * getMultiplier('all'))}</div></div>
               <div className="mi-opt-slider-wrap">
                 <div className="mi-opt-slider-lbl">Portion</div>
-                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${getMultiplier('all') * 50}%,#1a1915 ${getMultiplier('all') * 50}%,#1a1915 100%)` }} min="0" max="2" step="0.01" value={getMultiplier('all')} onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
+                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${getMultiplier('all') * 50}%,var(--bg-inset) ${getMultiplier('all') * 50}%,var(--bg-inset) 100%)` }} min="0" max="2" step="0.01" value={getMultiplier('all')} onChange={e => setMultiplier('all', parseFloat(e.target.value))} />
                 <div className="mi-opt-pct">{Math.round(getMultiplier('all') * 100)}%</div>
               </div>
             </div>
@@ -1186,7 +1186,7 @@ export default function ClientMenuItems() {
                                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency((c.calculatedCost || c.storedCost || 0) * m)}</div>
                               </div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,#1a1915 ${m * 50}%,#1a1915 100%)` }} min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
+                                <input type="range" style={{ flex: 1, background: `linear-gradient(to right,var(--accent) 0%,var(--accent) ${m * 50}%,var(--bg-inset) ${m * 50}%,var(--bg-inset) 100%)` }} min="0" max="2" step="0.01" value={m} onChange={e => setMultiplier(c.id, parseFloat(e.target.value))} />
                                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', width: 36, textAlign: 'right' }}>{Math.round(m * 100)}%</div>
                               </div>
                             </div>
@@ -1317,7 +1317,7 @@ export default function ClientMenuItems() {
                 <div className="mi-grid-wrap">
                   {filtered.length === 0 ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 }}>
-                      <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
+                      <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-faint)', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
                       {!searchTerm && <button onClick={() => setShowImportModal(true)} style={{ background: 'rgba(2,164,186,.1)', border: '1px solid rgba(2,164,186,.3)', borderRadius: 8, padding: '10px 24px', fontSize: 13, color: 'var(--accent)', cursor: 'pointer', fontFamily: "'Inter', sans-serif", fontWeight: 600 }}>↑ Import Your Menu</button>}
                     </div>
                   ) : <div className="mi-grid">{filtered.map(renderGridItem)}</div>}
@@ -1325,7 +1325,7 @@ export default function ClientMenuItems() {
               ) : (
                 <div className="mi-list-body">
                   {filtered.length === 0 ? (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, fontSize: 'clamp(11px,.85vw,14px)', color: '#6b6358' }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-faint)' }}>{searchTerm ? `No results for "${searchTerm}"` : 'No menu items yet'}</div>
                   ) : filtered.map(renderListItem)}
                 </div>
               )}
