@@ -1194,8 +1194,8 @@ export default function ClientDashboard() {
     <>
       <style>{GLOBAL_CSS}</style>
       <style>{`
-        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(5px,.5vw,8px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1),min-height .3s cubic-bezier(.4,0,.2,1);}
-        .db-rec-slot.collapsed{opacity:0;flex:0!important;min-height:0!important;overflow:hidden;pointer-events:none;}
+        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(4px,.4vw,6px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1),min-height .3s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+        .db-rec-slot.collapsed{opacity:0;flex:0 0 0px!important;min-height:0!important;pointer-events:none;margin:0;}
         .db-recipe-panel{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease;max-height:0;opacity:0;}
         .db-recipe-panel.open{max-height:500px;opacity:1;}
         .db-ticket-click{cursor:pointer;transition:border-color .15s,box-shadow .15s;}
@@ -1292,7 +1292,7 @@ export default function ClientDashboard() {
               </div>
 
               {/* ── COL 2: Tonight's Recommendations (full height, stacked) ── */}
-              <div style={{display:'flex',flexDirection:'column',width:'clamp(210px,21vw,310px)',flexShrink:0,gap:'clamp(4px,.4vw,7px)'}}>
+              <div style={{display:'flex',flexDirection:'column',width:'clamp(200px,19vw,280px)',flexShrink:0,gap:'clamp(4px,.4vw,6px)'}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,paddingBottom:'clamp(4px,.4vh,7px)',borderBottom:'1px solid var(--border-subtle)'}}>
                   <div style={{fontSize:'clamp(10px,.75vw,13px)',fontWeight:600,color:'var(--text-primary)'}}>Tonight's Recommendations</div>
                   {selectedRec!==null&&(
@@ -1363,11 +1363,11 @@ export default function ClientDashboard() {
               {/* ── COL 3: Right panel ── */}
               <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
                 {/* Week in Review — top half */}
-                <div style={{flex:1,minHeight:0,overflow:'hidden'}}>
+                <div style={{flex:'0 0 55%',minHeight:0,overflow:'hidden'}}>
                   <WeekInReviewCard restaurantId={restaurantId}/>
                 </div>
                 {/* Bottom: Waste Risk + Price Movement */}
-                <div style={{flex:1,minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+                <div style={{flex:'0 0 calc(45% - clamp(5px,.5vw,9px))',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
                   <div className="db-card">
                     <div className="db-card-hd">
                       <div className="db-card-title">
