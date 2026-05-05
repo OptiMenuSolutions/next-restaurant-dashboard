@@ -188,7 +188,7 @@ const GLOBAL_CSS = `
   .wir-stat-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);margin-top:2px;}
   .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);justify-content:flex-start;}
   .wir-days::-webkit-scrollbar{width:2px;}
-  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;overflow:hidden;flex:1 1 0;min-height:0;display:flex;flex-direction:column;}
+  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;flex-shrink:0;overflow:hidden;min-height:clamp(28px,3.5vh,42px);display:flex;flex-direction:column;}
   .wir-day-row.open{border-color:var(--accent);}
   .wir-day-row:hover:not(.open){border-color:var(--text-faint);}
   .wir-day-header{display:flex;align-items:center;gap:clamp(5px,.5vw,8px);padding:clamp(5px,.5vh,8px) clamp(8px,.7vw,12px);}
