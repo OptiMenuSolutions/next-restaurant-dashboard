@@ -461,19 +461,22 @@ input::placeholder,textarea::placeholder{color:var(--text-faint)!important;}
 .an-logo span{color:var(--accent);}
 .an-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:4px;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s;}
 .an-tab.active{color:var(--text-primary);background:var(--text-inset);}
-.an-ph{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(5px,.5vh,8px) clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
-.an-ph-title{font-family:'Playfair Display',serif;font-size:clamp(13px,1.1vw,18px);color:var(--text-primary);}
-.an-ph-sub{font-size:clamp(9px,.65vw,10px);color:var(--text-muted);}
+.an-ph{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:0 clamp(10px,1vw,20px);height:clamp(28px,3.2vh,40px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:10px;flex-wrap:wrap;}
+.an-ph-title{font-size:clamp(11px,.82vw,15px);font-weight:600;color:var(--text-primary);font-family:'Inter',sans-serif;}
+.an-ph-sub{font-size:clamp(9px,.62vw,11px);color:var(--text-muted);margin-left:6px;font-family:'Inter',sans-serif;}
+.mi-ph-action-item{display:flex;align-items:center;gap:4px;font-size:clamp(9px,.62vw,11px);color:var(--text-muted);}
+.mi-ph-action-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+.mi-ph-action-val{font-weight:600;font-family:'Inter',sans-serif;}
 .an-range-toggle{display:flex;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:2px;gap:2px;}
 .an-range-btn{padding:clamp(2px,.25vh,4px) clamp(7px,.6vw,12px);border-radius:4px;font-size:clamp(9px,.68vw,11px);font-weight:500;cursor:pointer;border:none;font-family:'Inter',sans-serif;color:var(--text-muted);background:transparent;transition:all .15s;}
 .an-range-btn.active{background:var(--text-inset);color:var(--text-primary);}
-.an-sbar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(10px,1vw,20px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
+.an-sbar{background:var(--bg-surface);border-bottom:1px solid var(--border);padding:clamp(4px,.4vh,7px) clamp(24px,3vw,60px);display:flex;gap:clamp(12px,1.5vw,28px);align-items:center;flex-shrink:0;overflow-x:auto;}
 .an-sbar::-webkit-scrollbar{display:none;}
 .an-sv{font-family:'Playfair Display',serif;font-size:clamp(12px,1vw,16px);line-height:1;}
 .an-sl{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);margin-top:1px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;}
 .an-sync-badge{display:flex;align-items:center;gap:5px;font-size:clamp(9px,.65vw,10px);color:var(--color-green);background:rgba(42,138,90,.1);border:1px solid rgba(42,138,90,.2);border-radius:20px;padding:2px 8px;margin-left:auto;white-space:nowrap;flex-shrink:0;}
 .an-sync-dot{width:5px;height:5px;border-radius:50%;background:var(--color-green);animation:blink 2s infinite;}
-.an-body{flex:1;min-height:0;padding:clamp(6px,.6vw,10px);gap:clamp(6px,.6vw,10px);display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:1fr 1fr;overflow:hidden;}
+.an-body{flex:1;min-height:0;padding:clamp(6px,.6vw,10px) clamp(24px,3vw,60px);gap:clamp(6px,.6vw,10px);display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-template-rows:1fr 1fr;overflow:hidden;}
 .an-trend-card{grid-column:1/4;grid-row:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
 .an-r1-col4{grid-column:4;grid-row:1;display:flex;flex-direction:column;gap:clamp(6px,.6vw,10px);min-height:0;overflow:hidden;}
 .an-day-col{grid-column:1;grid-row:2;display:flex;flex-direction:column;min-height:0;overflow:hidden;}
@@ -625,12 +628,41 @@ export default function AnalyticsPage() {
     const items = Object.values(itemMap).sort((a,b) => b.qty-a.qty);
     setTopSellers(items.slice(0,8));
 
+    // ── Slow Movers: compare last 7 days vs prior 7 days, flag ≥20% drop ──
     const sevenAgo = new Date(); sevenAgo.setDate(sevenAgo.getDate()-7);
+    const fourteenAgo = new Date(); fourteenAgo.setDate(fourteenAgo.getDate()-14);
     const sevenAgoStr = sevenAgo.toISOString().split('T')[0];
-    const recentMap = {};
-    for (const s of filtered.filter(s => s.sale_date.slice(0,10) >= sevenAgoStr))
-      recentMap[s.item_name] = (recentMap[s.item_name]||0) + parseFloat(s.quantity_sold||0);
-    setSlowMovers(items.filter(i => (recentMap[i.name]||0)<3).slice(0,6).map(i => ({...i, recentQty: recentMap[i.name]||0})));
+    const fourteenAgoStr = fourteenAgo.toISOString().split('T')[0];
+    const recentMap = {};   // last 7 days
+    const prevMap = {};     // prior 7 days (days 8–14 back)
+    for (const s of filtered) {
+      const d = s.sale_date.slice(0,10);
+      const qty = parseFloat(s.quantity_sold||0);
+      if (d >= sevenAgoStr) recentMap[s.item_name] = (recentMap[s.item_name]||0) + qty;
+      else if (d >= fourteenAgoStr) prevMap[s.item_name] = (prevMap[s.item_name]||0) + qty;
+    }
+    const slowMoverItems = items
+      .filter(i => {
+        const prev = prevMap[i.name] || 0;
+        const curr = recentMap[i.name] || 0;
+        if (prev === 0) return false; // no baseline to compare against
+        return curr <= prev * 0.80;  // current week is ≤80% of prior (20%+ drop)
+      })
+      .sort((a, b) => {
+        const dropA = ((prevMap[a.name]||0) - (recentMap[a.name]||0)) / (prevMap[a.name]||1);
+        const dropB = ((prevMap[b.name]||0) - (recentMap[b.name]||0)) / (prevMap[b.name]||1);
+        return dropB - dropA;
+      })
+      .slice(0, 6)
+      .map(i => ({
+        ...i,
+        recentQty: recentMap[i.name] || 0,
+        prevQty: prevMap[i.name] || 0,
+        dropPct: prevMap[i.name] > 0
+          ? Math.round(((prevMap[i.name] - (recentMap[i.name]||0)) / prevMap[i.name]) * 100)
+          : 0,
+      }));
+    setSlowMovers(slowMoverItems);
 
     const dayMap = {};
     for (const d of DAYS) dayMap[d] = { day: d, qty: 0, rev: 0 };
@@ -800,8 +832,6 @@ export default function AnalyticsPage() {
         `}</style>
 
         <div className="mob2-root">
-
-          {/* Header */}
           <div className="mob2-header">
             <div className="mob2-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -812,7 +842,6 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Sub bar */}
           <div className="mob2-subbar">
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Sales Analytics</div>
@@ -828,14 +857,12 @@ export default function AnalyticsPage() {
             )}
           </div>
 
-          {/* Tab bar */}
           <div className="mob2-tabs">
             {MOB_TABS.map(t => (
               <button key={t.id} className={`mob2-tab${mobTab === t.id ? ' active' : ''}`} onClick={() => setMobTab(t.id)}>{t.label}</button>
             ))}
           </div>
 
-          {/* Content */}
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
               <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
@@ -844,7 +871,6 @@ export default function AnalyticsPage() {
           ) : (
             <div className="mob2-content">
 
-              {/* ── SALES TAB ── */}
               {mobTab === 'sales' && (
                 <>
                   {!hasSalesData ? (
@@ -854,7 +880,6 @@ export default function AnalyticsPage() {
                     </div>
                   ) : (
                     <>
-                      {/* Stats grid */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                         {[
                           { l: 'Days of Data', v: stats.totalDays, c: 'var(--accent)' },
@@ -869,7 +894,6 @@ export default function AnalyticsPage() {
                         ))}
                       </div>
 
-                      {/* Revenue trend chart */}
                       <div className="mob2-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                           <div className="mob2-card-title" style={{ marginBottom: 0 }}>
@@ -886,7 +910,6 @@ export default function AnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Category breakdown */}
                       {categoryData.length > 0 && (
                         <div className="mob2-card">
                           <div className="mob2-card-title">
@@ -913,7 +936,6 @@ export default function AnalyticsPage() {
                 </>
               )}
 
-              {/* ── ITEMS TAB ── */}
               {mobTab === 'sellers' && (
                 <>
                   {!hasSalesData ? (
@@ -951,19 +973,23 @@ export default function AnalyticsPage() {
                         <div className="mob2-card">
                           <div className="mob2-card-title" style={{ color: 'var(--color-red)' }}>
                             <svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>
-                            Slow Movers (&lt;3 this week)
+                            Slow Movers (vs prior 7d)
                           </div>
                           {slowMovers.map(item => (
                             <div key={item.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--text-inset)' }}>
                               <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{item.name}</div>
                               <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
                                 <div style={{ textAlign: 'right' }}>
-                                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase' }}>14d</div>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>{Math.round(item.qty)}</div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase' }}>Prev</div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>{Math.round(item.prevQty)}</div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
-                                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase' }}>7d</div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase' }}>Now</div>
                                   <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-red)' }}>{Math.round(item.recentQty)}</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase' }}>Drop</div>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-red)' }}>-{item.dropPct}%</div>
                                 </div>
                               </div>
                             </div>
@@ -971,7 +997,6 @@ export default function AnalyticsPage() {
                         </div>
                       )}
 
-                      {/* Week over week */}
                       {(weekOverWeek.improvers.length > 0 || weekOverWeek.decliners.length > 0) && (
                         <div className="mob2-card">
                           <div className="mob2-card-title">
@@ -1003,14 +1028,12 @@ export default function AnalyticsPage() {
                 </>
               )}
 
-              {/* ── PATTERNS TAB ── */}
               {mobTab === 'patterns' && (
                 <>
                   {!hasSalesData ? (
                     <div style={{ textAlign: 'center', padding: '40px 16px', fontSize: 13, color: 'var(--text-muted)' }}>Upload POS data to see patterns</div>
                   ) : (
                     <>
-                      {/* By day */}
                       <div className="mob2-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                           <div className="mob2-card-title" style={{ marginBottom: 0 }}>
@@ -1040,7 +1063,6 @@ export default function AnalyticsPage() {
                         })}
                       </div>
 
-                      {/* By hour heat map */}
                       {hourlyData.length > 0 && (
                         <div className="mob2-card">
                           <div className="mob2-card-title">
@@ -1072,7 +1094,6 @@ export default function AnalyticsPage() {
                 </>
               )}
 
-              {/* ── RISK TAB ── */}
               {mobTab === 'risk' && (
                 <div className="mob2-card">
                   <div className="mob2-card-title">
@@ -1095,7 +1116,6 @@ export default function AnalyticsPage() {
                 </div>
               )}
 
-              {/* ── UPLOAD TAB ── */}
               {mobTab === 'upload' && (
                 <>
                   <div className="mob2-card">
@@ -1129,7 +1149,6 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-          {/* Bottom nav */}
           <div className="mob2-bottom-nav">
             {NAV.map(({ label, path }) => {
               const active = path === '/client/analytics';
@@ -1143,7 +1162,6 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Column mapping overlay on mobile */}
         {uploadStep === 'mapping' && !duplicateInfo && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'rgba(10,9,8,.95)', display: 'flex', flexDirection: 'column', padding: 16, paddingTop: 'max(16px,env(safe-area-inset-top))' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -1215,9 +1233,21 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
+        {/* ── FIX 1: Header bar — Inter font, stats right-justified on same row ── */}
         <div className="an-ph">
-          <div><div className="an-ph-title">Sales Analytics</div><div className="an-ph-sub">POS intelligence · inventory risk · daily dish recommendations</div></div>
-          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <div style={{ display:'flex', alignItems:'baseline', gap:6 }}>
+            <span className="an-ph-title">Sales Analytics</span>
+            <span className="an-ph-sub">· POS intelligence · inventory risk</span>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:'clamp(10px,1.2vw,20px)', flexWrap:'wrap' }}>
+            {hasSalesData && (
+              <>
+                <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--accent)' }}/><span className="mi-ph-action-val" style={{ color:'var(--accent)' }}>{stats.totalDays}</span><span>days</span></div>
+                <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-green)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-green)' }}>{formatCurrency(stats.totalRevenue)}</span><span>total rev</span></div>
+                <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-amber)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-amber)' }}>{formatCurrency(stats.avgDailyRevenue)}</span><span>avg daily</span></div>
+                <div className="mi-ph-action-item"><div className="mi-ph-action-dot" style={{ background:'var(--color-red)' }}/><span className="mi-ph-action-val" style={{ color:'var(--color-red)' }}>{slowMovers.length}</span><span>slow movers</span></div>
+              </>
+            )}
             {uploadStep==='done' && uploadSuccessMsg && (
               <div style={{ fontSize:'clamp(9px,.68vw,11px)', color:'var(--color-green)', background:'rgba(42,138,90,.1)', border:'1px solid rgba(42,138,90,.2)', borderRadius:6, padding:'3px 10px', display:'flex', alignItems:'center', gap:6 }}>
                 ✓ {uploadSuccessMsg}
@@ -1302,6 +1332,7 @@ export default function AnalyticsPage() {
               />
             )}
 
+            {/* ── FIX 2: Side padding applied via .an-body CSS class ── */}
             <div className="an-body">
               <div className="an-trend-card">
                 <div className="an-card" style={{ flex:1 }}>
@@ -1344,12 +1375,31 @@ export default function AnalyticsPage() {
                 <div className="an-card" style={{ flex:1 }}>
                   <div className="an-card-hd">
                     <div className="an-card-title"><svg viewBox="0 0 24 24"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></svg>Slow Movers</div>
-                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'var(--color-red)' }}>&lt;3 this week</div>
+                    {/* ── FIX 4: Updated badge label ── */}
+                    <div className="an-badge" style={{ background:'rgba(192,64,64,.1)', color:'var(--color-red)' }}>vs prior 7d</div>
                   </div>
-                  {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0 ? <div className="an-empty">All items selling well</div> : (
+                  {!hasSalesData ? <div className="an-empty">No data yet</div> : slowMovers.length===0 ? <div className="an-empty">All items on pace</div> : (
                     <div className="an-scrollable">
-                      <table className="an-table"><thead><tr><th className="an-th">Item</th><th className="an-th r">14d</th><th className="an-th r">7d</th></tr></thead>
-                      <tbody>{slowMovers.map(item => <tr key={item.name} className="an-tr"><td className="an-td p">{item.name}</td><td className="an-td r">{Math.round(item.qty)}</td><td className="an-td r d">{Math.round(item.recentQty)}</td></tr>)}</tbody>
+                      {/* ── FIX 4: New columns — Prev 7d / This 7d / Drop ── */}
+                      <table className="an-table">
+                        <thead>
+                          <tr>
+                            <th className="an-th">Item</th>
+                            <th className="an-th r">Prev 7d</th>
+                            <th className="an-th r">This 7d</th>
+                            <th className="an-th r">Drop</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {slowMovers.map(item => (
+                            <tr key={item.name} className="an-tr">
+                              <td className="an-td p">{item.name}</td>
+                              <td className="an-td r">{Math.round(item.prevQty)}</td>
+                              <td className="an-td r d">{Math.round(item.recentQty)}</td>
+                              <td className="an-td r d">-{item.dropPct}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
                       </table>
                     </div>
                   )}
