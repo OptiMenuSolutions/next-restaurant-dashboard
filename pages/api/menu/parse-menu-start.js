@@ -32,6 +32,8 @@ export default async function handler(req, res) {
     ? fields.restaurant_id[0]
     : fields.restaurant_id;
 
+    console.log('[parse-menu-start] restaurant_id:', restaurantId);
+
   if (!restaurantId) {
     return res.status(400).json({ error: 'restaurant_id is required' });
   }
