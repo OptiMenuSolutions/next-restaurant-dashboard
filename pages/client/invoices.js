@@ -1,6 +1,7 @@
 // pages/client/invoices.js
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
 import supabase from '../../lib/supabaseClient';
 import { useWindowSize } from '../../lib/useWindowSize';
 import ProfileDropdown from '../../components/ProfileDropdown';
@@ -299,65 +300,6 @@ const CSS = `
   .pm-success-icon { width: 48px; height: 48px; border-radius: 50%; background: rgba(42,138,90,.12); border: 2px solid rgba(42,138,90,.3); display: flex; align-items: center; justify-content: center; }
   .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,22px); color: var(--text-primary); }
   .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); max-width: 340px; line-height: 1.5; }
-
-  /* Mobile — unchanged */
-  .mob-root { font-family: 'Inter', sans-serif; background: var(--bg-root); color: var(--text-primary); width: 100%; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  .mob-header { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; padding-top: env(safe-area-inset-top, 10px); }
-  .mob-logo { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--text-primary); letter-spacing: -.3px; }
-  .mob-logo span { color: var(--accent); }
-  .mob-titlebar { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .mob-page-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 20px; color: var(--text-primary); line-height: 1; }
-  .mob-page-sub { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-  .mob-stats { background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 8px 16px; display: flex; flex-shrink: 0; overflow-x: auto; }
-  .mob-stats::-webkit-scrollbar { display: none; }
-  .mob-stat { flex: 1; min-width: 0; text-align: center; padding: 0 6px; border-right: 1px solid var(--border); }
-  .mob-stat:last-child { border-right: none; }
-  .mob-stat-v { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 16px; line-height: 1; }
-  .mob-stat-l { font-size: 9px; color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
-  .mob-search-bar { padding: 10px 14px; background: var(--bg-root); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .mob-search-input { width: 100%; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--text-primary); outline: none; font-family: 'Inter', sans-serif; }
-  .mob-list-head { display: grid; grid-template-columns: 2fr 1.5fr 1fr 90px; gap: 6px; padding: 8px 14px; background: var(--bg-elevated); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .mob-list-th { font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .7px; }
-  .mob-list-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  .mob-list-body::-webkit-scrollbar { display: none; }
-  .mob-list-row { display: grid; grid-template-columns: 2fr 1.5fr 1fr 90px; gap: 6px; padding: 13px 14px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; align-items: center; border-left: 3px solid transparent; }
-  .mob-list-row.selected { background: rgba(2,164,186,.07); border-left-color: var(--accent); }
-  .mob-td { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mob-td.primary { color: var(--text-primary); font-weight: 500; }
-  .mob-td.amount { color: var(--accent); font-weight: 600; }
-  .mob-pill { font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 10px; }
-  .mob-pill.ok { background: rgba(42,138,90,.12); color: var(--color-green); }
-  .mob-pill.pend { background: rgba(212,160,32,.12); color: var(--color-amber); }
-  .mob-add-btn { background: var(--accent); border: none; border-radius: 7px; padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; white-space: nowrap; }
-  .mob-detail-overlay { position: absolute; inset: 0; background: var(--bg-root); display: flex; flex-direction: column; z-index: 20; overflow: hidden; }
-  .mob-detail-hd { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-  .mob-back-btn { background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; font-size: 13px; color: var(--accent); padding: 0; }
-  .mob-detail-title { font-size: 15px; font-weight: 600; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mob-detail-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
-  .mob-dfield-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .mob-dfield { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
-  .mob-dfield-lbl { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .mob-dfield-val { font-size: 13px; color: var(--text-primary); font-weight: 500; }
-  .mob-dfield-val.accent { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 18px; color: var(--accent); }
-  .mob-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 8px 12px; background: var(--bg-elevated); border-radius: 8px 8px 0 0; border: 1px solid var(--border); border-bottom: none; }
-  .mob-ith { font-size: 9px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; }
-  .mob-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 80px; gap: 6px; padding: 11px 12px; border: 1px solid var(--border); border-top: none; align-items: center; }
-  .mob-item-row:last-child { border-radius: 0 0 8px 8px; }
-  .mob-item-row:nth-child(odd) { background: var(--bg-elevated); }
-  .mob-item-row:nth-child(even) { background: var(--bg-surface); }
-  .mob-itd { font-size: 12px; color: var(--text-muted); }
-  .mob-itd.name { color: var(--text-primary); font-weight: 500; }
-  .mob-itd.val { color: var(--accent); font-weight: 600; }
-  .mob-linked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(42,138,90,.12); color: var(--color-green); }
-  .mob-unlinked { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: rgba(212,160,32,.1); color: var(--color-amber); }
-  .mob-total-bar { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; }
-  .mob-bottom-nav { background: var(--bg-elevated); border-top: 1px solid var(--border); padding: 8px 0; padding-bottom: max(20px, calc(8px + env(safe-area-inset-bottom))); display: flex; flex-shrink: 0; }
-  .mob-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; padding: 4px 0; -webkit-tap-highlight-color: transparent; }
-  .mob-nav-icon svg { width: 20px; height: 20px; stroke: var(--text-muted); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-  .mob-nav-icon.active svg { stroke: var(--accent); }
-  .mob-nav-label { font-size: 10px; color: var(--text-muted); }
-  .mob-nav-label.active { color: var(--accent); }
-  .mob-nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); }
 `;
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -379,36 +321,12 @@ function IconFile({ size = 40 }) {
 }
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', path: '/client/dashboard' },
-  { label: 'Invoices',  path: '/client/invoices'  },
-  { label: 'Ingredients', path: '/client/ingredients' },
-  { label: 'Menu', path: '/client/menu-items' },
-  { label: 'Analytics', path: '/client/analytics' },
+  { label: 'Dashboard',   path: '/client/dashboard',    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
+  { label: 'Invoices',    path: '/client/invoices',     icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+  { label: 'Ingredients', path: '/client/ingredients',  icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg> },
+  { label: 'Menu',        path: '/client/menu-items',   icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
+  { label: 'Analytics',   path: '/client/analytics',    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
 ];
-
-function NavIcon({ path }) {
-  if (path === '/client/dashboard') return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>;
-  if (path === '/client/invoices') return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
-  if (path === '/client/ingredients') return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg>;
-  return <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>;
-}
-
-function MobBottomNav({ current, router }) {
-  return (
-    <div className="mob-bottom-nav">
-      {NAV_ITEMS.map(({ label, path }) => {
-        const active = path === current;
-        return (
-          <div key={label} className="mob-nav-item" onClick={() => router.push(path)}>
-            <div className={`mob-nav-icon${active ? ' active' : ''}`}><NavIcon path={path} /></div>
-            <div className={`mob-nav-label${active ? ' active' : ''}`}>{label}</div>
-            {active && <div className="mob-nav-dot" />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 // ─── Parse Modal ──────────────────────────────────────────────────────────────
 
@@ -479,28 +397,17 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       formData.append('restaurant_id', restaurantId);
       formData.append('file_url', publicUrl);
 
-      const res = await fetch('/api/invoices/parse-invoice', {
-        method: 'POST',
-        body: formData,
-      });
+      const res = await fetch('/api/invoices/parse-invoice', { method: 'POST', body: formData });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Parse failed');
 
       stopStageTimer();
       setParseResult(data);
-      setLineItems((data.line_items || []).map(item => ({
-        ...item,
-        confirmed_name: item.item_name,
-        confirm_new: false,
-        dismissed: false,
-      })));
+      setLineItems((data.line_items || []).map(item => ({ ...item, confirmed_name: item.item_name, confirm_new: false, dismissed: false })));
       setStep('review');
 
-      const firstPending = (data.line_items || []).find(
-        i => i.match_status === 'ambiguous' || i.match_status === 'new'
-      );
+      const firstPending = (data.line_items || []).find(i => i.match_status === 'ambiguous' || i.match_status === 'new');
       if (firstPending) setExpandedItem(firstPending._id);
-
     } catch (err) {
       setErrorMsg(err.message || 'Something went wrong');
       setStep('error');
@@ -508,42 +415,28 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   }
 
   function selectCandidate(itemId, candidate) {
-    setLineItems(prev => prev.map(item =>
-      item._id === itemId
-        ? { ...item, selected_ingredient_id: candidate.id, selected_ingredient_name: candidate.name }
-        : item
-    ));
+    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, selected_ingredient_id: candidate.id, selected_ingredient_name: candidate.name } : item));
     const currentIdx = lineItems.findIndex(i => i._id === itemId);
-    const nextPending = lineItems.slice(currentIdx + 1).find(
-      i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new')
-    );
+    const nextPending = lineItems.slice(currentIdx + 1).find(i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new'));
     setExpandedItem(nextPending?._id || null);
   }
 
   function confirmNew(itemId, confirmed) {
-    setLineItems(prev => prev.map(item =>
-      item._id === itemId ? { ...item, confirm_new: confirmed } : item
-    ));
+    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, confirm_new: confirmed } : item));
     if (confirmed) {
       const currentIdx = lineItems.findIndex(i => i._id === itemId);
-      const nextPending = lineItems.slice(currentIdx + 1).find(
-        i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new')
-      );
+      const nextPending = lineItems.slice(currentIdx + 1).find(i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new'));
       setExpandedItem(nextPending?._id || null);
     }
   }
 
   function dismissItem(itemId) {
-    setLineItems(prev => prev.map(item =>
-      item._id === itemId ? { ...item, dismissed: true } : item
-    ));
+    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, dismissed: true } : item));
     setExpandedItem(null);
   }
 
   function updateConfirmedName(itemId, name) {
-    setLineItems(prev => prev.map(item =>
-      item._id === itemId ? { ...item, confirmed_name: name } : item
-    ));
+    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, confirmed_name: name } : item));
   }
 
   async function handleConfirm() {
@@ -553,12 +446,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       const res = await fetch('/api/invoices/confirm-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          restaurant_id: restaurantId,
-          invoice: parseResult.invoice,
-          line_items: lineItems,
-          file_url: parseResult.file_url,
-        }),
+        body: JSON.stringify({ restaurant_id: restaurantId, invoice: parseResult.invoice, line_items: lineItems, file_url: parseResult.file_url }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
@@ -594,20 +482,16 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             {step === 'success' && 'Invoice Saved'}
             {step === 'error' && 'Something went wrong'}
           </div>
-          {step !== 'saving' && (
-            <button className="pm-close" onClick={onClose}>✕</button>
-          )}
+          {step !== 'saving' && <button className="pm-close" onClick={onClose}>✕</button>}
         </div>
 
         <div className="pm-body">
           {step === 'drop' && (
-            <div
-              className={`pm-drop${dragOver ? ' over' : ''}`}
+            <div className={`pm-drop${dragOver ? ' over' : ''}`}
               onDragOver={e => { e.preventDefault(); setDragOver(true); }}
               onDragLeave={() => setDragOver(false)}
               onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
-              onClick={() => fileInputRef.current?.click()}
-            >
+              onClick={() => fileInputRef.current?.click()}>
               <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
               <svg className="pm-drop-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/></svg>
               <div className="pm-drop-title">Drag & drop your invoice here</div>
@@ -619,21 +503,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           {step === 'parsing' && (
             <div className="pm-parsing">
               <div className="pm-spin" />
-              <div className="pm-parse-title" style={{ transition: 'opacity .3s' }}>
-                {PARSE_STAGES[stageIdx].msg}
-              </div>
-              <div className="pm-parse-sub" style={{ transition: 'opacity .3s' }}>
-                {PARSE_STAGES[stageIdx].sub}
-              </div>
+              <div className="pm-parse-title">{PARSE_STAGES[stageIdx].msg}</div>
+              <div className="pm-parse-sub">{PARSE_STAGES[stageIdx].sub}</div>
               <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
                 {PARSE_STAGES.map((_, i) => (
-                  <div key={i} style={{
-                    width: i === stageIdx ? 16 : 5,
-                    height: 5,
-                    borderRadius: 3,
-                    background: i <= stageIdx ? 'var(--accent)' : 'var(--border)',
-                    transition: 'all .4s ease',
-                  }} />
+                  <div key={i} style={{ width: i === stageIdx ? 16 : 5, height: 5, borderRadius: 3, background: i <= stageIdx ? 'var(--accent)' : 'var(--border)', transition: 'all .4s ease' }} />
                 ))}
               </div>
             </div>
@@ -658,11 +532,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                 {savedResult.ingredients_created > 0 && ` · ${savedResult.ingredients_created} new ingredient${savedResult.ingredients_created !== 1 ? 's' : ''} created`}
                 {savedResult.ingredients_updated > 0 && ` · ${savedResult.ingredients_updated} ingredient price${savedResult.ingredients_updated !== 1 ? 's' : ''} updated`}
               </div>
-              {savedResult.errors?.length > 0 && (
-                <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--color-amber)', maxWidth: 360, lineHeight: 1.5 }}>
-                  {savedResult.errors.length} item{savedResult.errors.length !== 1 ? 's' : ''} had issues and were skipped.
-                </div>
-              )}
             </div>
           )}
 
@@ -679,46 +548,25 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
               <div className="pm-inv-hd">
                 <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600, marginBottom: 8 }}>Invoice Details</div>
                 <div className="pm-inv-grid">
-                  <div>
-                    <div className="pm-inv-field-lbl">Supplier<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.supplier)}`}>{inv.confidence?.supplier || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
-                  </div>
-                  <div>
-                    <div className="pm-inv-field-lbl">Invoice #<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.invoice_number)}`}>{inv.confidence?.invoice_number || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.invoice_number || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
-                  </div>
-                  <div>
-                    <div className="pm-inv-field-lbl">Date<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.invoice_date)}`}>{inv.confidence?.invoice_date || '?'}</span></div>
-                    <div className="pm-inv-field-val">{inv.invoice_date ? formatDateShort(inv.invoice_date) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
-                  </div>
-                  <div>
-                    <div className="pm-inv-field-lbl">Total<span className={`pm-conf-badge ${confBadgeClass(inv.confidence?.total_amount)}`}>{inv.confidence?.total_amount || '?'}</span></div>
-                    <div className="pm-inv-field-val accent">{inv.total_amount ? formatCurrency(inv.total_amount) : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontFamily: 'Inter, sans-serif', fontSize: '13px' }}>Not found</span>}</div>
-                  </div>
+                  {[
+                    { l: 'Supplier', v: inv.supplier, conf: inv.confidence?.supplier },
+                    { l: 'Invoice #', v: inv.invoice_number, conf: inv.confidence?.invoice_number },
+                    { l: 'Date', v: inv.invoice_date ? formatDateShort(inv.invoice_date) : null, conf: inv.confidence?.invoice_date },
+                    { l: 'Total', v: inv.total_amount ? formatCurrency(inv.total_amount) : null, conf: inv.confidence?.total_amount, accent: true },
+                  ].map(({ l, v, conf, accent }) => (
+                    <div key={l}>
+                      <div className="pm-inv-field-lbl">{l}<span className={`pm-conf-badge ${confBadgeClass(conf)}`}>{conf || '?'}</span></div>
+                      <div className={`pm-inv-field-val${accent ? ' accent' : ''}`}>{v || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
+                    </div>
+                  ))}
                 </div>
-                {inv.notes && (
-                  <div style={{ marginTop: 8, fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', fontStyle: 'italic' }}>Note: {inv.notes}</div>
-                )}
               </div>
 
               {summary && (
                 <div className="pm-summary">
-                  <div className="pm-sum-pill pm-sum-auto">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    {summary.auto_matched} auto-matched
-                  </div>
-                  {summary.needs_review > 0 && (
-                    <div className="pm-sum-pill pm-sum-ambig">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                      {summary.needs_review} need{summary.needs_review === 1 ? 's' : ''} review
-                    </div>
-                  )}
-                  {summary.new_ingredients > 0 && (
-                    <div className="pm-sum-pill pm-sum-new">
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      {summary.new_ingredients} new ingredient{summary.new_ingredients !== 1 ? 's' : ''}
-                    </div>
-                  )}
+                  <div className="pm-sum-pill pm-sum-auto">✓ {summary.auto_matched} auto-matched</div>
+                  {summary.needs_review > 0 && <div className="pm-sum-pill pm-sum-ambig">! {summary.needs_review} need review</div>}
+                  {summary.new_ingredients > 0 && <div className="pm-sum-pill pm-sum-new">+ {summary.new_ingredients} new</div>}
                 </div>
               )}
 
@@ -726,57 +574,35 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                 {lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
                   <>
                     <div className="pm-section-title">Needs Your Review</div>
-                    {lineItems
-                      .filter(i => i.match_status !== 'auto' && !i.dismissed)
-                      .map(item => (
-                        <LineItemCard
-                          key={item._id}
-                          item={item}
-                          expanded={expandedItem === item._id}
-                          onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
-                          onSelectCandidate={selectCandidate}
-                          onConfirmNew={confirmNew}
-                          onDismiss={dismissItem}
-                          onUpdateName={updateConfirmedName}
-                        />
-                      ))}
+                    {lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => (
+                      <LineItemCard key={item._id} item={item} expanded={expandedItem === item._id}
+                        onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
+                        onSelectCandidate={selectCandidate} onConfirmNew={confirmNew}
+                        onDismiss={dismissItem} onUpdateName={updateConfirmedName} />
+                    ))}
                   </>
                 )}
-
                 {lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
                   <>
                     <div className="pm-section-title" style={{ marginTop: 16 }}>Auto-Matched</div>
-                    {lineItems
-                      .filter(i => i.match_status === 'auto' && !i.dismissed)
-                      .map(item => (
-                        <LineItemCard
-                          key={item._id}
-                          item={item}
-                          expanded={expandedItem === item._id}
-                          onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
-                          onSelectCandidate={selectCandidate}
-                          onConfirmNew={confirmNew}
-                          onDismiss={dismissItem}
-                          onUpdateName={updateConfirmedName}
-                        />
-                      ))}
+                    {lineItems.filter(i => i.match_status === 'auto' && !i.dismissed).map(item => (
+                      <LineItemCard key={item._id} item={item} expanded={expandedItem === item._id}
+                        onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
+                        onSelectCandidate={selectCandidate} onConfirmNew={confirmNew}
+                        onDismiss={dismissItem} onUpdateName={updateConfirmedName} />
+                    ))}
                   </>
                 )}
-
                 {lineItems.some(i => i.dismissed) && (
                   <>
                     <div className="pm-section-title" style={{ marginTop: 16 }}>Dismissed</div>
-                    {lineItems
-                      .filter(i => i.dismissed)
-                      .map(item => (
-                        <div key={item._id} className="pm-line-item dismissed" style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>{item.item_name}</div>
-                          <button onClick={() => setLineItems(prev => prev.map(i => i._id === item._id ? { ...i, dismissed: false } : i))}
-                            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
-                            Restore
-                          </button>
-                        </div>
-                      ))}
+                    {lineItems.filter(i => i.dismissed).map(item => (
+                      <div key={item._id} className="pm-line-item dismissed" style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>{item.item_name}</div>
+                        <button onClick={() => setLineItems(prev => prev.map(i => i._id === item._id ? { ...i, dismissed: false } : i))}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>Restore</button>
+                      </div>
+                    ))}
                   </>
                 )}
               </div>
@@ -785,29 +611,17 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         </div>
 
         <div className="pm-ft">
-          {step === 'drop' && (
-            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>Files are processed immediately — nothing is saved until you confirm.</div>
-          )}
+          {step === 'drop' && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>Files are processed immediately — nothing is saved until you confirm.</div>}
           {step === 'review' && (
             <>
-              <div className="pm-progress-text">
-                {pendingCount > 0
-                  ? `${pendingCount} item${pendingCount !== 1 ? 's' : ''} still need${pendingCount === 1 ? 's' : ''} review`
-                  : 'All items resolved — ready to save'}
-              </div>
+              <div className="pm-progress-text">{pendingCount > 0 ? `${pendingCount} item${pendingCount !== 1 ? 's' : ''} still need review` : 'All items resolved — ready to save'}</div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
-                <button className="pm-btn-primary" disabled={!canConfirm} onClick={handleConfirm}>
-                  Confirm & Save Invoice
-                </button>
+                <button className="pm-btn-primary" disabled={!canConfirm} onClick={handleConfirm}>Confirm & Save Invoice</button>
               </div>
             </>
           )}
-          {step === 'success' && (
-            <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="pm-btn-primary" onClick={onClose}>Done</button>
-            </div>
-          )}
+          {step === 'success' && <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}><button className="pm-btn-primary" onClick={onClose}>Done</button></div>}
           {step === 'error' && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="pm-btn-secondary" onClick={() => setStep('drop')}>Try Again</button>
@@ -835,12 +649,8 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         <div>
           <div className="pm-li-name">{item.item_name}</div>
           {autoMatchName && <div className="pm-li-meta">→ {autoMatchName}</div>}
-          {item.match_status === 'ambiguous' && item.selected_ingredient_id && (
-            <div className="pm-li-meta" style={{ color: 'var(--color-green)' }}>→ {item.selected_ingredient_name}</div>
-          )}
-          {item.match_status === 'new' && item.confirm_new && (
-            <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>
-          )}
+          {item.match_status === 'ambiguous' && item.selected_ingredient_id && <div className="pm-li-meta" style={{ color: 'var(--color-green)' }}>→ {item.selected_ingredient_name}</div>}
+          {item.match_status === 'new' && item.confirm_new && <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
         <div className="pm-li-cell">{item.quantity ? `${item.quantity} ${item.unit || ''}` : '—'}</div>
         <div className="pm-li-cell val">{formatCurrency(item.unit_cost)}</div>
@@ -848,9 +658,7 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         <div className="pm-li-status">
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
-          {item.match_status !== 'auto' && (
-            <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>
-          )}
+          {item.match_status !== 'auto' && <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>}
         </div>
       </div>
 
@@ -860,26 +668,16 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           {item.match_candidates.map(candidate => {
             const isSelected = item.selected_ingredient_id === candidate.id;
             return (
-              <div key={candidate.id} className={`pm-cand-option${isSelected ? ' selected' : ''}`}
-                onClick={() => onSelectCandidate(item._id, candidate)}>
-                <div className="pm-cand-radio">
-                  {isSelected && <div className="pm-cand-radio-dot" />}
-                </div>
+              <div key={candidate.id} className={`pm-cand-option${isSelected ? ' selected' : ''}`} onClick={() => onSelectCandidate(item._id, candidate)}>
+                <div className="pm-cand-radio">{isSelected && <div className="pm-cand-radio-dot" />}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="pm-cand-name">{candidate.name}</div>
                   <div className="pm-cand-unit">{candidate.unit} · last price: {candidate.last_price ? formatCurrency(candidate.last_price) : 'not set'}</div>
                   {candidate.used_in?.length > 0 && (
                     <div className="pm-cand-dishes">
-                      {candidate.used_in.slice(0, 4).map(dish => (
-                        <span key={dish} className="pm-cand-dish-tag">{dish}</span>
-                      ))}
-                      {candidate.used_in.length > 4 && (
-                        <span className="pm-cand-dish-tag">+{candidate.used_in.length - 4} more</span>
-                      )}
+                      {candidate.used_in.slice(0, 4).map(dish => <span key={dish} className="pm-cand-dish-tag">{dish}</span>)}
+                      {candidate.used_in.length > 4 && <span className="pm-cand-dish-tag">+{candidate.used_in.length - 4} more</span>}
                     </div>
-                  )}
-                  {(!candidate.used_in || !candidate.used_in.length) && (
-                    <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: '#3a3630', marginTop: 3 }}>Not used in any menu items yet</div>
                   )}
                 </div>
                 <div className="pm-cand-score">{Math.round((candidate.score || 0) * 100)}%</div>
@@ -897,18 +695,10 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           <div className="pm-new-lbl">New ingredient — confirm to add to your inventory</div>
           <div>
             <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', marginBottom: 4 }}>Ingredient name</div>
-            <input
-              className="pm-new-name-input"
-              value={item.confirmed_name}
-              onChange={e => onUpdateName(item._id, e.target.value)}
-              placeholder="Ingredient name..."
-            />
+            <input className="pm-new-name-input" value={item.confirmed_name} onChange={e => onUpdateName(item._id, e.target.value)} placeholder="Ingredient name..." />
           </div>
           <div className="pm-new-actions">
-            <button
-              className={`pm-new-confirm-btn${item.confirm_new ? ' active' : ''}`}
-              onClick={() => onConfirmNew(item._id, !item.confirm_new)}
-            >
+            <button className={`pm-new-confirm-btn${item.confirm_new ? ' active' : ''}`} onClick={() => onConfirmNew(item._id, !item.confirm_new)}>
               {item.confirm_new ? '✓ Confirmed — will create' : 'Confirm & Create Ingredient'}
             </button>
             <button className="pm-dismiss-btn" onClick={() => onDismiss(item._id)}>Skip</button>
@@ -936,14 +726,13 @@ export default function ClientInvoices() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [showParseModal, setShowParseModal] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState('');
+  const [mobTab, setMobTab] = useState('invoices');
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
 
   useEffect(() => { init(); }, []);
-  useEffect(() => {
-    if (restaurantId && !isTour) fetchInvoices();
-  }, [restaurantId]);
+  useEffect(() => { if (restaurantId && !isTour) fetchInvoices(); }, [restaurantId]);
   useEffect(() => {
     router.prefetch('/client/dashboard');
     router.prefetch('/client/invoices');
@@ -956,11 +745,7 @@ export default function ClientInvoices() {
 
   useEffect(() => {
     if (!router.isReady || !isTour) return;
-    fetchSampleData().then(sample => {
-      if (!sample) return;
-      setInvoices(sample.invoices);
-      setLoading(false);
-    });
+    fetchSampleData().then(sample => { if (!sample) return; setInvoices(sample.invoices); setLoading(false); });
   }, [router.isReady, isTour]);
 
   async function init() {
@@ -975,24 +760,17 @@ export default function ClientInvoices() {
 
   async function fetchInvoices() {
     setLoading(true);
-    const { data } = await supabase
-      .from('invoices')
-      .select('*')
-      .eq('restaurant_id', restaurantId)
-      .order('date', { ascending: false, nullsFirst: false });
+    const { data } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('date', { ascending: false, nullsFirst: false });
     setInvoices(data || []);
     setLoading(false);
     const { selected } = router.query;
-    if (selected && data) {
-      const found = data.find(i => i.id === selected);
-      if (found) selectInvoice(found);
-    }
+    if (selected && data) { const found = data.find(i => i.id === selected); if (found) selectInvoice(found); }
   }
 
   async function selectInvoice(invoice) {
     setSelectedInvoice(invoice);
     setLoadingDetail(true);
-    router.replace(`/client/invoices?selected=${invoice.id}`, undefined, { shallow: true });
+    if (!isMobile) router.replace(`/client/invoices?selected=${invoice.id}`, undefined, { shallow: true });
     const { data } = await supabase.from('invoice_items').select('*, ingredients(name, unit)').eq('invoice_id', invoice.id).order('item_name');
     setInvoiceItems(data || []);
     setLoadingDetail(false);
@@ -1008,202 +786,429 @@ export default function ClientInvoices() {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
-
   const totalSpend = invoices.reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
-
-  const thisMonthSpend = invoices.filter(i => {
-    if (!i.date) return false;
-    const [y, m] = i.date.split('T')[0].split('-').map(Number);
-    return y === currentYear && m - 1 === currentMonth;
-  }).reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
-
+  const thisMonthSpend = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
   const avgInvoice = invoices.length > 0 ? totalSpend / invoices.length : 0;
   const largest = invoices.length > 0 ? Math.max(...invoices.map(i => parseFloat(i.amount || 0))) : 0;
   const lastInvoice = invoices[0];
-  const daysSinceLast = lastInvoice?.date
-    ? (() => {
-        const [y, m, d] = lastInvoice.date.split('T')[0].split('-').map(Number);
-        return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000);
-      })()
-    : null;
-
-  // Invoices dated in current month
-  const invoicesThisMonthByDate = invoices.filter(i => {
-    if (!i.date) return false;
-    const [y, m] = i.date.split('T')[0].split('-').map(Number);
-    return y === currentYear && m - 1 === currentMonth;
-  }).length;
-
-  // Invoices uploaded (created_at) in current month
-  const invoicesUploadedThisMonth = invoices.filter(i => {
-    if (!i.created_at) return false;
-    const d = new Date(i.created_at);
-    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
-  }).length;
-
+  const daysSinceLast = lastInvoice?.date ? (() => { const [y, m, d] = lastInvoice.date.split('T')[0].split('-').map(Number); return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000); })() : null;
+  const invoicesThisMonthByDate = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).length;
+  const invoicesUploadedThisMonth = invoices.filter(i => { if (!i.created_at) return false; const d = new Date(i.created_at); return d.getFullYear() === currentYear && d.getMonth() === currentMonth; }).length;
   const supplierMap = {};
-  invoices.forEach(i => {
-    if (i.supplier) {
-      const key = i.supplier.trim();
-      supplierMap[key] = Math.round(((supplierMap[key] || 0) + (Math.round(parseFloat(i.amount || 0) * 100) / 100)) * 100) / 100;
-    }
-  });
+  invoices.forEach(i => { if (i.supplier) { const key = i.supplier.trim(); supplierMap[key] = Math.round(((supplierMap[key] || 0) + (Math.round(parseFloat(i.amount || 0) * 100) / 100)) * 100) / 100; } });
   const topSuppliers = Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const maxSupplier = topSuppliers[0]?.[1] || 1;
-
-  const monthlySpend = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(currentYear, currentMonth - 11 + i, 1);
-    const yr = d.getFullYear();
-    const mo = d.getMonth();
-    const total = invoices.filter(inv => {
-      if (!inv.date) return false;
-      const [y, m] = inv.date.split('T')[0].split('-').map(Number);
-      return y === yr && (m - 1) === mo;
-    }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
-    return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total };
-  });
+  const monthlySpend = Array.from({ length: 12 }, (_, i) => { const d = new Date(currentYear, currentMonth - 11 + i, 1); const yr = d.getFullYear(); const mo = d.getMonth(); const total = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === yr && (m - 1) === mo; }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0); return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total }; });
   const maxMonthly = Math.max(...monthlySpend.map(m => m.total), 1);
-
   const lastMonthDate = new Date(currentYear, currentMonth - 1, 1);
-  const lastMonthSpend = invoices.filter(inv => {
-    if (!inv.date) return false;
-    const [y, m] = inv.date.split('T')[0].split('-').map(Number);
-    return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth();
-  }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
-
+  const lastMonthSpend = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth(); }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
   const monthDelta = thisMonthSpend - lastMonthSpend;
   const monthPct = lastMonthSpend > 0 ? Math.round((monthDelta / lastMonthSpend) * 100) : null;
   const monthUp = monthDelta >= 0;
-
-  const filtered = invoices.filter(i => {
-    const s = searchTerm.toLowerCase();
-    return (i.number || '').toLowerCase().includes(s) || (i.supplier || '').toLowerCase().includes(s);
-  });
-
+  const filtered = invoices.filter(i => { const s = searchTerm.toLowerCase(); return (i.number || '').toLowerCase().includes(s) || (i.supplier || '').toLowerCase().includes(s); });
   const totalCalculated = invoiceItems.reduce((s, i) => s + calculateItemTotal(i), 0);
 
   // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
   if (isMobile) {
+    const MOB_TABS = [
+      { id: 'invoices', label: 'Invoices', badge: filtered.length },
+      { id: 'overview', label: 'Overview' },
+      { id: 'suppliers', label: 'Suppliers' },
+      { id: 'spending', label: 'Spending' },
+    ];
+
     return (
       <>
+        <Head>
+          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        </Head>
         <style>{CSS}</style>
-        <div className="mob-root" style={{ position: 'relative' }}>
-          <div className="mob-header">
-            <div className="mob-logo">Opti<span>Menu</span></div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+          @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+          @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+          .mob2-root { font-family:'Inter',sans-serif; background:var(--bg-root); color:var(--text-primary); width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+          .mob2-header { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-logo { font-family:'Inter',sans-serif; font-size:18px; font-weight:700; color:var(--text-primary); letter-spacing:-.3px; }
+          .mob2-logo span { color:var(--accent); }
+          .mob2-subbar { background:var(--bg-surface); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+          .mob2-tabs { background:var(--bg-elevated); border-bottom:1px solid var(--border); display:flex; overflow-x:auto; flex-shrink:0; -webkit-overflow-scrolling:touch; }
+          .mob2-tabs::-webkit-scrollbar { display:none; }
+          .mob2-tab { flex-shrink:0; padding:10px 14px; font-size:12px; font-weight:500; color:var(--text-muted); border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; border-bottom:2px solid transparent; white-space:nowrap; -webkit-tap-highlight-color:transparent; display:flex; align-items:center; gap:5px; }
+          .mob2-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+          .mob2-tab-badge { background:var(--accent); color:#0a0908; font-size:9px; font-weight:700; border-radius:8px; padding:1px 5px; }
+          .mob2-search { padding:10px 16px; background:var(--bg-root); border-bottom:1px solid var(--border); flex-shrink:0; }
+          .mob2-search-input { width:100%; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-size:14px; color:var(--text-primary); outline:none; font-family:'Inter',sans-serif; }
+          .mob2-scroll { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+          .mob2-scroll::-webkit-scrollbar { display:none; }
+          .mob2-content { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:12px; -webkit-overflow-scrolling:touch; }
+          .mob2-content::-webkit-scrollbar { display:none; }
+          .mob2-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
+          .mob2-card-title { font-size:11px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:.7px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+          .mob2-card-title svg { width:12px; height:12px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+          .mob2-inv-row { display:flex; align-items:center; padding:13px 16px; border-bottom:1px solid var(--border-subtle); cursor:pointer; gap:12px; border-left:3px solid transparent; -webkit-tap-highlight-color:transparent; }
+          .mob2-inv-row.selected { background:rgba(2,164,186,.07); border-left-color:var(--accent); }
+          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0 0; padding-bottom:env(safe-area-inset-bottom,8px); display:flex; flex-shrink:0; position:sticky; bottom:0; z-index:50; }
+          .mob2-nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px 0; -webkit-tap-highlight-color:transparent; }
+          .mob2-nav-icon svg { width:20px; height:20px; stroke:var(--text-muted); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
+          .mob2-nav-icon.active svg { stroke:var(--accent); }
+          .mob2-nav-label { font-size:10px; color:var(--text-muted); }
+          .mob2-nav-label.active { color:var(--accent); }
+          .mob2-detail-overlay { position:fixed; inset:0; background:var(--bg-root); display:flex; flex-direction:column; z-index:30; overflow:hidden; }
+          .mob2-detail-hd { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:12px 16px; padding-top:max(12px,env(safe-area-inset-top)); display:flex; align-items:center; gap:12px; flex-shrink:0; }
+          .mob2-detail-body { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:12px; padding-bottom:max(24px,env(safe-area-inset-bottom)); }
+          .mob2-detail-body::-webkit-scrollbar { display:none; }
+        `}</style>
+
+        <div className="mob2-root">
+
+          {/* Header */}
+          <div className="mob2-header">
+            <div className="mob2-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <button className="mob-add-btn" onClick={() => setShowParseModal(true)}>+ Upload</button>
-              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
+              <button onClick={() => setShowParseModal(true)}
+                style={{ background: 'var(--accent)', border: 'none', borderRadius: 7, padding: '7px 13px', fontSize: 12, fontWeight: 600, color: '#0a0908', cursor: 'pointer', fontFamily: 'Inter,sans-serif', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <IconUpload size={10} /> Upload
+              </button>
+              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true} />
             </div>
           </div>
-          <div className="mob-titlebar">
+
+          {/* Sub bar */}
+          <div className="mob2-subbar">
             <div>
-              <div className="mob-page-title">Invoice Center</div>
-              <div className="mob-page-sub">Track expenses and supplier payments</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Invoice Center</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{invoices.length} invoices · {formatCurrencyShort(totalSpend)} total</div>
+            </div>
+            <div style={{ display: 'flex', gap: 12 }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5 }}>This Month</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{formatCurrencyShort(thisMonthSpend)}</div>
+              </div>
+              {monthPct !== null && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5 }}>vs Last Mo</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: monthUp ? 'var(--color-red)' : 'var(--color-green)' }}>{monthUp ? '▲' : '▼'}{Math.abs(monthPct)}%</div>
+                </div>
+              )}
             </div>
           </div>
-          <div className="mob-stats">
-            {[
-              { v: invoices.length, l: 'Total', c: 'var(--accent)' },
-              { v: formatCurrencyShort(totalSpend), l: 'Total Spend', c: 'var(--text-primary)' },
-              { v: formatCurrencyShort(thisMonthSpend), l: 'This Month', c: 'var(--text-primary)' },
-              { v: formatCurrencyShort(lastMonthSpend), l: 'Last Month', c: '#6b6358' },
-            ].map(({ v, l, c }) => (
-              <div key={l} className="mob-stat">
-                <div className="mob-stat-v" style={{ color: c }}>{v}</div>
-                <div className="mob-stat-l">{l}</div>
-              </div>
+
+          {/* Tab bar */}
+          <div className="mob2-tabs">
+            {MOB_TABS.map(t => (
+              <button key={t.id} className={`mob2-tab${mobTab === t.id ? ' active' : ''}`} onClick={() => setMobTab(t.id)}>
+                {t.label}
+                {t.badge !== undefined && <span className="mob2-tab-badge">{t.badge}</span>}
+              </button>
             ))}
           </div>
-          <div className="mob-search-bar">
-            <input className="mob-search-input" placeholder="Search by supplier or invoice number..."
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-          </div>
-          <div className="mob-list-head">
-            <div className="mob-list-th">Supplier</div>
-            <div className="mob-list-th">Invoice No.</div>
-            <div className="mob-list-th">Amount</div>
-            <div className="mob-list-th">Date</div>
-          </div>
+
+          {/* Content */}
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
               <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading invoices...</div>
             </div>
           ) : (
-            <div className="mob-list-body">
-              {filtered.length === 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 }}>
-                  <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No invoices yet'}</div>
-                  {!searchTerm && <button className="mob-add-btn" onClick={() => setShowParseModal(true)}>Upload First Invoice</button>}
-                </div>
-              ) : filtered.map(invoice => (
-                <div key={invoice.id} className={`mob-list-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`} onClick={() => selectInvoice(invoice)}>
-                  <div className="mob-td primary">{invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown</span>}</div>
-                  <div className="mob-td">{invoice.number || <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-                  <div className="mob-td amount">{invoice.amount ? formatCurrencyShort(invoice.amount) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-                  <div className="mob-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {selectedInvoice && (
-            <div className="mob-detail-overlay">
-              <div className="mob-detail-hd">
-                <button className="mob-back-btn" onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); router.replace('/client/invoices', undefined, { shallow: true }); }}>← Back</button>
-                <div className="mob-detail-title">{selectedInvoice.supplier || 'Invoice'}</div>
-                <span className={`mob-pill ${getStatus(selectedInvoice).ok ? 'ok' : 'pend'}`}>{getStatus(selectedInvoice).label}</span>
-              </div>
-              <div className="mob-detail-body">
-                <div className="mob-dfield-grid">
-                  <div className="mob-dfield"><div className="mob-dfield-lbl">Invoice No.</div><div className="mob-dfield-val">{selectedInvoice.number || '—'}</div></div>
-                  <div className="mob-dfield"><div className="mob-dfield-lbl">Date</div><div className="mob-dfield-val">{selectedInvoice.date ? formatDateShort(selectedInvoice.date) : '—'}</div></div>
-                  <div className="mob-dfield"><div className="mob-dfield-lbl">Supplier</div><div className="mob-dfield-val">{selectedInvoice.supplier || '—'}</div></div>
-                  <div className="mob-dfield"><div className="mob-dfield-lbl">Upload Date</div><div className="mob-dfield-val">{formatDateShort(selectedInvoice.created_at)}</div></div>
-                </div>
-                <div className="mob-dfield">
-                  <div className="mob-dfield-lbl">Total Amount</div>
-                  <div className="mob-dfield-val accent">{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : '—'}</div>
-                </div>
-                {selectedInvoice.file_url && (
-                  <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
-                    style={{ display: 'block', textAlign: 'center', padding: 10, background: '#13120f', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--accent)', textDecoration: 'none' }}>
-                    View Invoice File ↗
-                  </a>
-                )}
-                {loadingDetail ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12 }}>
-                    <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
-                    Loading items...
+            <>
+              {/* ── INVOICES TAB ── */}
+              {mobTab === 'invoices' && (
+                <>
+                  <div className="mob2-search">
+                    <input className="mob2-search-input" placeholder="Search supplier or invoice number..."
+                      value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                   </div>
-                ) : invoiceItems.length > 0 ? (
-                  <>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.7px' }}>Invoice Items ({invoiceItems.length})</div>
-                    <div className="mob-items-head">
-                      <div className="mob-ith">Item</div><div className="mob-ith">Qty</div><div className="mob-ith">Cost</div><div className="mob-ith">Status</div>
-                    </div>
-                    {invoiceItems.map(item => (
-                      <div key={item.id} className="mob-item-row">
-                        <div className="mob-itd name">{item.item_name || '—'}</div>
-                        <div className="mob-itd">{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}</div>
-                        <div className="mob-itd val">{formatCurrency(calculateItemTotal(item))}</div>
-                        <div>{item.ingredients ? <span className="mob-linked">Linked</span> : <span className="mob-unlinked">Unlinked</span>}</div>
+                  <div className="mob2-scroll">
+                    {filtered.length === 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 }}>
+                        <IconFile size={36} />
+                        <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>{searchTerm ? `No results for "${searchTerm}"` : 'No invoices yet'}</div>
+                        {!searchTerm && (
+                          <button onClick={() => setShowParseModal(true)}
+                            style={{ background: 'var(--accent)', border: 'none', borderRadius: 7, padding: '9px 18px', fontSize: 13, fontWeight: 600, color: '#0a0908', cursor: 'pointer', fontFamily: 'Inter,sans-serif' }}>
+                            Upload First Invoice
+                          </button>
+                        )}
+                      </div>
+                    ) : filtered.map(invoice => {
+                      const { ok } = getStatus(invoice);
+                      return (
+                        <div key={invoice.id} className={`mob2-inv-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`}
+                          onClick={() => { selectInvoice(invoice); }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? 'var(--color-green)' : 'var(--color-amber)', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown supplier</span>}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{invoice.number || '—'} · {invoice.date ? formatDateShort(invoice.date) : '—'}</div>
+                          </div>
+                          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{invoice.amount ? formatCurrencyShort(invoice.amount) : '—'}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 2 }}>{timeAgo(invoice.created_at)}</div>
+                          </div>
+                          <div style={{ fontSize: 12, color: 'var(--text-faint)', flexShrink: 0 }}>›</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* ── OVERVIEW TAB ── */}
+              {mobTab === 'overview' && (
+                <div className="mob2-content">
+                  {/* Stats grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    {[
+                      { l: 'Total Spend', v: formatCurrencyShort(totalSpend), c: 'var(--accent)' },
+                      { l: 'Avg Invoice', v: formatCurrencyShort(avgInvoice), c: 'var(--text-primary)' },
+                      { l: 'Largest Invoice', v: formatCurrencyShort(largest), c: 'var(--color-amber)' },
+                      { l: 'Days Since Last', v: daysSinceLast !== null ? daysSinceLast : '—', c: daysSinceLast > 7 ? 'var(--color-amber)' : 'var(--color-green)' },
+                      { l: 'This Month', v: invoicesThisMonthByDate, c: 'var(--text-primary)', sub: 'invoices by date' },
+                      { l: 'Uploaded This Mo.', v: invoicesUploadedThisMonth, c: 'var(--text-muted)', sub: 'by upload date' },
+                    ].map(({ l, v, c, sub }) => (
+                      <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 6 }}>{l}</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: c, lineHeight: 1 }}>{v}</div>
+                        {sub && <div style={{ fontSize: 9, color: 'var(--text-faint)', marginTop: 4 }}>{sub}</div>}
                       </div>
                     ))}
-                    <div className="mob-total-bar">
-                      <div style={{ fontSize: 13, color: '#6b6358', fontWeight: 500 }}>Calculated Total</div>
-                      <div style={{ fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 18, color: 'var(--accent)' }}>{formatCurrency(totalCalculated)}</div>
+                  </div>
+
+                  {/* Month over Month */}
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">
+                      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
+                      Month over Month
                     </div>
-                  </>
-                ) : (
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
-                )}
-              </div>
-            </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>
+                          {new Date().toLocaleDateString('en-US', { month: 'long' })}
+                        </div>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)', lineHeight: 1 }}>{formatCurrencyShort(thisMonthSpend)}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>
+                          {new Date(currentYear, currentMonth - 1, 1).toLocaleDateString('en-US', { month: 'long' })}
+                        </div>
+                        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrencyShort(lastMonthSpend)}</div>
+                      </div>
+                    </div>
+                    {monthPct !== null ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: monthUp ? 'var(--color-red)' : 'var(--color-green)', fontWeight: 600 }}>
+                        <span>{monthUp ? '▲' : '▼'}</span>
+                        <span>{Math.abs(monthPct)}% {monthUp ? 'above' : 'below'} last month</span>
+                      </div>
+                    ) : <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No prior month data</div>}
+                  </div>
+
+                  {/* Recent activity */}
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">
+                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      Recent Activity
+                    </div>
+                    {invoices.slice(0, 6).map(inv => {
+                      const { ok } = getStatus(inv);
+                      return (
+                        <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+                          onClick={() => { setMobTab('invoices'); selectInvoice(inv); }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? 'var(--color-green)' : 'var(--color-amber)', flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.number || 'Invoice'}{inv.supplier ? ` · ${inv.supplier}` : ''}</div>
+                          </div>
+                          {inv.amount && <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', flexShrink: 0 }}>{formatCurrencyShort(inv.amount)}</div>}
+                          <div style={{ fontSize: 10, color: 'var(--text-faint)', flexShrink: 0 }}>{timeAgo(inv.created_at)}</div>
+                        </div>
+                      );
+                    })}
+                    {invoices.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No invoice activity yet</div>}
+                  </div>
+                  <div style={{ height: 8 }} />
+                </div>
+              )}
+
+              {/* ── SUPPLIERS TAB ── */}
+              {mobTab === 'suppliers' && (
+                <div className="mob2-content">
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">
+                      <svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
+                      Top Suppliers
+                    </div>
+                    {topSuppliers.length > 0 ? topSuppliers.map(([name, amount], i) => {
+                      const colors = ['var(--accent)', 'var(--color-amber)', 'var(--color-green)', 'var(--text-faint)'];
+                      return (
+                        <div key={name} style={{ marginBottom: 14 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: colors[i] }}>{formatCurrencyShort(amount)}</div>
+                          </div>
+                          <div style={{ height: 5, background: 'var(--border-subtle)', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${(amount / maxSupplier) * 100}%`, height: '100%', background: colors[i], borderRadius: 3 }} />
+                          </div>
+                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 3 }}>{Math.round((amount / totalSpend) * 100)}% of total spend</div>
+                        </div>
+                      );
+                    }) : <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No supplier data yet</div>}
+                  </div>
+
+                  {/* All suppliers list */}
+                  {Object.keys(supplierMap).length > 4 && (
+                    <div className="mob2-card">
+                      <div className="mob2-card-title">All Suppliers</div>
+                      {Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).map(([name, amount]) => (
+                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                          <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrencyShort(amount)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ height: 8 }} />
+                </div>
+              )}
+
+              {/* ── SPENDING TAB ── */}
+              {mobTab === 'spending' && (
+                <div className="mob2-content">
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">
+                      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                      12-Month Spend
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 120 }}>
+                      {monthlySpend.map(({ month, total }, idx) => (
+                        <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
+                          <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
+                            <div style={{ width: '100%', height: `${Math.max(2, (total / maxMonthly) * 90)}%`, background: getBarColor(total), borderRadius: '2px 2px 0 0', minHeight: 2 }} />
+                          </div>
+                          <div style={{ fontSize: 8, color: 'var(--text-faint)' }}>{month}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>12-month total</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{formatCurrencyShort(totalSpend)}</div>
+                    </div>
+                  </div>
+
+                  {/* Monthly breakdown list */}
+                  <div className="mob2-card">
+                    <div className="mob2-card-title">Monthly Breakdown</div>
+                    {[...monthlySpend].reverse().filter(m => m.total > 0).map(({ month, total }, i) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{month}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ width: 60, height: 4, background: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
+                            <div style={{ width: `${(total / maxMonthly) * 100}%`, height: '100%', background: getBarColor(total), borderRadius: 2 }} />
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', width: 55, textAlign: 'right' }}>{formatCurrencyShort(total)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ height: 8 }} />
+                </div>
+              )}
+            </>
           )}
 
-          <MobBottomNav current="/client/invoices" router={router} />
+          {/* Bottom nav */}
+          <div className="mob2-bottom-nav">
+            {NAV_ITEMS.map(({ label, path, icon }) => {
+              const active = path === '/client/invoices';
+              return (
+                <div key={label} className="mob2-nav-item" onClick={() => router.push(path)}>
+                  <div className={`mob2-nav-icon${active ? ' active' : ''}`}>{icon}</div>
+                  <div className={`mob2-nav-label${active ? ' active' : ''}`}>{label}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
+
+        {/* Invoice detail overlay */}
+        {selectedInvoice && (
+          <div className="mob2-detail-overlay">
+            <div className="mob2-detail-hd">
+              <button onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--accent)', fontFamily: 'Inter,sans-serif', padding: 0, flexShrink: 0 }}>← Back</button>
+              <div style={{ flex: 1, fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedInvoice.supplier || 'Invoice'}</div>
+              <span style={{ fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 10, background: getStatus(selectedInvoice).ok ? 'rgba(42,138,90,.12)' : 'rgba(212,160,32,.12)', color: getStatus(selectedInvoice).ok ? 'var(--color-green)' : 'var(--color-amber)', flexShrink: 0 }}>
+                {getStatus(selectedInvoice).label}
+              </span>
+            </div>
+            <div className="mob2-detail-body">
+
+              {/* Invoice fields */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {[
+                  { l: 'Invoice No.', v: selectedInvoice.number || '—' },
+                  { l: 'Date', v: selectedInvoice.date ? formatDateShort(selectedInvoice.date) : '—' },
+                  { l: 'Supplier', v: selectedInvoice.supplier || '—' },
+                  { l: 'Upload Date', v: formatDateShort(selectedInvoice.created_at) },
+                ].map(({ l, v }) => (
+                  <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>{l}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Total */}
+              <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total Amount</div>
+                <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--accent)' }}>{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : '—'}</div>
+              </div>
+
+              {/* File link */}
+              {selectedInvoice.file_url && (
+                <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 0', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  View Invoice File ↗
+                </a>
+              )}
+
+              {/* Line items */}
+              {loadingDetail ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>
+                  <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+                  Loading items...
+                </div>
+              ) : invoiceItems.length > 0 ? (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: .7 }}>Line Items ({invoiceItems.length})</div>
+                  {invoiceItems.map(item => (
+                    <div key={item.id} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.item_name || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'} · {formatCurrency(item.unit_cost)} ea</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency(calculateItemTotal(item))}</div>
+                        <div style={{ fontSize: 10, marginTop: 2 }}>
+                          {item.ingredients
+                            ? <span style={{ color: 'var(--color-green)' }}>Linked</span>
+                            : <span style={{ color: 'var(--color-amber)' }}>Unlinked</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Calculated Total</div>
+                    <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 18, color: 'var(--accent)' }}>{formatCurrency(totalCalculated)}</div>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
+              )}
+
+            </div>
+          </div>
+        )}
+
         {showParseModal && restaurantId && (
           <ParseModal restaurantId={restaurantId} onClose={() => setShowParseModal(false)} onSaved={handleInvoiceSaved} />
         )}
@@ -1219,7 +1224,6 @@ export default function ClientInvoices() {
       <style>{CSS}</style>
       <div className="inv-root">
 
-        {/* TOPBAR */}
         <div className="inv-nav">
           <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
             <div className="inv-logo">Opti<span>Menu</span></div>
@@ -1236,9 +1240,9 @@ export default function ClientInvoices() {
             <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.62vw,11px)',color:'var(--accent)'}}>
               <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
             </div>
-              <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
-                <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
-              </div>
+            <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
+              <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
+            </div>
             <button className="inv-upload-btn" onClick={()=>setShowParseModal(true)}>
               <IconUpload size={11}/> Upload Invoice
             </button>
@@ -1246,7 +1250,6 @@ export default function ClientInvoices() {
           </div>
         </div>
 
-        {/* STATS BAR */}
         <div className="inv-wbar">
           <div style={{display:'flex',alignItems:'baseline'}}>
             <span className="inv-wname">Invoice Center</span>
@@ -1294,8 +1297,6 @@ export default function ClientInvoices() {
           </div>
         ):(
           <div className="inv-split">
-
-            {/* LEFT — Invoice List */}
             <div className="inv-list">
               <div className="inv-list-hd">
                 <div className="inv-list-title">Invoices</div>
@@ -1325,8 +1326,7 @@ export default function ClientInvoices() {
                   const {label,ok}=getStatus(invoice);
                   return (
                     <div key={invoice.id} className={`inv-row${selectedInvoice?.id===invoice.id?' selected':''}`}
-                      style={{animationDelay:`${idx*.02}s`}}
-                      onClick={()=>selectInvoice(invoice)}>
+                      style={{animationDelay:`${idx*.02}s`}} onClick={()=>selectInvoice(invoice)}>
                       <div className="inv-td primary">{invoice.supplier||<span style={{color:'var(--text-faint)',fontStyle:'italic'}}>Unknown</span>}</div>
                       <div className="inv-td">{invoice.number||<span style={{color:'var(--text-faint)'}}>—</span>}</div>
                       <div className="inv-td">{invoice.date?formatDateShort(invoice.date):<span style={{color:'var(--text-faint)'}}>—</span>}</div>
@@ -1338,7 +1338,6 @@ export default function ClientInvoices() {
               </div>
             </div>
 
-            {/* RIGHT — Detail / Overview */}
             <div className="inv-detail">
               <div className="inv-detail-hd">
                 <div className="inv-detail-title">
@@ -1350,20 +1349,17 @@ export default function ClientInvoices() {
                 }
               </div>
 
-              {/* OVERVIEW STATE */}
               {!selectedInvoice&&(
                 <div className="inv-detail-body">
-
-                  {/* Row 1 — Key Metrics horizontal pills */}
                   <div className="inv-widget">
                     <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Key Metrics</div>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
                       {[
-                        {l:'Avg Invoice Size',  v:formatCurrencyWhole(avgInvoice),       c:'var(--text-primary)'},
-                        {l:'Invoices This Month',v:invoicesThisMonthByDate,              c:'var(--text-primary)'},
-                        {l:'Uploaded This Month',v:invoicesUploadedThisMonth,            c:'var(--text-muted)'},
-                        {l:'Days Since Last',   v:daysSinceLast!==null?daysSinceLast:'—',c:daysSinceLast>7?'var(--color-amber)':'var(--color-green)'},
-                        {l:'Largest Invoice',   v:formatCurrencyWhole(largest),          c:'var(--accent)'},
+                        {l:'Avg Invoice Size',   v:formatCurrencyWhole(avgInvoice),        c:'var(--text-primary)'},
+                        {l:'Invoices This Month',v:invoicesThisMonthByDate,                c:'var(--text-primary)'},
+                        {l:'Uploaded This Month',v:invoicesUploadedThisMonth,              c:'var(--text-muted)'},
+                        {l:'Days Since Last',    v:daysSinceLast!==null?daysSinceLast:'—', c:daysSinceLast>7?'var(--color-amber)':'var(--color-green)'},
+                        {l:'Largest Invoice',    v:formatCurrencyWhole(largest),            c:'var(--accent)'},
                       ].map(({l,v,c})=>(
                         <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
                           <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
@@ -1373,10 +1369,7 @@ export default function ClientInvoices() {
                     </div>
                   </div>
 
-                  {/* Row 2 — Recent Activity + Month over Month / Top Suppliers */}
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,8px)',flex:1,minHeight:0}}>
-
-                    {/* Recent Activity — tall left */}
                     <div className="inv-widget" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
                       <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Recent Activity</div>
                       <div style={{flex:1,overflowY:'auto'}}>
@@ -1395,33 +1388,22 @@ export default function ClientInvoices() {
                       </div>
                     </div>
 
-                    {/* Right column — Month over Month + Top Suppliers stacked */}
                     <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,8px)',minHeight:0}}>
-
                       <div className="inv-widget">
                         <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Month over Month</div>
                         <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:8}}>
                           <div>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
-                              {new Date().toLocaleDateString('en-US',{month:'long'})}
-                            </div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:'clamp(17px,1.5vw,24px)',color:'var(--accent)',lineHeight:1}}>
-                              {formatCurrencyWhole(thisMonthSpend)}
-                            </div>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{new Date().toLocaleDateString('en-US',{month:'long'})}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:'clamp(17px,1.5vw,24px)',color:'var(--accent)',lineHeight:1}}>{formatCurrencyWhole(thisMonthSpend)}</div>
                           </div>
                           <div style={{textAlign:'right'}}>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>
-                              {new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'long'})}
-                            </div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(13px,1.05vw,17px)',color:'var(--text-primary)',lineHeight:1}}>
-                              {formatCurrencyWhole(lastMonthSpend)}
-                            </div>
+                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'long'})}</div>
+                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(13px,1.05vw,17px)',color:'var(--text-primary)',lineHeight:1}}>{formatCurrencyWhole(lastMonthSpend)}</div>
                           </div>
                         </div>
                         {monthPct!==null?(
                           <div style={{display:'flex',alignItems:'center',gap:5,fontSize:'clamp(9px,.68vw,11px)',color:monthUp?'var(--color-red)':'var(--color-green)',fontWeight:600}}>
-                            <span>{monthUp?'▲':'▼'}</span>
-                            <span>{Math.abs(monthPct)}% {monthUp?'above':'below'} last month</span>
+                            <span>{monthUp?'▲':'▼'}</span><span>{Math.abs(monthPct)}% {monthUp?'above':'below'} last month</span>
                           </div>
                         ):(
                           <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No prior month data</div>
@@ -1443,44 +1425,33 @@ export default function ClientInvoices() {
                           }):<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No supplier data yet</div>}
                         </div>
                       </div>
-
                     </div>
                   </div>
 
-                  {/* Row 3 — 12-Month Spend full width */}
                   <div className="inv-widget">
                     <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>12-Month Spend</div>
                     <div className="inv-mini-chart">
                       {monthlySpend.map(({month,total},idx)=>(
                         <div key={idx} className="inv-mc-col">
-                          <div className="inv-mc-track">
-                            <div className="inv-mc-bar" style={{height:`${Math.max(2,(total/maxMonthly)*90)}%`,background:getBarColor(total)}}/>
-                          </div>
+                          <div className="inv-mc-track"><div className="inv-mc-bar" style={{height:`${Math.max(2,(total/maxMonthly)*90)}%`,background:getBarColor(total)}}/></div>
                           <div className="inv-mc-lbl">{month}</div>
                         </div>
                       ))}
                     </div>
                   </div>
-
                 </div>
               )}
 
-              {/* DETAIL STATE */}
               {selectedInvoice&&(
                 <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
-
-                  {/* Back button + status at top */}
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
-                    <button
-                      onClick={()=>{setSelectedInvoice(null);setInvoiceItems([]);router.replace('/client/invoices',undefined,{shallow:true});}}
+                    <button onClick={()=>{setSelectedInvoice(null);setInvoiceItems([]);router.replace('/client/invoices',undefined,{shallow:true});}}
                       style={{background:'none',border:'none',cursor:'pointer',fontSize:'clamp(9px,.68vw,11px)',color:'var(--accent)',fontFamily:"'Inter',sans-serif",display:'flex',alignItems:'center',gap:4,padding:0}}>
                       ← Back to overview
                     </button>
                   </div>
 
                   <div className="inv-detail-body">
-
-                    {/* Invoice Information — horizontal pills like Key Metrics */}
                     <div className="inv-widget">
                       <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Invoice Information</div>
                       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr auto',gap:'clamp(5px,.5vw,8px)',alignItems:'stretch'}}>
@@ -1496,11 +1467,10 @@ export default function ClientInvoices() {
                             <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(11px,.85vw,14px)',fontWeight:accent?700:500,color:accent?'var(--accent)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v}</div>
                           </div>
                         ))}
-                        {/* Open file button */}
                         {selectedInvoice.file_url?(
                           <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
                             style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,textDecoration:'none',cursor:'pointer',flexShrink:0,minWidth:'clamp(44px,4vw,60px)'}}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                             <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--accent)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>Open</div>
                           </a>
                         ):(
@@ -1512,10 +1482,8 @@ export default function ClientInvoices() {
                       </div>
                     </div>
 
-                    {/* Line Items card — only the rows scroll */}
                     <div className="inv-widget" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
                       <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Line Items {invoiceItems.length>0&&`(${invoiceItems.length})`}</div>
-
                       {loadingDetail?(
                         <div style={{display:'flex',alignItems:'center',gap:8,color:'var(--text-muted)',fontSize:'clamp(10px,.75vw,12px)'}}>
                           <div style={{width:16,height:16,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
@@ -1523,13 +1491,11 @@ export default function ClientInvoices() {
                         </div>
                       ):invoiceItems.length>0?(
                         <>
-                          {/* Sticky column headers */}
                           <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 80px',gap:5,padding:'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)',background:'var(--bg-elevated)',borderRadius:'clamp(4px,.3vw,6px)',marginBottom:4,flexShrink:0}}>
                             {['Item','Qty','Unit Cost','Total','Status'].map(h=>(
                               <div key={h} style={{fontSize:'clamp(7px,.58vw,10px)',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.6px'}}>{h}</div>
                             ))}
                           </div>
-                          {/* Scrollable rows only */}
                           <div style={{flex:1,overflowY:'auto',minHeight:0}}>
                             {invoiceItems.map(item=>(
                               <div key={item.id} className="inv-item-row">
@@ -1549,12 +1515,10 @@ export default function ClientInvoices() {
                         </div>
                       )}
                     </div>
-
                   </div>
                 </div>
               )}
             </div>
-
           </div>
         )}
       </div>
