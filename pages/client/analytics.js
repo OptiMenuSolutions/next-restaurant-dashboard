@@ -350,7 +350,7 @@ function UploadManagerModal({ restaurantId, onClose, onDeleted }) {
     if (!deleting) return;
     const { error } = await supabase.from('upload_sessions').delete().eq('id', deleting.id);
     if (!error) {
-      await supabase.from('activity_logs').insert({ restaurant_id: restaurantId, activity_type: 'pos_upload_deleted', title: 'POS Upload Deleted', subtitle: deleting.filename || 'Unknown file', details: `Deleted ${deleting.row_count} records from ${deleting.date_from} to ${deleting.date_to}`, metadata: { session_id: deleting.id, row_count: deleting.row_count } }).catch(() => {});
+      try { await supabase.from('activity_logs').insert({ restaurant_id: restaurantId, activity_type: 'pos_upload_deleted', title: 'POS Upload Deleted', subtitle: deleting.filename || 'Unknown file', details: `Deleted ${deleting.row_count} records from ${deleting.date_from} to ${deleting.date_to}`, metadata: { session_id: deleting.id, row_count: deleting.row_count } }); } catch {}
       cancelDelete();
       await loadSessions();
       onDeleted();
@@ -765,7 +765,7 @@ export default function AnalyticsPage() {
         if (error) throw error;
         setUploadProgress(Math.min(99, Math.round(((i+CHUNK)/taggedRows.length)*100)));
       }
-      await supabase.from('activity_logs').insert({ restaurant_id: restaurantId, activity_type: 'pos_upload', title: 'POS Data Uploaded', subtitle: pendingFilename, details: `Imported ${normalized.length} records from ${dateFrom} to ${dateTo}`, metadata: { session_id: session.id, row_count: normalized.length, date_from: dateFrom, date_to: dateTo } }).catch(() => {});
+      try { await supabase.from('activity_logs').insert({ restaurant_id: restaurantId, activity_type: 'pos_upload', title: 'POS Data Uploaded', subtitle: pendingFilename, details: `Imported ${normalized.length} records from ${dateFrom} to ${dateTo}`, metadata: { session_id: session.id, row_count: normalized.length, date_from: dateFrom, date_to: dateTo } }); } catch {}
       setUploadProgress(100);
       setUploadSuccessMsg(`Successfully imported ${normalized.length} records across ${[...new Set(normalized.map(r=>r.sale_date))].length} days.`);
       setUploadStep('done');
