@@ -1194,9 +1194,9 @@ export default function ClientDashboard() {
     <>
       <style>{GLOBAL_CSS}</style>
       <style>{`
-        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(4px,.4vw,6px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1),min-height .3s cubic-bezier(.4,0,.2,1);overflow:hidden;}
-        .db-rec-slot.collapsed{opacity:0;flex:0 0 0px!important;min-height:0!important;pointer-events:none;margin:0;}
-        .db-recipe-panel{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease;max-height:0;opacity:0;}
+        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(4px,.4vw,6px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1);overflow:hidden;}
+        .db-rec-slot.collapsed{opacity:0;flex:0 0 0px!important;min-height:0!important;pointer-events:none;margin:0;padding:0;}
+        .db-recipe-panel{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease;max-height:0;opacity:0;flex-shrink:0;}
         .db-recipe-panel.open{max-height:500px;opacity:1;}
         .db-ticket-click{cursor:pointer;transition:border-color .15s,box-shadow .15s;}
         .db-ticket-click:hover{border-color:var(--text-faint);}
@@ -1317,14 +1317,14 @@ export default function ClientDashboard() {
                       <div
                         key={i}
                         className={`db-rec-slot${isCollapsed?' collapsed':''}`}
-                        style={{flex: isSelected ? 1 : 1, minHeight: isCollapsed ? 0 : 'clamp(80px,9vh,110px)'}}
+                        style={{flex:'1 1 0',minHeight:0,overflow:'hidden'}}
                       >
                         <div
                           className={`db-ticket db-ticket-click${isSelected?' active':''}`}
-                          style={{flex:'none'}}
+                          style={{flex:'1 1 0',minHeight:0,overflow:'hidden'}}
                           onClick={() => handleRecClick(i)}
                         >
-                          <div style={{padding:'clamp(6px,.6vh,9px) clamp(7px,.7vw,11px)',display:'flex',flexDirection:'column',gap:0}}>
+                          <div style={{padding:'clamp(6px,.6vh,9px) clamp(7px,.7vw,11px)',display:'flex',flexDirection:'column',gap:0,height:'100%',overflow:'hidden'}}>
                             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'clamp(2px,.2vh,4px)'}}>
                               <div style={{fontSize:'clamp(7px,.6vw,10px)',fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</div>
                               <div style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)'}}>#{i+1}</div>
@@ -1361,13 +1361,13 @@ export default function ClientDashboard() {
               </div>
 
               {/* ── COL 3: Right panel ── */}
-              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
-                {/* Week in Review — top half */}
-                <div style={{flex:'0 0 55%',minHeight:0,overflow:'hidden'}}>
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:0,overflow:'hidden'}}>
+                {/* Week in Review — takes ~60% of height */}
+                <div style={{flex:'0 0 60%',minHeight:0,overflow:'hidden',paddingBottom:'clamp(5px,.5vw,9px)'}}>
                   <WeekInReviewCard restaurantId={restaurantId}/>
                 </div>
-                {/* Bottom: Waste Risk + Price Movement */}
-                <div style={{flex:'0 0 calc(45% - clamp(5px,.5vw,9px))',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+                {/* Bottom: Waste Risk + Price Movement — takes ~40% */}
+                <div style={{flex:'0 0 40%',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
                   <div className="db-card">
                     <div className="db-card-hd">
                       <div className="db-card-title">
