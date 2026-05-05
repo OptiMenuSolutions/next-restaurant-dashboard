@@ -25,6 +25,10 @@ const SHELF_LIFE = {
   corn:4,pea:5,carrot:21,onion:30,garlic:30,potato:21,apple:21,lemon:21,lime:14,
   orange:14,beet:21,celery:14,broccoli:7,cauliflower:7,zucchini:7,pepper:10,
   olive:60,oil:180,flour:180,sugar:365,salt:365,pasta:365,rice:365,vinegar:365,sauce:30,
+  albacore:2,yellowtail:2,toro:1,"torched albacore":2,"tempura lobster":1,
+  "spicy lobster":1,"spicy tuna":2,"spicy lobster salad":1,romanesco:7,
+  "ponzu sauce":30,"romesco sauce":30,"mango sauce":14,"white wine":365,
+  ricotta:14,wasabi:14,"shrimp tempura":2,"sushi rice":365,"arborio rice":365,
 };
 function getShelfLife(name) {
   if (!name) return 14;
@@ -57,13 +61,11 @@ function getWasteUrgencyColor(daysLeft) {
   if (daysLeft <= 2) return "var(--color-amber)";
   return "var(--accent)";
 }
-
 function getTicketMeta(index) {
   if (index === 0) return { label:'PUSH TONIGHT', color:'var(--accent)' };
   if (index === 1) return { label:'RECOMMEND',    color:'var(--color-green)' };
   return              { label:'MENTION',         color:'var(--color-amber)' };
 }
-
 const TICKET_COLORS = ['var(--accent)','var(--color-green)','var(--color-amber)'];
 
 function Sparkline({ points, color, globalMin, globalMax, width=70, height=24 }) {
@@ -112,10 +114,6 @@ const GLOBAL_CSS = `
   .db-waction-item{display:flex;align-items:center;gap:4px;font-size:clamp(9px,.62vw,11px);color:var(--text-muted);}
   .db-waction-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
   .db-waction-val{font-weight:600;}
-  .db-section-hd{font-size:clamp(8px,.58vw,10px);font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:var(--text-faint);padding:clamp(4px,.4vh,6px) 0 clamp(3px,.3vh,5px);flex-shrink:0;}
-  .db-grid-wrap{flex:1;min-height:0;padding:clamp(6px,.6vw,10px) clamp(24px,3vw,60px);gap:0;display:flex;flex-direction:column;overflow:hidden;}
-  .db-row-top{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:0 0 auto;min-height:clamp(220px,28vh,360px);margin-bottom:0;}
-  .db-row-bottom{display:grid;grid-template-columns:clamp(148px,12vw,200px) 1fr 1fr 1fr;gap:clamp(5px,.5vw,9px);flex:0 0 auto;min-height:0;}
   .db-score-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;align-items:center;gap:clamp(4px,.4vh,7px);flex-shrink:0;}
   .db-stats-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
   .db-rest-icon{width:clamp(22px,1.8vw,32px);height:clamp(22px,1.8vw,32px);border-radius:50%;background:var(--accent-bg);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -144,11 +142,6 @@ const GLOBAL_CSS = `
   .db-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);text-align:center;padding:8px;}
   .db-spinner{width:clamp(7px,.62vw,10px);height:clamp(7px,.62vw,10px);border:1.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
   .db-ticket{background:var(--ticket-bg);border:1px solid var(--ticket-border);border-radius:clamp(4px,.35vw,7px);display:flex;flex-direction:column;overflow:hidden;font-family:'Courier New',monospace;animation:fadeIn .3s ease both;position:relative;}
-  .db-ticket:nth-child(2){animation-delay:.08s;}
-  .db-ticket:nth-child(3){animation-delay:.16s;}
-  .db-ticket-inner{flex:1;display:flex;min-height:0;overflow:hidden;}
-  .db-ticket-left{flex:1;padding:clamp(5px,.55vh,8px) clamp(7px,.7vw,11px);display:flex;flex-direction:column;gap:0;border-right:1px dashed var(--border);overflow:hidden;}
-  .db-ticket-right{width:45%;padding:clamp(5px,.55vh,8px) clamp(6px,.6vw,10px);display:flex;flex-direction:column;overflow:hidden;}
   .db-receipt-divider{border:none;border-top:1px dashed var(--border);margin:clamp(2px,.2vh,3px) 0;flex-shrink:0;}
   .db-receipt-component{font-size:clamp(9px,.72vw,12px);color:var(--text-primary);margin-top:4px;font-weight:600;flex-shrink:0;}
   .db-receipt-ingredient{font-size:clamp(8px,.65vw,11px);color:var(--text-secondary);padding-left:10px;line-height:1.7;flex-shrink:0;}
@@ -259,54 +252,6 @@ const SELL_COPY = [
   "A personal favorite of the chef tonight — you won't be disappointed.",
   "Incredibly fresh tonight — this is the one to get.",
 ];
-
-function ThermalTicket({ rec, index, menuItems, wasteRisk }) {
-  if (!rec) return null;
-  const dishName    = rec.title || rec.dish || '';
-  const description = rec.description || rec.reason || '';
-  const sellCopy    = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
-  const { label: ticketLabel, color: ticketColor } = getTicketMeta(index);
-  const dishLower = dishName.toLowerCase().trim();
-  const menuItem = (menuItems||[]).find(m => m.name?.toLowerCase().trim()===dishLower)
-    || (menuItems||[]).find(m => dishLower.includes(m.name?.toLowerCase().trim()) || m.name?.toLowerCase().trim().includes(dishLower));
-  const atRiskNames = new Set((wasteRisk||[]).map(w => w.name?.toLowerCase().trim()));
-  return (
-    <div className="db-ticket">
-      <div className="db-ticket-inner">
-        <div className="db-ticket-left">
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,marginBottom:'clamp(3px,.3vh,5px)'}}>
-            <div style={{fontSize:'clamp(8px,.65vw,11px)',fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</div>
-            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)'}}>#{index+1}</div>
-          </div>
-          <div className="db-receipt-divider"/>
-          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(13px,1.1vw,17px)',fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:'clamp(2px,.2vh,3px)',flexShrink:0}}>{dishName||'—'}</div>
-          <div className="db-receipt-divider"/>
-          {description && <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',lineHeight:1.4,marginBottom:'clamp(2px,.2vh,4px)',flexShrink:0}}>{description}</div>}
-          <div className="db-receipt-divider"/>
-          <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.45,flex:1,overflow:'hidden'}}>
-            <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
-          </div>
-          <div className="db-receipt-footer" style={{marginTop:'clamp(3px,.3vh,5px)'}}>#{String(index+1).padStart(3,'0')} · opti-menu.com</div>
-        </div>
-        <div className="db-ticket-right">
-          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:4,flexShrink:0}}>Recipe</div>
-          <div style={{flex:1,overflowY:'auto'}}>
-            {menuItem?.menu_item_components?.length > 0 ? menuItem.menu_item_components.map((comp,ci) => (
-              <div key={ci}>
-                <div className="db-receipt-component">— {comp.name||`Component ${ci+1}`}</div>
-                {(comp.component_ingredients||[]).map((ci2,ii) => {
-                  const ingName = ci2.ingredients?.name||ci2.name||'';
-                  const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
-                  return <div key={ii} className={`db-receipt-ingredient${isAtRisk?' at-risk':''}`}>&nbsp;&nbsp;· {ingName}{ci2.quantity?` (${ci2.quantity})`:''}{isAtRisk?' ⚠':''}</div>;
-                })}
-              </div>
-            )) : <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',fontFamily:'Courier New,monospace'}}>{dishName?'Recipe not linked':'No dish selected'}</div>}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function WasteRow({ item, router }) {
   const daysLeft = item.daysLeft;
@@ -459,7 +404,6 @@ function WeekInReviewCard({ restaurantId }) {
         </div>
         <span className="db-card-sub">{weekData.length>0?`${weekData[0].date.slice(5).replace('-','/')} – ${weekData[weekData.length-1].date.slice(5).replace('-','/')}`:'7-day summary'}</span>
       </div>
-
       {loading ? <div className="db-empty">Loading...</div> : (
         <>
           {!openDay && (
@@ -481,7 +425,6 @@ function WeekInReviewCard({ restaurantId }) {
               </div>
             </div>
           )}
-
           <div className="wir-days">
             {openDay ? (
               <>
@@ -650,7 +593,6 @@ function MobileWeekInReview({ restaurantId }) {
 
   return (
     <div>
-      {/* Summary stats */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
         {[
           {l:'Extra Sold',v:`${weekExtraSold>=0?'+':''}${weekExtraSold}`,c:weekExtraSold>=0?'var(--color-green)':'var(--color-red)',sub:'vs avg'},
@@ -664,7 +606,6 @@ function MobileWeekInReview({ restaurantId }) {
           </div>
         ))}
       </div>
-      {/* Day rows */}
       {weekData.map(day => {
         const isOpen = openDay === day.date;
         const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
@@ -736,7 +677,6 @@ function MobilePriceMovement({ priceByCategory }) {
   Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<globalMin)globalMin=p; if(p>globalMax)globalMax=p; })));
   if (globalMin===Infinity){globalMin=0;globalMax=1;}
   const catData = selectedCat ? priceByCategory[selectedCat] : null;
-
   return (
     <div>
       {selectedCat && (
@@ -787,6 +727,7 @@ export default function ClientDashboard() {
   const [menuItemsFull, setMenuItemsFull] = useState([]);
   const [wasteShowAll, setWasteShowAll] = useState(false);
   const [mobTab, setMobTab]             = useState('tonight');
+  const [selectedRec, setSelectedRec]   = useState(null);
   const [data, setData] = useState({
     totalInvoices:0,totalIngredients:0,totalMenuItems:0,
     ingredientTrends:[],menuItemAnalysis:[],
@@ -839,7 +780,7 @@ export default function ClientDashboard() {
       const [{data:invoices},{data:ingredients},{data:menuItems},{data:invoiceItems},{data:posSales}]=await Promise.all([
         supabase.from("invoices").select("*").eq("restaurant_id",restId).order("date",{ascending:false}),
         supabase.from("ingredients").select("*").eq("restaurant_id",restId),
-        supabase.from("menu_items").select(`id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,ingredients(id,name,last_price,is_estimated)))`).eq("restaurant_id",restId),
+        supabase.from("menu_items").select(`id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))`).eq("restaurant_id",restId),
         supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id)").eq("invoices.restaurant_id",restId).gte("invoices.date",fromDate).order("invoices(date)",{ascending:true}),
         supabase.from("pos_sales").select("item_name,quantity_sold,sale_date").eq("restaurant_id",restId),
       ]);
@@ -1015,8 +956,6 @@ export default function ClientDashboard() {
         `}</style>
 
         <div className="mob2-root">
-
-          {/* Header */}
           <div className="mob2-header">
             <div className="mob2-logo">Opti<span>Menu</span></div>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -1026,14 +965,11 @@ export default function ClientDashboard() {
               <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true}/>
             </div>
           </div>
-
-          {/* Sub bar — restaurant + date */}
           <div className="mob2-subbar">
             <div>
               <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{restaurantName}</div>
               <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
             </div>
-            {/* OptiScore inline */}
             <div style={{display:'flex',alignItems:'center',gap:8}}>
               <div style={{position:'relative',width:36,height:36,flexShrink:0}}>
                 <svg viewBox="0 0 100 100" width={36} height={36} style={{transform:'rotate(-90deg)'}}>
@@ -1050,8 +986,6 @@ export default function ClientDashboard() {
               </div>
             </div>
           </div>
-
-          {/* Tab bar */}
           <div className="mob2-tabs">
             {MOB_TABS.map(t=>(
               <button key={t.id} className={`mob2-tab${mobTab===t.id?' active':''}`} onClick={()=>setMobTab(t.id)}>
@@ -1060,8 +994,6 @@ export default function ClientDashboard() {
               </button>
             ))}
           </div>
-
-          {/* Content */}
           {loading ? (
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
               <div style={{width:22,height:22,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
@@ -1069,8 +1001,6 @@ export default function ClientDashboard() {
             </div>
           ) : (
             <div className="mob2-scroll">
-
-              {/* ── TONIGHT'S PICKS ── */}
               {mobTab==='tonight' && (
                 <>
                   {aiLoading ? (
@@ -1108,39 +1038,32 @@ export default function ClientDashboard() {
                   )}
                 </>
               )}
-
-              {/* ── METRICS ── */}
               {mobTab==='metrics' && (
-                <>
-                  {/* Key metrics grid */}
-                  <div className="mob2-card">
-                    <div className="mob2-card-title">
-                      <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                      Key Metrics
-                    </div>
-                    <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                      {[
-                        {l:'YTD Spend',        v:fmt(data.totalSpending),                         c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
-                        {l:'Avg Margin',        v:`${data.averageMargin.toFixed(1)}%`,             c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                        {l:'High Margin Items', v:data.highMarginCount||0,                         c:'var(--color-green)', sub:'Above 60% margin'},
-                        {l:'Low Margin Items',  v:data.lowMarginCount,                             c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)', sub:`Below ${LOW_MARGIN_THRESHOLD}% threshold`},
-                        {l:'Menu Items',        v:data.totalMenuItems,                             c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
-                        {l:'Ingredients',       v:data.totalIngredients,                           c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
-                      ].map(({l,v,c,sub})=>(
-                        <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',gap:8}}>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:11,color:'var(--text-muted)'}}>{l}</div>
-                            <div style={{fontSize:10,color:'var(--text-faint)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
-                          </div>
-                          <div style={{fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
-                        </div>
-                      ))}
-                    </div>
+                <div className="mob2-card">
+                  <div className="mob2-card-title">
+                    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                    Key Metrics
                   </div>
-                </>
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {[
+                      {l:'YTD Spend',        v:fmt(data.totalSpending),                         c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
+                      {l:'Avg Margin',        v:`${data.averageMargin.toFixed(1)}%`,             c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
+                      {l:'High Margin Items', v:data.highMarginCount||0,                         c:'var(--color-green)', sub:'Above 60% margin'},
+                      {l:'Low Margin Items',  v:data.lowMarginCount,                             c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)', sub:`Below ${LOW_MARGIN_THRESHOLD}% threshold`},
+                      {l:'Menu Items',        v:data.totalMenuItems,                             c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
+                      {l:'Ingredients',       v:data.totalIngredients,                           c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
+                    ].map(({l,v,c,sub})=>(
+                      <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',gap:8}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:11,color:'var(--text-muted)'}}>{l}</div>
+                          <div style={{fontSize:10,color:'var(--text-faint)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
+                        </div>
+                        <div style={{fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
-
-              {/* ── WASTE RISK ── */}
               {mobTab==='waste' && (
                 <div className="mob2-card">
                   <div className="mob2-card-title">
@@ -1162,8 +1085,6 @@ export default function ClientDashboard() {
                   )}
                 </div>
               )}
-
-              {/* ── WEEK IN REVIEW ── */}
               {mobTab==='week' && (
                 <div className="mob2-card">
                   <div className="mob2-card-title">
@@ -1173,8 +1094,6 @@ export default function ClientDashboard() {
                   <MobileWeekInReview restaurantId={restaurantId}/>
                 </div>
               )}
-
-              {/* ── PRICE MOVEMENT ── */}
               {mobTab==='prices' && (
                 <div className="mob2-card">
                   <div className="mob2-card-title">
@@ -1185,12 +1104,9 @@ export default function ClientDashboard() {
                   <MobilePriceMovement priceByCategory={data.priceByCategory}/>
                 </div>
               )}
-
               <div style={{height:8}}/>
             </div>
           )}
-
-          {/* Bottom nav */}
           <div className="mob2-bottom-nav">
             {[
               {label:'Dashboard', path:'/client/dashboard',     icon:<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>},
@@ -1209,7 +1125,6 @@ export default function ClientDashboard() {
             })}
           </div>
         </div>
-
         <Analytics/><SpeedInsights/>
         {tourProps&&<TourOverlay {...tourProps}/>}
         <TourDataBanner/>
@@ -1238,9 +1153,55 @@ export default function ClientDashboard() {
   const wasteAlertCount=data.wasteRisk.length;
   const recCount=(data.aiRecommendations||[]).length;
 
+  function handleRecClick(i) {
+    setSelectedRec(prev => prev === i ? null : i);
+  }
+
+  function RecipePanel({ rec, menuItems, wasteRisk }) {
+    if (!rec) return null;
+    const dishName = rec.title || rec.dish || '';
+    const dishLower = dishName.toLowerCase().trim();
+    const menuItem = (menuItems||[]).find(m => m.name?.toLowerCase().trim()===dishLower)
+      || (menuItems||[]).find(m => dishLower.includes(m.name?.toLowerCase().trim()) || m.name?.toLowerCase().trim().includes(dishLower));
+    const atRiskNames = new Set((wasteRisk||[]).map(w => w.name?.toLowerCase().trim()));
+    if (!menuItem?.menu_item_components?.length) return (
+      <div style={{padding:'clamp(8px,.8vw,12px)',fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.62vw,11px)',color:'var(--text-faint)'}}>
+        Recipe not linked — add ingredients in Menu Items
+      </div>
+    );
+    return (
+      <div style={{padding:'clamp(8px,.8vw,12px)'}}>
+        <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'clamp(6px,.6vh,10px)',fontFamily:'Inter,sans-serif'}}>Recipe Breakdown</div>
+        {menuItem.menu_item_components.map((comp,ci) => (
+          <div key={ci} style={{marginBottom:'clamp(5px,.5vh,8px)'}}>
+            <div style={{fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',fontWeight:600,fontFamily:'Courier New,monospace',marginBottom:2}}>— {comp.name||`Component ${ci+1}`}</div>
+            {(comp.component_ingredients||[]).map((ci2,ii) => {
+              const ingName = ci2.ingredients?.name||ci2.name||'';
+              const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
+              return (
+                <div key={ii} style={{fontSize:'clamp(8px,.65vw,11px)',color:isAtRisk?'var(--color-red)':'var(--text-secondary)',fontFamily:'Courier New,monospace',paddingLeft:12,lineHeight:1.7,fontWeight:isAtRisk?600:'normal'}}>
+                  &nbsp;&nbsp;· {ingName}{ci2.quantity?` (${ci2.quantity})`:''}{isAtRisk?' ⚠':''}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <>
       <style>{GLOBAL_CSS}</style>
+      <style>{`
+        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(5px,.5vw,8px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1),min-height .3s cubic-bezier(.4,0,.2,1);}
+        .db-rec-slot.collapsed{opacity:0;flex:0!important;min-height:0!important;overflow:hidden;pointer-events:none;}
+        .db-recipe-panel{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease;max-height:0;opacity:0;}
+        .db-recipe-panel.open{max-height:500px;opacity:1;}
+        .db-ticket-click{cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+        .db-ticket-click:hover{border-color:var(--text-faint);}
+        .db-ticket-click.active{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent);}
+      `}</style>
       <div className="db-root">
         <div className="db-topbar">
           <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
@@ -1297,94 +1258,145 @@ export default function ClientDashboard() {
               <div style={{fontSize:'clamp(10px,.78vw,13px)',color:'var(--text-muted)'}}>Loading dashboard...</div>
             </div>
           ):(
-            <div className="db-grid-wrap">
-              <div style={{display:'flex',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,padding:'clamp(6px,.6vw,10px) clamp(24px,3vw,60px)',overflow:'hidden'}}>
-                <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',width:'clamp(148px,12vw,200px)',flexShrink:0}}>
-                  <div className="db-score-card" style={{flex:'0 0 auto'}}>
-                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
-                      <div className="db-rest-icon">
-                        <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
-                      </div>
-                      <div className="db-rest-name">{restaurantName}</div>
-                      <div className="db-rest-sub">Management Dashboard</div>
+            <div style={{flex:1,minHeight:0,display:'flex',gap:'clamp(5px,.5vw,9px)',padding:'clamp(6px,.6vw,10px) clamp(24px,3vw,60px)',overflow:'hidden'}}>
+
+              {/* ── COL 1: Score + Metrics ── */}
+              <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',width:'clamp(148px,12vw,200px)',flexShrink:0}}>
+                <div className="db-score-card" style={{flex:'0 0 auto'}}>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
+                    <div className="db-rest-icon">
+                      <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
                     </div>
-                    <ScoreRing score={data.aiProfitScore.score}/>
+                    <div className="db-rest-name">{restaurantName}</div>
+                    <div className="db-rest-sub">Management Dashboard</div>
                   </div>
-                  <div className="db-stats-card" style={{flex:1}}>
-                    <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
-                    {[
-                      {l:'YTD Spend',        v:fmt(data.totalSpending),                          c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
-                      {l:'Avg Margin',       v:`${data.averageMargin.toFixed(1)}%`,              c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                      {l:'High Margin Items',v:data.highMarginCount||0,                          c:'var(--text-primary)', sub:'Above 60% margin'},
-                      {l:'Low Margin Items', v:data.lowMarginCount,                              c:'var(--text-primary)',   sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}% threshold`:'All items healthy'},
-                      {l:'Menu Items',       v:data.totalMenuItems,                              c:'var(--text-primary)',      sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
-                      {l:'Ingredients',      v:data.totalIngredients,                            c:'var(--text-primary)',sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
-                      {l:'Waste Alerts',     v:data.wasteRisk.length,                            c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)',sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
-                    ].map(({l,v,c,sub})=>(
-                      <div key={l} className="db-pill" style={{flex:1}}>
-                        <div className="db-pill-left"><div className="db-pill-l">{l}</div><div className="db-pill-sub">{sub}</div></div>
-                        <div className="db-pill-v" style={{color:c}}>{v}</div>
-                      </div>
-                    ))}
-                  </div>
+                  <ScoreRing score={data.aiProfitScore.score}/>
                 </div>
-
-                <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
-                  <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flexShrink:0}}>
-                    <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)'}}>Tonight's Recommendations</div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',minHeight:'clamp(200px,24vh,320px)'}}>
-                      {aiLoading?[0,1,2].map(i=>(
-                        <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center',gap:8}}>
-                          <div className="db-spinner"/>
-                          <div style={{fontSize:'clamp(9px,.62vw,11px)',color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing menu...</div>
-                        </div>
-                      )):(data.aiRecommendations||[]).length>0
-                        ?(data.aiRecommendations||[]).slice(0,3).map((rec,i)=>(
-                          <ThermalTicket key={i} rec={rec} index={i} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
-                        ))
-                        :[0,1,2].map(i=>(
-                          <div key={i} className="db-ticket" style={{alignItems:'center',justifyContent:'center'}}>
-                            <div className="db-empty">No recommendations yet</div>
-                          </div>
-                        ))
-                      }
+                <div className="db-stats-card" style={{flex:1}}>
+                  <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
+                  {[
+                    {l:'YTD Spend',   v:fmt(data.totalSpending),             c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
+                    {l:'Avg Margin',  v:`${data.averageMargin.toFixed(1)}%`, c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
+                    {l:'High Margin', v:data.highMarginCount||0,             c:'var(--text-primary)', sub:'Above 60% margin'},
+                    {l:'Low Margin',  v:data.lowMarginCount,                 c:'var(--text-primary)', sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}%`:'All items healthy'},
+                    {l:'Menu Items',  v:data.totalMenuItems,                 c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
+                    {l:'Ingredients', v:data.totalIngredients,               c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
+                    {l:'Waste Alerts',v:data.wasteRisk.length,               c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)', sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
+                  ].map(({l,v,c,sub})=>(
+                    <div key={l} className="db-pill" style={{flex:1}}>
+                      <div className="db-pill-left"><div className="db-pill-l">{l}</div><div className="db-pill-sub">{sub}</div></div>
+                      <div className="db-pill-v" style={{color:c}}>{v}</div>
                     </div>
-                  </div>
-
-                  <div style={{background:'var(--bg-surface)',border:'1px solid var(--border)',borderRadius:'clamp(5px,.4vw,8px)',padding:'clamp(8px,.7vw,14px)',flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-                    <div style={{fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:'var(--text-primary)',fontFamily:"'Inter',sans-serif",letterSpacing:'-.2px',marginBottom:'clamp(8px,.7vh,12px)',paddingBottom:'clamp(5px,.5vh,8px)',borderBottom:'1px solid var(--border-subtle)',flexShrink:0}}>Operations</div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'clamp(5px,.5vw,9px)',flex:1,minHeight:0,overflow:'hidden'}}>
-                      <WeekInReviewCard restaurantId={restaurantId}/>
-                      <div className="db-card">
-                        <div className="db-card-hd">
-                          <div className="db-card-title">
-                            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                            Waste Risk
-                          </div>
-                          <span className="db-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
-                        </div>
-                        <div className="db-waste-list">
-                          {data.wasteRisk.length===0&&<div className="db-empty">No expiring items detected</div>}
-                          {wasteVisible.map((item,i)=><WasteRow key={i} item={item} router={router}/>)}
-                        </div>
-                        {data.wasteRisk.length>WASTE_PREVIEW&&(
-                          <button className="db-waste-view-all" onClick={()=>setWasteShowAll(prev=>!prev)}>
-                            {wasteShowAll?'↑ Show fewer':`↓ View all ${data.wasteRisk.length} at risk`}
-                          </button>
-                        )}
-                        {data.wasteRisk.length>0&&(
-                          <div className="db-legend-strip">
-                            <span><span className="db-legend-dot" style={{background:'var(--color-red)'}}/>Expired / today</span>
-                            <span><span className="db-legend-dot" style={{background:'var(--color-amber)'}}/>2 days</span>
-                            <span><span className="db-legend-dot" style={{background:'var(--accent)'}}/>3–7 days</span>
-                          </div>
-                        )}
-                      </div>
-                      <PriceMovementCard priceByCategory={data.priceByCategory}/>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </div>
+
+              {/* ── COL 2: Tonight's Recommendations (full height, stacked) ── */}
+              <div style={{display:'flex',flexDirection:'column',width:'clamp(210px,21vw,310px)',flexShrink:0,gap:'clamp(4px,.4vw,7px)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,paddingBottom:'clamp(4px,.4vh,7px)',borderBottom:'1px solid var(--border-subtle)'}}>
+                  <div style={{fontSize:'clamp(10px,.75vw,13px)',fontWeight:600,color:'var(--text-primary)'}}>Tonight's Recommendations</div>
+                  {selectedRec!==null&&(
+                    <button onClick={()=>setSelectedRec(null)} style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--accent)',background:'none',border:'none',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>← All</button>
+                  )}
+                </div>
+
+                {aiLoading ? (
+                  [0,1,2].map(i=>(
+                    <div key={i} className="db-ticket" style={{flex:1,alignItems:'center',justifyContent:'center',gap:6,minHeight:'clamp(60px,8vh,90px)'}}>
+                      <div className="db-spinner"/>
+                      <div style={{fontSize:'clamp(8px,.62vw,11px)',color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing...</div>
+                    </div>
+                  ))
+                ) : (data.aiRecommendations||[]).length > 0 ? (
+                  (data.aiRecommendations||[]).slice(0,3).map((rec,i) => {
+                    const {label:ticketLabel,color:ticketColor} = getTicketMeta(i);
+                    const sellCopy = rec.sellCopy||rec.talking_point||SELL_COPY[i%SELL_COPY.length];
+                    const isSelected = selectedRec === i;
+                    const isCollapsed = selectedRec !== null && !isSelected;
+                    return (
+                      <div
+                        key={i}
+                        className={`db-rec-slot${isCollapsed?' collapsed':''}`}
+                        style={{flex: isSelected ? 1 : 1, minHeight: isCollapsed ? 0 : 'clamp(80px,9vh,110px)'}}
+                      >
+                        <div
+                          className={`db-ticket db-ticket-click${isSelected?' active':''}`}
+                          style={{flex:'none'}}
+                          onClick={() => handleRecClick(i)}
+                        >
+                          <div style={{padding:'clamp(6px,.6vh,9px) clamp(7px,.7vw,11px)',display:'flex',flexDirection:'column',gap:0}}>
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'clamp(2px,.2vh,4px)'}}>
+                              <div style={{fontSize:'clamp(7px,.6vw,10px)',fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</div>
+                              <div style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)'}}>#{i+1}</div>
+                            </div>
+                            <div className="db-receipt-divider"/>
+                            <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(11px,.95vw,15px)',fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:'clamp(2px,.2vh,3px)'}}>{rec.title||'—'}</div>
+                            <div className="db-receipt-divider"/>
+                            {rec.description&&<div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.65vw,11px)',color:'var(--text-primary)',lineHeight:1.4,marginBottom:'clamp(2px,.2vh,3px)'}}>{rec.description}</div>}
+                            <div className="db-receipt-divider"/>
+                            <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.65vw,11px)',color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.4}}>
+                              <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
+                            </div>
+                            <div style={{fontSize:'clamp(7px,.5vw,9px)',color:'var(--text-faint)',textAlign:'center',marginTop:'clamp(3px,.3vh,5px)'}}>
+                              {isSelected?'click to collapse':'click for recipe →'}
+                            </div>
+                          </div>
+                        </div>
+                        {/* Recipe slide panel */}
+                        <div className={`db-recipe-panel${isSelected?' open':''}`}>
+                          <div style={{background:'var(--bg-surface)',border:'1px solid var(--accent)',borderRadius:'clamp(4px,.35vw,7px)',overflow:'hidden',overflowY:'auto',maxHeight:'clamp(200px,28vh,380px)'}}>
+                            <RecipePanel rec={rec} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  [0,1,2].map(i=>(
+                    <div key={i} className="db-ticket" style={{flex:1,alignItems:'center',justifyContent:'center',minHeight:'clamp(60px,8vh,90px)'}}>
+                      <div className="db-empty">No recommendations yet</div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* ── COL 3: Right panel ── */}
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+                {/* Week in Review — top half */}
+                <div style={{flex:1,minHeight:0,overflow:'hidden'}}>
+                  <WeekInReviewCard restaurantId={restaurantId}/>
+                </div>
+                {/* Bottom: Waste Risk + Price Movement */}
+                <div style={{flex:1,minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+                  <div className="db-card">
+                    <div className="db-card-hd">
+                      <div className="db-card-title">
+                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        Waste Risk
+                      </div>
+                      <span className="db-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
+                    </div>
+                    <div className="db-waste-list">
+                      {data.wasteRisk.length===0&&<div className="db-empty">No expiring items detected</div>}
+                      {wasteVisible.map((item,i)=><WasteRow key={i} item={item} router={router}/>)}
+                    </div>
+                    {data.wasteRisk.length>WASTE_PREVIEW&&(
+                      <button className="db-waste-view-all" onClick={()=>setWasteShowAll(prev=>!prev)}>
+                        {wasteShowAll?'↑ Show fewer':`↓ View all ${data.wasteRisk.length} at risk`}
+                      </button>
+                    )}
+                    {data.wasteRisk.length>0&&(
+                      <div className="db-legend-strip">
+                        <span><span className="db-legend-dot" style={{background:'var(--color-red)'}}/>Expired / today</span>
+                        <span><span className="db-legend-dot" style={{background:'var(--color-amber)'}}/>2 days</span>
+                        <span><span className="db-legend-dot" style={{background:'var(--accent)'}}/>3–7 days</span>
+                      </div>
+                    )}
+                  </div>
+                  <PriceMovementCard priceByCategory={data.priceByCategory}/>
+                </div>
+              </div>
+
             </div>
           )}
         </div>
