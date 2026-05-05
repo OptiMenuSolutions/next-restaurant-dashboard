@@ -186,9 +186,9 @@ const GLOBAL_CSS = `
   .wir-stat-lbl{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
   .wir-stat-val{font-family:'Playfair Display',serif;font-size:clamp(14px,1.3vw,20px);line-height:1;}
   .wir-stat-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);margin-top:2px;}
-  .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);justify-content:space-between;}
+  .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);justify-content:flex-start;}
   .wir-days::-webkit-scrollbar{width:2px;}
-  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;flex-shrink:0;overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column;}
+  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;overflow:hidden;flex:1 1 0;min-height:0;display:flex;flex-direction:column;}
   .wir-day-row.open{border-color:var(--accent);}
   .wir-day-row:hover:not(.open){border-color:var(--text-faint);}
   .wir-day-header{display:flex;align-items:center;gap:clamp(5px,.5vw,8px);padding:clamp(5px,.5vh,8px) clamp(8px,.7vw,12px);}
@@ -1361,13 +1361,13 @@ export default function ClientDashboard() {
               </div>
 
               {/* ── COL 3: Right panel ── */}
-              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:0,overflow:'hidden'}}>
                 {/* Week in Review — takes ~60% of height */}
                 <div style={{flex:'3 1 0',minHeight:0,overflow:'hidden'}}>
                   <WeekInReviewCard restaurantId={restaurantId}/>
                 </div>
                 {/* Bottom: Waste Risk + Price Movement — takes ~40% */}
-                <div style={{flex:'2 1 0',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
+                <div style={{flex:'2 1 0',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',marginTop:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
                   <div className="db-card">
                     <div className="db-card-hd">
                       <div className="db-card-title">
