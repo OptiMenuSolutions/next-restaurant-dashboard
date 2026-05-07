@@ -114,6 +114,15 @@ export default async function handler(req, res) {
       console.log(`[parse-menu-start] ${fileLabel} Pass 1 done: ${ingredients.length} ingredients, ${dishes.length} dishes`);
     }
 
+    // Deduplicate dishes by normalized name
+    const seenDishes = new Set();
+    const dedupedDishManifest = allDishManifest.filter(d => {
+      const key = d.name.trim().toLowerCase();
+      if (seenDishes.has(key)) return false;
+      seenDishes.add(key);
+      return true;
+    });
+
     // Clean up temp files
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
@@ -134,7 +143,7 @@ export default async function handler(req, res) {
         status: 'pass1_complete',
         pass1_result: {
           ingredients: Object.values(allIngredientMap),
-          dishes: allDishManifest,
+          dishes: dedupedDishManifest,
         },
       })
       .eq('id', jobId);
