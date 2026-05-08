@@ -1,7 +1,6 @@
 // pages/api/menu/parse-menu.js
 // Production two-pass menu parser.
-// Accepts one or more files (images + PDFs) in a single request.
-// All files are merged into one imageContents array before the two-pass parse.
+// Google Vision handles OCR. Claude Haiku handles dish extraction and recipe building.
 // Writes to: ingredients, menu_items, menu_item_components, component_ingredients, menu_categories
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -118,50 +117,72 @@ const ARCHETYPE_SCHEMA_TEXT = Object.entries(ARCHETYPES)
   })
   .join('\n\n');
 
-// ─── PDF → base64 images ──────────────────────────────────────────────────────
+// ─── Google Vision OCR ────────────────────────────────────────────────────────
 
-async function pdfToImages(filePath) {
-  const { fromPath } = await import('pdf2pic');
-  const convert = fromPath(filePath, {
-    density: 150,
-    saveFilename: 'page',
-    savePath: '/tmp',
-    format: 'png',
-    width: 1200,
-    height: 1600,
-  });
-  const images = [];
-  for (let i = 1; i <= 6; i++) {
-    try {
-      const result = await convert(i, { responseType: 'base64' });
-      if (result?.base64) images.push(result.base64);
-      else break;
-    } catch { break; }
+async function extractTextWithVision(filePath) {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY;
+  if (!apiKey) throw new Error('GOOGLE_VISION_API_KEY is not set');
+
+  const imageData = fs.readFileSync(filePath);
+  const base64Image = imageData.toString('base64');
+
+  const response = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { content: base64Image },
+          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+        }],
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Google Vision API error: ${err}`);
   }
-  return images;
+
+  const data = await response.json();
+  const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
+  console.log(`[vision] Extracted ${text.length} characters from ${filePath}`);
+  return text;
 }
 
-// ─── Single file → imageContents array ───────────────────────────────────────
+// ─── Single file → extracted text string ─────────────────────────────────────
 
-async function fileToImageContents(file) {
+async function fileToText(file) {
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
 
   if (isPDF) {
-    const base64Pages = await pdfToImages(file.filepath);
-    return base64Pages.map(b64 => ({
-      type: 'image',
-      source: { type: 'base64', media_type: 'image/png', data: b64 },
-    }));
+    const { fromPath } = await import('pdf2pic');
+    const convert = fromPath(file.filepath, {
+      density: 150,
+      saveFilename: 'page',
+      savePath: '/tmp',
+      format: 'png',
+      width: 1200,
+      height: 1600,
+    });
+    const textParts = [];
+    for (let i = 1; i <= 6; i++) {
+      try {
+        const result = await convert(i, { responseType: 'base64' });
+        if (!result?.base64) break;
+        const tempPath = `/tmp/page_${i}.png`;
+        fs.writeFileSync(tempPath, Buffer.from(result.base64, 'base64'));
+        const pageText = await extractTextWithVision(tempPath);
+        fs.unlinkSync(tempPath);
+        if (pageText) textParts.push(pageText);
+      } catch { break; }
+    }
+    return textParts.join('\n\n--- PAGE BREAK ---\n\n');
   }
 
-  const data = fs.readFileSync(file.filepath);
-  const base64 = data.toString('base64');
-  const mediaType =
-    ext === '.png'  ? 'image/png'  :
-    ext === '.webp' ? 'image/webp' :
-    'image/jpeg';
-  return [{ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } }];
+  return await extractTextWithVision(file.filepath);
 }
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
@@ -169,10 +190,8 @@ async function fileToImageContents(file) {
 function safeParseJSON(text) {
   const cleaned = text.replace(/```json|```/g, '').trim();
 
-  // 1. Happy path
   try { return JSON.parse(cleaned); } catch {}
 
-  // 2. Truncated array — close at last complete object
   const lastComma = cleaned.lastIndexOf('},');
   if (lastComma > 0) {
     try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
@@ -182,7 +201,6 @@ function safeParseJSON(text) {
     try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
   }
 
-  // 3. Truncated pass1 object — salvage complete ingredient/dish entries individually
   function extractObjects(str, arrayKey) {
     const keyIdx = str.indexOf(JSON.stringify(arrayKey));
     if (keyIdx === -1) return [];
@@ -219,7 +237,7 @@ function safeParseJSON(text) {
 
 // ─── Pass 1: Ingredient library + dish manifest ───────────────────────────────
 
-async function pass1_extractAndClassify(imageContents, globalIngredients, restaurantId) {
+async function pass1_extractAndClassify(menuText, globalIngredients, restaurantId) {
   const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
 
   const stream = anthropic.messages.stream({
@@ -228,11 +246,9 @@ async function pass1_extractAndClassify(imageContents, globalIngredients, restau
     system: [
       {
         type: 'text',
-        text: `You are a restaurant menu analyst. In one pass you do two things:
-1. Build a unified ingredient library covering everything needed across all dishes
-2. Classify every dish into a named archetype and record its basic details
+        text: `You are a restaurant menu analyst. You will receive raw text extracted from a menu page by an OCR system. Your job is to identify every dish and every ingredient needed across all dishes.
 
-You reason about what is actually on each plate — not just what is written in descriptions.`,
+CRITICAL: You are working from OCR text — trust it completely. Do not add dishes that are not in the text. Do not invent dishes based on restaurant type or cuisine.`,
       },
       {
         type: 'text',
@@ -242,47 +258,47 @@ You reason about what is actually on each plate — not just what is written in 
     ],
     messages: [{
       role: 'user',
-      content: [
-        ...imageContents,
-        {
-          type: 'text',
-          text: `Scan the entire menu. Return a JSON object with two keys: "ingredients" and "dishes".
+      content: [{
+        type: 'text',
+        text: `Here is the raw OCR text extracted from a menu page:
 
-PART A — INGREDIENT LIBRARY
-Identify every ingredient needed across ALL dishes. For each:
-- Match to global library if possible — use EXACT name and unit
-- If new, propose a canonical name and appropriate unit
-- Assign a realistic US restaurant wholesale unit cost
+---
+${menuText}
+---
+
+Return a JSON object with two keys: "ingredients" and "dishes".
+
+PART A — DISH LIST
+Include a dish only if:
+✓ Its name appears in the text
+✓ A price (number like 16.95) appears next to or near the name
+
+Do NOT include:
+✗ Section headers — lines with no price (e.g. "Entrees", "Burgers", "Salads")
+✗ Add-on lines (e.g. "Add: Beef 10.95") — these modify another dish
+✗ Sauce/flavor variant lists under a dish — these are ingredients
+✗ Items marked "inquire for today's selection" or "ask your server"
+✗ Combo pricing tiers (e.g. "Beef 30.95 · Chicken 27.95") — one dish, not multiple
+✗ Dietary tags like (GF), (V), (VG) — not dish names
+
+SPECIAL CASES:
+- If a dish offers TWO format choices (e.g. "Traditional or Boneless Wings 15.95"), create TWO separate dishes at the same price
+- Strip dietary tags from dish names: "(GF) Salmon" → "Salmon"
+- Title case all dish names: "GRILLED CHICKEN" → "Grilled Chicken"
+- Preserve acronyms: BLT, BBQ, GF, NYC
+
+PART B — INGREDIENT LIBRARY
+For every dish, list all ingredients needed:
+- Match global library ingredients by exact name and unit
+- For new ingredients, propose canonical name and unit
+- Assign realistic US restaurant wholesale unit cost
 - One entry per ingredient — no duplicates
 - Units: lb, oz, each, bunch, slice, sheet, sprig only
+- Include every ingredient mentioned in dish descriptions
+- Break proprietary sauces into likely base components
+- Never omit an ingredient — estimate cost if uncertain
 
-CULINARY INFERENCE — you must infer ingredients not explicitly listed:
-- Any pizza → include All-Purpose Flour, Olive Oil, Active Dry Yeast, Kosher Salt
-- Any burger → include the protein patty AND a bun
-- Any pasta → include the pasta itself
-- Any sandwich → include the bread
-- Any steak/chop/fillet → include that protein cut
-- Any salad → include the greens base
-- Any risotto → include Arborio Rice, Butter, White Wine, stock, Parmesan
-- Any soup → include appropriate stock, aromatics (onion, garlic, butter)
-
-CRITICAL RULES FOR INGREDIENTS:
-- You MUST include every ingredient mentioned in the dish description, no exceptions
-- You MUST include every inferred ingredient based on the dish type above
-- For house-made or proprietary sauces (e.g. "echo bbq sauce", "addams sauce"), break them down into their likely base ingredients — do not skip them
-- For vague descriptors (e.g. "light pink sauce"), infer the most likely components (e.g. tomato sauce, heavy cream) and include those
-- If you are uncertain about a cost, still include the ingredient with your best estimate — never omit an ingredient due to uncertainty
-- Every ingredient must have a non-null estimated_unit_cost, even if it is a rough guess
-
-PART B — DISH MANIFEST
-List every dish with archetype, price, category, and description.
 Available archetypes: ${ARCHETYPE_NAMES}
-
-DISH NAME FORMATTING — apply to every dish name:
-- Use title case: capitalize the first letter of each word, lowercase the rest
-- Exception: preserve all-caps sequences that are clearly acronyms or initialisms (e.g. BLT, BBQ, NYC, PEI, BLTA)
-- If the menu uses ALL CAPS or all lowercase for a name, reformat it — do not copy the raw casing
-- Examples: "GRILLED CHICKEN SANDWICH" → "Grilled Chicken Sandwich", "b.l.t. club" → "BLT Club", "NYC strip steak" → "NYC Strip Steak"
 
 Return ONLY valid JSON:
 {
@@ -290,13 +306,13 @@ Return ONLY valid JSON:
     { "name": "Mozzarella", "unit": "oz", "estimated_unit_cost": 0.25, "is_new": false }
   ],
   "dishes": [
-    { "name": "Red Pizza", "archetype": "Pizza", "price": 22.00, "category": "Pizza", "description": "Marinara, fresh mozzarella, fresh basil" }
+    { "name": "Grilled Chicken Sandwich", "archetype": "Sandwich / Sub", "price": 16.95, "category": "Sandwiches", "description": "Grilled chicken, lettuce, tomato, mayo on a brioche bun" }
   ]
 }`,
-        },
-      ],
+      }],
     }],
   });
+
   const response = await stream.finalMessage();
 
   await logAiUsage({
@@ -307,22 +323,12 @@ Return ONLY valid JSON:
   });
 
   const raw = response.content[0]?.text || '{}';
-
-  console.log(`[pass1] stop_reason: ${response.stop_reason}`);
-  console.log(`[pass1] usage: input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
-  console.log(`[pass1] raw response (first 500 chars): ${raw.slice(0, 500)}`);
-
-  if (response.stop_reason === 'max_tokens') {
-    console.warn('[pass1] WARNING: response was truncated — JSON may be incomplete');
-  }
+  console.log(`[pass1] stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+  if (response.stop_reason === 'max_tokens') console.warn('[pass1] WARNING: response truncated');
 
   const parsed = safeParseJSON(raw);
-
-  if (!parsed) {
-    console.error('[pass1] safeParseJSON returned null. Full raw response:', raw);
-  } else {
-    console.log(`[pass1] parsed: ${parsed.ingredients?.length ?? 0} ingredients, ${parsed.dishes?.length ?? 0} dishes`);
-  }
+  if (!parsed) console.error('[pass1] safeParseJSON returned null. Raw:', raw.slice(0, 500));
+  else console.log(`[pass1] ${parsed.ingredients?.length ?? 0} ingredients, ${parsed.dishes?.length ?? 0} dishes`);
 
   return {
     ingredients: parsed?.ingredients || [],
@@ -370,9 +376,9 @@ RULES:
 - Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
 - Include all required components; omit optional ones only if clearly not applicable
 - Estimate realistic per-serving quantities
-- CRITICAL: Every ingredient mentioned in the dish description MUST appear somewhere in that dish's components — do not drop any described ingredient
-- CRITICAL: Every component marked "always include" in the archetype schema MUST have at least one ingredient
-- If a dish description mentions an ingredient that is not in the library, flag it by using the closest library match and noting the discrepancy in a comment field — do not silently omit it
+- Every ingredient mentioned in the dish description MUST appear in the recipe
+- Every component marked "always include" MUST have at least one ingredient
+- If a described ingredient has no exact library match, use the closest match
 
 Return ONLY a valid JSON array:
 [
@@ -395,6 +401,7 @@ Return ONLY a valid JSON array:
       }],
     }],
   });
+
   const response = await stream.finalMessage();
 
   await logAiUsage({
@@ -404,11 +411,61 @@ Return ONLY a valid JSON array:
     restaurantId,
   });
 
+  console.log(`[pass2] stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+  if (response.stop_reason === 'max_tokens') console.warn('[pass2] WARNING: response truncated');
+
   const raw = response.content[0]?.text || '[]';
   return {
     dishes: safeParseJSON(raw),
     truncated: response.stop_reason === 'max_tokens',
   };
+}
+
+// ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
+
+function validateDishes(rawDishes) {
+  return rawDishes
+    .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
+    .map(d => {
+      const components = (d.components || []).map(c => {
+        const ingredients = (c.ingredients || []).map(i => {
+          const qty = typeof i.quantity === 'number' ? i.quantity : 0;
+          const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
+          return {
+            name: i.name || 'Unknown',
+            unit: i.unit || 'each',
+            quantity: qty,
+            estimated_unit_cost: cost,
+            estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
+          };
+        });
+        const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
+        return {
+          name: c.name || 'Component',
+          ingredients,
+          component_cost: Math.round(componentCost * 10000) / 10000,
+        };
+      });
+
+      const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
+      const price = typeof d.price === 'number' && !isNaN(d.price)
+        ? Math.round(d.price * 100) / 100
+        : null;
+      const estimatedMargin = price && totalEstimatedCost > 0
+        ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
+        : null;
+
+      return {
+        name: d.name.trim(),
+        price,
+        category: typeof d.category === 'string' ? d.category.trim() : 'Other',
+        archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
+        description: typeof d.description === 'string' ? d.description.trim() : null,
+        components,
+        total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
+        estimated_margin: estimatedMargin,
+      };
+    });
 }
 
 // ─── Supabase writes ──────────────────────────────────────────────────────────
@@ -574,55 +631,6 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-// ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
-
-function validateDishes(rawDishes) {
-  return rawDishes
-    .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
-    .map(d => {
-      const components = (d.components || []).map(c => {
-        const ingredients = (c.ingredients || []).map(i => {
-          const qty = typeof i.quantity === 'number' ? i.quantity : 0;
-          const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
-          return {
-            name: i.name || 'Unknown',
-            unit: i.unit || 'each',
-            quantity: qty,
-            estimated_unit_cost: cost,
-            estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
-          };
-        });
-        const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
-        return {
-          name: c.name || 'Component',
-          ingredients,
-          component_cost: Math.round(componentCost * 10000) / 10000,
-        };
-      });
-
-      const totalEstimatedCost = components.reduce((s, c) => s + c.component_cost, 0);
-      const price = typeof d.price === 'number' && !isNaN(d.price)
-        ? Math.round(d.price * 100) / 100
-        : null;
-      const estimatedMargin = price && totalEstimatedCost > 0
-        ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
-        : null;
-
-      return {
-        name: d.name.trim(),
-        price,
-        category: typeof d.category === 'string' ? d.category.trim() : 'Other',
-        archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
-        description: typeof d.description === 'string' ? d.description.trim() : null,
-        components,
-        total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
-        estimated_margin: estimatedMargin,
-      };
-    });
-}
-
-// ─── Main handler ─────────────────────────────────────────────────────────────
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -670,29 +678,25 @@ export default async function handler(req, res) {
     console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
 
-    // ── Process each file sequentially through its own Pass 1 + Pass 2 ──────
-    // This avoids the 10-minute streaming limit by keeping each API call short.
-    // Results are merged before the single Supabase write at the end.
-
-    const allDishes = [];         // validated dish objects from every file
-    const ingredientMap = {};     // name.toLowerCase() → ingredient object (deduped across files)
+    const allDishes = [];
+    const ingredientMap = {};
     let anyTruncated = false;
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
       const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
 
-      console.log(`[parse-menu] ${fileLabel} Converting to images...`);
-      const imageContents = await fileToImageContents(file);
+      console.log(`[parse-menu] ${fileLabel} Running OCR...`);
+      const menuText = await fileToText(file);
 
-      if (imageContents.length === 0) {
-        console.warn(`[parse-menu] ${fileLabel} No images extracted, skipping`);
+      if (!menuText) {
+        console.warn(`[parse-menu] ${fileLabel} No text extracted, skipping`);
         continue;
       }
 
-      console.log(`[parse-menu] ${fileLabel} Pass 1 — extracting ingredients + dishes...`);
+      console.log(`[parse-menu] ${fileLabel} Pass 1...`);
       const { ingredients: fileIngredients, dishes: fileDishManifest } =
-        await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
+        await pass1_extractAndClassify(menuText, globalIngredients, restaurantId);
 
       if (!fileIngredients?.length) {
         console.warn(`[parse-menu] ${fileLabel} No ingredients extracted, skipping`);
@@ -705,13 +709,12 @@ export default async function handler(req, res) {
 
       console.log(`[parse-menu] ${fileLabel} Pass 1 complete: ${fileIngredients.length} ingredients, ${fileDishManifest.length} dishes`);
 
-      // Merge ingredients — last writer wins on cost (fine for estimates)
       for (const ing of fileIngredients) {
         const key = ing.name.trim().toLowerCase();
         if (!ingredientMap[key]) ingredientMap[key] = ing;
       }
 
-      console.log(`[parse-menu] ${fileLabel} Pass 2 — building recipes...`);
+      console.log(`[parse-menu] ${fileLabel} Pass 2...`);
       const { dishes: rawDishes, truncated } =
         await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId);
 
@@ -726,7 +729,6 @@ export default async function handler(req, res) {
       allDishes.push(...validateDishes(rawDishes));
     }
 
-    // Clean up temp files
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
