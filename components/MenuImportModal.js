@@ -230,61 +230,30 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
     if (files.length === 0) return;
     setStage('running');
     setError('');
-    setJobStatus('upload');
+    setJobStatus('processing');
 
     const controller = new AbortController();
     abortRef.current = controller;
 
     try {
-      // ── Step 1: Start (upload + Pass 1) ──────────────────────────────────
       const formData = new FormData();
       formData.append('restaurant_id', restaurantId);
       files.forEach(f => formData.append('file', f));
 
-      const startRes = await fetch('/api/menu/parse-menu-start', {
+      const res = await fetch('/api/menu/parse-menu', {
         method: 'POST',
         body: formData,
         signal: controller.signal,
       });
 
-      const startData = await startRes.json();
+      const data = await res.json();
 
-      if (!startRes.ok || !startData.job_id) {
-        throw new Error(startData.error || 'Failed to start menu parse.');
-      }
-
-      const jobId = startData.job_id;
-      setJobStatus('processing');
-
-      // ── Step 2: Poll until pass1_complete ────────────────────────────────
-      let pollResult = await pollJobStatus(
-        jobId,
-        (s) => setJobStatus(s),
-        controller.signal
-      );
-
-      if (pollResult.status === 'error') {
-        throw new Error(pollResult.error || 'Menu scan failed.');
-      }
-
-      // ── Step 3: Finish (Pass 2 + Supabase writes) ────────────────────────
-      setJobStatus('pass1_complete');
-
-      const finishRes = await fetch('/api/menu/parse-menu-finish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_id: jobId }),
-        signal: controller.signal,
-      });
-
-      const finishData = await finishRes.json();
-
-      if (!finishRes.ok || !finishData.success) {
-        throw new Error(finishData.error || 'Recipe building failed.');
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Failed to import menu.');
       }
 
       setJobStatus('complete');
-      setResult(finishData);
+      setResult(data);
       setStage('done');
 
     } catch (err) {
