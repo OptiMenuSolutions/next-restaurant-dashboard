@@ -1,6 +1,7 @@
 // pages/api/menu/parse-menu-start.js
-// Step 1 of 2: Accept upload, run Pass 1, save job to menu_parse_jobs.
-// Returns job_id immediately. Frontend polls /api/menu/job-status for completion.
+// Step 1 of 2: Accept upload, run Pass 1 + Pass 2 per file, save results to job row.
+// Frontend polls /api/menu/job-status. Once status = 'pass1_complete',
+// frontend calls parse-menu-finish which just writes to Supabase.
 
 import formidable from 'formidable';
 import fs from 'fs';
@@ -9,6 +10,8 @@ import {
   supabase,
   fileToImageContents,
   pass1_extractAndClassify,
+  pass2_buildRecipes,
+  validateDishes,
 } from '../../../lib/menuParser';
 
 export const config = { api: { bodyParser: false } };
@@ -32,11 +35,7 @@ export default async function handler(req, res) {
     ? fields.restaurant_id[0]
     : fields.restaurant_id;
 
-    console.log('[parse-menu-start] restaurant_id:', restaurantId);
-
-  if (!restaurantId) {
-    return res.status(400).json({ error: 'restaurant_id is required' });
-  }
+  if (!restaurantId) return res.status(400).json({ error: 'restaurant_id is required' });
 
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   for (const file of fileList) {
@@ -49,23 +48,17 @@ export default async function handler(req, res) {
     }
   }
 
-  // Create job row immediately so frontend has a job_id to poll
+  // Create job row
   const { data: job, error: jobError } = await supabase
     .from('menu_parse_jobs')
-    .insert({
-      restaurant_id: restaurantId,
-      status: 'processing',
-    })
+    .insert({ restaurant_id: restaurantId, status: 'processing' })
     .select('id')
     .single();
 
-  if (jobError) {
-    return res.status(500).json({ error: 'Failed to create parse job.' });
-  }
+  if (jobError) return res.status(500).json({ error: 'Failed to create parse job.' });
 
   const jobId = job.id;
 
-  // Run Pass 1 — this is the slow part but stays under 60s per file
   try {
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
@@ -73,82 +66,99 @@ export default async function handler(req, res) {
       .order('name');
 
     if (dbError) {
-      await supabase
-        .from('menu_parse_jobs')
-        .update({ status: 'error', error_text: 'Failed to load ingredient library.' })
-        .eq('id', jobId);
+      await supabase.from('menu_parse_jobs').update({ status: 'error', error_text: 'Failed to load ingredient library.' }).eq('id', jobId);
       return res.status(500).json({ error: 'Failed to load ingredient library.', job_id: jobId });
     }
 
-    console.log(`[parse-menu-start] Job: ${jobId} | Restaurant: ${restaurantId} | Files: ${fileList.length}`);
+    console.log(`[parse-menu-start] Job ${jobId} | Restaurant: ${restaurantId} | Files: ${fileList.length}`);
 
-    const allIngredientMap = {};   // deduped across files
-    const allDishManifest = [];    // flat list of all dishes from all files
+    const allValidatedDishes = [];
+    const ingredientMap = {};   // deduped across files
+    let anyTruncated = false;
+
+    // ── Per-file Pass 1 + Pass 2 loop ────────────────────────────────────────
+    // Each file gets its own focused pair of Claude calls.
+    // This keeps each call smaller and more accurate than batching all files.
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
+      const label = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
 
-      console.log(`[parse-menu-start] ${fileLabel} Converting to images...`);
+      console.log(`[parse-menu-start] ${label} Converting to images...`);
       const imageContents = await fileToImageContents(file);
 
       if (imageContents.length === 0) {
-        console.warn(`[parse-menu-start] ${fileLabel} No images extracted, skipping`);
+        console.warn(`[parse-menu-start] ${label} No images extracted, skipping`);
         continue;
       }
 
-      console.log(`[parse-menu-start] ${fileLabel} Running Pass 1...`);
-      const { ingredients, dishes } = await pass1_extractAndClassify(
-        imageContents,
-        globalIngredients,
-        restaurantId
-      );
+      console.log(`[parse-menu-start] ${label} Pass 1...`);
+      const { ingredients: fileIngredients, dishes: fileDishManifest } =
+        await pass1_extractAndClassify(imageContents, globalIngredients, restaurantId);
 
-      for (const ing of ingredients) {
-        const key = ing.name.trim().toLowerCase();
-        if (!allIngredientMap[key]) allIngredientMap[key] = ing;
+      if (!fileIngredients?.length || !fileDishManifest?.length) {
+        console.warn(`[parse-menu-start] ${label} Pass 1 returned nothing, skipping`);
+        continue;
       }
 
-      allDishManifest.push(...dishes);
+      console.log(`[parse-menu-start] ${label} Pass 1: ${fileIngredients.length} ingredients, ${fileDishManifest.length} dishes`);
 
-      console.log(`[parse-menu-start] ${fileLabel} Pass 1 done: ${ingredients.length} ingredients, ${dishes.length} dishes`);
+      // Merge ingredients (last writer wins on cost — fine for estimates)
+      for (const ing of fileIngredients) {
+        const key = ing.name.trim().toLowerCase();
+        if (!ingredientMap[key]) ingredientMap[key] = ing;
+      }
+
+      console.log(`[parse-menu-start] ${label} Pass 2...`);
+      const { dishes: rawDishes, truncated } =
+        await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId);
+
+      if (truncated) anyTruncated = true;
+
+      if (!rawDishes || !Array.isArray(rawDishes)) {
+        console.warn(`[parse-menu-start] ${label} Pass 2 returned nothing, skipping`);
+        continue;
+      }
+
+      const validated = validateDishes(rawDishes);
+      console.log(`[parse-menu-start] ${label} Pass 2: ${validated.length} validated dishes`);
+      allValidatedDishes.push(...validated);
     }
-
-    // Deduplicate dishes by normalized name
-    const seenDishes = new Set();
-    const dedupedDishManifest = allDishManifest.filter(d => {
-      const key = d.name.trim().toLowerCase();
-      if (seenDishes.has(key)) return false;
-      seenDishes.add(key);
-      return true;
-    });
 
     // Clean up temp files
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
 
-    if (allDishManifest.length === 0) {
-      await supabase
-        .from('menu_parse_jobs')
-        .update({ status: 'error', error_text: 'No dishes found in uploaded files.' })
-        .eq('id', jobId);
+    if (allValidatedDishes.length === 0) {
+      await supabase.from('menu_parse_jobs').update({ status: 'error', error_text: 'No dishes found in uploaded files.' }).eq('id', jobId);
       return res.status(200).json({ job_id: jobId, status: 'error', error: 'No dishes found in uploaded files.' });
     }
 
-    // Save Pass 1 result to job row — finish route will pick this up
+    // Deduplicate dishes by normalized name
+    const seenDishes = new Set();
+    const dedupedDishes = allValidatedDishes.filter(d => {
+      const key = d.name.trim().toLowerCase();
+      if (seenDishes.has(key)) return false;
+      seenDishes.add(key);
+      return true;
+    });
+
+    console.log(`[parse-menu-start] Job ${jobId} complete: ${dedupedDishes.length} dishes, ${Object.keys(ingredientMap).length} ingredients`);
+
+    // Save fully validated dishes + ingredient library to job row
+    // parse-menu-finish just reads this and writes to Supabase — no more Claude calls
     await supabase
       .from('menu_parse_jobs')
       .update({
         status: 'pass1_complete',
         pass1_result: {
-          ingredients: Object.values(allIngredientMap),
-          dishes: dedupedDishManifest,
+          validatedDishes: dedupedDishes,
+          ingredientLibrary: Object.values(ingredientMap),
+          truncated: anyTruncated,
         },
       })
       .eq('id', jobId);
-
-    console.log(`[parse-menu-start] Job ${jobId} Pass 1 complete. ${allDishManifest.length} dishes, ${Object.keys(allIngredientMap).length} ingredients.`);
 
     return res.status(200).json({ job_id: jobId, status: 'pass1_complete' });
 
@@ -157,10 +167,7 @@ export default async function handler(req, res) {
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
-    await supabase
-      .from('menu_parse_jobs')
-      .update({ status: 'error', error_text: err.message })
-      .eq('id', jobId);
-    return res.status(500).json({ error: err.message || 'Pass 1 failed.', job_id: jobId });
+    await supabase.from('menu_parse_jobs').update({ status: 'error', error_text: err.message }).eq('id', jobId);
+    return res.status(500).json({ error: err.message || 'Parse failed.', job_id: jobId });
   }
 }
