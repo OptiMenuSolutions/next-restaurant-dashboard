@@ -240,9 +240,9 @@ function safeParseJSON(text) {
 async function pass1_extractAndClassify(menuText, globalIngredients, restaurantId) {
   const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
 
-  const stream = anthropic.messages.stream({
+  const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 64000,
+    max_tokens: 8000,
     system: [
       {
         type: 'text',
@@ -313,8 +313,6 @@ Return ONLY valid JSON:
     }],
   });
 
-  const response = await stream.finalMessage();
-
   await logAiUsage({
     feature: 'menu_import',
     model: 'claude-haiku-4-5-20251001',
@@ -349,9 +347,9 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId)
     )
     .join('\n');
 
-  const stream = anthropic.messages.stream({
+  const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 64000,
+    max_tokens: 12000,
     system: [
       {
         type: 'text',
@@ -387,7 +385,6 @@ Return ONLY a valid JSON array:
     "price": number | null,
     "category": string,
     "archetype": string,
-    "description": string | null,
     "components": [
       {
         "name": string,
@@ -401,8 +398,6 @@ Return ONLY a valid JSON array:
       }],
     }],
   });
-
-  const response = await stream.finalMessage();
 
   await logAiUsage({
     feature: 'menu_import',
