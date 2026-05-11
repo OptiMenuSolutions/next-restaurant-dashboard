@@ -300,10 +300,22 @@ For every dish, list all ingredients needed:
 
 Available archetypes: ${ARCHETYPE_NAMES}
 
+PREP TYPE — classify every ingredient with one of three values:
+- "purchased": raw commodities, produce, dairy, pre-processed proteins (wings, shrimp, calamari),
+  bread products, condiments, oils, spices, and anything that clearly arrives ready to use
+- "scratch": nothing — do not assume any prepared item is made from scratch
+- "ask": compound preparations that restaurants commonly either make in-house OR buy pre-made:
+  sauces (alfredo, marinara, vodka sauce, chimichurri, hollandaise, etc.)
+  dressings, stocks, bases, doughs, batters, spice blends, rubs,
+  specialty preparations (mashed potatoes, risotto base, guacamole, etc.)
+
+When in doubt between "purchased" and "ask", use "ask".
+
 Return ONLY valid JSON:
 {
   "ingredients": [
-    { "name": "Mozzarella", "unit": "oz", "estimated_unit_cost": 0.25, "is_new": false }
+    { "name": "Mozzarella", "unit": "oz", "estimated_unit_cost": 0.25, "is_new": false, "prep_type": "purchased" },
+    { "name": "Alfredo Sauce", "unit": "oz", "estimated_unit_cost": 1.00, "is_new": true, "prep_type": "ask" }
   ],
   "dishes": [
     { "name": "Grilled Chicken Sandwich", "archetype": "Sandwich / Sub", "price": 16.95, "category": "Sandwiches", "description": "Grilled chicken, lettuce, tomato, mayo on a brioche bun" }
