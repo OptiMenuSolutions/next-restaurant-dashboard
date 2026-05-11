@@ -675,7 +675,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'Failed to load ingredient library.' });
     }
 
-    console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length}`);
+    console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Vision key: ${process.env.GOOGLE_VISION_API_KEY ? 'SET' : 'MISSING'}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
 
     const allDishes = [];
