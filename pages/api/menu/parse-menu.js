@@ -334,7 +334,7 @@ Return ONLY valid JSON:
   };
 }
 
-// ─── Pass 2: Build recipes (parallel, one call per dish) ─────────────────────
+// ─── Pass 2: Build recipes (batched parallel, 5 dishes at a time) ─────────────
 
 async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId) {
   const libraryRef = ingredientLibrary
@@ -353,19 +353,18 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId)
     },
   ];
 
-  const results = await Promise.all(
-    dishManifest.map(async (dish) => {
-      const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}`;
+  const buildDish = async (dish) => {
+    const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}`;
 
-      const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1200,
-        system: systemPrompt,
-        messages: [{
-          role: 'user',
-          content: [{
-            type: 'text',
-            text: `Build a complete recipe for this dish. Use archetype schema for components.
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1200,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: [{
+          type: 'text',
+          text: `Build a complete recipe for this dish. Use archetype schema for components.
 
 DISH: ${dishLine}
 
@@ -392,26 +391,35 @@ Return ONLY a valid JSON object (not an array):
     }
   ]
 }`,
-          }],
         }],
-      });
+      }],
+    });
 
-      await logAiUsage({
-        feature: 'menu_import',
-        model: 'claude-haiku-4-5-20251001',
-        usage: response.usage,
-        restaurantId,
-      });
+    await logAiUsage({
+      feature: 'menu_import',
+      model: 'claude-haiku-4-5-20251001',
+      usage: response.usage,
+      restaurantId,
+    });
 
-      const raw = response.content[0]?.text || '{}';
-      const parsed = safeParseJSON(raw);
-      if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
-      return parsed;
-    })
-  );
+    const raw = response.content[0]?.text || '{}';
+    const parsed = safeParseJSON(raw);
+    if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
+    return parsed;
+  };
 
-  const dishes = results.filter(Boolean);
-  console.log(`[pass2] ${dishes.length}/${dishManifest.length} dishes built in parallel`);
+  const allResults = [];
+  const batchSize = 5;
+
+  for (let i = 0; i < dishManifest.length; i += batchSize) {
+    const batch = dishManifest.slice(i, i + batchSize);
+    console.log(`[pass2] Batch ${Math.floor(i / batchSize) + 1}: dishes ${i + 1}–${Math.min(i + batchSize, dishManifest.length)}`);
+    const batchResults = await Promise.all(batch.map(buildDish));
+    allResults.push(...batchResults);
+  }
+
+  const dishes = allResults.filter(Boolean);
+  console.log(`[pass2] ${dishes.length}/${dishManifest.length} dishes built`);
 
   return {
     dishes,
