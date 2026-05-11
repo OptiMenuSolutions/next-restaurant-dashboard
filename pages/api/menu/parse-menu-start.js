@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   supabase,
-  fileToImageContents,
+  fileToText,
   pass1_extractAndClassify,
   pass2_buildRecipes,
   validateDishes,
