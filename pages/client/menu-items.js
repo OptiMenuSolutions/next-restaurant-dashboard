@@ -352,7 +352,7 @@ export default function ClientMenuItems() {
         return { id: ci.id, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit, unitCost, standardUnit: ing?.unit || 'unit', totalCost, hasPrice: unitCost > 0, isEstimated: ing?.is_estimated === true };
       });
       const calculatedCost = processedIngs.reduce((s, i) => s + i.totalCost, 0);
-      return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: effectiveCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
+      return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: calculatedCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
     });
     setSelectedItemData({ item, ingredients: ings || [], components: processedComps, costHistory: history || [] });
     setOptimizedPrice(null); setMultipliers({}); setExpandedComponents(new Set());
