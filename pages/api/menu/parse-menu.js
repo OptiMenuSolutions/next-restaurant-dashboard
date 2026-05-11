@@ -687,7 +687,9 @@ export default async function handler(req, res) {
       const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
 
       console.log(`[parse-menu] ${fileLabel} Running OCR...`);
+      const t0 = Date.now();
       const menuText = await fileToText(file);
+      console.log(`[parse-menu] ${fileLabel} OCR done in ${Date.now() - t0}ms`);
 
       if (!menuText) {
         console.warn(`[parse-menu] ${fileLabel} No text extracted, skipping`);
@@ -695,8 +697,10 @@ export default async function handler(req, res) {
       }
 
       console.log(`[parse-menu] ${fileLabel} Pass 1...`);
+      const t1 = Date.now();
       const { ingredients: fileIngredients, dishes: fileDishManifest } =
         await pass1_extractAndClassify(menuText, globalIngredients, restaurantId);
+      console.log(`[parse-menu] ${fileLabel} Pass 1 done in ${Date.now() - t1}ms`);
 
       if (!fileIngredients?.length) {
         console.warn(`[parse-menu] ${fileLabel} No ingredients extracted, skipping`);
@@ -715,8 +719,10 @@ export default async function handler(req, res) {
       }
 
       console.log(`[parse-menu] ${fileLabel} Pass 2...`);
+      const t2 = Date.now();
       const { dishes: rawDishes, truncated } =
         await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId);
+      console.log(`[parse-menu] ${fileLabel} Pass 2 done in ${Date.now() - t2}ms`);
 
       if (truncated) anyTruncated = true;
 
