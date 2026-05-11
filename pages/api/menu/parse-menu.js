@@ -334,41 +334,40 @@ Return ONLY valid JSON:
   };
 }
 
-// ─── Pass 2: Build recipes ────────────────────────────────────────────────────
+// ─── Pass 2: Build recipes (parallel, one call per dish) ─────────────────────
 
 async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId) {
   const libraryRef = ingredientLibrary
     .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
     .join('\n');
 
-  const dishList = dishManifest
-    .map((d, idx) =>
-      `${idx + 1}. "${d.name}" | archetype: ${d.archetype} | price: ${d.price ?? 'unknown'} | category: ${d.category || 'unknown'} | description: ${d.description || 'none'}`
-    )
-    .join('\n');
+  const systemPrompt = [
+    {
+      type: 'text',
+      text: `You are a restaurant recipe builder. Build complete recipes using only the provided ingredient library and archetype component schemas. Never invent ingredients or costs outside the library.`,
+    },
+    {
+      type: 'text',
+      text: `INGREDIENT LIBRARY — copy name, unit, and cost exactly:\n\n${libraryRef}\n\n${'━'.repeat(48)}\nARCHETYPE COMPONENT SCHEMAS\n${'━'.repeat(48)}\n\n${ARCHETYPE_SCHEMA_TEXT}`,
+      cache_control: { type: 'ephemeral' },
+    },
+  ];
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 12000,
-    system: [
-      {
-        type: 'text',
-        text: `You are a restaurant recipe builder. Build complete recipes using only the provided ingredient library and archetype component schemas. Never invent ingredients or costs outside the library.`,
-      },
-      {
-        type: 'text',
-        text: `INGREDIENT LIBRARY — copy name, unit, and cost exactly:\n\n${libraryRef}\n\n${'━'.repeat(48)}\nARCHETYPE COMPONENT SCHEMAS\n${'━'.repeat(48)}\n\n${ARCHETYPE_SCHEMA_TEXT}`,
-        cache_control: { type: 'ephemeral' },
-      },
-    ],
-    messages: [{
-      role: 'user',
-      content: [{
-        type: 'text',
-        text: `Build a complete recipe for every dish. Use archetype schema for components.
+  const results = await Promise.all(
+    dishManifest.map(async (dish) => {
+      const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}`;
 
-DISHES:
-${dishList}
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: [{
+            type: 'text',
+            text: `Build a complete recipe for this dish. Use archetype schema for components.
+
+DISH: ${dishLine}
 
 RULES:
 - Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
@@ -378,41 +377,45 @@ RULES:
 - Every component marked "always include" MUST have at least one ingredient
 - If a described ingredient has no exact library match, use the closest match
 
-Return ONLY a valid JSON array:
-[
-  {
-    "name": string,
-    "price": number | null,
-    "category": string,
-    "archetype": string,
-    "components": [
-      {
-        "name": string,
-        "ingredients": [
-          { "name": string, "unit": string, "quantity": number, "estimated_unit_cost": number }
-        ]
-      }
-    ]
-  }
-]`,
-      }],
-    }],
-  });
+Return ONLY a valid JSON object (not an array):
+{
+  "name": string,
+  "price": number | null,
+  "category": string,
+  "archetype": string,
+  "components": [
+    {
+      "name": string,
+      "ingredients": [
+        { "name": string, "unit": string, "quantity": number, "estimated_unit_cost": number }
+      ]
+    }
+  ]
+}`,
+          }],
+        }],
+      });
 
-  await logAiUsage({
-    feature: 'menu_import',
-    model: 'claude-haiku-4-5-20251001',
-    usage: response.usage,
-    restaurantId,
-  });
+      await logAiUsage({
+        feature: 'menu_import',
+        model: 'claude-haiku-4-5-20251001',
+        usage: response.usage,
+        restaurantId,
+      });
 
-  console.log(`[pass2] stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
-  if (response.stop_reason === 'max_tokens') console.warn('[pass2] WARNING: response truncated');
+      const raw = response.content[0]?.text || '{}';
+      const parsed = safeParseJSON(raw);
+      if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
+      return parsed;
+    })
+  );
 
-  const raw = response.content[0]?.text || '[]';
+  const dishes = results.filter(Boolean);
+  console.log(`[pass2] ${dishes.length}/${dishManifest.length} dishes built in parallel`);
+
   return {
-    dishes: safeParseJSON(raw),
-    truncated: response.stop_reason === 'max_tokens',
+    dishes,
+    truncated: false,
   };
 }
 
