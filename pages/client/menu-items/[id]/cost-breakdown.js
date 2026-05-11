@@ -125,7 +125,7 @@ export default function MenuItemCostBreakdown() {
                   recipeQuantity,
                   recipeUnit,
                   ingredientCost,
-                  ingredientName
+                  ingredient?.unit
                 );
               } else {
                 console.warn('⚠️ calculateStandardizedCost function not available, using simple calculation');

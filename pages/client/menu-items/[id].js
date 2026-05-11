@@ -160,7 +160,7 @@ export default function MenuItemDetail() {
                     recipeQuantity,
                     recipeUnit,
                     ingredientCost,
-                    ingredientName
+                    ingredient?.unit
                   );
                 } else {
                   calculatedCost = recipeQuantity * ingredientCost;

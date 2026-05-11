@@ -348,11 +348,10 @@ export default function ClientMenuItems() {
         const ing = ci.ingredients;
         const unitCost = ing?.last_price || 0;
         let totalCost = 0;
-        if (unitCost > 0) { try { const calc = typeof calculateStandardizedCost === 'function' ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.name) : null; totalCost = (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : 0; } catch { totalCost = 0; } }
+        if (unitCost > 0) { try { const calc = typeof calculateStandardizedCost === 'function' ? calculateStandardizedCost(ci.quantity, ci.unit, unitCost, ing?.unit) : null; totalCost = (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : 0; } catch { totalCost = 0; } }
         return { id: ci.id, ingredientId: ing?.id, name: ing?.name || 'Unknown', quantity: ci.quantity, unit: ci.unit, unitCost, standardUnit: ing?.unit || 'unit', totalCost, hasPrice: unitCost > 0, isEstimated: ing?.is_estimated === true };
       });
       const calculatedCost = processedIngs.reduce((s, i) => s + i.totalCost, 0);
-      const effectiveCost = (c.cost > 0 && calculatedCost > c.cost * 3) ? c.cost : calculatedCost;
       return { id: c.id, name: c.name, storedCost: c.cost || 0, calculatedCost: effectiveCost, ingredients: processedIngs, ingredientCount: processedIngs.length };
     });
     setSelectedItemData({ item, ingredients: ings || [], components: processedComps, costHistory: history || [] });
