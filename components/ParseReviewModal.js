@@ -196,9 +196,21 @@ const CSS = `
   .prm-unit-input {
     background: transparent; border: none; outline: none;
     font-family: 'Inter', sans-serif; font-size: 12px; color: #6a6560;
-    text-align: right; width: 100%;
+    text-align: right; width: 100%; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
   }
   .prm-unit-input:focus { color: #9a9490; }
+  .prm-unit-select {
+    background: transparent; border: none; outline: none;
+    font-family: 'Inter', sans-serif; font-size: 12px; color: #6a6560;
+    text-align: right; width: 100%; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4' viewBox='0 0 6 4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%234a4845'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 2px center;
+    padding-right: 12px;
+  }
+  .prm-unit-select:focus { color: #d8d4ce; }
+  .prm-unit-select option { background: #1e1d1b; color: #d8d4ce; }
   .prm-ing-del {
     background: none; border: none; color: #2e2c29; cursor: pointer;
     font-size: 13px; padding: 0; line-height: 1; transition: color .15s;
@@ -406,26 +418,20 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   function updateIng(ci, ii, field, val) {
     if (field === 'unit') {
-      let converted = true;
       setDishes(prev => {
         const d = deepClone(prev);
         const ing = d[current].components[ci].ingredients[ii];
-        const oldUnit = ing.unit;
-        const result = convertUnitCost(oldUnit, val, ing.estimated_unit_cost);
+        const { newCost, converted } = convertUnitCost(ing.unit, val, ing.estimated_unit_cost);
         ing.unit = val;
-        ing.estimated_unit_cost = result.newCost;
-        converted = result.converted;
-        return d;
-      });
-      // Run warning update after dishes state settles
-      setTimeout(() => {
+        ing.estimated_unit_cost = newCost;
         const warnKey = `${current}-${ci}-${ii}`;
-        setUnitWarnings(prev => {
-          const s = new Set(prev);
+        setUnitWarnings(ws => {
+          const s = new Set(ws);
           converted ? s.delete(warnKey) : s.add(warnKey);
           return s;
         });
-      }, 0);
+        return d;
+      });
     } else {
       setDishes(prev => { const d = deepClone(prev); d[current].components[ci].ingredients[ii][field] = val; return d; });
       if (field === 'estimated_unit_cost') {
@@ -600,8 +606,32 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   <span className="prm-purchased-label">Purchased as finished product — matches invoice line item</span>
                   <div className="prm-purchased-inputs">
                     <span className="prm-purchased-field-lbl">Unit</span>
-                    <input className="prm-purchased-unit-input" value={purchasedIng.unit}
-                      onChange={e => updateIng(ci, 0, 'unit', e.target.value)} />
+                    <select
+                      className="prm-unit-select"
+                      style={{ background: '#1a1408', border: '1px solid #3a2a10', borderRadius: 4, padding: '5px 20px 5px 8px', width: 80, color: '#9a9490' }}
+                      value={purchasedIng.unit}
+                      onChange={e => updateIng(ci, 0, 'unit', e.target.value)}
+                    >
+                      <optgroup label="Weight">
+                        <option value="oz">oz</option>
+                        <option value="lb">lb</option>
+                        <option value="g">g</option>
+                        <option value="kg">kg</option>
+                      </optgroup>
+                      <optgroup label="Volume">
+                        <option value="fl_oz">fl oz</option>
+                        <option value="cup">cup</option>
+                        <option value="ml">ml</option>
+                        <option value="l">l</option>
+                      </optgroup>
+                      <optgroup label="Count">
+                        <option value="each">each</option>
+                        <option value="bunch">bunch</option>
+                        <option value="slice">slice</option>
+                        <option value="sprig">sprig</option>
+                        <option value="sheet">sheet</option>
+                      </optgroup>
+                    </select>
                     <span className="prm-purchased-field-lbl">Cost/$</span>
                     <input className="prm-purchased-cost-input" type="number" step="0.01" min="0"
                       value={purchasedIng.estimated_unit_cost}
@@ -646,8 +676,31 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                         <input className="prm-qty-input" type="number" step="0.01" min="0" value={ing.quantity}
                           onChange={e => updateIng(ci, ii, 'quantity', parseFloat(e.target.value) || 0)} />
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-                          <input className="prm-unit-input" value={ing.unit}
-                            onChange={e => updateIng(ci, ii, 'unit', e.target.value)} />
+                          <select
+                            className="prm-unit-select"
+                            value={ing.unit}
+                            onChange={e => updateIng(ci, ii, 'unit', e.target.value)}
+                          >
+                            <optgroup label="Weight">
+                              <option value="oz">oz</option>
+                              <option value="lb">lb</option>
+                              <option value="g">g</option>
+                              <option value="kg">kg</option>
+                            </optgroup>
+                            <optgroup label="Volume">
+                              <option value="fl_oz">fl oz</option>
+                              <option value="cup">cup</option>
+                              <option value="ml">ml</option>
+                              <option value="l">l</option>
+                            </optgroup>
+                            <optgroup label="Count">
+                              <option value="each">each</option>
+                              <option value="bunch">bunch</option>
+                              <option value="slice">slice</option>
+                              <option value="sprig">sprig</option>
+                              <option value="sheet">sheet</option>
+                            </optgroup>
+                          </select>
                           {unitWarnings.has(`${current}-${ci}-${ii}`) && (
                             <span className="prm-unit-warn" title="Unit conversion not possible — verify cost manually">⚠</span>
                           )}
