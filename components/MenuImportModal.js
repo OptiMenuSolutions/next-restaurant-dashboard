@@ -166,7 +166,7 @@ async function pollJobStatus(jobId, onStepChange, signal) {
   }
 }
 
-export default function MenuImportModal({ restaurantId, onClose, onImported }) {
+export default function MenuImportModal({ restaurantId, onClose, onImported, onReviewReady }) {
   const [files, setFiles] = useState([]);
   const [stage, setStage] = useState('idle'); // idle | running | done | error
   const [jobStatus, setJobStatus] = useState(''); // tracks current step label
@@ -240,7 +240,7 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
       formData.append('restaurant_id', restaurantId);
       files.forEach(f => formData.append('file', f));
 
-      const res = await fetch('/api/menu/parse-menu', {
+      const res = await fetch('/api/menu/parse-menu?review=true', {
         method: 'POST',
         body: formData,
         signal: controller.signal,
@@ -253,8 +253,13 @@ export default function MenuImportModal({ restaurantId, onClose, onImported }) {
       }
 
       setJobStatus('complete');
-      setResult(data);
-      setStage('done');
+      if (data.review && onReviewReady) {
+        // Hand off to ParseReviewModal — don't show success screen
+        onReviewReady({ dishes: data.dishes, ingredientLibrary: data.ingredient_library });
+      } else {
+        setResult(data);
+        setStage('done');
+      }
 
     } catch (err) {
       if (err.name === 'AbortError') return;

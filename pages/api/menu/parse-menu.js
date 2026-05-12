@@ -764,12 +764,40 @@ export default async function handler(req, res) {
     const mergedIngredientLibrary = Object.values(ingredientMap);
 
     console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients`);
+    const reviewMode = req.query.review === 'true';
+    const withMargin = allDishes.filter(d => d.estimated_margin !== null);
+
+    // Review mode: skip Supabase write, return raw dishes for human review
+    if (reviewMode) {
+      console.log(`[parse-menu] Review mode — skipping Supabase write`);
+      return res.status(200).json({
+        success: true,
+        review: true,
+        dishes: allDishes,
+        ingredient_library: mergedIngredientLibrary,
+        count: allDishes.length,
+        truncated: anyTruncated,
+        files_processed: fileList.length,
+        summary: {
+          total_items: allDishes.length,
+          categories: [...new Set(allDishes.map(d => d.category))].sort(),
+          archetypes_used: [...new Set(allDishes.map(d => d.archetype))].sort(),
+          avg_estimated_cost:
+            allDishes.length > 0
+              ? Math.round(allDishes.reduce((s, d) => s + d.total_estimated_cost, 0) / allDishes.length * 100) / 100
+              : 0,
+          avg_estimated_margin:
+            withMargin.length > 0
+              ? Math.round(withMargin.reduce((s, d) => s + d.estimated_margin, 0) / withMargin.length * 10) / 10
+              : null,
+        },
+      });
+    }
+
     console.log(`[parse-menu] Writing to Supabase...`);
 
     const saveResults = await saveToSupabase(restaurantId, allDishes, mergedIngredientLibrary);
     console.log('[parse-menu] Save complete:', saveResults);
-
-    const withMargin = allDishes.filter(d => d.estimated_margin !== null);
 
     return res.status(200).json({
       success: true,

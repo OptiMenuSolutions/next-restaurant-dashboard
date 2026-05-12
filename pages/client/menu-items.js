@@ -11,6 +11,7 @@ import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
+import ParseReviewModal from '../../components/ParseReviewModal';
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
@@ -290,9 +291,11 @@ export default function ClientMenuItems() {
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [unsavedCallback, setUnsavedCallback] = useState(null);
   const [mobTab, setMobTab] = useState('menu');
+  const [reviewData, setReviewData] = useState(null); // { dishes, ingredientLibrary }
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
+
 
   useEffect(() => { init(); }, []);
   useEffect(() => { if (restaurantId && !isTour) fetchMenuItems(); }, [restaurantId]);
@@ -1211,7 +1214,17 @@ export default function ClientMenuItems() {
           </div>
         )}
 
-        {showImportModal && <MenuImportModal restaurantId={restaurantId} onClose={() => setShowImportModal(false)} onImported={() => { setShowImportModal(false); fetchMenuItems(); }} />}
+        {showImportModal && (
+          <MenuImportModal
+            restaurantId={restaurantId}
+            onClose={() => setShowImportModal(false)}
+            onImported={() => { setShowImportModal(false); fetchMenuItems(); }}
+            onReviewReady={({ dishes, ingredientLibrary }) => {
+              setShowImportModal(false);
+              setReviewData({ dishes, ingredientLibrary });
+            }}
+          />
+        )}
         {tourProps && <TourOverlay {...tourProps} />}
         <TourDataBanner />
       </>
@@ -1414,10 +1427,32 @@ export default function ClientMenuItems() {
           </div>
         )}
 
-        {showImportModal && <MenuImportModal restaurantId={restaurantId} onClose={() => setShowImportModal(false)} onImported={() => { setShowImportModal(false); fetchMenuItems(); }} />}
+        {showImportModal && (
+          <MenuImportModal
+            restaurantId={restaurantId}
+            onClose={() => setShowImportModal(false)}
+            onImported={() => { setShowImportModal(false); fetchMenuItems(); }}
+            onReviewReady={({ dishes, ingredientLibrary }) => {
+              setShowImportModal(false);
+              setReviewData({ dishes, ingredientLibrary });
+            }}
+          />
+        )}
       </div>
       {tourProps && <TourOverlay {...tourProps} />}
       <TourDataBanner />
+      {reviewData && (
+        <ParseReviewModal
+          dishes={reviewData.dishes}
+          ingredientLibrary={reviewData.ingredientLibrary}
+          restaurantId={restaurantId}
+          onCommitted={() => {
+            setReviewData(null);
+            fetchMenuItems();
+          }}
+          onClose={() => setReviewData(null)}
+        />
+      )}
     </>
   );
 }
