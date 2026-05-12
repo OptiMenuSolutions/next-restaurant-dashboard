@@ -764,7 +764,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
         {commitError && <div className="prm-commit-err">⚠ {commitError}</div>}
         <button className="prm-btn prm-btn-confirm" style={{ fontSize: 14, padding: '11px 32px' }}
           onClick={handleCommit} disabled={committing}>
-          {committing ? <><span className="prm-spinner" />Writing to database...</> : 'Commit to Supabase'}
+          {committing ? <><span className="prm-spinner" />Saving...</> : 'Save to Menu'}
         </button>
         <button className="prm-btn prm-btn-ghost" style={{ marginTop: 10 }}
           onClick={() => setView('review')} disabled={committing}>
