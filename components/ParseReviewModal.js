@@ -371,6 +371,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   const [acSearch, setAcSearch] = useState({});
   const [acOpen, setAcOpen] = useState({});
   const acTimers = useRef({});
+  const acMouseDown = useRef(false);
   // unitWarnings: set of keys `${dishIdx}-${ci}-${ii}` where unit conversion wasn't possible
   const [unitWarnings, setUnitWarnings] = useState(new Set());
 
@@ -524,10 +525,14 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   }
 
   function closeAc(key) {
-    acTimers.current[key] = setTimeout(() => setAcOpen(prev => ({ ...prev, [key]: false })), 150);
+    // Only close if the mouse isn't currently held down on the dropdown
+    if (!acMouseDown.current) {
+      setAcOpen(prev => ({ ...prev, [key]: false }));
+      setAcSearch(prev => ({ ...prev, [key]: '' }));
+    }
   }
 
-  function cancelCloseAc(key) { clearTimeout(acTimers.current[key]); }
+  function cancelCloseAc() { acMouseDown.current = false; }
 
   // ── Confirm / commit ──────────────────────────────────────────────────────
 
@@ -663,9 +668,17 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                             onBlur={() => closeAc(key)}
                           />
                           {isOpen && (
-                            <div className="prm-ac-dropdown" onMouseDown={e => e.preventDefault()}>
+                            <div
+                              className="prm-ac-dropdown"
+                              onMouseDown={() => { acMouseDown.current = true; }}
+                              onMouseUp={() => { acMouseDown.current = false; }}
+                            >
                               {acResults.map((lib, ri) => (
-                                <div key={ri} className="prm-ac-item" onMouseDown={() => { cancelCloseAc(key); selectAcItem(ci, ii, lib); }}>
+                                <div
+                                  key={ri}
+                                  className="prm-ac-item"
+                                  onClick={() => { selectAcItem(ci, ii, lib); cancelCloseAc(); }}
+                                >
                                   <span className="prm-ac-name">{lib.name}</span>
                                   <span className="prm-ac-meta">{lib.unit} · ${lib.estimated_unit_cost?.toFixed(2) ?? '—'}/{lib.unit}</span>
                                 </div>
