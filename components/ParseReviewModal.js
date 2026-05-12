@@ -11,13 +11,18 @@ const CSS = `
   @keyframes prm-spin { to { transform: rotate(360deg); } }
 
   .prm-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.88);
-    z-index: 300; display: flex; align-items: stretch; justify-content: center;
-    animation: prm-fadein .2s ease;
+    position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    z-index: 300; display: flex; align-items: center; justify-content: center;
+    padding: 24px; animation: prm-fadein .2s ease;
   }
   .prm-shell {
-    width: 100%; max-width: 1100px; display: flex; flex-direction: column;
-    background: #111110; font-family: 'Inter', sans-serif;
+    width: 100%; max-width: 860px; height: 90vh; max-height: 780px;
+    display: flex; flex-direction: column;
+    background: #161514; border: 1px solid #2e2c29;
+    border-radius: 14px; overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 24px 64px rgba(0,0,0,.7);
   }
 
   /* ── Top bar ── */
@@ -86,19 +91,15 @@ const CSS = `
   .prm-badge-price { background: #0d2018; color: #4ecb72; border: 1px solid #1a3828; }
   .prm-badge-margin-ok { background: #0d2018; color: #4ecb72; border: 1px solid #1a3828; }
   .prm-badge-margin-warn { background: #240e0e; color: #e06060; border: 1px solid #3a1818; }
-  .prm-badge-archetype { background: #1a1917; color: #7a7570; border: 1px solid #252320; }
 
-  /* Category select */
-  .prm-cat-select {
-    background: #0d2a2e; border: 1px solid #1a4048; border-radius: 4px;
-    padding: 3px 22px 3px 8px; font-size: 10px; font-weight: 600; color: #02a4ba;
-    font-family: 'Inter', sans-serif; outline: none; cursor: pointer;
-    appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%2302a4ba'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 7px center;
+  /* Category text input */
+  .prm-cat-input {
+    background: transparent; border: none; outline: none;
+    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
+    color: #7a7570; padding: 0; width: auto; min-width: 60px; max-width: 180px;
+    border-bottom: 1px dashed #3a3530; transition: border-color .15s;
   }
-  .prm-cat-select:focus { border-color: #02a4ba; }
-  .prm-cat-select option { background: #111110; color: #d8d4ce; }
+  .prm-cat-input:focus { color: #d8d4ce; border-bottom-color: #02a4ba; }
 
   /* Warning */
   .prm-warn {
@@ -150,7 +151,10 @@ const CSS = `
     background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
     padding: 5px 8px; font-size: 12px; color: #d8d4ce; width: 84px;
     text-align: right; outline: none; font-family: 'Inter', sans-serif;
+    -moz-appearance: textfield; appearance: textfield;
   }
+  .prm-purchased-cost-input::-webkit-inner-spin-button,
+  .prm-purchased-cost-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .prm-purchased-cost-input:focus { border-color: #c08830; }
   .prm-purchased-unit-input {
     background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
@@ -184,7 +188,10 @@ const CSS = `
     background: transparent; border: none; outline: none;
     font-family: 'Inter', sans-serif; font-size: 12px; color: #9a9490;
     text-align: right; width: 100%;
+    -moz-appearance: textfield; appearance: textfield;
   }
+  .prm-qty-input::-webkit-inner-spin-button,
+  .prm-qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .prm-qty-input:focus { color: #d8d4ce; }
   .prm-unit-input {
     background: transparent; border: none; outline: none;
@@ -356,7 +363,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   const [unitWarnings, setUnitWarnings] = useState(new Set());
 
   const allConfirmed = confirmed.every(Boolean);
-  const allCategories = [...new Set(rawDishes.map(d => d.category).filter(Boolean))].sort();
   const sidebarCategories = [...new Set(dishes.map(d => d.category))];
 
   // ── Sidebar ──────────────────────────────────────────────────────────────
@@ -400,25 +406,28 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   function updateIng(ci, ii, field, val) {
     if (field === 'unit') {
-      // Auto-convert estimated_unit_cost when unit changes
+      let converted = true;
       setDishes(prev => {
         const d = deepClone(prev);
         const ing = d[current].components[ci].ingredients[ii];
         const oldUnit = ing.unit;
-        const { newCost, converted } = convertUnitCost(oldUnit, val, ing.estimated_unit_cost);
+        const result = convertUnitCost(oldUnit, val, ing.estimated_unit_cost);
         ing.unit = val;
-        ing.estimated_unit_cost = newCost;
+        ing.estimated_unit_cost = result.newCost;
+        converted = result.converted;
+        return d;
+      });
+      // Run warning update after dishes state settles
+      setTimeout(() => {
         const warnKey = `${current}-${ci}-${ii}`;
         setUnitWarnings(prev => {
           const s = new Set(prev);
           converted ? s.delete(warnKey) : s.add(warnKey);
           return s;
         });
-        return d;
-      });
+      }, 0);
     } else {
       setDishes(prev => { const d = deepClone(prev); d[current].components[ci].ingredients[ii][field] = val; return d; });
-      // Clear warning if cost is being manually updated
       if (field === 'estimated_unit_cost') {
         setUnitWarnings(prev => { const s = new Set(prev); s.delete(`${current}-${ci}-${ii}`); return s; });
       }
@@ -550,16 +559,18 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
         <div className="prm-dish-hd">
           <div className="prm-dish-title">{dish.name}</div>
           <div className="prm-dish-meta">
-            <select className="prm-cat-select" value={dish.category} onChange={e => updateCategory(e.target.value)}>
-              {allCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
+            <input
+              className="prm-cat-input"
+              value={dish.category}
+              onChange={e => updateCategory(e.target.value)}
+              size={Math.max(8, dish.category.length)}
+            />
             {dish.price && <span className="prm-badge prm-badge-price">${dish.price.toFixed(2)}</span>}
             {mgn !== null && (
               <span className={`prm-badge ${losing ? 'prm-badge-margin-warn' : 'prm-badge-margin-ok'}`}>
                 {losing ? '⚠ ' : ''}{mgn.toFixed(1)}% margin
               </span>
             )}
-            <span className="prm-badge prm-badge-archetype">{dish.archetype}</span>
           </div>
         </div>
 
