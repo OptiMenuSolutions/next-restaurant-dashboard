@@ -172,6 +172,34 @@ const CSS = `
   }
   .prm-add-ing:hover { color: #02a4ba; }
 
+  /* Purchased / finished toggle */
+  .prm-purchased-btn {
+    background: none; border: 1px solid #2a2520; border-radius: 4px;
+    font-size: 9px; font-weight: 600; color: #4a4540; cursor: pointer;
+    padding: 2px 7px; font-family: 'Inter', sans-serif; white-space: nowrap;
+    letter-spacing: .04em; transition: all .15s; flex-shrink: 0;
+  }
+  .prm-purchased-btn:hover { border-color: #c08020; color: #c08020; }
+  .prm-purchased-btn.active { border-color: #c08020; color: #0a0908; background: #c08020; }
+  .prm-purchased-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; background: #141008;
+    border-top: 1px solid #2a1e08;
+  }
+  .prm-purchased-label { font-size: 11px; color: #c08020; font-style: italic; flex: 1; }
+  .prm-purchased-cost-input {
+    background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
+    padding: 4px 8px; font-size: 11px; color: #c8c4be; width: 80px;
+    text-align: right; outline: none; font-family: 'Inter', sans-serif;
+  }
+  .prm-purchased-cost-input:focus { border-color: #c08020; }
+  .prm-purchased-unit-input {
+    background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
+    padding: 4px 8px; font-size: 11px; color: #8a8480; width: 56px;
+    text-align: right; outline: none; font-family: 'Inter', sans-serif;
+  }
+  .prm-purchased-unit-input:focus { border-color: #c08020; }
+
   /* Add component */
   .prm-add-comp {
     width: 100%; background: none; border: 1px dashed #2a2520;
@@ -357,6 +385,34 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     unconfirm(current);
   }
 
+  function markPurchased(ci) {
+    setDishes(prev => {
+      const d = deepClone(prev);
+      const comp = d[current].components[ci];
+      const isCurrentlyPurchased = comp.purchased === true;
+      if (isCurrentlyPurchased) {
+        // Toggle off — restore scratch ingredients placeholder
+        comp.purchased = false;
+        comp._savedIngredients = undefined;
+        if (!comp.ingredients.length) {
+          comp.ingredients = [{ name: 'New Ingredient', unit: 'oz', quantity: 1, estimated_unit_cost: 0 }];
+        }
+      } else {
+        // Toggle on — collapse to single purchased ingredient named after the component
+        comp._savedIngredients = deepClone(comp.ingredients);
+        comp.purchased = true;
+        comp.ingredients = [{
+          name: comp.name,
+          unit: 'each',
+          quantity: 1,
+          estimated_unit_cost: comp.ingredients.reduce((s, i) => s + (i.quantity || 0) * (i.estimated_unit_cost || 0), 0),
+        }];
+      }
+      return d;
+    });
+    unconfirm(current);
+  }
+
   function confirmDish() {
     setConfirmed(prev => { const n = [...prev]; n[current] = true; return n; });
     if (current < dishes.length - 1) setCurrent(c => c + 1);
@@ -417,6 +473,8 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
         {dish.components.map((comp, ci) => {
           const cost = compCost(comp);
+          const isPurchased = comp.purchased === true;
+          const purchasedIng = isPurchased ? comp.ingredients[0] : null;
           return (
             <div key={ci} className="prm-comp">
               <div className="prm-comp-hd">
@@ -426,38 +484,69 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   onChange={e => updateCompName(ci, e.target.value)}
                 />
                 <span className="prm-comp-cost">${cost.toFixed(2)}</span>
+                <button
+                  className={`prm-purchased-btn${isPurchased ? ' active' : ''}`}
+                  onClick={() => markPurchased(ci)}
+                  title={isPurchased ? 'Switch back to scratch ingredients' : 'Mark as finished/purchased product'}
+                >
+                  {isPurchased ? '✓ Purchased' : 'Purchased?'}
+                </button>
                 <button className="prm-comp-del" onClick={() => deleteComp(ci)} title="Remove component">✕</button>
               </div>
-              <div className="prm-col-hd">
-                <span>Ingredient</span>
-                <span style={{ textAlign: 'right' }}>Qty</span>
-                <span style={{ textAlign: 'right' }}>Unit</span>
-                <span />
-              </div>
-              {comp.ingredients.map((ing, ii) => (
-                <div key={ii} className="prm-ing-row">
+
+              {isPurchased ? (
+                <div className="prm-purchased-row">
+                  <span className="prm-purchased-label">Purchased as finished product — matches invoice line item</span>
                   <input
-                    className="prm-ing-input"
-                    value={ing.name}
-                    onChange={e => updateIng(ci, ii, 'name', e.target.value)}
+                    className="prm-purchased-unit-input"
+                    value={purchasedIng.unit}
+                    onChange={e => updateIng(ci, 0, 'unit', e.target.value)}
+                    title="Unit"
                   />
                   <input
-                    className="prm-qty-input"
+                    className="prm-purchased-cost-input"
                     type="number"
                     step="0.01"
                     min="0"
-                    value={ing.quantity}
-                    onChange={e => updateIng(ci, ii, 'quantity', parseFloat(e.target.value) || 0)}
+                    value={purchasedIng.estimated_unit_cost}
+                    onChange={e => updateIng(ci, 0, 'estimated_unit_cost', parseFloat(e.target.value) || 0)}
+                    title="Unit cost"
                   />
-                  <input
-                    className="prm-unit-input"
-                    value={ing.unit}
-                    onChange={e => updateIng(ci, ii, 'unit', e.target.value)}
-                  />
-                  <button className="prm-ing-del" onClick={() => deleteIng(ci, ii)}>✕</button>
                 </div>
-              ))}
-              <button className="prm-add-ing" onClick={() => addIng(ci)}>+ ingredient</button>
+              ) : (
+                <>
+                  <div className="prm-col-hd">
+                    <span>Ingredient</span>
+                    <span style={{ textAlign: 'right' }}>Qty</span>
+                    <span style={{ textAlign: 'right' }}>Unit</span>
+                    <span />
+                  </div>
+                  {comp.ingredients.map((ing, ii) => (
+                    <div key={ii} className="prm-ing-row">
+                      <input
+                        className="prm-ing-input"
+                        value={ing.name}
+                        onChange={e => updateIng(ci, ii, 'name', e.target.value)}
+                      />
+                      <input
+                        className="prm-qty-input"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={ing.quantity}
+                        onChange={e => updateIng(ci, ii, 'quantity', parseFloat(e.target.value) || 0)}
+                      />
+                      <input
+                        className="prm-unit-input"
+                        value={ing.unit}
+                        onChange={e => updateIng(ci, ii, 'unit', e.target.value)}
+                      />
+                      <button className="prm-ing-del" onClick={() => deleteIng(ci, ii)}>✕</button>
+                    </div>
+                  ))}
+                  <button className="prm-add-ing" onClick={() => addIng(ci)}>+ ingredient</button>
+                </>
+              )}
             </div>
           );
         })}
