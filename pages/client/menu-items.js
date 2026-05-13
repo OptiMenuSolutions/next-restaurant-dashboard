@@ -463,12 +463,32 @@ export default function ClientMenuItems() {
     for (const comp of editComponents) {
       let componentId = comp.id;
       if (comp.isNew) {
-        const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+        function calcIngCost(ing) {
+          const unitCost = parseFloat(ing.unitCost || 0);
+          if (unitCost === 0) return 0;
+          try {
+            const calc = typeof calculateStandardizedCost === 'function'
+              ? calculateStandardizedCost(ing.quantity, ing.unit, unitCost, ing.standardUnit || ing.unit)
+              : null;
+            return (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(ing.quantity || 0) * unitCost;
+          } catch { return parseFloat(ing.quantity || 0) * unitCost; }
+        }
+        const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
         const { data: newComp, error } = await supabase.from('menu_item_components').insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).select('id').single();
         if (error) { errors.push(`Failed to create component "${comp.name}"`); continue; }
         componentId = newComp.id;
       } else {
-        const compCost = comp.ingredients.reduce((s, i) => s + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0);
+        function calcIngCost(ing) {
+          const unitCost = parseFloat(ing.unitCost || 0);
+          if (unitCost === 0) return 0;
+          try {
+            const calc = typeof calculateStandardizedCost === 'function'
+              ? calculateStandardizedCost(ing.quantity, ing.unit, unitCost, ing.standardUnit || ing.unit)
+              : null;
+            return (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(ing.quantity || 0) * unitCost;
+          } catch { return parseFloat(ing.quantity || 0) * unitCost; }
+        }
+        const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
         await supabase.from('menu_item_components').update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).eq('id', componentId);
       }
       for (const ing of comp.ingredients) {
@@ -478,7 +498,18 @@ export default function ClientMenuItems() {
         else await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
       }
     }
-    const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => ss + (parseFloat(i.quantity || 0) * parseFloat(i.unitCost || 0)), 0), 0);
+    const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => {
+      const unitCost = parseFloat(i.unitCost || 0);
+      if (unitCost === 0) return ss;
+      try {
+        const calc = typeof calculateStandardizedCost === 'function'
+          ? calculateStandardizedCost(i.quantity, i.unit, unitCost, i.standardUnit || i.unit)
+          : null;
+        return ss + ((calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(i.quantity || 0) * unitCost);
+      } catch {
+        return ss + parseFloat(i.quantity || 0) * unitCost;
+      }
+    }, 0), 0);
     await supabase.from('menu_items').update({ cost: Math.round(newTotalCost * 100) / 100 }).eq('id', menuItemId);
     setEditSaving(false);
     if (errors.length > 0) { setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` }); }
