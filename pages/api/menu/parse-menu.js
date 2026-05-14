@@ -240,7 +240,7 @@ function safeParseJSON(text) {
             const candidate = cleaned.slice(firstBrace, lastBrace + 1);
             const parsed = JSON.parse(candidate);
             if (parsed.name && parsed.components) {
-              console.warn('[safeParseJSON] Salvaged single dish object: ' + parsed.name);
+              console.log('[safeParseJSON] Parsed dish: ' + parsed.name);
               return parsed;
             }
           }
@@ -438,7 +438,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1200,
+      max_tokens: 1800,
       system: systemPrompt,
       messages: [{
         role: 'user',
