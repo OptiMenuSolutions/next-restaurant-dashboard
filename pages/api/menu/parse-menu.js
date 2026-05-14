@@ -443,33 +443,6 @@ If total cost exceeds 50% of the dish price (${dish.price ?? 'unknown'}), your q
 Scale ingredient quantities down proportionally until total cost is at or below 50% of menu price.
 Never output a recipe where estimated cost exceeds menu price.
 
-PROTEIN CUT RULE:
-When a dish name or description specifies a cut of meat, use that exact cut in the recipe.
-Do not substitute. Ribeye is not tenderloin. NY Strip is not sirloin. Steak tips are sirloin
-tips or flap meat, not strip steak. Duck breast is not chicken breast. If the exact cut is
-not in the ingredient library, use the closest match by name, not by price.
-
-NON-PROTEIN QUANTITY CAPS:
-Single serving quantity limits for non-protein ingredients:
-- Sauces and reductions: max 6 oz per component
-- Dry pasta or rice: max 6 oz
-- Starches (mashed potato, rice, etc.): max 8 oz total across all starch components
-- Garnishes and finishing ingredients (herbs, cheese dust, drizzles): max 1 oz each
-- Cooking fats (butter, olive oil): max 2 oz per component
-These caps exist to prevent cost inflation from unrealistic quantities.
-
-RAW INGREDIENTS ONLY:
-Never use a composite or prepared dish as an ingredient. Always break down to raw components.
-Examples of what NOT to do and what to do instead:
-- "Fried Rice" → use rice (dry), eggs, soy sauce, sesame oil, carrots, peas, scallions
-- "Mashed Potatoes" → use russet potatoes, butter, heavy cream, salt
-- "Guacamole" → use avocado, lime juice, red onion, cilantro, jalapeño
-- "Coleslaw" → use green cabbage, carrots, mayonnaise, apple cider vinegar, sugar
-- "Pico de Gallo" → use roma tomatoes, white onion, cilantro, jalapeño, lime juice
-- "Hollandaise" → use egg yolks, butter, lemon juice
-- "Chimichurri" → use fresh parsley, garlic, olive oil, red wine vinegar, red pepper flakes
-Any ingredient that is itself a recipe must be decomposed into its raw purchased components.
-
 Return ONLY a valid JSON object (not an array):
 {
   "name": string,
