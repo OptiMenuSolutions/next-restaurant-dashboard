@@ -821,8 +821,7 @@ export default async function handler(req, res) {
         if (!ingredientMap[key]) ingredientMap[key] = ing;
       }
 
-      console.log(`[parse-menu] ${fileLabel} Spoonacular lookup...`);
-      const spoonacularData = await lookupSpoonacularRecipes(fileDishManifest);
+      const spoonacularData = {};
 
       console.log(`[parse-menu] ${fileLabel} Pass 2...`);
       const t2 = Date.now();
