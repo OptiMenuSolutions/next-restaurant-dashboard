@@ -437,6 +437,12 @@ RULES:
 - Every component marked "always include" MUST have at least one ingredient
 - If a described ingredient has no exact library match, use the closest match
 
+COST GUARDRAIL:
+After building the recipe, calculate total estimated cost by summing all (quantity × estimated_unit_cost) across all components.
+If total cost exceeds 50% of the dish price (${dish.price ?? 'unknown'}), your quantities are too high.
+Scale ingredient quantities down proportionally until total cost is at or below 50% of menu price.
+Never output a recipe where estimated cost exceeds menu price.
+
 Return ONLY a valid JSON object (not an array):
 {
   "name": string,
