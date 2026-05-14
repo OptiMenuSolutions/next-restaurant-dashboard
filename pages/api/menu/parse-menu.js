@@ -419,7 +419,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
+      max_tokens: 1200,
       system: systemPrompt,
       messages: [{
         role: 'user',
@@ -483,9 +483,6 @@ Return ONLY a valid JSON object (not an array):
     console.log(`[pass2] Batch ${Math.floor(i / batchSize) + 1}: dishes ${i + 1}–${Math.min(i + batchSize, dishManifest.length)}`);
     const batchResults = await Promise.all(batch.map(buildDish));
     allResults.push(...batchResults);
-    if (i + batchSize < dishManifest.length) {
-      await new Promise(r => setTimeout(r, 2500));
-    }
   }
 
   const dishes = allResults.filter(Boolean);
