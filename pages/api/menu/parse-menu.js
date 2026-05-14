@@ -503,13 +503,16 @@ Return ONLY a valid JSON object (not an array):
   };
 
   const allResults = [];
-  const batchSize = 5;
+  const batchSize = 3; // Adjust batch size based on expected response time and token usage
 
   for (let i = 0; i < dishManifest.length; i += batchSize) {
     const batch = dishManifest.slice(i, i + batchSize);
     console.log(`[pass2] Batch ${Math.floor(i / batchSize) + 1}: dishes ${i + 1}–${Math.min(i + batchSize, dishManifest.length)}`);
     const batchResults = await Promise.all(batch.map(buildDish));
     allResults.push(...batchResults);
+    if (i + batchSize < dishManifest.length) {
+      await new Promise(r => setTimeout(r, 2500));
+    }
   }
 
   const dishes = allResults.filter(Boolean);
