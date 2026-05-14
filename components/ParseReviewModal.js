@@ -390,7 +390,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           const isDone = confirmed[i];
           return (
             <div key={i} className={`prm-sb-item${isActive ? ' active' : ''}${isDone ? ' confirmed' : ''}`}
-              onClick={() => { setCurrent(i); setView('review'); }}>
+              onClick={() => { setCurrent(i); setView('review'); setAcSearch({}); setAcOpen({}); }}>
               <div className={`prm-sb-dot${isActive ? ' active' : ''}${isDone ? ' confirmed' : ''}`} />
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
               {isDone && <span className="prm-sb-check">✓</span>}
@@ -539,7 +539,15 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   function confirmDish() {
     setConfirmed(prev => { const n = [...prev]; n[current] = true; return n; });
-    if (current < dishes.length - 1) setCurrent(c => c + 1);
+    if (current < dishes.length - 1) { setCurrent(c => c + 1); setAcSearch({}); setAcOpen({}); }
+  }
+
+  function removeDish() {
+    setDishes(prev => prev.filter((_, i) => i !== current));
+    setConfirmed(prev => prev.filter((_, i) => i !== current));
+    setAcSearch({});
+    setAcOpen({});
+    setCurrent(c => Math.min(c, dishes.length - 2));
   }
 
   async function handleCommit() {
@@ -805,8 +813,9 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   <div className="prm-scroll">{renderDish()}</div>
                   <div className="prm-footer">
                     <div className="prm-nav">
-                      <button className="prm-btn prm-btn-ghost" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>← Prev</button>
-                      <button className="prm-btn prm-btn-ghost" onClick={() => setCurrent(c => c + 1)} disabled={current === dishes.length - 1}>Next →</button>
+                      <button className="prm-btn prm-btn-ghost" onClick={() => { setCurrent(c => c - 1); setAcSearch({}); setAcOpen({}); }} disabled={current === 0}>← Prev</button>
+                      <button className="prm-btn prm-btn-ghost" onClick={() => { setCurrent(c => c + 1); setAcSearch({}); setAcOpen({}); }} disabled={current === dishes.length - 1}>Next →</button>
+                      <button className="prm-btn prm-btn-ghost" style={{ color: '#e06060', borderColor: '#3a1818' }} onClick={removeDish}>Remove dish</button>
                     </div>
                     {confirmed[current]
                       ? <div className="prm-confirmed-tag">✓ Confirmed</div>
