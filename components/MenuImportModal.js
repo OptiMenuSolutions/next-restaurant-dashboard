@@ -215,6 +215,7 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
       { id: 'saving', label: 'Saving to your account' },
     ];
     const idx = ['upload', 'pass1', 'pass2', 'saving'].indexOf(
+      status === 'upload' ? 'upload' :
       status === 'processing' ? 'pass1' :
       status === 'pass1_complete' ? 'pass2' :
       status === 'processing_pass2' ? 'pass2' :
@@ -230,10 +231,14 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
     if (files.length === 0) return;
     setStage('running');
     setError('');
-    setJobStatus('processing');
+    setJobStatus('upload');
 
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // Advance steps on a realistic timer
+    const stepTimer1 = setTimeout(() => setJobStatus('processing'), 2000);
+    const stepTimer2 = setTimeout(() => setJobStatus('pass1_complete'), 25000);
 
     try {
       const formData = new FormData();
@@ -246,6 +251,9 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
         signal: controller.signal,
       });
 
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
+
       const data = await res.json();
 
       if (!res.ok || !data.success) {
@@ -253,8 +261,8 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
       }
 
       setJobStatus('complete');
+
       if (data.review && onReviewReady) {
-        // Hand off to ParseReviewModal — don't show success screen
         onReviewReady({ dishes: data.dishes, ingredientLibrary: data.ingredient_library });
       } else {
         setResult(data);
@@ -262,6 +270,8 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
       }
 
     } catch (err) {
+      clearTimeout(stepTimer1);
+      clearTimeout(stepTimer2);
       if (err.name === 'AbortError') return;
       setError(err.message || 'Something went wrong. Please try again.');
       setStage('error');
