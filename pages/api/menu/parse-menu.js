@@ -346,9 +346,53 @@ Return ONLY valid JSON:
   };
 }
 
+// ─── Spoonacular recipe lookup ────────────────────────────────────────────────
+
+async function lookupSpoonacularRecipes(dishes) {
+  const apiKey = process.env.SPOONACULAR_API_KEY;
+  if (!apiKey) {
+    console.warn('[spoonacular] No API key set, skipping lookup');
+    return {};
+  }
+
+  const recipeMap = {};
+
+  await Promise.all(dishes.map(async (dish) => {
+    try {
+      const query = encodeURIComponent(dish.name);
+      const res = await fetch(
+        `https://api.spoonacular.com/recipes/complexSearch?query=${query}&number=1&addRecipeInformation=false&fillIngredients=true&apiKey=${apiKey}`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const result = data.results?.[0];
+      if (!result?.missedIngredients && !result?.usedIngredients) return;
+
+      const ingredients = [
+        ...(result.usedIngredients || []),
+        ...(result.missedIngredients || []),
+      ].map(i => ({
+        name: i.name,
+        amount: i.amount,
+        unit: i.unit || 'each',
+      }));
+
+      if (ingredients.length > 0) {
+        recipeMap[dish.name.toLowerCase()] = ingredients;
+        console.log(`[spoonacular] "${dish.name}" → ${ingredients.length} ingredients`);
+      }
+    } catch (err) {
+      console.warn(`[spoonacular] Failed for "${dish.name}":`, err.message);
+    }
+  }));
+
+  console.log(`[spoonacular] Matched ${Object.keys(recipeMap).length}/${dishes.length} dishes`);
+  return recipeMap;
+}
+
 // ─── Pass 2: Build recipes (batched parallel, 5 dishes at a time) ─────────────
 
-async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId) {
+async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId, spoonacularData = {}) {
   const libraryRef = ingredientLibrary
     .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
     .join('\n');
@@ -366,7 +410,12 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId)
   ];
 
   const buildDish = async (dish) => {
-    const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}`;
+    const spoonacularRef = spoonacularData[dish.name.toLowerCase()];
+    const spoonacularBlock = spoonacularRef
+      ? `\nSPOONACULAR REFERENCE INGREDIENTS (use as strong guidance for what belongs in this dish):\n${spoonacularRef.map(i => `- ${i.name}: ${i.amount} ${i.unit}`).join('\n')}`
+      : '';
+
+    const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}${spoonacularBlock}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -736,10 +785,13 @@ export default async function handler(req, res) {
         if (!ingredientMap[key]) ingredientMap[key] = ing;
       }
 
+      console.log(`[parse-menu] ${fileLabel} Spoonacular lookup...`);
+      const spoonacularData = await lookupSpoonacularRecipes(fileDishManifest);
+
       console.log(`[parse-menu] ${fileLabel} Pass 2...`);
       const t2 = Date.now();
       const { dishes: rawDishes, truncated } =
-        await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId);
+        await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId, spoonacularData);
       console.log(`[parse-menu] ${fileLabel} Pass 2 done in ${Date.now() - t2}ms`);
 
       if (truncated) anyTruncated = true;
