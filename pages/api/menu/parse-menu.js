@@ -469,14 +469,15 @@ Return ONLY a valid JSON object (not an array):
       restaurantId,
     });
 
-    const raw = response.content[0]?.text || '{}';
-    const parsed = safeParseJSON(raw);
-    if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
-    return parsed;
+      console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+      const raw = response.content[0]?.text || '{}';
+      const parsed = safeParseJSON(raw);
+      if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
+      return parsed;
   };
 
   const allResults = [];
-  const batchSize = 3; // Adjust batch size based on expected response time and token usage
+  const batchSize = 5; // Adjust batch size based on expected response time and token usage
 
   for (let i = 0; i < dishManifest.length; i += batchSize) {
     const batch = dishManifest.slice(i, i + batchSize);
