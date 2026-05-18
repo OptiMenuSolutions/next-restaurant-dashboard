@@ -282,7 +282,12 @@ function matchRecipe(dishName, globalRecipes) {
   if (normalized.length >= 6) {
     for (const recipe of globalRecipes) {
       const recipeNorm = normalizeDishName(recipe.dish_name);
-      if (recipeNorm.length >= 6 && (normalized.includes(recipeNorm) || recipeNorm.includes(normalized))) {
+      if (recipeNorm.length < 6) continue;
+      const longer = Math.max(normalized.length, recipeNorm.length);
+      const shorter = Math.min(normalized.length, recipeNorm.length);
+      // Only partial match if the strings are at least 60% similar in length
+      if (shorter / longer < 0.6) continue;
+      if (normalized.includes(recipeNorm) || recipeNorm.includes(normalized)) {
         console.log(`[recipes] Partial match: "${dishName}" → "${recipe.dish_name}"`);
         return recipe.components;
       }
