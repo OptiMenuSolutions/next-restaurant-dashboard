@@ -185,6 +185,113 @@ async function fileToText(file) {
   return await extractTextWithVision(file.filepath);
 }
 
+// ─── OCR text chunker ─────────────────────────────────────────────────────────
+// Splits menu OCR text on section headers (ALL CAPS lines) only.
+// Never cuts mid-dish. If no headers found, returns the full text as one chunk.
+// Logs a warning if any single section exceeds SECTION_WARN_CHARS.
+
+const SECTION_WARN_CHARS = 4000;
+
+function chunkMenuText(text) {
+  // Match lines that are ALL CAPS (section headers like "ENTREES", "SALADS & SOUPS")
+  // Must be on their own line, at least 3 chars, no price digits
+  const headerRegex = /^([A-Z][A-Z\s&\/\-]{2,})$/m;
+
+  // Find all header positions
+  const splits = [];
+  let match;
+  const globalRegex = new RegExp(headerRegex.source, 'gm');
+  while ((match = globalRegex.exec(text)) !== null) {
+    splits.push(match.index);
+  }
+
+  // No headers found — return full text as single chunk
+  if (splits.length === 0) {
+    console.log(`[chunkMenuText] No section headers found — processing as single chunk (${text.length} chars)`);
+    return [text];
+  }
+
+  // Build chunks: everything before first header is chunk 0 (preamble/restaurant info)
+  // then one chunk per section starting at each header
+  const chunks = [];
+
+  const preamble = text.slice(0, splits[0]).trim();
+  if (preamble.length > 0) chunks.push(preamble);
+
+  for (let i = 0; i < splits.length; i++) {
+    const start = splits[i];
+    const end = i + 1 < splits.length ? splits[i + 1] : text.length;
+    const chunk = text.slice(start, end).trim();
+    if (chunk.length === 0) continue;
+
+    if (chunk.length > SECTION_WARN_CHARS) {
+      console.warn(`[chunkMenuText] Section "${chunk.split('\n')[0]}" is ${chunk.length} chars — large but proceeding`);
+    }
+
+    chunks.push(chunk);
+  }
+
+  console.log(`[chunkMenuText] Split into ${chunks.length} section chunk(s)`);
+  return chunks;
+}
+
+
+// ─── Global recipe matcher ────────────────────────────────────────────────────
+
+async function loadGlobalRecipes() {
+  const { data, error } = await supabase
+    .from('global_recipes')
+    .select('dish_name, aliases, components')
+    .eq('cuisine', 'american');
+
+  if (error) {
+    console.warn('[recipes] Failed to load global recipes:', error.message);
+    return [];
+  }
+
+  console.log(`[recipes] Loaded ${data.length} global recipes`);
+  return data;
+}
+
+function normalizeDishName(name) {
+  return name
+    .toLowerCase()
+    .replace(/\b(grilled|pan[- ]seared|seared|fried|baked|roasted|broiled|braised|steamed|crispy|blackened|smoked|charcoal[- ]broiled|pan[- ]roasted)\b/g, '')
+    .replace(/\b(classic|homemade|fresh|homestyle|traditional|signature|famous|house|jumbo|giant|loaded|double|triple|mini|small|large|whole|half)\b/g, '')
+    .replace(/\b(penne|fettuccine|fettucine|linguine|linguini|spaghetti|rigatoni|ziti|tagliatelle|farfalle|orecchiette|angel hair|capellini)\b/g, '')
+    .replace(/\b(8oz|10oz|12oz|14oz|16oz|8 oz|10 oz|12 oz|bone[- ]in|boneless)\b/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchRecipe(dishName, globalRecipes) {
+  const normalized = normalizeDishName(dishName);
+
+  for (const recipe of globalRecipes) {
+    if (normalizeDishName(recipe.dish_name) === normalized) {
+      return recipe.components;
+    }
+    for (const alias of recipe.aliases || []) {
+      if (normalizeDishName(alias) === normalized) {
+        return recipe.components;
+      }
+    }
+  }
+
+  if (normalized.length >= 6) {
+    for (const recipe of globalRecipes) {
+      const recipeNorm = normalizeDishName(recipe.dish_name);
+      if (recipeNorm.length >= 6 && (normalized.includes(recipeNorm) || recipeNorm.includes(normalized))) {
+        console.log(`[recipes] Partial match: "${dishName}" → "${recipe.dish_name}"`);
+        return recipe.components;
+      }
+    }
+  }
+
+  return null;
+}
+
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
 
 function safeParseJSON(text) {
@@ -307,6 +414,26 @@ SPECIAL CASES:
 - Preserve acronyms: BLT, BBQ, GF, NYC
 
 PART B — INGREDIENT LIBRARY
+
+NAMING RULES — follow these exactly:
+- Use the most specific, standardized name for every ingredient
+- Be consistent: the same physical ingredient must use the SAME name every time it appears across all dishes
+- Choose ONE canonical name and use it everywhere:
+  ✓ "Pork Ribs" not "Baby Back Ribs" in one dish and "Pork Ribs" in another — pick one
+  ✓ "New York Strip" not "NY Steak" in one dish and "New York Strip" in another — pick one
+  ✓ "Mashed Potatoes" not "Mashed Potato" sometimes and "Mashed Potatoes" other times
+  ✓ "Skirt Steak" not "Beef Skirt Steak" and "Skirt Steak" interchangeably — pick one
+  ✓ "Littleneck Clams" not "Clams", "Fresh Clams", and "Littleneck Clams" all for the same item
+- Prefer the global library name when a match exists — use it exactly
+- Never create two ingredient entries for what is clearly the same ingredient
+
+NO FINISHED GOODS RULE:
+- Never use a pre-made, plated, or composite dish as an ingredient (e.g. "Fried Rice", "Caesar Salad", "French Onion Soup")
+- Always decompose into raw components:
+  ✗ "Fried Rice" → ✓ "Jasmine Rice" + "Eggs" + "Scallions" + "Soy Sauce"
+  ✗ "Mashed Potatoes" as a finished good → ✓ "Yukon Gold Potatoes" + "Butter" + "Heavy Cream" (mark prep_type "ask")
+  ✗ "House Salad" → ✓ "Mixed Greens" + "Cherry Tomatoes" + etc.
+
 For every dish, list all ingredients needed:
 - Match global library ingredients by exact name and unit
 - For new ingredients, propose canonical name and unit
@@ -450,11 +577,17 @@ DISH: ${dishLine}
 
 RULES:
 - Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
+- The ingredient name in your output MUST match the library name character-for-character — no synonyms, no abbreviations, no alternate spellings
 - Include all required components; omit optional ones only if clearly not applicable
 - Estimate realistic per-serving quantities
 - Every ingredient mentioned in the dish description MUST appear in the recipe
 - Every component marked "always include" MUST have at least one ingredient
-- If a described ingredient has no exact library match, use the closest match
+- If a described ingredient has no exact library match, use the closest match by name
+
+NO FINISHED GOODS:
+- Never use a pre-made or composite preparation as an ingredient
+- If the library contains a finished good like "Fried Rice" or "House Salad", decompose it into its raw components instead
+- Always build from raw ingredients
 
 COST GUARDRAIL:
 After building the recipe, calculate total estimated cost by summing all (quantity × estimated_unit_cost) across all components.
@@ -488,15 +621,15 @@ Return ONLY a valid JSON object (not an array):
       restaurantId,
     });
 
-      console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
-      const raw = response.content[0]?.text || '{}';
-      const parsed = safeParseJSON(raw);
-      if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
-      return parsed;
+    console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+    const raw = response.content[0]?.text || '{}';
+    const parsed = safeParseJSON(raw);
+    if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
+    return parsed;
   };
 
   const allResults = [];
-  const batchSize = 5; // Adjust batch size based on expected response time and token usage
+  const batchSize = 5;
 
   for (let i = 0; i < dishManifest.length; i += batchSize) {
     const batch = dishManifest.slice(i, i + batchSize);
@@ -770,6 +903,7 @@ export default async function handler(req, res) {
 
     console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Vision key: ${process.env.GOOGLE_VISION_API_KEY ? 'SET' : 'MISSING'}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
+    const globalRecipes = await loadGlobalRecipes();
 
     const allDishes = [];
     const ingredientMap = {};
@@ -789,45 +923,77 @@ export default async function handler(req, res) {
         continue;
       }
 
-      console.log(`[parse-menu] ${fileLabel} Pass 1...`);
-      const t1 = Date.now();
-      const { ingredients: fileIngredients, dishes: fileDishManifest } =
-        await pass1_extractAndClassify(menuText, globalIngredients, restaurantId);
-      console.log(`[parse-menu] ${fileLabel} Pass 1 done in ${Date.now() - t1}ms`);
+      // ── Chunk large menus so Pass 1 never sees more than ~15 dishes at once ──
+      const chunks = chunkMenuText(menuText);
+      console.log(`[parse-menu] ${fileLabel} ${chunks.length} chunk(s) to process`);
 
-      if (!fileIngredients?.length) {
-        console.warn(`[parse-menu] ${fileLabel} No ingredients extracted, skipping`);
-        continue;
+      for (let c = 0; c < chunks.length; c++) {
+        const chunkLabel = chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '';
+
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
+        const t1 = Date.now();
+        const { ingredients: chunkIngredients, dishes: chunkDishManifest } =
+          await pass1_extractAndClassify(chunks[c], globalIngredients, restaurantId);
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 done in ${Date.now() - t1}ms`);
+
+        if (!chunkIngredients?.length) {
+          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No ingredients extracted, skipping`);
+          continue;
+        }
+        if (!chunkDishManifest?.length) {
+          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes found, skipping`);
+          continue;
+        }
+
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
+
+        // Merge ingredients — later chunks win on price if same name seen before
+        for (const ing of chunkIngredients) {
+          const key = ing.name.trim().toLowerCase();
+          if (!ingredientMap[key]) ingredientMap[key] = ing;
+        }
+
+        // ── Match against global recipe library — skip Pass 2 for hits ──
+        const matchedDishes = [];
+        const unmatchedDishes = [];
+
+        for (const dish of chunkDishManifest) {
+          const components = matchRecipe(dish.name, globalRecipes);
+          if (components) {
+            console.log(`[recipes] Hit: "${dish.name}"`);
+            matchedDishes.push({
+              name: dish.name,
+              price: dish.price ?? null,
+              category: dish.category || 'Other',
+              archetype: dish.archetype || 'Small Plate / Other',
+              description: dish.description ?? null,
+              components,
+            });
+          } else {
+            unmatchedDishes.push(dish);
+          }
+        }
+
+        console.log(`[recipes] ${matchedDishes.length} matched, ${unmatchedDishes.length} going to Pass 2`);
+        allDishes.push(...validateDishes(matchedDishes));
+
+        if (unmatchedDishes.length > 0) {
+          console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2...`);
+          const t2 = Date.now();
+          const { dishes: rawDishes, truncated } =
+            await pass2_buildRecipes(unmatchedDishes, chunkIngredients, restaurantId, {});
+          console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 done in ${Date.now() - t2}ms`);
+
+          if (truncated) anyTruncated = true;
+
+          if (rawDishes && Array.isArray(rawDishes)) {
+            console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 complete: ${rawDishes.length} dishes`);
+            allDishes.push(...validateDishes(rawDishes));
+          } else {
+            console.warn(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 returned no dishes`);
+          }
+        }
       }
-      if (!fileDishManifest?.length) {
-        console.warn(`[parse-menu] ${fileLabel} No dishes found, skipping`);
-        continue;
-      }
-
-      console.log(`[parse-menu] ${fileLabel} Pass 1 complete: ${fileIngredients.length} ingredients, ${fileDishManifest.length} dishes`);
-
-      for (const ing of fileIngredients) {
-        const key = ing.name.trim().toLowerCase();
-        if (!ingredientMap[key]) ingredientMap[key] = ing;
-      }
-
-      const spoonacularData = {};
-
-      console.log(`[parse-menu] ${fileLabel} Pass 2...`);
-      const t2 = Date.now();
-      const { dishes: rawDishes, truncated } =
-        await pass2_buildRecipes(fileDishManifest, fileIngredients, restaurantId, spoonacularData);
-      console.log(`[parse-menu] ${fileLabel} Pass 2 done in ${Date.now() - t2}ms`);
-
-      if (truncated) anyTruncated = true;
-
-      if (!rawDishes || !Array.isArray(rawDishes)) {
-        console.warn(`[parse-menu] ${fileLabel} Pass 2 returned no dishes, skipping`);
-        continue;
-      }
-
-      console.log(`[parse-menu] ${fileLabel} Pass 2 complete: ${rawDishes.length} dishes`);
-      allDishes.push(...validateDishes(rawDishes));
     }
 
     for (const file of fileList) {
