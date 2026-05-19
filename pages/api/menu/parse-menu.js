@@ -328,15 +328,22 @@ function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
 function safeParseJSON(text) {
   const cleaned = text.replace(/```json|```/g, '').trim();
 
-  try { return JSON.parse(cleaned); } catch {}
-
-  const lastComma = cleaned.lastIndexOf('},');
-  if (lastComma > 0) {
-    try { return JSON.parse(cleaned.slice(0, lastComma + 1) + ']'); } catch {}
-  }
+  // Extract just the JSON object, ignoring any prose before or after
+  const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
-  if (lastBrace > 0) {
-    try { return JSON.parse(cleaned.slice(0, lastBrace + 1) + ']'); } catch {}
+  const stripped = firstBrace !== -1 && lastBrace !== -1
+    ? cleaned.slice(firstBrace, lastBrace + 1)
+    : cleaned;
+
+  try { return JSON.parse(stripped); } catch {}
+
+  const lastComma = stripped.lastIndexOf('},');
+  if (lastComma > 0) {
+    try { return JSON.parse(stripped.slice(0, lastComma + 1) + ']'); } catch {}
+  }
+  const lastBraceIdx = stripped.lastIndexOf('}');
+  if (lastBraceIdx > 0) {
+    try { return JSON.parse(stripped.slice(0, lastBraceIdx + 1) + ']'); } catch {}
   }
 
   function extractObjects(str, arrayKey) {
@@ -365,24 +372,19 @@ function safeParseJSON(text) {
     return entries;
   }
 
-  const ingredients = extractObjects(cleaned, 'ingredients');
+  const ingredients = extractObjects(stripped, 'ingredients');
   if (ingredients.length > 0) {
-    const dishes = extractObjects(cleaned, 'dishes');
-    // Try to salvage a single dish object from Pass 2 response
+    const dishes = extractObjects(stripped, 'dishes');
     if (dishes.length === 0) {
       try {
-        const nameIdx = cleaned.indexOf('"name"');
-        const componentsIdx = cleaned.indexOf('"components"');
+        const nameIdx = stripped.indexOf('"name"');
+        const componentsIdx = stripped.indexOf('"components"');
         if (nameIdx !== -1 && componentsIdx !== -1) {
-          const firstBrace = cleaned.indexOf('{');
-          const lastBrace = cleaned.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace !== -1) {
-            const candidate = cleaned.slice(firstBrace, lastBrace + 1);
-            const parsed = JSON.parse(candidate);
-            if (parsed.name && parsed.components) {
-              console.log('[safeParseJSON] Parsed dish: ' + parsed.name);
-              return parsed;
-            }
+          const candidate = stripped;
+          const parsed = JSON.parse(candidate);
+          if (parsed.name && parsed.components) {
+            console.log('[safeParseJSON] Parsed dish: ' + parsed.name);
+            return parsed;
           }
         }
       } catch {}
