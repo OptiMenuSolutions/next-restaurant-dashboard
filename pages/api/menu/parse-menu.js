@@ -326,7 +326,9 @@ function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
 
 function safeParseJSON(text) {
-  const cleaned = text.replace(/```json|```/g, '').trim();
+  const fenceEnd = text.indexOf('```', text.indexOf('```json') + 7);
+  const jsonOnly = fenceEnd !== -1 ? text.slice(0, fenceEnd) : text;
+  const cleaned = jsonOnly.replace(/```json|```/g, '').trim();
 
   // Extract just the JSON object, ignoring any prose before or after
   const firstBrace = cleaned.indexOf('{');
