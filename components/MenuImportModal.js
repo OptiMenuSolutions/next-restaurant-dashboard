@@ -152,6 +152,36 @@ function formatBytes(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+async function compressImage(file, maxSizeMB = 3) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let { width, height } = img;
+
+      const maxDim = 2400;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => resolve(new File([blob], file.name, { type: 'image/jpeg' })),
+        'image/jpeg',
+        0.85
+      );
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  });
+}
+
 // Polls job-status until done or error. Returns final status string.
 async function pollJobStatus(jobId, onStepChange, signal) {
   while (true) {
@@ -243,7 +273,11 @@ export default function MenuImportModal({ restaurantId, onClose, onImported, onR
     try {
       const formData = new FormData();
       formData.append('restaurant_id', restaurantId);
-      files.forEach(f => formData.append('file', f));
+      for (const f of files) {
+        const isPDF = f.type === 'application/pdf' || f.name.endsWith('.pdf');
+        const processed = isPDF ? f : await compressImage(f);
+        formData.append('file', processed);
+      }
 
       const res = await fetch('/api/menu/parse-menu?review=true', {
         method: 'POST',
