@@ -470,6 +470,40 @@ NO FINISHED GOODS RULE:
   ✗ "House Salad" → ✓ "Mixed Greens" + "Cherry Tomatoes" + etc.
   ✗ "Mac & Cheese" as a purchased item → ✓ "Elbow Macaroni" + "Cheddar Cheese" + "Heavy Cream" + "Butter"
 
+  NEVER use any of the following as ingredients under any circumstances — 
+always decompose them into their raw components:
+
+Sauces: BBQ Sauce, Marinara Sauce, Vodka Sauce, Alfredo Sauce, Chimichurri, 
+Chimichurri Sauce, Garlic Aioli, Chipotle Mayo, Pico de Gallo, Guacamole, 
+Salsa, Tartar Sauce, Ranch Dressing, Caesar Dressing, Blue Cheese Dressing,
+House Dressing, Cocktail Sauce, Remoulade Sauce, Hollandaise Sauce,
+Bechamel Sauce, Demi-Glace
+
+Prepared sides: Refried Beans, Mashed Potatoes, Coleslaw, Fried Rice,
+Seasonal Vegetables, Mixed Vegetables, Roasted Vegetables
+
+Compound items: Cranberry Sauce, Cranberry Mustard, Garlic Oil, 
+Pistachio Butter, Madeira Wine Reduction, Ginger Sauce, Beer Cheese Sauce
+
+When you encounter any of these in a dish description, decompose them:
+- BBQ Sauce → Ketchup, Brown Sugar, Apple Cider Vinegar, Worcestershire Sauce, Smoked Paprika
+- Marinara Sauce → Crushed Tomatoes, Garlic, Olive Oil, Fresh Basil, Yellow Onion
+- Vodka Sauce → Crushed Tomatoes, Heavy Cream, Vodka, Butter, Garlic, Yellow Onion
+- Alfredo Sauce → Heavy Cream, Butter, Parmesan, Garlic
+- Chimichurri → Fresh Parsley, Garlic, Red Wine Vinegar, Olive Oil, Red Chili Flakes
+- Garlic Aioli → Mayonnaise, Garlic, Lemon
+- Chipotle Mayo → Mayonnaise, Chipotle in Adobo, Lime
+- Pico de Gallo → Roma Tomatoes, Red Onion, Fresh Cilantro, Lime, Jalapeño
+- Guacamole → Avocado, Lime, Fresh Cilantro, Red Onion, Jalapeño
+- Salsa → Roma Tomatoes, Yellow Onion, Fresh Cilantro, Lime, Jalapeño
+- Refried Beans → Pinto Beans, Lard, Garlic, Yellow Onion
+- Mixed Vegetables → Zucchini, Bell Pepper, Broccoli, Carrot, Olive Oil
+- Garlic Oil → Garlic, Olive Oil
+- Pistachio Butter → Pistachios, Butter
+- Madeira Wine Reduction → Marsala Wine, Butter, Chicken Stock
+- Cranberry Mustard → Cranberries, Dijon Mustard, Honey
+- Ginger Sauce → Ginger, Soy Sauce, Honey, Rice Wine Vinegar, Sesame Oil
+
 For every dish, list all ingredients needed:
 - Match global library ingredients by exact name and unit
 - For new ingredients, propose canonical name and unit
