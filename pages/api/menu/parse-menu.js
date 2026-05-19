@@ -345,20 +345,22 @@ function safeParseJSON(text) {
     const arrOpen = str.indexOf('[', keyIdx);
     if (arrOpen === -1) return [];
     const entries = [];
-    let i = arrOpen + 1;
+    let pos = arrOpen + 1;
     let depth = 0;
-    let start = -1;
-    while (i < str.length) {
-      const ch = str[i];
-      if (ch === '{') { if (depth === 0) start = i; depth++; }
-      else if (ch === '}') {
+    let objStart = -1;
+    while (pos < str.length) {
+      const ch = str[pos];
+      if (ch === '{') {
+        if (depth === 0) objStart = pos;
+        depth++;
+      } else if (ch === '}') {
         depth--;
-        if (depth === 0 && start !== -1) {
-          try { entries.push(JSON.parse(str.slice(start, i + 1))); } catch {}
-          start = -1;
+        if (depth === 0 && objStart !== -1) {
+          try { entries.push(JSON.parse(str.slice(objStart, pos + 1))); } catch {}
+          objStart = -1;
         }
       }
-      i++;
+      pos++;
     }
     return entries;
   }
