@@ -391,6 +391,7 @@ function safeParseJSON(text) {
     return { ingredients, dishes };
   }
 
+  console.warn('[safeParseJSON] Could not parse. Raw preview:', text?.slice(0, 300));
   return null;
 }
 
@@ -441,7 +442,8 @@ Do NOT include:
 ✗ Dietary tags like (GF), (V), (VG) — not dish names
 
 SPECIAL CASES:
-- If a dish offers TWO format choices (e.g. "Traditional or Boneless Wings 15.95"), create TWO separate dishes at the same price
+- If a dish lists multiple protein or filling options as ALTERNATIVES — separated by commas or "OR" where the customer chooses one (e.g. "Tacos - chicken, steak, OR shrimp 17.95", or "Traditional or Boneless Wings 15.95") — create one separate dish per option using the format "[Parent Name] - [Variant]". When the parent name itself contains the variant words (e.g. "Traditional or Boneless Wings"), use the shortest clean parent name (e.g. "Wings") not the full option string. All variants share the same price.
+- Do NOT split dishes where multiple proteins are combined in the same recipe, indicated by "&", "and", or "with" (e.g. "Penne Vodka with Grilled Chicken & Shrimp" is one dish containing both proteins, not two variants).
 - Strip dietary tags from dish names: "(GF) Salmon" → "Salmon"
 - Title case all dish names: "GRILLED CHICKEN" → "Grilled Chicken"
 - Preserve acronyms: BLT, BBQ, GF, NYC
@@ -599,7 +601,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1800,
+      max_tokens: 2500,
       system: systemPrompt,
       messages: [{
         role: 'user',
