@@ -610,8 +610,16 @@ async function lookupSpoonacularRecipes(dishes) {
 
 async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId, spoonacularData = {}) {
   const libraryRef = ingredientLibrary
-    .map((ing, idx) => `${idx + 1}. ${ing.name} | ${ing.unit} | $${ing.estimated_unit_cost}/${ing.unit}`)
+    .filter(ing => ing.name && ing.unit)
+    .map((ing, idx) => {
+      const cost = typeof ing.estimated_unit_cost === 'number'
+        ? ing.estimated_unit_cost
+        : 0;
+      return `${idx + 1}. ${ing.name} | ${ing.unit} | $${cost}/${ing.unit}`;
+    })
     .join('\n');
+
+  console.log(`[pass2] libraryRef: ${ingredientLibrary.length} ingredients, ${libraryRef.length} chars`);
 
   const systemPrompt = [
     {
@@ -1054,6 +1062,7 @@ export default async function handler(req, res) {
 
         if (unmatchedDishes.length > 0) {
           console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2...`);
+          console.log(`[pass2] ingredient library sample:`, JSON.stringify(chunkIngredients.slice(0, 3)));
           const t2 = Date.now();
           const { dishes: rawDishes, truncated } =
             await pass2_buildRecipes(unmatchedDishes, chunkIngredients, restaurantId, {});
