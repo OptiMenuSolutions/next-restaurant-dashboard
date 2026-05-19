@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "pages/api/menu/parse-menu.js": {
+      "maxDuration": 300
+    }
+  }
+}
