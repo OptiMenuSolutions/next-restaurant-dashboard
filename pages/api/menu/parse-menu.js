@@ -666,6 +666,8 @@ Return ONLY a valid JSON object (not an array):
 
     console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
     const raw = response.content[0]?.text || '{}';
+    console.log(`[pass2] "${dish.name}" content[0] type: ${response.content[0]?.type} | raw length: ${raw.length}`);
+    const parsed = safeParseJSON(raw);
     const parsed = safeParseJSON(raw);
     if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
     return parsed;
