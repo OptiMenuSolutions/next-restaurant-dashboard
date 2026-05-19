@@ -335,7 +335,11 @@ function safeParseJSON(text) {
     ? cleaned.slice(firstBrace, lastBrace + 1)
     : cleaned;
 
-  try { return JSON.parse(stripped); } catch {}
+  try { 
+    const result = JSON.parse(stripped);
+    console.log('[safeParseJSON] Parsed dish: ' + (result?.name || 'unknown'));
+    return result;
+  } catch {}
 
   const lastComma = stripped.lastIndexOf('},');
   if (lastComma > 0) {
