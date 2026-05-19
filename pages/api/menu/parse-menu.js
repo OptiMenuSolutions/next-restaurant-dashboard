@@ -520,15 +520,13 @@ Return ONLY valid JSON:
     restaurantId,
   });
 
-const raw = response.content[0]?.text || '{}';
-  console.log(`[pass2] "${dish.name}" content[0] type: ${response.content[0]?.type} | raw length: ${raw.length}`);
-  if (['Sizzling Fajitas - Shrimp', 'Sizzling Fajitas - Combo of Three', 'Avocado Egg Rolls', 'Burrata & Foccacia'].includes(dish.name)) {
-    console.log(`[pass2] ${dish.name} RAW:`, raw.slice(0, 500));
-    console.log(`[pass2] ${dish.name} RAW TAIL:`, raw.slice(-200));
-  }
+  const raw = response.content[0]?.text || '{}';
+  console.log(`[pass1] stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+  if (response.stop_reason === 'max_tokens') console.warn('[pass1] WARNING: response truncated');
+
   const parsed = safeParseJSON(raw);
-  if (!parsed) console.error('[pass2] safeParseJSON returned null. Raw:', raw.slice(0, 500));
-  else console.log(`[pass2] ${parsed.ingredients?.length ?? 0} ingredients, ${parsed.dishes?.length ?? 0} dishes`);
+  if (!parsed) console.error('[pass1] safeParseJSON returned null. Raw:', raw.slice(0, 500));
+  else console.log(`[pass1] ${parsed.ingredients?.length ?? 0} ingredients, ${parsed.dishes?.length ?? 0} dishes`);
 
   return {
     ingredients: parsed?.ingredients || [],
@@ -673,8 +671,12 @@ Return ONLY a valid JSON object (not an array):
     });
 
     console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
-    const raw = response.content[0]?.text || '{}';
+  const raw = response.content[0]?.text || '{}';
     console.log(`[pass2] "${dish.name}" content[0] type: ${response.content[0]?.type} | raw length: ${raw.length}`);
+    if (['Sizzling Fajitas - Shrimp', 'Sizzling Fajitas - Combo of Three', 'Avocado Egg Rolls', 'Burrata & Foccacia'].includes(dish.name)) {
+      console.log(`[pass2] ${dish.name} RAW:`, raw.slice(0, 500));
+      console.log(`[pass2] ${dish.name} RAW TAIL:`, raw.slice(-200));
+    }
     const parsed = safeParseJSON(raw);
     if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
     return parsed;
