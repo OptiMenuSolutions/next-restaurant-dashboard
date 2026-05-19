@@ -265,29 +265,32 @@ function normalizeDishName(name) {
     .trim();
 }
 
-function matchRecipe(dishName, globalRecipes) {
+function matchRecipe(dishName, globalRecipes, section = '') {
   const normalized = normalizeDishName(dishName);
+  const normalizedWords = normalized.split(' ').filter(w => w.length > 0);
+  const qualifiedName = normalizedWords.length === 1 && section
+    ? `${normalized} ${section.toLowerCase()}`
+    : normalized;
 
   for (const recipe of globalRecipes) {
-    if (normalizeDishName(recipe.dish_name) === normalized) {
+    if (normalizeDishName(recipe.dish_name) === qualifiedName) {
       return recipe.components;
     }
     for (const alias of recipe.aliases || []) {
-      if (normalizeDishName(alias) === normalized) {
+      if (normalizeDishName(alias) === qualifiedName) {
         return recipe.components;
       }
     }
   }
 
-  if (normalized.length >= 6) {
+  if (normalizedWords.length >= 2) {
     for (const recipe of globalRecipes) {
       const recipeNorm = normalizeDishName(recipe.dish_name);
       if (recipeNorm.length < 6) continue;
-      const longer = Math.max(normalized.length, recipeNorm.length);
-      const shorter = Math.min(normalized.length, recipeNorm.length);
-      // Only partial match if the strings are at least 60% similar in length
+      const longer = Math.max(qualifiedName.length, recipeNorm.length);
+      const shorter = Math.min(qualifiedName.length, recipeNorm.length);
       if (shorter / longer < 0.6) continue;
-      if (normalized.includes(recipeNorm) || recipeNorm.includes(normalized)) {
+      if (qualifiedName.includes(recipeNorm) || recipeNorm.includes(qualifiedName)) {
         console.log(`[recipes] Partial match: "${dishName}" → "${recipe.dish_name}"`);
         return recipe.components;
       }
@@ -295,6 +298,27 @@ function matchRecipe(dishName, globalRecipes) {
   }
 
   return null;
+}
+
+// ─── Extract ingredients from matched recipe components into ingredientMap ────
+// Ensures every ingredient in a global recipe hit gets an entry in ingredientMap
+// so saveToSupabase can resolve ingredient IDs for matched dishes.
+
+function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
+  for (const comp of components || []) {
+    for (const ing of comp.ingredients || []) {
+      const key = ing.name.trim().toLowerCase();
+      if (!ingredientMap[key]) {
+        ingredientMap[key] = {
+          name: ing.name.trim(),
+          unit: ing.unit,
+          estimated_unit_cost: ing.estimated_unit_cost,
+          is_new: true,
+          prep_type: 'purchased',
+        };
+      }
+    }
+  }
 }
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
@@ -438,6 +462,7 @@ NO FINISHED GOODS RULE:
   ✗ "Fried Rice" → ✓ "Jasmine Rice" + "Eggs" + "Scallions" + "Soy Sauce"
   ✗ "Mashed Potatoes" as a finished good → ✓ "Yukon Gold Potatoes" + "Butter" + "Heavy Cream" (mark prep_type "ask")
   ✗ "House Salad" → ✓ "Mixed Greens" + "Cherry Tomatoes" + etc.
+  ✗ "Mac & Cheese" as a purchased item → ✓ "Elbow Macaroni" + "Cheddar Cheese" + "Heavy Cream" + "Butter"
 
 For every dish, list all ingredients needed:
 - Match global library ingredients by exact name and unit
@@ -566,7 +591,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
       ? `\nSPOONACULAR REFERENCE INGREDIENTS (use as strong guidance for what belongs in this dish):\n${spoonacularRef.map(i => `- ${i.name}: ${i.amount} ${i.unit}`).join('\n')}`
       : '';
 
-    const dishLine = `"${dish.name}" | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}${spoonacularBlock}`;
+    const dishLine = `"${dish.name}" | section: ${dish.section || 'unknown'} | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}${spoonacularBlock}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
@@ -591,7 +616,7 @@ RULES:
 
 NO FINISHED GOODS:
 - Never use a pre-made or composite preparation as an ingredient
-- If the library contains a finished good like "Fried Rice" or "House Salad", decompose it into its raw components instead
+- If the library contains a finished good like "Fried Rice" or "House Salad" or "Mac & Cheese", decompose it into its raw components instead
 - Always build from raw ingredients
 
 COST GUARDRAIL:
@@ -935,6 +960,7 @@ export default async function handler(req, res) {
       for (let c = 0; c < chunks.length; c++) {
         const chunkLabel = chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '';
 
+        const sectionName = chunks[c].split('\n')[0].trim();
         console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
         const t1 = Date.now();
         const { ingredients: chunkIngredients, dishes: chunkDishManifest } =
@@ -945,12 +971,13 @@ export default async function handler(req, res) {
           console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No ingredients extracted, skipping`);
           continue;
         }
-        if (!chunkDishManifest?.length) {
+        if (!stampedDishManifest?.length) {
           console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes found, skipping`);
           continue;
         }
 
         console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
+        const stampedDishManifest = chunkDishManifest.map(dish => ({ ...dish, section: sectionName }));
 
         // Merge ingredients — later chunks win on price if same name seen before
         for (const ing of chunkIngredients) {
@@ -962,10 +989,13 @@ export default async function handler(req, res) {
         const matchedDishes = [];
         const unmatchedDishes = [];
 
-        for (const dish of chunkDishManifest) {
-          const components = matchRecipe(dish.name, globalRecipes);
+        for (const dish of stampedDishManifest) {
+          const components = matchRecipe(dish.name, globalRecipes, dish.section || '');
           if (components) {
             console.log(`[recipes] Hit: "${dish.name}"`);
+            // Ensure all ingredients in this matched recipe are in ingredientMap
+            // so saveToSupabase can resolve their IDs
+            mergeRecipeIngredientsIntoMap(components, ingredientMap);
             matchedDishes.push({
               name: dish.name,
               price: dish.price ?? null,
