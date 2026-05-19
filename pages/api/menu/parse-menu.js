@@ -629,7 +629,6 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
     {
       type: 'text',
       text: `INGREDIENT LIBRARY — copy name, unit, and cost exactly:\n\n${libraryRef}\n\n${'━'.repeat(48)}\nARCHETYPE COMPONENT SCHEMAS\n${'━'.repeat(48)}\n\n${ARCHETYPE_SCHEMA_TEXT}`,
-      cache_control: { type: 'ephemeral' },
     },
   ];
 
