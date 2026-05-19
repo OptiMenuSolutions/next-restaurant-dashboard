@@ -305,8 +305,10 @@ function matchRecipe(dishName, globalRecipes, section = '') {
 // so saveToSupabase can resolve ingredient IDs for matched dishes.
 
 function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
-  for (const comp of components || []) {
-    for (const ing of comp.ingredients || []) {
+  for (let i = 0; i < (components || []).length; i++) {
+    const comp = components[i];
+    for (let j = 0; j < (comp.ingredients || []).length; j++) {
+      const ing = comp.ingredients[j];
       const key = ing.name.trim().toLowerCase();
       if (!ingredientMap[key]) {
         ingredientMap[key] = {
@@ -977,7 +979,7 @@ export default async function handler(req, res) {
         }
 
         console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
-        const stampedDishManifest = chunkDishManifest.map(dish => ({ ...dish, section: sectionName }));
+        const stampedDishManifest = chunkDishManifest.map(dish => Object.assign({}, dish, { section: sectionName }));
 
         // Merge ingredients — later chunks win on price if same name seen before
         for (const ing of chunkIngredients) {
