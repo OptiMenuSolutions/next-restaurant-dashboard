@@ -975,13 +975,13 @@ export default async function handler(req, res) {
           console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No ingredients extracted, skipping`);
           continue;
         }
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
+        const stampedDishManifest = chunkDishManifest.map(dish => Object.assign({}, dish, { section: sectionName }));
+
         if (!stampedDishManifest?.length) {
           console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes found, skipping`);
           continue;
         }
-
-        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
-        const stampedDishManifest = chunkDishManifest.map(dish => Object.assign({}, dish, { section: sectionName }));
 
         // Merge ingredients — later chunks win on price if same name seen before
         for (const ing of chunkIngredients) {
