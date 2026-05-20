@@ -1117,19 +1117,41 @@ function validateDishes(rawDishes) {
       const price = typeof d.price === 'number' && !isNaN(d.price)
         ? Math.round(d.price * 100) / 100
         : null;
-      const estimatedMargin = price && totalEstimatedCost > 0
-        ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
+
+      // Auto-scale if cost exceeds 50% of menu price
+      let scaledComponents = components;
+      let scaledCost = totalEstimatedCost;
+
+      if (price && totalEstimatedCost > price * 0.50) {
+        const scaleFactor = (price * 0.50) / totalEstimatedCost;
+        console.warn(`[validate] Cost guardrail triggered for "${d.name}": $${totalEstimatedCost.toFixed(2)} > 50% of $${price} — scaling by ${scaleFactor.toFixed(3)}`);
+        
+        scaledComponents = components.map(comp => {
+          const scaledIngredients = comp.ingredients.map(ing => {
+            const newQty = Math.round(ing.quantity * scaleFactor * 10000) / 10000;
+            return {
+              ...ing,
+              quantity: newQty,
+              estimated_total_cost: Math.round(newQty * ing.estimated_unit_cost * 10000) / 10000,
+            };
+          });
+          const newCompCost = scaledIngredients.reduce((s, i) => s + i.estimated_total_cost, 0);
+          return {
+            ...comp,
+            ingredients: scaledIngredients,
+            component_cost: Math.round(newCompCost * 10000) / 10000,
+          };
+        });
+
+        scaledCost = scaledComponents.reduce((s, c) => s + c.component_cost, 0);
+      }
+
+      const estimatedMargin = price && scaledCost > 0
+        ? Math.round(((price - scaledCost) / price) * 1000) / 10
         : null;
 
-      // Warn on beverage cost anomalies — likely unit error
-      if (d.archetype === 'Beverage' && price) {
-        for (const comp of components) {
-          for (const ing of comp.ingredients) {
-            if (ing.estimated_total_cost > price * 0.4) {
-              console.warn(`[validate] Beverage cost anomaly: "${ing.name}" on "${d.name}" costs $${ing.estimated_total_cost.toFixed(2)} alone — possible unit or quantity error`);
-            }
-          }
-        }
+      if (estimatedMargin !== null && estimatedMargin < 45) {
+        console.warn(`[validate] Low margin warning: "${d.name}" estimated margin ${estimatedMargin}% after scaling`);
       }
 
       return {
@@ -1138,8 +1160,8 @@ function validateDishes(rawDishes) {
         category: typeof d.category === 'string' ? d.category.trim() : 'Other',
         archetype: typeof d.archetype === 'string' ? d.archetype.trim() : 'Small Plate / Other',
         description: typeof d.description === 'string' ? d.description.trim() : null,
-        components,
-        total_estimated_cost: Math.round(totalEstimatedCost * 100) / 100,
+        components: scaledComponents,
+        total_estimated_cost: Math.round(scaledCost * 100) / 100,
         estimated_margin: estimatedMargin,
       };
     });
