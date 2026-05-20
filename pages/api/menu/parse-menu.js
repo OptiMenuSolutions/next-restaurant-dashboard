@@ -428,7 +428,7 @@ async function pass1_extractAndClassify(menuText, globalIngredients, restaurantI
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 8000,
+    max_tokens: 12000,
     system: [
       {
         type: 'text',
@@ -858,9 +858,24 @@ Return a valid JSON object first, then the cost check. No other prose.
 //     (library costs are more trustworthy than Pass 1 estimates)
 
 function canonicalizeIngredients(ingredientMap, allDishes) {
-  const keys = Object.keys(ingredientMap); // all lowercase normalized keys
-  const merged = new Set(); // keys already absorbed into another group
-  const renameMap = {}; // oldKey → canonicalKey, for rewriting dish refs
+  // Build a set of dish names so we can exclude them from ingredient merging.
+  // Dish names sometimes leak into ingredientMap when the finished-goods rule
+  // isn't followed perfectly — they should never be treated as ingredients.
+  const dishNameKeys = new Set(allDishes.map(d => d.name.trim().toLowerCase()));
+
+  // Filter out any ingredientMap entries that are actually dish names
+  const filteredKeys = Object.keys(ingredientMap).filter(k => !dishNameKeys.has(k));
+  const removedDishNames = Object.keys(ingredientMap).length - filteredKeys.length;
+  if (removedDishNames > 0) {
+    const removed = Object.keys(ingredientMap)
+      .filter(k => dishNameKeys.has(k))
+      .map(k => ingredientMap[k].name);
+    console.log(`[canonicalize] Removed ${removedDishNames} dish names from ingredient map: ${removed.join(', ')}`);
+  }
+
+  const keys = filteredKeys;
+  const merged = new Set();
+  const renameMap = {}; // oldKey → canonicalKey
 
   function tokenize(name) {
     return name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
@@ -874,33 +889,40 @@ function canonicalizeIngredients(ingredientMap, allDishes) {
     return union === 0 ? 0 : intersection / union;
   }
 
+  // Two ingredients are similar only if they share enough tokens AND
+  // neither name is a strict prefix/suffix qualifier of a completely different thing.
+  // We use token overlap >= 0.75 (tight) — this catches:
+  //   "Clams" / "Littleneck Clams" (0.5 overlap — below threshold, intentionally NOT merged)
+  //   "NY Strip" / "New York Strip" (no token overlap — NOT merged)
+  //   "Jasmine Rice" / "White Rice" (0.5 — NOT merged)
+  //   "Chipotle Mayo" / "Chipotle in Adobo" (0.33 — NOT merged)
+  //   "Hot Sauce" / "Hot Cherry Pepper" (0.33 — NOT merged)
+  // And correctly merges only near-identical names:
+  //   "Yukon Gold Potato" / "Yukon Gold Potatoes" (0.8 — merged ✓)
+  //   "Chicken Breast" / "Chicken Breasts" (0.67 — merged ✓)
+  //   "Yellow Onion" / "Yellow Onions" (0.67 — merged ✓)
+  //   "Pico de Gallo" / "Pico De Gallo" (1.0 — merged ✓)
+  const OVERLAP_THRESHOLD = 0.75;
+
   function areSimilar(keyA, keyB) {
-    // Substring containment (either direction)
-    if (keyA.includes(keyB) || keyB.includes(keyA)) return true;
-    // Token overlap
-    if (tokenOverlap(keyA, keyB) >= 0.6) return true;
-    return false;
+    return tokenOverlap(keyA, keyB) >= OVERLAP_THRESHOLD;
   }
 
   function pickCanonical(groupKeys) {
-    // Prefer the longest name (most specific)
-    // Among ties, prefer non-new (global library) entries
-    // Among remaining ties, prefer lower cost (more trustworthy library cost)
     return groupKeys.sort((a, b) => {
       const ingA = ingredientMap[a];
       const ingB = ingredientMap[b];
-      // Longest name first
-      const lenDiff = ingredientMap[b].name.length - ingredientMap[a].name.length;
+      // Longest name first (most specific)
+      const lenDiff = ingB.name.length - ingA.name.length;
       if (lenDiff !== 0) return lenDiff;
-      // Global library entry preferred (is_new: false)
+      // Global library entry preferred (is_new: false beats is_new: true)
       const newDiff = (ingA.is_new ? 1 : 0) - (ingB.is_new ? 1 : 0);
       if (newDiff !== 0) return newDiff;
       return 0;
     })[0];
   }
 
-  // Build groups
-  const groups = []; // array of Sets of keys
+  const groups = [];
 
   for (const key of keys) {
     if (merged.has(key)) continue;
@@ -919,8 +941,7 @@ function canonicalizeIngredients(ingredientMap, allDishes) {
     groups.push(group);
   }
 
-  // For each group with more than one member, pick canonical and build renameMap
-  const canonicalMap = {}; // canonicalKey → merged ingredient entry
+  const canonicalMap = {};
 
   for (const group of groups) {
     const groupKeys = [...group];
@@ -928,13 +949,13 @@ function canonicalizeIngredients(ingredientMap, allDishes) {
     const canonical = { ...ingredientMap[canonicalKey] };
 
     if (groupKeys.length > 1) {
-      const aliases = groupKeys.filter(k => k !== canonicalKey).map(k => ingredientMap[k].name);
+      const aliases = groupKeys
+        .filter(k => k !== canonicalKey)
+        .map(k => ingredientMap[k].name);
       console.log(`[canonicalize] "${canonical.name}" absorbs: ${aliases.join(', ')}`);
 
       for (const k of groupKeys) {
-        if (k !== canonicalKey) {
-          renameMap[k] = canonicalKey;
-        }
+        if (k !== canonicalKey) renameMap[k] = canonicalKey;
       }
     }
 
