@@ -843,6 +843,127 @@ Return a valid JSON object first, then the cost check. No other prose.
   };
 }
 
+// ─── Ingredient canonicalization ─────────────────────────────────────────────
+// Runs after all chunks complete, before saveToSupabase.
+// Groups ingredients whose names are highly similar, picks one canonical name
+// per group, then rewrites all dish component references to use it.
+//
+// Similarity rules (in order):
+//   1. Substring containment — "Clams" is contained in "Littleneck Clams" → same group
+//   2. Token overlap ≥ 0.6 — "NY Strip" and "New York Strip" share enough tokens
+//
+// Canonical name selection:
+//   - Longest name in the group (most specific)
+//   - Ties broken by: global library entry preferred, then lowest estimated cost
+//     (library costs are more trustworthy than Pass 1 estimates)
+
+function canonicalizeIngredients(ingredientMap, allDishes) {
+  const keys = Object.keys(ingredientMap); // all lowercase normalized keys
+  const merged = new Set(); // keys already absorbed into another group
+  const renameMap = {}; // oldKey → canonicalKey, for rewriting dish refs
+
+  function tokenize(name) {
+    return name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean);
+  }
+
+  function tokenOverlap(a, b) {
+    const ta = new Set(tokenize(a));
+    const tb = new Set(tokenize(b));
+    const intersection = [...ta].filter(t => tb.has(t)).length;
+    const union = new Set([...ta, ...tb]).size;
+    return union === 0 ? 0 : intersection / union;
+  }
+
+  function areSimilar(keyA, keyB) {
+    // Substring containment (either direction)
+    if (keyA.includes(keyB) || keyB.includes(keyA)) return true;
+    // Token overlap
+    if (tokenOverlap(keyA, keyB) >= 0.6) return true;
+    return false;
+  }
+
+  function pickCanonical(groupKeys) {
+    // Prefer the longest name (most specific)
+    // Among ties, prefer non-new (global library) entries
+    // Among remaining ties, prefer lower cost (more trustworthy library cost)
+    return groupKeys.sort((a, b) => {
+      const ingA = ingredientMap[a];
+      const ingB = ingredientMap[b];
+      // Longest name first
+      const lenDiff = ingredientMap[b].name.length - ingredientMap[a].name.length;
+      if (lenDiff !== 0) return lenDiff;
+      // Global library entry preferred (is_new: false)
+      const newDiff = (ingA.is_new ? 1 : 0) - (ingB.is_new ? 1 : 0);
+      if (newDiff !== 0) return newDiff;
+      return 0;
+    })[0];
+  }
+
+  // Build groups
+  const groups = []; // array of Sets of keys
+
+  for (const key of keys) {
+    if (merged.has(key)) continue;
+
+    const group = new Set([key]);
+
+    for (const other of keys) {
+      if (other === key || merged.has(other)) continue;
+      if (areSimilar(key, other)) {
+        group.add(other);
+        merged.add(other);
+      }
+    }
+
+    merged.add(key);
+    groups.push(group);
+  }
+
+  // For each group with more than one member, pick canonical and build renameMap
+  const canonicalMap = {}; // canonicalKey → merged ingredient entry
+
+  for (const group of groups) {
+    const groupKeys = [...group];
+    const canonicalKey = pickCanonical(groupKeys);
+    const canonical = { ...ingredientMap[canonicalKey] };
+
+    if (groupKeys.length > 1) {
+      const aliases = groupKeys.filter(k => k !== canonicalKey).map(k => ingredientMap[k].name);
+      console.log(`[canonicalize] "${canonical.name}" absorbs: ${aliases.join(', ')}`);
+
+      for (const k of groupKeys) {
+        if (k !== canonicalKey) {
+          renameMap[k] = canonicalKey;
+        }
+      }
+    }
+
+    canonicalMap[canonicalKey] = canonical;
+  }
+
+  // Rewrite dish component ingredient names to use canonical
+  let rewriteCount = 0;
+  for (const dish of allDishes) {
+    for (const comp of dish.components || []) {
+      for (const ing of comp.ingredients || []) {
+        const ingKey = ing.name.trim().toLowerCase();
+        const canonicalKey = renameMap[ingKey];
+        if (canonicalKey) {
+          const canonicalEntry = canonicalMap[canonicalKey];
+          ing.name = canonicalEntry.name;
+          ing.estimated_unit_cost = canonicalEntry.estimated_unit_cost;
+          ing.unit = canonicalEntry.unit;
+          rewriteCount++;
+        }
+      }
+    }
+  }
+
+  console.log(`[canonicalize] ${groups.length} canonical ingredients from ${keys.length} raw | ${rewriteCount} dish references rewritten`);
+
+  return canonicalMap;
+}
+
 // ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
 
 // Heuristic cheese keyword list — catches obvious component misclassifications
@@ -1236,9 +1357,14 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: 'No menu items found across all uploaded files. Try clearer images.' });
     }
 
-    const mergedIngredientLibrary = Object.values(ingredientMap);
+    const rawIngredientLibrary = Object.values(ingredientMap);
 
-    console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients`);
+    // Canonicalize ingredient names across all chunks before saving.
+    // Returns a cleaned map and rewrites dish component references in-place.
+    const canonicalMap = canonicalizeIngredients(ingredientMap, allDishes);
+    const mergedIngredientLibrary = Object.values(canonicalMap);
+
+    console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients (${rawIngredientLibrary.length} raw)`);
     const reviewMode = req.query.review === 'true';
     const withMargin = allDishes.filter(d => d.estimated_margin !== null);
 
