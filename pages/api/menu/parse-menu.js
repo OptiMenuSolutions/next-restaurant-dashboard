@@ -566,6 +566,14 @@ DISH NAMES:
 - Preserve acronyms: BLT, BBQ, GF, NYC
 - Keep the menu's own name — do not rename or standardize
 
+DISH NAME INTEGRITY:
+The dish name must match the menu exactly as printed — never incorporate description text.
+✗ "Penne Vodka with Grilled Chicken & Shrimp" (description appended)
+✓ "Penne Vodka" (name as printed)
+✗ "Sizzling Fajitas - Beef 30.95" (price appended)
+✓ "Sizzling Fajitas - Beef"
+Strip everything after the first price or description separator.
+
 ════════════════════════════════════════
 PART B — INGREDIENT LIBRARY
 ════════════════════════════════════════
@@ -1056,8 +1064,10 @@ function validateDishes(rawDishes) {
     .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
     .map(d => {
       const components = (d.components || []).map(c => {
-        const ingredients = (c.ingredients || []).map(i => {
-          const qty = typeof i.quantity === 'number' ? i.quantity : 0;
+      const ingredients = (c.ingredients || [])
+        .filter(i => (typeof i.quantity === 'number' ? i.quantity : 0) > 0)
+        .map(i => {
+          const qty = i.quantity;
           const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
           return {
             name: i.name || 'Unknown',
@@ -1077,6 +1087,21 @@ function validateDishes(rawDishes) {
             const isActuallyCheese = CHEESE_KEYWORDS.some(k => ingLower.includes(k));
             if (!isActuallyCheese) {
               console.warn(`[validate] Possible misclassified ingredient: "${ing.name}" in Cheese component of "${d.name}"`);
+            }
+          }
+        }
+
+        // Heuristic: warn if protein component ingredient doesn't match dish name variant
+        // Only applies to variant dishes (name contains " - ")
+        if (d.name.includes(' - ')) {
+          const variant = d.name.split(' - ').pop().toLowerCase();
+          const proteinComp = (d.components || []).find(c => c.name === 'Protein' || c.name === 'Main Element');
+          if (proteinComp) {
+            const proteinNames = proteinComp.ingredients.map(i => i.name.toLowerCase()).join(' ');
+            const variantWords = variant.split(/\s+/).filter(w => w.length > 3);
+            const hasMatch = variantWords.some(w => proteinNames.includes(w));
+            if (!hasMatch) {
+              console.warn(`[validate] Possible protein mismatch: "${d.name}" — variant "${variant}" not found in protein ingredients: ${proteinNames}`);
             }
           }
         }
