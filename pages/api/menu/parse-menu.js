@@ -322,6 +322,62 @@ function matchRecipe(dishName, dishArchetype, globalRecipes, section = '') {
   return null;
 }
 
+// ─── Pre-Pass-2 dish filter ───────────────────────────────────────────────────
+// Removes dishes that should never enter the recommendation engine:
+//   1. Add-on / upcharge variants (e.g. "Pineapple Stir-Fry - Add Beef")
+//   2. Combo pricing tiers (e.g. "Sizzling Fajitas - Combo of Two")
+//   3. Sides, kids menu, desserts, and beverages (low/no recommendation value)
+//
+// Detection is by section/category name and dish name patterns.
+// All removals are logged for auditability.
+
+const EXCLUDED_SECTION_PATTERNS = [
+  /\bsides?\b/i,
+  /\bkids?\b/i,
+  /\bchildren\b/i,
+  /\bdesserts?\b/i,
+  /\bsweets?\b/i,
+  /\bbeverages?\b/i,
+  /\bdrinks?\b/i,
+  /\bcocktails?\b/i,
+  /\bwine\b/i,
+  /\bbeer\b/i,
+  /\bspirits?\b/i,
+];
+
+const EXCLUDED_NAME_PATTERNS = [
+  /^add\s+/i,           // "Add Beef", "Add Salmon"
+  /\s[-–]\s*add\s+/i,   // "Pineapple Stir-Fry - Add Beef"
+  /combo\s+of\s+/i,     // "Combo of Two", "Combo of Three"
+];
+
+function filterDishManifest(dishes) {
+  const kept = [];
+  const removed = [];
+
+  for (const dish of dishes) {
+    const sectionExcluded = EXCLUDED_SECTION_PATTERNS.some(p =>
+      p.test(dish.section || '') || p.test(dish.category || '')
+    );
+    const nameExcluded = EXCLUDED_NAME_PATTERNS.some(p => p.test(dish.name));
+
+    if (sectionExcluded || nameExcluded) {
+      removed.push({
+        name: dish.name,
+        reason: sectionExcluded ? `section: "${dish.section}"` : 'name pattern',
+      });
+    } else {
+      kept.push(dish);
+    }
+  }
+
+  if (removed.length > 0) {
+    console.log(`[filter] Removed ${removed.length} dishes: ${removed.map(d => `"${d.name}" (${d.reason})`).join(', ')}`);
+  }
+
+  return kept;
+}
+
 // ─── Extract ingredients from matched recipe components into ingredientMap ────
 
 function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
@@ -428,7 +484,7 @@ async function pass1_extractAndClassify(menuText, globalIngredients, restaurantI
 
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 12000,
+    max_tokens: 8000,
     system: [
       {
         type: 'text',
@@ -1316,8 +1372,11 @@ export default async function handler(req, res) {
           Object.assign({}, dish, { section: sectionName })
         );
 
-        if (!stampedDishManifest?.length) {
-          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes found, skipping`);
+        // Filter out add-ons, combo tiers, sides, kids, desserts, beverages
+        const filteredDishManifest = filterDishManifest(stampedDishManifest);
+
+        if (!filteredDishManifest?.length) {
+          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes remaining after filter, skipping`);
           continue;
         }
 
@@ -1330,7 +1389,7 @@ export default async function handler(req, res) {
         const matchedDishes = [];
         const unmatchedDishes = [];
 
-        for (const dish of stampedDishManifest) {
+        for (const dish of filteredDishManifest) {
           const components = matchRecipe(dish.name, dish.archetype, globalRecipes, dish.section || '');
           if (components) {
             console.log(`[recipes] Hit: "${dish.name}"`);
