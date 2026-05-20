@@ -117,6 +117,25 @@ const ARCHETYPE_SCHEMA_TEXT = Object.entries(ARCHETYPES)
   })
   .join('\n\n');
 
+// ─── Archetype compatibility map for recipe matching ─────────────────────────
+
+const ARCHETYPE_COMPAT = {
+  'Pizza':                   ['Pizza'],
+  'Pasta':                   ['Pasta'],
+  'Appetizer':               ['Appetizer', 'Small Plate / Other'],
+  'Small Plate / Other':     ['Small Plate / Other', 'Appetizer'],
+  'Salad':                   ['Salad'],
+  'Burger':                  ['Burger'],
+  'Sandwich / Sub':          ['Sandwich / Sub'],
+  'Soup':                    ['Soup'],
+  'Dessert':                 ['Dessert'],
+  'Beverage':                ['Beverage'],
+  'Risotto':                 ['Risotto'],
+  'Seafood Entree':          ['Seafood Entree', 'Steak / Chop / Fillet', 'Chicken Entree'],
+  'Chicken Entree':          ['Chicken Entree', 'Steak / Chop / Fillet', 'Seafood Entree'],
+  'Steak / Chop / Fillet':   ['Steak / Chop / Fillet', 'Seafood Entree', 'Chicken Entree'],
+};
+
 // ─── Google Vision OCR ────────────────────────────────────────────────────────
 
 async function extractTextWithVision(filePath) {
@@ -186,18 +205,12 @@ async function fileToText(file) {
 }
 
 // ─── OCR text chunker ─────────────────────────────────────────────────────────
-// Splits menu OCR text on section headers (ALL CAPS lines) only.
-// Never cuts mid-dish. If no headers found, returns the full text as one chunk.
-// Logs a warning if any single section exceeds SECTION_WARN_CHARS.
 
 const SECTION_WARN_CHARS = 4000;
 
 function chunkMenuText(text) {
-  // Match lines that are ALL CAPS (section headers like "ENTREES", "SALADS & SOUPS")
-  // Must be on their own line, at least 3 chars, no price digits
   const headerRegex = /^([A-Z][A-Z\s&\/\-]{2,})$/m;
 
-  // Find all header positions
   const splits = [];
   let match;
   const globalRegex = new RegExp(headerRegex.source, 'gm');
@@ -205,14 +218,11 @@ function chunkMenuText(text) {
     splits.push(match.index);
   }
 
-  // No headers found — return full text as single chunk
   if (splits.length === 0) {
     console.log(`[chunkMenuText] No section headers found — processing as single chunk (${text.length} chars)`);
     return [text];
   }
 
-  // Build chunks: everything before first header is chunk 0 (preamble/restaurant info)
-  // then one chunk per section starting at each header
   const chunks = [];
 
   const preamble = text.slice(0, splits[0]).trim();
@@ -235,13 +245,12 @@ function chunkMenuText(text) {
   return chunks;
 }
 
-
 // ─── Global recipe matcher ────────────────────────────────────────────────────
 
 async function loadGlobalRecipes() {
   const { data, error } = await supabase
     .from('global_recipes')
-    .select('dish_name, aliases, components')
+    .select('dish_name, aliases, components, archetype')
     .eq('cuisine', 'american');
 
   if (error) {
@@ -265,21 +274,30 @@ function normalizeDishName(name) {
     .trim();
 }
 
-function matchRecipe(dishName, globalRecipes, section = '') {
+function matchRecipe(dishName, dishArchetype, globalRecipes, section = '') {
   const normalized = normalizeDishName(dishName);
   const normalizedWords = normalized.split(' ').filter(w => w.length > 0);
   const qualifiedName = normalizedWords.length === 1 && section
     ? `${normalized} ${section.toLowerCase()}`
     : normalized;
 
+  const archetypeCompatible = (recipeArchetype) => {
+    if (!dishArchetype || !recipeArchetype) return true;
+    const compatible = ARCHETYPE_COMPAT[dishArchetype] || [];
+    return compatible.includes(recipeArchetype);
+  };
+
   for (const recipe of globalRecipes) {
-    if (normalizeDishName(recipe.dish_name) === qualifiedName) {
-      return recipe.components;
-    }
-    for (const alias of recipe.aliases || []) {
-      if (normalizeDishName(alias) === qualifiedName) {
-        return recipe.components;
+    const nameMatch =
+      normalizeDishName(recipe.dish_name) === qualifiedName ||
+      (recipe.aliases || []).some(a => normalizeDishName(a) === qualifiedName);
+
+    if (nameMatch) {
+      if (!archetypeCompatible(recipe.archetype)) {
+        console.log(`[recipes] Rejected match: "${dishName}" (${dishArchetype}) → "${recipe.dish_name}" (${recipe.archetype}) — archetype mismatch`);
+        continue;
       }
+      return recipe.components;
     }
   }
 
@@ -291,6 +309,10 @@ function matchRecipe(dishName, globalRecipes, section = '') {
       const shorter = Math.min(qualifiedName.length, recipeNorm.length);
       if (shorter / longer < 0.6) continue;
       if (qualifiedName.includes(recipeNorm) || recipeNorm.includes(qualifiedName)) {
+        if (!archetypeCompatible(recipe.archetype)) {
+          console.log(`[recipes] Rejected partial match: "${dishName}" (${dishArchetype}) → "${recipe.dish_name}" (${recipe.archetype}) — archetype mismatch`);
+          continue;
+        }
         console.log(`[recipes] Partial match: "${dishName}" → "${recipe.dish_name}"`);
         return recipe.components;
       }
@@ -301,8 +323,6 @@ function matchRecipe(dishName, globalRecipes, section = '') {
 }
 
 // ─── Extract ingredients from matched recipe components into ingredientMap ────
-// Ensures every ingredient in a global recipe hit gets an entry in ingredientMap
-// so saveToSupabase can resolve ingredient IDs for matched dishes.
 
 function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
   for (let i = 0; i < (components || []).length; i++) {
@@ -330,14 +350,13 @@ function safeParseJSON(text) {
   const jsonOnly = fenceEnd !== -1 ? text.slice(0, fenceEnd) : text;
   const cleaned = jsonOnly.replace(/```json|```/g, '').trim();
 
-  // Extract just the JSON object, ignoring any prose before or after
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
   const stripped = firstBrace !== -1 && lastBrace !== -1
     ? cleaned.slice(firstBrace, lastBrace + 1)
     : cleaned;
 
-  try { 
+  try {
     const result = JSON.parse(stripped);
     console.log('[safeParseJSON] Parsed dish: ' + (result?.name || 'unknown'));
     return result;
@@ -386,8 +405,7 @@ function safeParseJSON(text) {
         const nameIdx = stripped.indexOf('"name"');
         const componentsIdx = stripped.indexOf('"components"');
         if (nameIdx !== -1 && componentsIdx !== -1) {
-          const candidate = stripped;
-          const parsed = JSON.parse(candidate);
+          const parsed = JSON.parse(stripped);
           if (parsed.name && parsed.components) {
             console.log('[safeParseJSON] Parsed dish: ' + parsed.name);
             return parsed;
@@ -434,81 +452,126 @@ CRITICAL: You are working from OCR text — trust it completely. Do not add dish
 ${menuText}
 ---
 
-Return a JSON object with two keys: "ingredients" and "dishes".
+Return a JSON object with exactly two keys: "ingredients" and "dishes".
 
+════════════════════════════════════════
 PART A — DISH LIST
-Include a dish only if:
-✓ Its name appears in the text
-✓ A price (number like 16.95) appears next to or near the name
+════════════════════════════════════════
+
+Include a dish ONLY if:
+✓ Its name appears verbatim in the OCR text
+✓ A price (a number like 16.95) appears next to or near the name
 
 Do NOT include:
 ✗ Section headers — lines with no price (e.g. "Entrees", "Burgers", "Salads")
-✗ Add-on lines (e.g. "Add: Beef 10.95") — these modify another dish
-✗ Sauce/flavor variant lists under a dish — these are ingredients
-✗ Items marked "inquire for today's selection" or "ask your server"
-✗ Combo pricing tiers (e.g. "Beef 30.95 · Chicken 27.95") — one dish, not multiple
+✗ Add-on lines (e.g. "Add: Beef 10.95") — these modify another dish, not standalone dishes
+✗ Combo pricing tiers listed inline (e.g. "Beef 30.95 · Chicken 27.95 · Shrimp 30.95") — treat the parent as ONE dish, not multiple
+✗ Items marked "inquire for today's selection" or "ask your server" — omit entirely
 ✗ Dietary tags like (GF), (V), (VG) — not dish names
+✗ Gift certificates, daily specials placeholders, or non-food items
 
-SPECIAL CASES:
-- If a dish lists multiple protein or filling options as ALTERNATIVES — separated by commas or "OR" where the customer chooses one (e.g. "Tacos - chicken, steak, OR shrimp 17.95", or "Traditional or Boneless Wings 15.95") — create one separate dish per option using the format "[Parent Name] - [Variant]". When the parent name itself contains the variant words (e.g. "Traditional or Boneless Wings"), use the shortest clean parent name (e.g. "Wings") not the full option string. All variants share the same price.
-- Do NOT split dishes where multiple proteins are combined in the same recipe, indicated by "&", "and", or "with" (e.g. "Penne Vodka with Grilled Chicken & Shrimp" is one dish containing both proteins, not two variants).
-- Strip dietary tags from dish names: "(GF) Salmon" → "Salmon"
-- Title case all dish names: "GRILLED CHICKEN" → "Grilled Chicken"
+VARIANT SPLITTING RULES:
+Variants occur when a customer must CHOOSE ONE option from a list. Split into separate dishes when:
+- Protein alternatives separated by commas or "OR" (e.g. "Tacos - chicken, steak, OR shrimp 17.95" → three dishes)
+- Style alternatives where the style fundamentally changes the dish (e.g. "Traditional or Boneless Wings 15.95" → two dishes)
+- Named sauce or flavor variants listed in a sidebar or callout box at the same price point — each named sauce or flavor becomes its own dish variant
+
+Use the format "[Shortest Clean Parent Name] - [Variant]":
+✓ "Wings - Buffalo", "Wings - Korean BBQ" (NOT "Traditional or Boneless Wings - Buffalo")
+✓ "Gourmet Tacos - Steak", "Gourmet Tacos - Chicken"
+All variants of the same parent share the same price.
+
+Do NOT split when multiple items are combined in the same recipe:
+✗ "Penne with Chicken & Shrimp" → ONE dish containing both proteins
+✗ "Surf & Turf" → ONE dish
+
+VARIANT CONSISTENCY RULE:
+When you split a dish into protein or flavor variants, all variants share the same base accompaniments unless the menu text explicitly says otherwise.
+If one variant comes with rice and beans, all variants of that parent dish also come with rice and beans.
+Capture this in the description field of each variant.
+
+ARCHETYPE ASSIGNMENT:
+Assign the most specific matching archetype from this list: ${ARCHETYPE_NAMES}
+
+The section header a dish appears under is the strongest signal for its archetype — use it as the tiebreaker when the dish name alone is ambiguous:
+- A dish in a Pizza section → archetype "Pizza" regardless of its name
+- A dish in a Starters or Appetizers section → archetype "Appetizer" regardless of its name
+- A dish in a Salads section → archetype "Salad"
+- Flatbreads are archetype "Pizza" unless they are clearly open-faced sandwiches
+- Milkshakes, smoothies, juices → "Beverage"
+- Kids menu items → use the most specific archetype that fits the actual dish (pizza → "Pizza", pasta → "Pasta", burger → "Burger")
+- Never assign an archetype based solely on the dish name if the section context contradicts it
+
+The archetype you assign here is used in Pass 2 to select the component structure. A wrong archetype produces a wrong recipe.
+
+DISH NAMES:
+- Strip dietary tags: "(GF) Salmon" → "Salmon"
+- Title case: "GRILLED CHICKEN" → "Grilled Chicken"
 - Preserve acronyms: BLT, BBQ, GF, NYC
+- Keep the menu's own name — do not rename or standardize
 
+════════════════════════════════════════
 PART B — INGREDIENT LIBRARY
+════════════════════════════════════════
 
-NAMING RULES — follow these exactly:
+List every ingredient needed across all dishes on this menu page.
+
+NAMING RULES:
 - Use the most specific, standardized name for every ingredient
-- Be consistent: the same physical ingredient must use the SAME name every time it appears across all dishes
-- Choose ONE canonical name and use it everywhere:
-  ✓ "Pork Ribs" not "Baby Back Ribs" in one dish and "Pork Ribs" in another — pick one
-  ✓ "New York Strip" not "NY Steak" in one dish and "New York Strip" in another — pick one
-  ✓ "Mashed Potatoes" not "Mashed Potato" sometimes and "Mashed Potatoes" other times
-  ✓ "Skirt Steak" not "Beef Skirt Steak" and "Skirt Steak" interchangeably — pick one
-  ✓ "Littleneck Clams" not "Clams", "Fresh Clams", and "Littleneck Clams" all for the same item
-- Prefer the global library name when a match exists — use it exactly
-- Never create two ingredient entries for what is clearly the same ingredient
+- The same physical ingredient must use the SAME name every time across all dishes — pick one canonical name and never vary it
+- Match the global library name EXACTLY when a match exists — use it character-for-character
+- Never create two entries for what is clearly the same ingredient
 
-NO FINISHED GOODS RULE:
-- Never use a pre-made, plated, or composite dish as an ingredient (e.g. "Fried Rice", "Caesar Salad", "French Onion Soup")
-- Always decompose into raw components:
-  ✗ "Fried Rice" → ✓ "Jasmine Rice" + "Eggs" + "Scallions" + "Soy Sauce"
-  ✗ "Mashed Potatoes" as a finished good → ✓ "Yukon Gold Potatoes" + "Butter" + "Heavy Cream" (mark prep_type "ask")
-  ✗ "House Salad" → ✓ "Mixed Greens" + "Cherry Tomatoes" + etc.
-  ✗ "Mac & Cheese" as a purchased item → ✓ "Elbow Macaroni" + "Cheddar Cheese" + "Heavy Cream" + "Butter"
+MISSING INGREDIENTS:
+If an ingredient appears in a dish description but has no match in the global library, ADD IT ANYWAY:
+- Set is_new: true and assign a realistic US restaurant wholesale unit cost
+- NEVER substitute a different ingredient because the correct one is not in the library
+- The correct ingredient name from the menu description is always preferred over a library approximation
+- The library will be expanded over time — missing ingredients are expected and should be captured accurately
 
-For every dish, list all ingredients needed:
-- Match global library ingredients by exact name and unit
-- For new ingredients, propose canonical name and unit
-- Assign realistic US restaurant wholesale unit cost
-- One entry per ingredient — no duplicates
-- Units: lb, oz, each, bunch, slice, sheet, sprig only
-- Include every ingredient mentioned in dish descriptions
-- Break proprietary sauces into likely base components
-- Never omit an ingredient — estimate cost if uncertain
+NO FINISHED GOODS — this is a strict rule:
+Never use a pre-made, plated, or composite dish as an ingredient. Always decompose into raw components.
 
-Available archetypes: ${ARCHETYPE_NAMES}
+The pattern to avoid: if you find yourself writing a dish name (or any named menu item) as one of its own ingredients, stop and decompose it into its raw parts.
 
-PREP TYPE — classify every ingredient with one of three values:
-- "purchased": raw commodities, produce, dairy, pre-processed proteins (wings, shrimp, calamari),
-  bread products, condiments, oils, spices, and anything that clearly arrives ready to use
-- "scratch": nothing — do not assume any prepared item is made from scratch
-- "ask": compound preparations that restaurants commonly either make in-house OR buy pre-made:
-  sauces (alfredo, marinara, vodka sauce, chimichurri, hollandaise, etc.)
-  dressings, stocks, bases, doughs, batters, spice blends, rubs,
-  specialty preparations (mashed potatoes, risotto base, guacamole, etc.)
+Examples of the pattern (illustrative, not exhaustive):
+✗ Any dish using its own name as an ingredient
+✗ "Fried Rice" as an ingredient → ✓ Jasmine Rice + Eggs + Scallions + Soy Sauce + Sesame Oil
+✗ "Mashed Potatoes" as a finished good → ✓ Yukon Gold Potato + Butter + Heavy Cream + Garlic
+✗ "Coleslaw" as a purchased item → ✓ Green Cabbage + Carrot + Mayonnaise + Apple Cider Vinegar
+✗ "Guacamole" as a purchased item → ✓ Avocado + Red Onion + Jalapeño + Lime Juice + Cilantro
+✗ Any named sauce listed as a single purchased ingredient when it can reasonably be decomposed
 
-When in doubt between "purchased" and "ask", use "ask".
+DRESSING INFERENCE RULE:
+When a dish's name or description implies a specific dressing, add that dressing by name — even if it is not in the global library. Set is_new: true.
+The pattern: dish name or description implies a dressing → use that specific dressing, not a generic substitute.
+Common examples (not exhaustive): Caesar → "Caesar Dressing", Greek → "Greek Vinaigrette", Ranch → "Ranch Dressing", Honey Mustard → "Honey Mustard Dressing", Balsamic → "Balsamic Vinaigrette".
+Never default to a generic "House Dressing" unless the menu explicitly says "house dressing."
 
-Return ONLY valid JSON:
+UNITS — use only: lb, oz, each, bunch, slice, sheet, sprig
+"Each" is appropriate for ingredients that kitchen staff would literally count out as whole units: eggs, whole lemons or limes, whole avocados, buns, rolls, tortillas, pitas.
+"Each" is NOT appropriate for fractional toppings or portioned produce — use oz or lb instead.
+
+PREP TYPE — classify every ingredient:
+- "purchased": raw commodities, produce, dairy, proteins, bread, condiments, oils, spices — anything that arrives ready to use
+- "scratch": do not use
+- "ask": compound preparations that restaurants commonly either make in-house OR buy pre-made: sauces, dressings, stocks, doughs, batters, spice blends. When uncertain between "purchased" and "ask", use "ask".
+
+Return ONLY valid JSON — no prose, no markdown outside the JSON block:
 {
   "ingredients": [
-    { "name": "Mozzarella", "unit": "oz", "estimated_unit_cost": 0.25, "is_new": false, "prep_type": "purchased" },
-    { "name": "Alfredo Sauce", "unit": "oz", "estimated_unit_cost": 1.00, "is_new": true, "prep_type": "ask" }
+    { "name": "Fresh Mozzarella", "unit": "oz", "estimated_unit_cost": 0.75, "is_new": false, "prep_type": "purchased" },
+    { "name": "Caesar Dressing", "unit": "oz", "estimated_unit_cost": 0.50, "is_new": true, "prep_type": "ask" },
+    { "name": "Fresh Cilantro", "unit": "oz", "estimated_unit_cost": 1.50, "is_new": true, "prep_type": "purchased" }
   ],
   "dishes": [
-    { "name": "Grilled Chicken Sandwich", "archetype": "Sandwich / Sub", "price": 16.95, "category": "Sandwiches", "description": "Grilled chicken, lettuce, tomato, mayo on a brioche bun" }
+    {
+      "name": "Grilled Chicken Caesar",
+      "archetype": "Salad",
+      "price": 16.95,
+      "category": "Salads",
+      "description": "Chopped romaine, grilled chicken breast, parmesan, croutons, caesar dressing"
+    }
   ]
 }`,
       }],
@@ -593,12 +656,20 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
     })
     .join('\n');
 
+  console.log(`[pass2] ingredient library sample:`, JSON.stringify(ingredientLibrary.slice(0, 3)));
   console.log(`[pass2] libraryRef: ${ingredientLibrary.length} ingredients, ${libraryRef.length} chars`);
+
+  // Build a lightweight index of all dishes in this chunk for sibling context
+  const chunkDishIndex = dishManifest
+    .map(d => `- ${d.name} (${d.archetype}, $${d.price ?? '?'})`)
+    .join('\n');
 
   const systemPrompt = [
     {
       type: 'text',
-      text: `You are a restaurant recipe builder. Build complete recipes using only the provided ingredient library and archetype component schemas. Never invent ingredients or costs outside the library.`,
+      text: `You are a restaurant recipe builder. Your job is to produce accurate, cost-realistic recipes for restaurant dishes using only the provided ingredient library.
+
+You must follow every rule below exactly. A recipe that violates any rule is wrong even if it looks reasonable.`,
     },
     {
       type: 'text',
@@ -607,12 +678,16 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
   ];
 
   const buildDish = async (dish) => {
+    const archetypeSchema = ARCHETYPES[dish.archetype]
+      ? ARCHETYPES[dish.archetype]
+          .map(c => `  - ${c.name}${c.optional ? ' (optional)' : ' (always include)'}`)
+          .join('\n')
+      : ARCHETYPE_SCHEMA_TEXT;
+
     const spoonacularRef = spoonacularData[dish.name.toLowerCase()];
     const spoonacularBlock = spoonacularRef
       ? `\nSPOONACULAR REFERENCE INGREDIENTS (use as strong guidance for what belongs in this dish):\n${spoonacularRef.map(i => `- ${i.name}: ${i.amount} ${i.unit}`).join('\n')}`
       : '';
-
-    const dishLine = `"${dish.name}" | section: ${dish.section || 'unknown'} | archetype: ${dish.archetype} | price: ${dish.price ?? 'unknown'} | category: ${dish.category || 'unknown'} | description: ${dish.description || 'none'}${spoonacularBlock}`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
@@ -622,31 +697,93 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
         role: 'user',
         content: [{
           type: 'text',
-          text: `Build a complete recipe for this dish. Use archetype schema for components.
+          text: `Build a complete recipe for this dish.
 
-DISH: ${dishLine}
+DISH: "${dish.name}"
+Section: ${dish.section || 'unknown'}
+Archetype: ${dish.archetype}
+Menu price: $${dish.price ?? 'unknown'}
+Category: ${dish.category || 'unknown'}
+Description: ${dish.description || 'none'}
+${spoonacularBlock}
 
-RULES:
-- Use ONLY ingredients from the library — copy name, unit, estimated_unit_cost exactly
-- The ingredient name in your output MUST match the library name character-for-character — no synonyms, no abbreviations, no alternate spellings
-- Include all required components; omit optional ones only if clearly not applicable
-- Estimate realistic per-serving quantities
-- Every ingredient mentioned in the dish description MUST appear in the recipe
-- Every component marked "always include" MUST have at least one ingredient
-- If a described ingredient has no exact library match, use the closest match by name
+OTHER DISHES IN THIS SECTION (for context only — do not build recipes for these):
+${chunkDishIndex}
+If this dish appears to be a variant of another dish in the list above (same parent name, different protein or flavor), ensure your base components are consistent with what those siblings would logically include. Do not omit sides, starches, or accompaniments that the sibling variants would share.
 
-NO FINISHED GOODS:
-- Never use a pre-made or composite preparation as an ingredient
-- If the library contains a finished good like "Fried Rice" or "House Salad" or "Mac & Cheese", decompose it into its raw components instead
-- Always build from raw ingredients
+ARCHETYPE COMPONENT SCHEMA FOR "${dish.archetype}":
+${archetypeSchema}
 
-COST GUARDRAIL:
-After building the recipe, calculate total estimated cost by summing all (quantity × estimated_unit_cost) across all components.
-If total cost exceeds 50% of the dish price (${dish.price ?? 'unknown'}), your quantities are too high.
-Scale ingredient quantities down proportionally until total cost is at or below 50% of menu price.
-Never output a recipe where estimated cost exceeds menu price.
+════════════════════════════════════════
+RULES
+════════════════════════════════════════
 
-Return ONLY a valid JSON object (not an array):
+LIBRARY FIDELITY:
+- Use ONLY ingredients from the library above
+- Copy name, unit, and estimated_unit_cost exactly — no synonyms, abbreviations, or alternate spellings
+- The ingredient name in your output must match the library name character-for-character
+- If an ingredient from the dish description has no exact library match, use the closest match and add a "substitution_note" field on that ingredient explaining what was substituted and why
+- Never invent a cost — use the library cost exactly
+
+COMPONENT STRUCTURE:
+- Follow the archetype schema above exactly
+- Every component marked "always include" must appear with at least one ingredient
+- Omit optional components only if they clearly do not apply to this dish
+- Do not add components that are not in the schema
+
+COMPONENT LABEL INTEGRITY:
+- Only place ingredients in components where they logically belong
+- "Cheese" components must contain dairy cheese ingredients only — never beans, produce, proteins, or sauces
+- "Protein" components must contain the primary protein only
+- "Sauce" components contain liquid or semi-liquid preparations — not solid toppings
+- "Toppings" components contain solid add-ons — not sauces or dressings
+- If you find yourself placing a non-cheese item in a Cheese component, stop and reconsider the component assignment
+
+NO FINISHED GOODS — this is an absolute rule:
+- Never use a composite or pre-plated dish as an ingredient
+- If the library contains an entry that is itself a finished dish, do NOT use it — decompose into raw components instead
+- A dish's own name should never appear as one of its ingredients
+- The pattern to avoid: any named menu item appearing as its own ingredient, or any item that is clearly a complete dish being used as a sub-ingredient
+- This applies regardless of whether the finished good appears in the library
+
+VARIANT CONSISTENCY:
+- If this dish is a variant (its name contains " - " suggesting a parent and variant), it shares base components with its sibling variants listed in the section index above
+- Do not omit base accompaniments (rice, beans, tortillas, sides, starches) that sibling variants would logically include unless the description explicitly excludes them
+
+BEVERAGE RULE:
+- If this dish's archetype is "Beverage", always decompose into actual base ingredients
+- Never use a single finished-good ingredient at a high per-oz cost as the only ingredient in a beverage recipe
+- Build from raw components: a milkshake from whole milk + ice cream + flavoring, a smoothie from fruit + juice + yogurt, etc.
+
+DRESSING RULE:
+- If this is a salad and the dish name or description implies a specific dressing, use that dressing by name
+- Never substitute a generic "House Dressing" for a named dressing unless the menu explicitly says "house dressing"
+- If the correct dressing is not in the library, use the closest available match and add a substitution_note
+
+QUANTITY REALISM:
+- Use realistic per-serving kitchen quantities proportional to the dish's menu price and category
+- Higher priced entrees warrant larger protein portions than lower priced items
+- Use the dish description as the primary guide for quantities when specific amounts or sizes are mentioned
+- Garnishes, finishing herbs, and spices should always be small: 0.1–0.5 oz
+- Sauces and dressings: 1–3 oz typical
+- When no description is available, estimate conservatively — the cost guardrail below will catch quantities that are too large
+
+COST GUARDRAIL — mandatory:
+After building the recipe, calculate total estimated cost = sum of all (quantity × estimated_unit_cost) across every component and ingredient.
+If total cost exceeds 50% of menu price ($${dish.price ?? 'unknown'}), your quantities are too high.
+Scale ALL ingredient quantities down proportionally until total cost is at or below 50% of menu price.
+Never output a recipe where total estimated cost exceeds the menu price.
+If the guardrail cannot be satisfied without quantities becoming unrealistically small, flag it with ⚠️ after the JSON and note which ingredient is the likely culprit.
+
+Show your cost check after the JSON in this format:
+**Cost Check:** [ingredient]: [qty] × $[cost] = $[line total] | ... | **Total: $X.XX | 50% cap: $Y.YY | ✅ or ⚠️**
+
+════════════════════════════════════════
+OUTPUT FORMAT
+════════════════════════════════════════
+
+Return a valid JSON object first, then the cost check. No other prose.
+
 {
   "name": string,
   "price": number | null,
@@ -656,7 +793,13 @@ Return ONLY a valid JSON object (not an array):
     {
       "name": string,
       "ingredients": [
-        { "name": string, "unit": string, "quantity": number, "estimated_unit_cost": number }
+        {
+          "name": string,
+          "unit": string,
+          "quantity": number,
+          "estimated_unit_cost": number,
+          "substitution_note": string | null
+        }
       ]
     }
   ]
@@ -667,18 +810,15 @@ Return ONLY a valid JSON object (not an array):
 
     await logAiUsage({
       feature: 'menu_import',
-      model: 'claude-haiku-4-5-20251001',
+      model: 'claude-sonnet-4-6',
       usage: response.usage,
       restaurantId,
     });
 
     console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
-  const raw = response.content[0]?.text || '{}';
+    const raw = response.content[0]?.text || '{}';
     console.log(`[pass2] "${dish.name}" content[0] type: ${response.content[0]?.type} | raw length: ${raw.length}`);
-    if (['Sizzling Fajitas - Shrimp', 'Sizzling Fajitas - Combo of Three', 'Avocado Egg Rolls', 'Burrata & Foccacia'].includes(dish.name)) {
-      console.log(`[pass2] ${dish.name} RAW:`, raw.slice(0, 500));
-      console.log(`[pass2] ${dish.name} RAW TAIL:`, raw.slice(-200));
-    }
+
     const parsed = safeParseJSON(raw);
     if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
     return parsed;
@@ -705,6 +845,14 @@ Return ONLY a valid JSON object (not an array):
 
 // ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
 
+// Heuristic cheese keyword list — catches obvious component misclassifications
+const CHEESE_KEYWORDS = [
+  'mozzarella', 'cheddar', 'brie', 'gruyere', 'gouda', 'feta', 'parmesan',
+  'pecorino', 'provolone', 'ricotta', 'gorgonzola', 'blue cheese', 'american cheese',
+  'pepper jack', 'burrata', 'cotija', 'queso', 'halloumi', 'manchego', 'fontina',
+  'havarti', 'muenster', 'colby', 'swiss', 'bocconcini',
+];
+
 function validateDishes(rawDishes) {
   return rawDishes
     .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
@@ -719,9 +867,22 @@ function validateDishes(rawDishes) {
             quantity: qty,
             estimated_unit_cost: cost,
             estimated_total_cost: Math.round(qty * cost * 10000) / 10000,
+            substitution_note: i.substitution_note || null,
           };
         });
         const componentCost = ingredients.reduce((s, i) => s + i.estimated_total_cost, 0);
+
+        // Heuristic: warn if a non-cheese ingredient lands in a Cheese component
+        if (c.name === 'Cheese') {
+          for (const ing of ingredients) {
+            const ingLower = ing.name.toLowerCase();
+            const isActuallyCheese = CHEESE_KEYWORDS.some(k => ingLower.includes(k));
+            if (!isActuallyCheese) {
+              console.warn(`[validate] Possible misclassified ingredient: "${ing.name}" in Cheese component of "${d.name}"`);
+            }
+          }
+        }
+
         return {
           name: c.name || 'Component',
           ingredients,
@@ -736,6 +897,17 @@ function validateDishes(rawDishes) {
       const estimatedMargin = price && totalEstimatedCost > 0
         ? Math.round(((price - totalEstimatedCost) / price) * 1000) / 10
         : null;
+
+      // Warn on beverage cost anomalies — likely unit error
+      if (d.archetype === 'Beverage' && price) {
+        for (const comp of components) {
+          for (const ing of comp.ingredients) {
+            if (ing.estimated_total_cost > price * 0.4) {
+              console.warn(`[validate] Beverage cost anomaly: "${ing.name}" on "${d.name}" costs $${ing.estimated_total_cost.toFixed(2)} alone — possible unit or quantity error`);
+            }
+          }
+        }
+      }
 
       return {
         name: d.name.trim(),
@@ -979,14 +1151,13 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // ── Chunk large menus so Pass 1 never sees more than ~15 dishes at once ──
       const chunks = chunkMenuText(menuText);
       console.log(`[parse-menu] ${fileLabel} ${chunks.length} chunk(s) to process`);
 
       for (let c = 0; c < chunks.length; c++) {
         const chunkLabel = chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '';
-
         const sectionName = chunks[c].split('\n')[0].trim();
+
         console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
         const t1 = Date.now();
         const { ingredients: chunkIngredients, dishes: chunkDishManifest } =
@@ -998,29 +1169,29 @@ export default async function handler(req, res) {
           continue;
         }
         console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
-        const stampedDishManifest = chunkDishManifest.map(dish => Object.assign({}, dish, { section: sectionName }));
+
+        const stampedDishManifest = chunkDishManifest.map(dish =>
+          Object.assign({}, dish, { section: sectionName })
+        );
 
         if (!stampedDishManifest?.length) {
           console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes found, skipping`);
           continue;
         }
 
-        // Merge ingredients — later chunks win on price if same name seen before
         for (const ing of chunkIngredients) {
           const key = ing.name.trim().toLowerCase();
           if (!ingredientMap[key]) ingredientMap[key] = ing;
         }
 
-        // ── Match against global recipe library — skip Pass 2 for hits ──
+        // Match against global recipe library — pass archetype for compatibility check
         const matchedDishes = [];
         const unmatchedDishes = [];
 
         for (const dish of stampedDishManifest) {
-          const components = matchRecipe(dish.name, globalRecipes, dish.section || '');
+          const components = matchRecipe(dish.name, dish.archetype, globalRecipes, dish.section || '');
           if (components) {
             console.log(`[recipes] Hit: "${dish.name}"`);
-            // Ensure all ingredients in this matched recipe are in ingredientMap
-            // so saveToSupabase can resolve their IDs
             mergeRecipeIngredientsIntoMap(components, ingredientMap);
             matchedDishes.push({
               name: dish.name,
@@ -1040,7 +1211,6 @@ export default async function handler(req, res) {
 
         if (unmatchedDishes.length > 0) {
           console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2...`);
-          console.log(`[pass2] ingredient library sample:`, JSON.stringify(chunkIngredients.slice(0, 3)));
           const t2 = Date.now();
           const { dishes: rawDishes, truncated } =
             await pass2_buildRecipes(unmatchedDishes, chunkIngredients, restaurantId, {});
@@ -1072,7 +1242,6 @@ export default async function handler(req, res) {
     const reviewMode = req.query.review === 'true';
     const withMargin = allDishes.filter(d => d.estimated_margin !== null);
 
-    // Review mode: skip Supabase write, return raw dishes for human review
     if (reviewMode) {
       console.log(`[parse-menu] Review mode — skipping Supabase write`);
       return res.status(200).json({
