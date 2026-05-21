@@ -403,7 +403,9 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
   const lineTotal = item.line_total || ((parseFloat(item.quantity_ordered) || 0) * (parseFloat(item.unit_price) || 0));
-  const displayCost = item.cost_per_lb
+  const displayCost = item.unit_price_per_unit && item.unit_price_unit
+    ? `${formatCurrency(item.unit_price_per_unit)}/${item.unit_price_unit}`
+    : item.cost_per_lb
     ? `${formatCurrency(item.cost_per_lb)}/lb`
     : item.cost_per_each
     ? `${formatCurrency(item.cost_per_each)}/ea`
@@ -713,7 +715,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   }
 
   return (
-    <div className="pm-bg" onClick={e => { if (e.target === e.currentTarget && step !== 'saving') onClose(); }}>
+    <div className="pm-bg" onClick={e => { if (e.target === e.currentTarget && step !== 'saving' && step !== 'parsing') onClose(); }}>
       <div className="pm-modal">
 
         {/* Header */}
@@ -1422,7 +1424,7 @@ export default function ClientInvoices() {
                     <div key={item.id} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '11px 13px', display: 'flex', alignItems: 'center', gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.item_name || '—'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'} · {formatCurrency(item.unit_cost)} ea</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'} · {item.unit_cost ? `${formatCurrency(item.unit_cost)}/${item.unit || ''}` : '—'}</div>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency(calculateItemTotal(item))}</div>
@@ -1737,7 +1739,7 @@ export default function ClientInvoices() {
                               <div key={item.id} className="inv-item-row">
                                 <div className="inv-itd name">{item.item_name || '—'}</div>
                                 <div className="inv-itd">{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}</div>
-                                <div className="inv-itd">{formatCurrency(item.unit_cost)}</div>
+                                <div className="inv-itd">{item.unit_cost ? `${formatCurrency(item.unit_cost)}/${item.unit || ''}` : '—'}</div>
                                 <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
                                 <div>{item.ingredients ? <span className="inv-linked">Linked</span> : <span className="inv-unlinked">Unlinked</span>}</div>
                               </div>
