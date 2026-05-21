@@ -948,9 +948,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                       <>
                         <div className="pm-section-title">Needs Your Review</div>
                         {activeGroup.lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => {
-                          const [expandedId, setExpandedId] = [activeGroup._expandedId, (id) => {
-                            setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : { ...g, _expandedId: id }));
-                          }];
                           return (
                             <LineItemCard
                               key={item._id}
