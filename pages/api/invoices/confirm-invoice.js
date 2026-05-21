@@ -212,19 +212,26 @@ export default async function handler(req, res) {
         newIngredientIdMap[item._id] ||
         null;
 
-      // FIX #1: derive unit_cost and unit from new or legacy shape
       const { unit_cost, unit } = resolveUnitCost(item);
 
-      const qty = parseFloat(item.quantity_ordered ?? item.quantity) || 0;
-      const lineTotal = item.line_total || (qty * (parseFloat(unit_cost) || 0));
+      // Total delivered quantity in base units
+      let totalQty;
+      if (item.catch_weight && item.actual_weight && item.pack) {
+        totalQty = item.pack * item.actual_weight;
+      } else if (item.pack && item.size) {
+        const orderedCases = item.quantity_ordered ?? 1;
+        totalQty = orderedCases * item.pack * item.size;
+      } else {
+        totalQty = item.quantity_ordered ?? null;
+      }
 
       return {
         invoice_id:                 invoiceRecord.id,
         item_name:                  item.item_name_normalized || item.item_name,
-        quantity:                   item.quantity_ordered ?? item.quantity ?? null,
-        unit:                       item.quantity_unit || unit || null,
-        unit_cost:                  unit_cost || null,
-        amount:                     lineTotal || null,
+        quantity:                   totalQty,
+        unit:                       unit,
+        unit_cost:                  unit_cost,
+        amount:                     item.line_total ?? null,
         ingredient_name_normalized: normalizeName(item.item_name_normalized || item.item_name),
         category:                   item.category || null,
         ingredient_id:              ingredientId,
