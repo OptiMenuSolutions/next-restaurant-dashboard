@@ -313,10 +313,10 @@ export default async function handler(req, res) {
             const unitCost   = parseFloat(ci.ingredients?.last_price || 0);
             const qty        = parseFloat(ci.quantity || 0);
             const recipeUnit = ci.unit || ci.ingredients?.unit || 'oz';
-            const ingName    = ci.ingredients?.name || '';
+            const ingUnit    = ci.ingredients?.unit || 'oz';
 
             if (unitCost > 0 && qty > 0) {
-              newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingName);
+              newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingUnit);
             }
           }
         }

@@ -127,16 +127,31 @@ METHOD 3 (case-priced items): Extract raw values only — do NOT compute cost pe
     size          = size of each unit (e.g. 27)
     size_unit     = unit of that size (e.g. "oz", "lb", "ct", "gal")
     invoice_price = the price as printed on the invoice (per case)
+
+    IMPORTANT — OCR spacing errors in pack/size fields:
+    The pack and size columns are often run together by OCR. Validate your reading
+    by checking: does invoice_price / (pack × size) produce a reasonable unit cost?
+    Example: OCR reads "150 LB" but $37.50 / 150 = $0.25/lb seems too cheap for sugar.
+    Try splitting differently: pack=1, size=50 → $37.50 / 50 = $0.75/lb. Use food
+    service knowledge to sanity check (sugar ~$0.50-1.00/lb, chicken ~$1-3/lb, etc.)
+
   Leave cost_per_lb and cost_per_each as null — the server will compute from pack × size.
   confidence = "medium" if pack/size are clearly readable, "low" if ambiguous
 
-  CATCH-WEIGHT ITEMS — when unit column differs from size_unit:
+CATCH-WEIGHT ITEMS — when unit column differs from size_unit:
   If the invoice has a separate "unit" column (e.g. "LB") that differs from size_unit (e.g. "OZ"):
     catch_weight  = true
     actual_weight = line_total / invoice_price  ← derive from the math, not handwriting
+    pack          = null
+    size          = null
     size_unit     = the unit column value (e.g. "lb")
   Example: size="7 OZ", unit column="LB", price=$14.50, extension=$144.42
     → catch_weight=true, actual_weight=144.42/14.50=9.96, size_unit="lb"
+
+  Do NOT set catch_weight=true just because a total weight column exists.
+  catch_weight is ONLY for items where the unit column and size_unit differ.
+  Example: "140 LB" in a weight column with pack="1", size="40", size_unit="lb"
+    → catch_weight=false, pack=1, size=40, size_unit="lb"
 
 METHOD 4: Count-based items (eggs, lobster tails, avocados, etc.)
 If the item is naturally counted rather than weighed:
