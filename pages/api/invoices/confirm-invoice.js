@@ -213,6 +213,7 @@ export default async function handler(req, res) {
         null;
 
       const { unit_cost, unit } = resolveUnitCost(item);
+      console.log(`[confirm-invoice] resolveUnitCost for "${item.item_name_normalized}":`, JSON.stringify({ pack: item.pack, size: item.size, size_unit: item.size_unit, invoice_price: item.invoice_price, catch_weight: item.catch_weight, actual_weight: item.actual_weight, unit_cost, unit }));
 
       // Total delivered quantity in base units
       let totalQty;

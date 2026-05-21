@@ -462,6 +462,7 @@ export default async function handler(req, res) {
     const t1 = Date.now();
     const extracted = await extractInvoiceData(ocrText, restaurantId);
     console.log(`[parse-invoice] Sonnet extraction done in ${Date.now() - t1}ms`);
+    console.log('[parse-invoice] Raw extracted line items:', JSON.stringify(extracted.line_items, null, 2));
 
     if (!extracted) {
       try { fs.unlinkSync(file.filepath); } catch {}
@@ -484,6 +485,7 @@ export default async function handler(req, res) {
     const nonFoodItems = allLineItems.filter(i => !i.is_food);
 
     console.log(`[parse-invoice] ${allLineItems.length} total items: ${foodItems.length} food, ${nonFoodItems.length} non-food`);
+    console.log('[parse-invoice] format_notes:', extracted.format_notes);
 
     const lineItemsWithMatches = foodItems.map((item, idx) => {
       const matchResult = matchLineItem(item, restaurantIngredients);
