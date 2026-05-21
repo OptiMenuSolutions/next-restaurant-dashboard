@@ -147,6 +147,15 @@ METHOD 3 (case-priced items): Extract raw values only — do NOT compute cost pe
   Leave cost_per_lb and cost_per_each as null — the server will compute from pack × size.
   confidence = "medium" if pack/size are clearly readable, "low" if ambiguous
 
+  PER-LB ITEMS — when the unit column is "LB" and price is per lb:
+    If quantity_unit = "LB" and invoice_price is clearly a per-lb price:
+      catch_weight  = false
+      pack          = 1
+      size          = line_total / invoice_price  ← actual lbs delivered
+      size_unit     = "lb"
+    Example: unit="LB", price=$14.50, extension=$144.42
+      → pack=1, size=9.96, size_unit="lb", catch_weight=false
+
 CATCH-WEIGHT ITEMS — when unit column differs from size_unit:
   If the invoice has a separate "unit" column (e.g. "LB") that differs from size_unit (e.g. "OZ"):
     catch_weight  = true
