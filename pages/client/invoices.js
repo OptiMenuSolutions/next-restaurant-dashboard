@@ -88,6 +88,46 @@ function getMatchLabel(status) {
   return 'New ingredient';
 }
 
+// ─── Image compression ────────────────────────────────────────────────────────
+// Resizes images to max 1500px long edge, re-encodes as JPEG at 85% quality.
+// PDFs pass through unchanged. Runs entirely client-side before upload.
+
+async function compressImage(file) {
+  if (file.type === 'application/pdf') return file;
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const MAX = 1500;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(
+        blob => resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' })),
+        'image/jpeg',
+        0.85
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); }; // fallback: use original
+    img.src = url;
+  });
+}
+
+// ─── Merge key for grouping multi-page invoices ───────────────────────────────
+
+function invoiceMergeKey(inv) {
+  const supplier = (inv.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
+  const number = (inv.invoice_number || '').trim();
+  return number ? `${supplier}__${number}` : `${supplier}__${Date.now()}_${Math.random()}`;
+}
+
 // ─── CSS ─────────────────────────────────────────────────────────────────────
 
 const CSS = `
@@ -152,31 +192,19 @@ const CSS = `
   .inv-detail-body { flex: 1; overflow-y: auto; padding: clamp(6px,.6vw,10px); display: flex; flex-direction: column; gap: clamp(5px,.5vh,8px); }
 
   /* ── OVERVIEW WIDGETS ── */
-  .inv-widget-row { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(6px,.6vw,10px); }
   .inv-widget { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; padding: clamp(7px,.7vw,10px); }
-  .inv-widget-full { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; padding: clamp(7px,.7vw,10px); }
   .inv-wlbl { font-size: clamp(8px,.6vw,10px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .9px; margin-bottom: clamp(5px,.5vh,8px); display: flex; align-items: center; gap: 5px; }
-  .inv-wlbl svg { width: 10px; height: 10px; stroke: var(--accent); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
-
   .inv-mini-chart { display: flex; align-items: flex-end; gap: clamp(2px,.2vw,4px); height: clamp(120px,14vh,180px); }
   .inv-mc-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; }
   .inv-mc-track { flex: 1; width: 100%; display: flex; align-items: flex-end; }
   .inv-mc-bar { width: 100%; border-radius: 2px 2px 0 0; min-height: 2px; transition: height .3s ease; }
   .inv-mc-lbl { font-size: clamp(7px,.52vw,9px); color: var(--text-faint); }
-
-  .inv-stat-pair { display: flex; flex-direction: column; gap: clamp(6px,.6vh,9px); }
-  .inv-stat-item { display: flex; align-items: center; justify-content: space-between; padding: clamp(4px,.4vh,6px) 0; border-bottom: 1px solid var(--border-subtle); }
-  .inv-stat-item:last-child { border-bottom: none; }
-  .inv-stat-name { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
-  .inv-stat-val { font-family: 'Inter', sans-serif; font-size: clamp(12px,1vw,15px); font-weight: 600; }
-
   .inv-prog-row { display: flex; align-items: center; gap: 8px; margin-bottom: clamp(6px,.6vh,9px); }
   .inv-prog-row:last-child { margin-bottom: 0; }
   .inv-prog-label { font-size: clamp(8px,.62vw,11px); color: var(--text-muted); width: clamp(70px,7vw,100px); flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .inv-prog-track { flex: 1; background: var(--border-subtle); border-radius: 3px; height: clamp(4px,.35vh,5px); }
   .inv-prog-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
   .inv-prog-val { font-size: clamp(8px,.62vw,11px); font-weight: 600; width: clamp(40px,4vw,58px); text-align: right; flex-shrink: 0; }
-
   .inv-act-item { display: flex; align-items: center; gap: clamp(7px,.7vw,10px); padding: clamp(5px,.5vh,8px) 0; border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background .1s; }
   .inv-act-item:last-child { border-bottom: none; }
   .inv-act-item:hover { opacity: .8; }
@@ -187,18 +215,6 @@ const CSS = `
   .inv-act-time { font-size: clamp(8px,.6vw,10px); color: var(--text-faint); flex-shrink: 0; white-space: nowrap; }
 
   /* ── INVOICE DETAIL ── */
-  .inv-dsection { margin-bottom: clamp(8px,.8vh,12px); }
-  .inv-dsection-title { font-size: clamp(8px,.6vw,10px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .9px; margin-bottom: clamp(6px,.6vh,10px); display: flex; align-items: center; gap: 6px; }
-  .inv-dsection-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .inv-dgrid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: clamp(5px,.5vw,8px); }
-  .inv-dfield { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: clamp(6px,.6vh,10px) clamp(8px,.7vw,12px); }
-  .inv-dfield-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-faint); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
-  .inv-dfield-val { font-size: clamp(10px,.75vw,13px); color: var(--text-primary); font-weight: 500; }
-  .inv-dfield-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 700; font-size: clamp(15px,1.2vw,20px); }
-  .inv-dfield-val.link { color: var(--accent); font-size: clamp(9px,.65vw,11px); cursor: pointer; text-decoration: underline; }
-
-  .inv-items-head { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 80px; gap: 5px; padding: clamp(5px,.5vh,7px) clamp(8px,.7vw,12px); background: var(--bg-elevated); border-radius: 6px 6px 0 0; border: 1px solid var(--border); border-bottom: none; }
-  .inv-ith { font-size: clamp(7px,.58vw,10px); font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: .6px; }
   .inv-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 80px; gap: 5px; padding: clamp(5px,.5vh,8px) clamp(8px,.7vw,12px); border: 1px solid var(--border); border-top: none; align-items: center; }
   .inv-item-row:last-child { border-radius: 0 0 6px 6px; }
   .inv-item-row:nth-child(odd) { background: var(--bg-elevated); }
@@ -208,78 +224,123 @@ const CSS = `
   .inv-itd.val { color: var(--accent); font-weight: 600; font-family: 'Inter', sans-serif; }
   .inv-linked { font-size: clamp(7px,.55vw,9px); padding: 1px 6px; border-radius: 8px; background: rgba(42,138,90,.12); color: var(--color-green); }
   .inv-unlinked { font-size: clamp(7px,.55vw,9px); padding: 1px 6px; border-radius: 8px; background: rgba(212,160,32,.1); color: var(--color-amber); }
-
-  .inv-total-bar { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); display: flex; justify-content: space-between; align-items: center; margin-top: clamp(5px,.5vh,8px); }
-  .inv-total-label { font-size: clamp(9px,.68vw,12px); color: var(--text-muted); font-weight: 500; }
-  .inv-total-val { font-family: 'Inter', sans-serif; font-weight: 700; font-size: clamp(15px,1.2vw,20px); color: var(--accent); }
-  .inv-diff { font-size: clamp(8px,.62vw,10px); color: var(--color-red); margin-top: 3px; text-align: right; }
-
   .inv-confirm-banner { margin: 0 clamp(6px,.6vw,10px); background: rgba(42,138,90,.1); border: 1px solid rgba(42,138,90,.25); border-radius: 6px; padding: 8px 14px; font-size: clamp(10px,.75vw,13px); color: var(--color-green); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-
   .inv-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 200px; gap: 10px; }
-  .inv-hint { font-size: clamp(8px,.62vw,11px); color: var(--text-faint); text-align: center; padding: clamp(4px,.4vh,7px); border: 1px dashed var(--border); border-radius: 6px; }
 
   /* ── PARSE MODAL ── */
   .pm-bg { position: fixed; inset: 0; background: rgba(0,0,0,.82); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px; }
-  .pm-modal { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; width: min(760px, 100%); max-height: 90vh; display: flex; flex-direction: column; animation: slideUp .2s ease; }
-  .pm-hd { padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .pm-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,20px); color: var(--text-primary); }
+  .pm-modal { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 12px; width: min(980px, 100%); max-height: 90vh; display: flex; flex-direction: column; animation: slideUp .2s ease; }
+  .pm-hd { padding: clamp(14px,1.4vh,20px) clamp(16px,1.4vw,24px); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .pm-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.2vw,18px); color: var(--text-primary); }
   .pm-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 18px; line-height: 1; transition: color .15s; }
   .pm-close:hover { color: var(--text-primary); }
-  .pm-body { flex: 1; overflow-y: auto; padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); display: flex; flex-direction: column; gap: clamp(12px,1.2vh,20px); }
-  .pm-ft { padding: clamp(12px,1.2vh,18px) clamp(16px,1.4vw,24px); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
+  .pm-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .pm-ft { padding: clamp(10px,1vh,16px) clamp(16px,1.4vw,24px); border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-shrink: 0; }
+
+  /* Drop zone */
+  .pm-drop-wrap { padding: clamp(14px,1.4vh,22px) clamp(16px,1.4vw,24px); display: flex; flex-direction: column; gap: clamp(12px,1.2vh,20px); overflow-y: auto; flex: 1; }
   .pm-drop { border: 2px dashed var(--border); border-radius: 10px; padding: clamp(28px,4vh,48px) 20px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
   .pm-drop:hover, .pm-drop.over { border-color: var(--accent); background: rgba(2,164,186,.04); }
   .pm-drop-icon { width: 40px; height: 40px; stroke: var(--border); fill: none; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; margin: 0 auto 12px; }
   .pm-drop-title { font-size: clamp(12px,.95vw,15px); color: var(--text-primary); font-weight: 500; margin-bottom: 4px; }
   .pm-drop-sub { font-size: clamp(9px,.68vw,12px); color: var(--text-muted); margin-bottom: 14px; }
   .pm-browse { background: var(--accent); border: none; border-radius: 6px; padding: 8px 18px; font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; }
-  .pm-parsing { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 20px; text-align: center; }
+
+  /* File queue */
+  .pm-file-queue { display: flex; flex-direction: column; gap: 6px; }
+  .pm-file-item { display: flex; align-items: center; gap: 10px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px; }
+  .pm-file-icon { width: 28px; height: 28px; border-radius: 5px; background: rgba(2,164,186,.1); border: 1px solid rgba(2,164,186,.2); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pm-file-name { flex: 1; font-size: clamp(10px,.75vw,12px); color: var(--text-primary); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-file-size { font-size: clamp(8px,.6vw,10px); color: var(--text-muted); flex-shrink: 0; }
+  .pm-file-remove { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; line-height: 1; padding: 2px; transition: color .15s; flex-shrink: 0; }
+  .pm-file-remove:hover { color: var(--color-red); }
+
+  /* Parsing / states */
+  .pm-parsing { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 40px 20px; text-align: center; flex: 1; justify-content: center; }
   .pm-spin { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
   .pm-parse-title { font-size: clamp(13px,1vw,16px); font-weight: 600; color: var(--text-primary); }
   .pm-parse-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); }
-  .pm-inv-hd { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,16px); }
+
+  /* Review layout: sidebar + detail */
+  .pm-review { display: flex; flex: 1; overflow: hidden; }
+
+  /* Left sidebar */
+  .pm-sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; background: var(--bg-elevated); }
+  .pm-sidebar-hd { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .pm-sidebar-label { font-size: clamp(7px,.58vw,9px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .9px; }
+  .pm-sidebar-body { flex: 1; overflow-y: auto; padding: 6px; }
+  .pm-sidebar-supplier { margin-bottom: 4px; }
+  .pm-sidebar-supplier-name { font-size: clamp(8px,.62vw,10px); font-weight: 700; color: var(--text-faint); text-transform: uppercase; letter-spacing: .7px; padding: 6px 8px 3px; }
+  .pm-sidebar-inv { display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 6px; cursor: pointer; transition: background .12s; border: 1px solid transparent; margin-bottom: 2px; }
+  .pm-sidebar-inv:hover { background: var(--bg-surface); }
+  .pm-sidebar-inv.active { background: rgba(2,164,186,.08); border-color: rgba(2,164,186,.2); }
+  .pm-sidebar-inv-num { font-size: clamp(9px,.68vw,11px); font-weight: 600; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-sidebar-inv-badge { width: 16px; height: 16px; border-radius: 50%; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pm-sidebar-inv-badge.warn { background: rgba(212,160,32,.15); color: var(--color-amber); }
+  .pm-sidebar-inv-badge.ok { background: rgba(42,138,90,.12); color: var(--color-green); }
+
+  /* Right detail panel */
+  .pm-detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .pm-detail-body { flex: 1; overflow-y: auto; padding: clamp(12px,1.2vh,18px) clamp(14px,1.2vw,20px); display: flex; flex-direction: column; gap: clamp(10px,1vh,16px); }
+
+  /* Invoice header card */
+  .pm-inv-hd { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,14px); flex-shrink: 0; }
+  .pm-inv-hd-label { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 8px; }
   .pm-inv-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; }
   .pm-inv-field-lbl { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
-  .pm-inv-field-val { font-size: clamp(11px,.85vw,14px); color: var(--text-primary); font-weight: 500; }
-  .pm-inv-field-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(14px,1.1vw,18px); }
+  .pm-inv-field-val { font-size: clamp(11px,.85vw,13px); color: var(--text-primary); font-weight: 500; }
+  .pm-inv-field-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(13px,1.1vw,17px); }
   .pm-conf-badge { display: inline-block; font-size: clamp(7px,.58vw,9px); padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
   .pm-conf-high { background: rgba(42,138,90,.15); color: var(--color-green); }
   .pm-conf-medium { background: rgba(212,160,32,.15); color: var(--color-amber); }
   .pm-conf-low { background: rgba(192,64,64,.15); color: var(--color-red); }
-  .pm-summary { display: flex; gap: 8px; flex-wrap: wrap; }
-  .pm-sum-pill { display: flex; align-items: center; gap: 5px; font-size: clamp(9px,.68vw,11px); padding: 4px 10px; border-radius: 20px; font-weight: 500; }
+
+  /* Format notes */
+  .pm-format-note { font-size: clamp(8px,.62vw,10px); color: var(--text-faint); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font-style: italic; }
+
+  /* Summary pills */
+  .pm-summary { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pm-sum-pill { display: flex; align-items: center; gap: 5px; font-size: clamp(9px,.68vw,11px); padding: 3px 9px; border-radius: 20px; font-weight: 500; }
   .pm-sum-auto { background: rgba(42,138,90,.1); color: var(--color-green); border: 1px solid rgba(42,138,90,.2); }
   .pm-sum-ambig { background: rgba(212,160,32,.1); color: var(--color-amber); border: 1px solid rgba(212,160,32,.2); }
   .pm-sum-new { background: rgba(2,164,186,.1); color: var(--accent); border: 1px solid rgba(2,164,186,.2); }
-  .pm-section-title { font-size: clamp(9px,.7vw,11px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .pm-sum-warn { background: rgba(192,64,64,.1); color: var(--color-red); border: 1px solid rgba(192,64,64,.2); }
+
+  /* Section title */
+  .pm-section-title { font-size: clamp(9px,.7vw,11px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
   .pm-section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .pm-line-item { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 6px; transition: border-color .15s; }
+
+  /* Line item cards */
+  .pm-line-item { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 5px; transition: border-color .15s; }
   .pm-line-item:last-child { margin-bottom: 0; }
   .pm-line-item.status-auto { border-left: 3px solid var(--color-green); }
   .pm-line-item.status-ambiguous { border-left: 3px solid var(--color-amber); }
   .pm-line-item.status-new { border-left: 3px solid var(--accent); }
   .pm-line-item.dismissed { opacity: .4; }
-  .pm-li-hd { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 120px; gap: 8px; padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
+  .pm-li-hd { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 130px; gap: 8px; padding: clamp(7px,.7vh,10px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
   .pm-li-hd:hover { background: rgba(255,255,255,.02); }
-  .pm-li-name { font-size: clamp(10px,.78vw,13px); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pm-li-meta { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-top: 2px; }
+  .pm-li-name { font-size: clamp(10px,.78vw,12px); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pm-li-meta { font-size: clamp(7px,.6vw,9px); color: var(--text-muted); margin-top: 1px; }
   .pm-li-cell { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
   .pm-li-cell.val { color: var(--accent); font-weight: 600; }
   .pm-li-status { display: flex; align-items: center; gap: 5px; font-size: clamp(8px,.62vw,10px); font-weight: 600; }
-  .pm-candidates { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 6px; }
+
+  /* Candidate options */
+  .pm-candidates { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 5px; }
   .pm-cand-title { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; margin-bottom: 4px; }
-  .pm-cand-option { display: flex; align-items: flex-start; gap: 10px; padding: clamp(7px,.7vh,11px) clamp(10px,.9vw,14px); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; transition: all .15s; background: var(--bg-surface); }
+  .pm-cand-option { display: flex; align-items: flex-start; gap: 10px; padding: clamp(6px,.6vh,10px) clamp(10px,.9vw,14px); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; transition: all .15s; background: var(--bg-surface); }
   .pm-cand-option:hover { border-color: var(--text-faint); background: var(--bg-elevated); }
   .pm-cand-option.selected { border-color: var(--accent); background: rgba(2,164,186,.06); }
   .pm-cand-radio { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
   .pm-cand-radio.checked { border-color: var(--accent); }
   .pm-cand-radio-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-  .pm-cand-name { font-size: clamp(10px,.78vw,13px); font-weight: 600; color: var(--text-primary); }
+  .pm-cand-name { font-size: clamp(10px,.78vw,12px); font-weight: 600; color: var(--text-primary); }
   .pm-cand-unit { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); margin-top: 1px; }
   .pm-cand-dishes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
   .pm-cand-dish-tag { font-size: clamp(7px,.58vw,9px); padding: 1px 6px; border-radius: 8px; background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
   .pm-cand-score { font-size: clamp(7px,.58vw,9px); color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+
+  /* New ingredient confirm */
   .pm-new-confirm { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 8px; }
   .pm-new-lbl { font-size: clamp(8px,.62vw,10px); color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
   .pm-new-name-input { background: var(--bg-inset); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: clamp(10px,.78vw,12px); color: var(--text-primary); outline: none; font-family: 'Inter', sans-serif; width: 100%; transition: border-color .15s; }
@@ -290,19 +351,26 @@ const CSS = `
   .pm-new-confirm-btn.active { background: rgba(2,164,186,.2); border-color: var(--accent); }
   .pm-dismiss-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
   .pm-dismiss-btn:hover { color: var(--color-red); border-color: rgba(192,64,64,.3); }
-  .pm-btn-primary { background: var(--accent); border: none; border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(18px,1.6vw,28px); font-size: clamp(11px,.85vw,14px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; white-space: nowrap; }
+
+  /* Buttons */
+  .pm-btn-primary { background: var(--accent); border: none; border-radius: 6px; padding: clamp(8px,.8vh,11px) clamp(18px,1.6vw,26px); font-size: clamp(11px,.85vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; white-space: nowrap; }
   .pm-btn-primary:hover { background: #01bcd4; }
   .pm-btn-primary:disabled { opacity: .5; cursor: not-allowed; }
-  .pm-btn-secondary { background: none; border: 1px solid var(--border); border-radius: 6px; padding: clamp(8px,.8vh,12px) clamp(14px,1.2vw,20px); font-size: clamp(11px,.85vw,14px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
+  .pm-btn-secondary { background: none; border: 1px solid var(--border); border-radius: 6px; padding: clamp(8px,.8vh,11px) clamp(14px,1.2vw,18px); font-size: clamp(11px,.85vw,13px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
   .pm-btn-secondary:hover { color: var(--text-primary); border-color: var(--text-faint); }
   .pm-progress-text { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
-  .pm-success { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; text-align: center; }
+
+  /* Success */
+  .pm-success { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 40px 20px; text-align: center; flex: 1; justify-content: center; }
   .pm-success-icon { width: 48px; height: 48px; border-radius: 50%; background: rgba(42,138,90,.12); border: 2px solid rgba(42,138,90,.3); display: flex; align-items: center; justify-content: center; }
-  .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,22px); color: var(--text-primary); }
-  .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); max-width: 340px; line-height: 1.5; }
+  .pm-success-title { font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(16px,1.4vw,20px); color: var(--text-primary); }
+  .pm-success-sub { font-size: clamp(10px,.75vw,13px); color: var(--text-muted); max-width: 380px; line-height: 1.6; }
+
+  /* Duplicate warning */
+  .pm-dup-warn { background: rgba(212,160,32,.08); border: 1px solid rgba(212,160,32,.25); border-radius: 7px; padding: 8px 12px; font-size: clamp(9px,.68vw,11px); color: var(--color-amber); display: flex; align-items: center; gap: 7px; }
 `;
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function IconUpload({ size = 12 }) {
   return (
@@ -328,348 +396,61 @@ const NAV_ITEMS = [
   { label: 'Analytics',   path: '/client/analytics',    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
 ];
 
-// ─── Parse Modal ──────────────────────────────────────────────────────────────
-
-function ParseModal({ onClose, restaurantId, onSaved }) {
-  const fileInputRef = useRef(null);
-  const [step, setStep] = useState('drop');
-  const [dragOver, setDragOver] = useState(false);
-  const [parseResult, setParseResult] = useState(null);
-  const [lineItems, setLineItems] = useState([]);
-  const [expandedItem, setExpandedItem] = useState(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [savedResult, setSavedResult] = useState(null);
-  const PARSE_STAGES = [
-    { msg: 'Uploading invoice...', sub: 'Sending file to server' },
-    { msg: 'Claude is reading your invoice', sub: 'Scanning line items and pricing...' },
-    { msg: 'Extracting ingredients...', sub: 'Identifying products and quantities' },
-    { msg: 'Matching to your inventory...', sub: 'Comparing against existing ingredients' },
-    { msg: 'Almost done...', sub: 'Finalizing results' },
-  ];
-
-  const [stageIdx, setStageIdx] = useState(0);
-  const stageTimerRef = useRef(null);
-
-  function startStageTimer() {
-    setStageIdx(0);
-    let idx = 0;
-    const intervals = [2000, 8000, 6000, 4000];
-    function advance() {
-      idx++;
-      if (idx < PARSE_STAGES.length - 1) {
-        setStageIdx(idx);
-        stageTimerRef.current = setTimeout(advance, intervals[idx] || 4000);
-      } else {
-        setStageIdx(PARSE_STAGES.length - 1);
-      }
-    }
-    stageTimerRef.current = setTimeout(advance, intervals[0]);
-  }
-
-  function stopStageTimer() {
-    if (stageTimerRef.current) clearTimeout(stageTimerRef.current);
-  }
-
-  const pendingCount = lineItems.filter(i =>
-    !i.dismissed && (
-      (i.match_status === 'ambiguous' && !i.selected_ingredient_id) ||
-      (i.match_status === 'new' && !i.confirm_new && !i.dismissed)
-    )
-  ).length;
-
-  const canConfirm = pendingCount === 0 && lineItems.length > 0;
-
-  async function handleFile(file) {
-    if (!file) return;
-    setStep('parsing');
-    setErrorMsg('');
-    startStageTimer();
-
-    try {
-      const filePath = `${restaurantId}/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage.from('invoices').upload(filePath, file);
-      if (uploadError) throw new Error('File upload failed: ' + uploadError.message);
-      const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(filePath);
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('restaurant_id', restaurantId);
-      formData.append('file_url', publicUrl);
-
-      const res = await fetch('/api/invoices/parse-invoice', { method: 'POST', body: formData });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Parse failed');
-
-      stopStageTimer();
-      setParseResult(data);
-      setLineItems((data.line_items || []).map(item => ({ ...item, confirmed_name: item.item_name, confirm_new: false, dismissed: false })));
-      setStep('review');
-
-      const firstPending = (data.line_items || []).find(i => i.match_status === 'ambiguous' || i.match_status === 'new');
-      if (firstPending) setExpandedItem(firstPending._id);
-    } catch (err) {
-      setErrorMsg(err.message || 'Something went wrong');
-      setStep('error');
-    }
-  }
-
-  function selectCandidate(itemId, candidate) {
-    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, selected_ingredient_id: candidate.id, selected_ingredient_name: candidate.name } : item));
-    const currentIdx = lineItems.findIndex(i => i._id === itemId);
-    const nextPending = lineItems.slice(currentIdx + 1).find(i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new'));
-    setExpandedItem(nextPending?._id || null);
-  }
-
-  function confirmNew(itemId, confirmed) {
-    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, confirm_new: confirmed } : item));
-    if (confirmed) {
-      const currentIdx = lineItems.findIndex(i => i._id === itemId);
-      const nextPending = lineItems.slice(currentIdx + 1).find(i => !i.dismissed && (i.match_status === 'ambiguous' || i.match_status === 'new'));
-      setExpandedItem(nextPending?._id || null);
-    }
-  }
-
-  function dismissItem(itemId) {
-    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, dismissed: true } : item));
-    setExpandedItem(null);
-  }
-
-  function updateConfirmedName(itemId, name) {
-    setLineItems(prev => prev.map(item => item._id === itemId ? { ...item, confirmed_name: name } : item));
-  }
-
-  async function handleConfirm() {
-    setSaving(true);
-    setStep('saving');
-    try {
-      const res = await fetch('/api/invoices/confirm-invoice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ restaurant_id: restaurantId, invoice: parseResult.invoice, line_items: lineItems, file_url: parseResult.file_url }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
-      setSavedResult(data);
-      setStep('success');
-      onSaved();
-    } catch (err) {
-      setErrorMsg(err.message || 'Save failed');
-      setStep('error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function confBadgeClass(level) {
-    if (level === 'high') return 'pm-conf-high';
-    if (level === 'medium') return 'pm-conf-medium';
-    return 'pm-conf-low';
-  }
-
-  const inv = parseResult?.invoice;
-  const summary = parseResult?.summary;
-
-  return (
-    <div className="pm-bg" onClick={e => { if (e.target === e.currentTarget && step !== 'saving') onClose(); }}>
-      <div className="pm-modal">
-        <div className="pm-hd">
-          <div className="pm-title">
-            {step === 'drop' && 'Upload Invoice'}
-            {step === 'parsing' && 'Analyzing Invoice...'}
-            {step === 'review' && 'Review & Confirm'}
-            {step === 'saving' && 'Saving...'}
-            {step === 'success' && 'Invoice Saved'}
-            {step === 'error' && 'Something went wrong'}
-          </div>
-          {step !== 'saving' && <button className="pm-close" onClick={onClose}>✕</button>}
-        </div>
-
-        <div className="pm-body">
-          {step === 'drop' && (
-            <div className={`pm-drop${dragOver ? ' over' : ''}`}
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
-              onClick={() => fileInputRef.current?.click()}>
-              <input ref={fileInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => handleFile(e.target.files[0])} />
-              <svg className="pm-drop-icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/></svg>
-              <div className="pm-drop-title">Drag & drop your invoice here</div>
-              <div className="pm-drop-sub">Supports PDF, JPG, PNG, WEBP — up to 20MB</div>
-              <button className="pm-browse" onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}>Browse Files</button>
-            </div>
-          )}
-
-          {step === 'parsing' && (
-            <div className="pm-parsing">
-              <div className="pm-spin" />
-              <div className="pm-parse-title">{PARSE_STAGES[stageIdx].msg}</div>
-              <div className="pm-parse-sub">{PARSE_STAGES[stageIdx].sub}</div>
-              <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
-                {PARSE_STAGES.map((_, i) => (
-                  <div key={i} style={{ width: i === stageIdx ? 16 : 5, height: 5, borderRadius: 3, background: i <= stageIdx ? 'var(--accent)' : 'var(--border)', transition: 'all .4s ease' }} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {step === 'saving' && (
-            <div className="pm-parsing">
-              <div className="pm-spin" />
-              <div className="pm-parse-title">Saving to your account</div>
-              <div className="pm-parse-sub">Updating invoice records and ingredient prices...</div>
-            </div>
-          )}
-
-          {step === 'success' && savedResult && (
-            <div className="pm-success">
-              <div className="pm-success-icon">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </div>
-              <div className="pm-success-title">Invoice saved successfully</div>
-              <div className="pm-success-sub">
-                {savedResult.items_saved} line item{savedResult.items_saved !== 1 ? 's' : ''} saved
-                {savedResult.ingredients_created > 0 && ` · ${savedResult.ingredients_created} new ingredient${savedResult.ingredients_created !== 1 ? 's' : ''} created`}
-                {savedResult.ingredients_updated > 0 && ` · ${savedResult.ingredients_updated} ingredient price${savedResult.ingredients_updated !== 1 ? 's' : ''} updated`}
-              </div>
-            </div>
-          )}
-
-          {step === 'error' && (
-            <div className="pm-parsing">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <div className="pm-parse-title" style={{ color: 'var(--color-red)' }}>Parse failed</div>
-              <div className="pm-parse-sub">{errorMsg}</div>
-            </div>
-          )}
-
-          {step === 'review' && inv && (
-            <>
-              <div className="pm-inv-hd">
-                <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '.6px', fontWeight: 600, marginBottom: 8 }}>Invoice Details</div>
-                <div className="pm-inv-grid">
-                  {[
-                    { l: 'Supplier', v: inv.supplier, conf: inv.confidence?.supplier },
-                    { l: 'Invoice #', v: inv.invoice_number, conf: inv.confidence?.invoice_number },
-                    { l: 'Date', v: inv.invoice_date ? formatDateShort(inv.invoice_date) : null, conf: inv.confidence?.invoice_date },
-                    { l: 'Total', v: inv.total_amount ? formatCurrency(inv.total_amount) : null, conf: inv.confidence?.total_amount, accent: true },
-                  ].map(({ l, v, conf, accent }) => (
-                    <div key={l}>
-                      <div className="pm-inv-field-lbl">{l}<span className={`pm-conf-badge ${confBadgeClass(conf)}`}>{conf || '?'}</span></div>
-                      <div className={`pm-inv-field-val${accent ? ' accent' : ''}`}>{v || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {summary && (
-                <div className="pm-summary">
-                  <div className="pm-sum-pill pm-sum-auto">✓ {summary.auto_matched} auto-matched</div>
-                  {summary.needs_review > 0 && <div className="pm-sum-pill pm-sum-ambig">! {summary.needs_review} need review</div>}
-                  {summary.new_ingredients > 0 && <div className="pm-sum-pill pm-sum-new">+ {summary.new_ingredients} new</div>}
-                </div>
-              )}
-
-              <div>
-                {lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
-                  <>
-                    <div className="pm-section-title">Needs Your Review</div>
-                    {lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => (
-                      <LineItemCard key={item._id} item={item} expanded={expandedItem === item._id}
-                        onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
-                        onSelectCandidate={selectCandidate} onConfirmNew={confirmNew}
-                        onDismiss={dismissItem} onUpdateName={updateConfirmedName} />
-                    ))}
-                  </>
-                )}
-                {lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
-                  <>
-                    <div className="pm-section-title" style={{ marginTop: 16 }}>Auto-Matched</div>
-                    {lineItems.filter(i => i.match_status === 'auto' && !i.dismissed).map(item => (
-                      <LineItemCard key={item._id} item={item} expanded={expandedItem === item._id}
-                        onToggle={() => setExpandedItem(expandedItem === item._id ? null : item._id)}
-                        onSelectCandidate={selectCandidate} onConfirmNew={confirmNew}
-                        onDismiss={dismissItem} onUpdateName={updateConfirmedName} />
-                    ))}
-                  </>
-                )}
-                {lineItems.some(i => i.dismissed) && (
-                  <>
-                    <div className="pm-section-title" style={{ marginTop: 16 }}>Dismissed</div>
-                    {lineItems.filter(i => i.dismissed).map(item => (
-                      <div key={item._id} className="pm-line-item dismissed" style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>{item.item_name}</div>
-                        <button onClick={() => setLineItems(prev => prev.map(i => i._id === item._id ? { ...i, dismissed: false } : i))}
-                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>Restore</button>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="pm-ft">
-          {step === 'drop' && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>Files are processed immediately — nothing is saved until you confirm.</div>}
-          {step === 'review' && (
-            <>
-              <div className="pm-progress-text">{pendingCount > 0 ? `${pendingCount} item${pendingCount !== 1 ? 's' : ''} still need review` : 'All items resolved — ready to save'}</div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
-                <button className="pm-btn-primary" disabled={!canConfirm} onClick={handleConfirm}>Confirm & Save Invoice</button>
-              </div>
-            </>
-          )}
-          {step === 'success' && <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}><button className="pm-btn-primary" onClick={onClose}>Done</button></div>}
-          {step === 'error' && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="pm-btn-secondary" onClick={() => setStep('drop')}>Try Again</button>
-              <button className="pm-btn-secondary" onClick={onClose}>Close</button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
 function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
-  const lineTotal = item.line_total || ((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0));
+  const lineTotal = item.line_total || ((parseFloat(item.quantity_ordered) || 0) * (parseFloat(item.unit_price) || 0));
+  const displayCost = item.cost_per_lb
+    ? `${formatCurrency(item.cost_per_lb)}/lb`
+    : item.cost_per_each
+    ? `${formatCurrency(item.cost_per_each)}/ea`
+    : '—';
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
 
   return (
-    <div className={`pm-line-item status-${item.match_status}`}>
-      <div className="pm-li-hd" onClick={item.match_status !== 'auto' ? onToggle : undefined}
+    <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
+      <div className="pm-li-hd"
+        onClick={item.match_status !== 'auto' ? onToggle : undefined}
         style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default' }}>
-        <div>
-          <div className="pm-li-name">{item.item_name}</div>
+        <div style={{ minWidth: 0 }}>
+          <div className="pm-li-name">{item.item_name_normalized || item.item_name_raw}</div>
+          {item.item_name_raw && item.item_name_normalized && item.item_name_raw !== item.item_name_normalized &&
+            <div className="pm-li-meta" style={{ color: 'var(--text-faint)' }}>Raw: {item.item_name_raw}</div>}
           {autoMatchName && <div className="pm-li-meta">→ {autoMatchName}</div>}
-          {item.match_status === 'ambiguous' && item.selected_ingredient_id && <div className="pm-li-meta" style={{ color: 'var(--color-green)' }}>→ {item.selected_ingredient_name}</div>}
-          {item.match_status === 'new' && item.confirm_new && <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
+          {item.match_status === 'ambiguous' && item.selected_ingredient_id &&
+            <div className="pm-li-meta" style={{ color: 'var(--color-green)' }}>→ {item.selected_ingredient_name}</div>}
+          {item.match_status === 'new' && item.confirm_new &&
+            <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
-        <div className="pm-li-cell">{item.quantity ? `${item.quantity} ${item.unit || ''}` : '—'}</div>
-        <div className="pm-li-cell val">{formatCurrency(item.unit_cost)}</div>
-        <div className="pm-li-cell val">{formatCurrency(lineTotal)}</div>
+        <div className="pm-li-cell">
+          {item.quantity_ordered ? `${item.quantity_ordered} ${item.quantity_unit || ''}` : '—'}
+        </div>
+        <div className="pm-li-cell val">{displayCost}</div>
+        <div className="pm-li-cell val">{lineTotal ? formatCurrency(lineTotal) : '—'}</div>
         <div className="pm-li-status">
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
-          {item.match_status !== 'auto' && <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>}
+          {item.confidence && item.confidence !== 'high' && (
+            <span className={`pm-conf-badge pm-conf-${item.confidence}`}>{item.confidence}</span>
+          )}
+          {item.match_status !== 'auto' &&
+            <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>}
         </div>
       </div>
 
       {expanded && item.match_status === 'ambiguous' && (
         <div className="pm-candidates">
           <div className="pm-cand-title">Which ingredient is this?</div>
-          {item.match_candidates.map(candidate => {
+          {(item.match_candidates || []).map(candidate => {
             const isSelected = item.selected_ingredient_id === candidate.id;
             return (
-              <div key={candidate.id} className={`pm-cand-option${isSelected ? ' selected' : ''}`} onClick={() => onSelectCandidate(item._id, candidate)}>
-                <div className="pm-cand-radio">{isSelected && <div className="pm-cand-radio-dot" />}</div>
+              <div key={candidate.id} className={`pm-cand-option${isSelected ? ' selected' : ''}`}
+                onClick={() => onSelectCandidate(item._id, candidate)}>
+                <div className={`pm-cand-radio${isSelected ? ' checked' : ''}`}>
+                  {isSelected && <div className="pm-cand-radio-dot" />}
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="pm-cand-name">{candidate.name}</div>
                   <div className="pm-cand-unit">{candidate.unit} · last price: {candidate.last_price ? formatCurrency(candidate.last_price) : 'not set'}</div>
@@ -695,7 +476,7 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           <div className="pm-new-lbl">New ingredient — confirm to add to your inventory</div>
           <div>
             <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-muted)', marginBottom: 4 }}>Ingredient name</div>
-            <input className="pm-new-name-input" value={item.confirmed_name} onChange={e => onUpdateName(item._id, e.target.value)} placeholder="Ingredient name..." />
+            <input className="pm-new-name-input" value={item.confirmed_name || ''} onChange={e => onUpdateName(item._id, e.target.value)} placeholder="Ingredient name..." />
           </div>
           <div className="pm-new-actions">
             <button className={`pm-new-confirm-btn${item.confirm_new ? ' active' : ''}`} onClick={() => onConfirmNew(item._id, !item.confirm_new)}>
@@ -705,6 +486,583 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Parse Modal ──────────────────────────────────────────────────────────────
+
+function ParseModal({ onClose, restaurantId, onSaved }) {
+  const fileInputRef = useRef(null);
+  const [step, setStep] = useState('drop'); // drop | parsing | review | saving | success | error
+  const [dragOver, setDragOver] = useState(false);
+  const [queuedFiles, setQueuedFiles] = useState([]); // File[] staged for upload
+  const [parseStage, setParseStage] = useState({ msg: '', sub: '' });
+
+  // invoiceGroups: array of { key, invoice, lineItems, fileUrl, duplicate }
+  const [invoiceGroups, setInvoiceGroups] = useState([]);
+  const [activeGroupKey, setActiveGroupKey] = useState(null);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [savedResult, setSavedResult] = useState(null);
+
+  const PARSE_STAGES = [
+    { msg: 'Compressing images...', sub: 'Optimizing files for upload' },
+    { msg: 'Uploading invoices...', sub: 'Sending files to server' },
+    { msg: 'Reading invoices with Claude...', sub: 'Scanning line items and pricing' },
+    { msg: 'Matching to your inventory...', sub: 'Comparing against existing ingredients' },
+    { msg: 'Almost done...', sub: 'Finalizing results' },
+  ];
+
+  // ── Derived: total pending count across all invoice groups ─────────────────
+  const totalPending = invoiceGroups.reduce((sum, g) => {
+    return sum + g.lineItems.filter(i =>
+      !i.dismissed && (
+        (i.match_status === 'ambiguous' && !i.selected_ingredient_id) ||
+        (i.match_status === 'new' && !i.confirm_new)
+      )
+    ).length;
+  }, 0);
+
+  const canConfirmAll = totalPending === 0 && invoiceGroups.length > 0;
+
+  const activeGroup = invoiceGroups.find(g => g.key === activeGroupKey) || invoiceGroups[0] || null;
+
+  // ── Sidebar grouping: by supplier ─────────────────────────────────────────
+  const sidebarGroups = (() => {
+    const bySupplier = {};
+    for (const g of invoiceGroups) {
+      const s = g.invoice.supplier || 'Unknown Supplier';
+      if (!bySupplier[s]) bySupplier[s] = [];
+      bySupplier[s].push(g);
+    }
+    return Object.entries(bySupplier);
+  })();
+
+  // ── File queue management ─────────────────────────────────────────────────
+  function addFiles(newFiles) {
+    const arr = Array.from(newFiles).filter(f => {
+      const ext = f.name.split('.').pop().toLowerCase();
+      return ['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext);
+    });
+    setQueuedFiles(prev => {
+      const names = new Set(prev.map(f => f.name));
+      return [...prev, ...arr.filter(f => !names.has(f.name))];
+    });
+  }
+
+  function removeFile(name) {
+    setQueuedFiles(prev => prev.filter(f => f.name !== name));
+  }
+
+  function formatBytes(b) {
+    if (b < 1024) return `${b} B`;
+    if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
+    return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  // ── Main parse flow ───────────────────────────────────────────────────────
+  async function handleParse() {
+    if (!queuedFiles.length) return;
+    setStep('parsing');
+    setErrorMsg('');
+
+    try {
+      // Step 1: compress
+      setParseStage(PARSE_STAGES[0]);
+      const compressed = await Promise.all(queuedFiles.map(f => compressImage(f)));
+
+      // Step 2: upload to Supabase storage in parallel
+      setParseStage(PARSE_STAGES[1]);
+      const uploadResults = await Promise.all(compressed.map(async (file) => {
+        const filePath = `${restaurantId}/${Date.now()}_${file.name}`;
+        const { error } = await supabase.storage.from('invoices').upload(filePath, file);
+        if (error) throw new Error(`Upload failed for ${file.name}: ${error.message}`);
+        const { data: { publicUrl } } = supabase.storage.from('invoices').getPublicUrl(filePath);
+        return { file, publicUrl };
+      }));
+
+      // Step 3: parse each file
+      setParseStage(PARSE_STAGES[2]);
+      const parseResults = await Promise.all(uploadResults.map(async ({ file, publicUrl }) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('restaurant_id', restaurantId);
+        formData.append('file_url', publicUrl);
+        const res = await fetch('/api/invoices/parse-invoice', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || `Parse failed for ${file.name}`);
+        return { data, publicUrl };
+      }));
+
+      // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
+      setParseStage(PARSE_STAGES[3]);
+
+      const groupMap = {};
+      for (const { data, publicUrl } of parseResults) {
+        const key = invoiceMergeKey(data.invoice);
+        if (!groupMap[key]) {
+          groupMap[key] = {
+            key,
+            invoice: data.invoice,
+            fileUrl: publicUrl,
+            duplicate: data.duplicate || false,
+            lineItems: [],
+          };
+        }
+        // Merge line items, avoiding duplicates by _id prefix collision
+        const existingIds = new Set(groupMap[key].lineItems.map(i => i.item_name_raw));
+        const newItems = (data.line_items || []).map((item, idx) => ({
+          ...item,
+          _id: `${key}_${groupMap[key].lineItems.length + idx}`,
+          confirmed_name: item.item_name_normalized || item.item_name_raw || '',
+          confirm_new: false,
+          dismissed: false,
+        })).filter(item => !existingIds.has(item.item_name_raw));
+        groupMap[key].lineItems.push(...newItems);
+      }
+
+      setParseStage(PARSE_STAGES[4]);
+      const groups = Object.values(groupMap);
+      setInvoiceGroups(groups);
+      setActiveGroupKey(groups[0]?.key || null);
+      setStep('review');
+
+    } catch (err) {
+      setErrorMsg(err.message || 'Something went wrong');
+      setStep('error');
+    }
+  }
+
+  // ── Line item update helpers ──────────────────────────────────────────────
+  function updateLineItem(groupKey, itemId, updates) {
+    setInvoiceGroups(prev => prev.map(g => g.key !== groupKey ? g : {
+      ...g,
+      lineItems: g.lineItems.map(i => i._id !== itemId ? i : { ...i, ...updates }),
+    }));
+  }
+
+  function selectCandidate(groupKey, itemId, candidate) {
+    updateLineItem(groupKey, itemId, { selected_ingredient_id: candidate.id, selected_ingredient_name: candidate.name });
+  }
+
+  function confirmNew(groupKey, itemId, confirmed) {
+    updateLineItem(groupKey, itemId, { confirm_new: confirmed });
+  }
+
+  function dismissItem(groupKey, itemId) {
+    updateLineItem(groupKey, itemId, { dismissed: true });
+  }
+
+  function updateConfirmedName(groupKey, itemId, name) {
+    updateLineItem(groupKey, itemId, { confirmed_name: name });
+  }
+
+  function restoreItem(groupKey, itemId) {
+    updateLineItem(groupKey, itemId, { dismissed: false });
+  }
+
+  // ── Confirm all invoices ──────────────────────────────────────────────────
+  async function handleConfirmAll() {
+    setStep('saving');
+    const aggregate = { items_saved: 0, ingredients_created: 0, ingredients_updated: 0, errors: [] };
+
+    for (const group of invoiceGroups) {
+      try {
+        const res = await fetch('/api/invoices/confirm-invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            restaurant_id: restaurantId,
+            invoice: group.invoice,
+            line_items: group.lineItems,
+            file_url: group.fileUrl,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+        aggregate.items_saved += data.items_saved || 0;
+        aggregate.ingredients_created += data.ingredients_created || 0;
+        aggregate.ingredients_updated += data.ingredients_updated || 0;
+        if (data.errors?.length) aggregate.errors.push(...data.errors);
+      } catch (err) {
+        aggregate.errors.push(`${group.invoice.supplier || 'Invoice'}: ${err.message}`);
+      }
+    }
+
+    setSavedResult(aggregate);
+    setStep('success');
+    onSaved();
+  }
+
+  // ── Confidence badge ──────────────────────────────────────────────────────
+  function confBadgeClass(level) {
+    if (level === 'high') return 'pm-conf-high';
+    if (level === 'medium') return 'pm-conf-medium';
+    return 'pm-conf-low';
+  }
+
+  // ── Per-group pending count for sidebar badge ─────────────────────────────
+  function groupPendingCount(group) {
+    return group.lineItems.filter(i =>
+      !i.dismissed && (
+        (i.match_status === 'ambiguous' && !i.selected_ingredient_id) ||
+        (i.match_status === 'new' && !i.confirm_new)
+      )
+    ).length;
+  }
+
+  return (
+    <div className="pm-bg" onClick={e => { if (e.target === e.currentTarget && step !== 'saving') onClose(); }}>
+      <div className="pm-modal">
+
+        {/* Header */}
+        <div className="pm-hd">
+          <div className="pm-title">
+            {step === 'drop' && 'Upload Invoices'}
+            {step === 'parsing' && 'Analyzing Invoices...'}
+            {step === 'review' && `Review & Confirm · ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
+            {step === 'saving' && 'Saving...'}
+            {step === 'success' && 'Invoices Saved'}
+            {step === 'error' && 'Something went wrong'}
+          </div>
+          {step !== 'saving' && <button className="pm-close" onClick={onClose}>✕</button>}
+        </div>
+
+        {/* Body */}
+        <div className="pm-body">
+
+          {/* ── DROP ── */}
+          {step === 'drop' && (
+            <div className="pm-drop-wrap">
+              <div className={`pm-drop${dragOver ? ' over' : ''}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => { e.preventDefault(); setDragOver(false); addFiles(e.dataTransfer.files); }}
+                onClick={() => fileInputRef.current?.click()}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={e => { addFiles(e.target.files); e.target.value = ''; }}
+                />
+                <svg className="pm-drop-icon" viewBox="0 0 24 24">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                  <line x1="12" y1="18" x2="12" y2="12"/>
+                  <line x1="9" y1="15" x2="12" y2="12"/>
+                  <line x1="15" y1="15" x2="12" y2="12"/>
+                </svg>
+                <div className="pm-drop-title">Drag & drop invoices here</div>
+                <div className="pm-drop-sub">
+                  Upload multiple files at once — separate invoices or multi-page invoices.<br />
+                  Supports PDF, JPG, PNG, WEBP. Pages from the same invoice are auto-merged.
+                </div>
+                <button className="pm-browse" onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                  Browse Files
+                </button>
+              </div>
+
+              {queuedFiles.length > 0 && (
+                <div className="pm-file-queue">
+                  <div className="pm-section-title">{queuedFiles.length} file{queuedFiles.length !== 1 ? 's' : ''} queued</div>
+                  {queuedFiles.map(f => (
+                    <div key={f.name} className="pm-file-item">
+                      <div className="pm-file-icon">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                          <polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                      </div>
+                      <div className="pm-file-name">{f.name}</div>
+                      <div className="pm-file-size">{formatBytes(f.size)}</div>
+                      <button className="pm-file-remove" onClick={() => removeFile(f.name)}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── PARSING ── */}
+          {step === 'parsing' && (
+            <div className="pm-parsing">
+              <div className="pm-spin" />
+              <div className="pm-parse-title">{parseStage.msg}</div>
+              <div className="pm-parse-sub">{parseStage.sub}</div>
+              <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+                {PARSE_STAGES.map((s, i) => (
+                  <div key={i} style={{
+                    width: s.msg === parseStage.msg ? 16 : 5,
+                    height: 5, borderRadius: 3,
+                    background: PARSE_STAGES.indexOf(parseStage) >= i ? 'var(--accent)' : 'var(--border)',
+                    transition: 'all .4s ease',
+                  }} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── SAVING ── */}
+          {step === 'saving' && (
+            <div className="pm-parsing">
+              <div className="pm-spin" />
+              <div className="pm-parse-title">Saving invoices...</div>
+              <div className="pm-parse-sub">Updating invoice records and ingredient prices</div>
+            </div>
+          )}
+
+          {/* ── SUCCESS ── */}
+          {step === 'success' && savedResult && (
+            <div className="pm-success">
+              <div className="pm-success-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <div className="pm-success-title">
+                {invoiceGroups.length} invoice{invoiceGroups.length !== 1 ? 's' : ''} saved successfully
+              </div>
+              <div className="pm-success-sub">
+                {savedResult.items_saved} line item{savedResult.items_saved !== 1 ? 's' : ''} saved
+                {savedResult.ingredients_created > 0 && ` · ${savedResult.ingredients_created} new ingredient${savedResult.ingredients_created !== 1 ? 's' : ''} created`}
+                {savedResult.ingredients_updated > 0 && ` · ${savedResult.ingredients_updated} price${savedResult.ingredients_updated !== 1 ? 's' : ''} updated`}
+                {savedResult.errors?.length > 0 && (
+                  <div style={{ color: 'var(--color-amber)', marginTop: 8 }}>
+                    {savedResult.errors.length} error{savedResult.errors.length !== 1 ? 's' : ''} — some items may not have saved correctly.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── ERROR ── */}
+          {step === 'error' && (
+            <div className="pm-parsing">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="var(--color-red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <div className="pm-parse-title" style={{ color: 'var(--color-red)' }}>Parse failed</div>
+              <div className="pm-parse-sub">{errorMsg}</div>
+            </div>
+          )}
+
+          {/* ── REVIEW ── */}
+          {step === 'review' && (
+            <div className="pm-review">
+
+              {/* Left sidebar */}
+              <div className="pm-sidebar">
+                <div className="pm-sidebar-hd">
+                  <div className="pm-sidebar-label">Invoices</div>
+                </div>
+                <div className="pm-sidebar-body">
+                  {sidebarGroups.map(([supplier, groups]) => (
+                    <div key={supplier} className="pm-sidebar-supplier">
+                      <div className="pm-sidebar-supplier-name">{supplier}</div>
+                      {groups.map(g => {
+                        const pending = groupPendingCount(g);
+                        const isActive = g.key === activeGroupKey;
+                        return (
+                          <div
+                            key={g.key}
+                            className={`pm-sidebar-inv${isActive ? ' active' : ''}`}
+                            onClick={() => setActiveGroupKey(g.key)}
+                          >
+                            <div className="pm-sidebar-inv-num">
+                              {g.invoice.invoice_number || 'No number'}
+                            </div>
+                            <div className={`pm-sidebar-inv-badge ${pending > 0 ? 'warn' : 'ok'}`}>
+                              {pending > 0 ? pending : '✓'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right detail panel */}
+              <div className="pm-detail">
+                {activeGroup ? (
+                  <div className="pm-detail-body">
+
+                    {/* Duplicate warning */}
+                    {activeGroup.duplicate && (
+                      <div className="pm-dup-warn">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        This invoice number was already uploaded on {formatDateShort(activeGroup.duplicate.existing_date)}. Saving will update ingredient prices.
+                      </div>
+                    )}
+
+                    {/* Invoice header */}
+                    <div className="pm-inv-hd">
+                      <div className="pm-inv-hd-label">Invoice Details</div>
+                      <div className="pm-inv-grid">
+                        {[
+                          { l: 'Supplier', v: activeGroup.invoice.supplier, conf: activeGroup.invoice.confidence?.supplier },
+                          { l: 'Invoice #', v: activeGroup.invoice.invoice_number, conf: activeGroup.invoice.confidence?.invoice_number },
+                          { l: 'Date', v: activeGroup.invoice.invoice_date ? formatDateShort(activeGroup.invoice.invoice_date) : null, conf: activeGroup.invoice.confidence?.invoice_date },
+                          { l: 'Total', v: activeGroup.invoice.total_amount ? formatCurrency(activeGroup.invoice.total_amount) : null, conf: activeGroup.invoice.confidence?.total_amount, accent: true },
+                        ].map(({ l, v, conf, accent }) => (
+                          <div key={l}>
+                            <div className="pm-inv-field-lbl">
+                              {l}
+                              {conf && <span className={`pm-conf-badge ${confBadgeClass(conf)}`}>{conf}</span>}
+                            </div>
+                            <div className={`pm-inv-field-val${accent ? ' accent' : ''}`}>
+                              {v || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not found</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {activeGroup.invoice.format_notes && (
+                        <div className="pm-format-note">📋 {activeGroup.invoice.format_notes}</div>
+                      )}
+                    </div>
+
+                    {/* Summary pills */}
+                    {(() => {
+                      const items = activeGroup.lineItems;
+                      const autoCount = items.filter(i => i.match_status === 'auto' && !i.dismissed).length;
+                      const ambigCount = items.filter(i => i.match_status === 'ambiguous' && !i.dismissed).length;
+                      const newCount = items.filter(i => i.match_status === 'new' && !i.dismissed).length;
+                      const noCostCount = items.filter(i => i.needs_cost_input && !i.dismissed).length;
+                      return (
+                        <div className="pm-summary">
+                          {autoCount > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {autoCount} auto-matched</div>}
+                          {ambigCount > 0 && <div className="pm-sum-pill pm-sum-ambig">! {ambigCount} need review</div>}
+                          {newCount > 0 && <div className="pm-sum-pill pm-sum-new">+ {newCount} new</div>}
+                          {noCostCount > 0 && <div className="pm-sum-pill pm-sum-warn">⚠ {noCostCount} missing cost</div>}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Needs review section */}
+                    {activeGroup.lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
+                      <>
+                        <div className="pm-section-title">Needs Your Review</div>
+                        {activeGroup.lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => {
+                          const [expandedId, setExpandedId] = [activeGroup._expandedId, (id) => {
+                            setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : { ...g, _expandedId: id }));
+                          }];
+                          return (
+                            <LineItemCard
+                              key={item._id}
+                              item={item}
+                              expanded={activeGroup._expandedId === item._id}
+                              onToggle={() => setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : {
+                                ...g, _expandedId: g._expandedId === item._id ? null : item._id,
+                              }))}
+                              onSelectCandidate={(_, cand) => selectCandidate(activeGroup.key, item._id, cand)}
+                              onConfirmNew={(_, confirmed) => confirmNew(activeGroup.key, item._id, confirmed)}
+                              onDismiss={() => dismissItem(activeGroup.key, item._id)}
+                              onUpdateName={(_, name) => updateConfirmedName(activeGroup.key, item._id, name)}
+                            />
+                          );
+                        })}
+                      </>
+                    )}
+
+                    {/* Auto-matched section */}
+                    {activeGroup.lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
+                      <>
+                        <div className="pm-section-title" style={{ marginTop: 8 }}>Auto-Matched</div>
+                        {activeGroup.lineItems.filter(i => i.match_status === 'auto' && !i.dismissed).map(item => (
+                          <LineItemCard
+                            key={item._id}
+                            item={item}
+                            expanded={false}
+                            onToggle={() => {}}
+                            onSelectCandidate={() => {}}
+                            onConfirmNew={() => {}}
+                            onDismiss={() => dismissItem(activeGroup.key, item._id)}
+                            onUpdateName={() => {}}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {/* Dismissed section */}
+                    {activeGroup.lineItems.some(i => i.dismissed) && (
+                      <>
+                        <div className="pm-section-title" style={{ marginTop: 8 }}>Dismissed</div>
+                        {activeGroup.lineItems.filter(i => i.dismissed).map(item => (
+                          <div key={item._id} className="pm-line-item dismissed"
+                            style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
+                              {item.item_name_normalized || item.item_name_raw}
+                            </div>
+                            <button onClick={() => restoreItem(activeGroup.key, item._id)}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
+                              Restore
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                  </div>
+                ) : (
+                  <div className="pm-parsing">
+                    <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-muted)' }}>Select an invoice from the sidebar</div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="pm-ft">
+          {step === 'drop' && (
+            <>
+              <div className="pm-progress-text">
+                {queuedFiles.length === 0
+                  ? 'Files are processed immediately — nothing is saved until you confirm.'
+                  : `${queuedFiles.length} file${queuedFiles.length !== 1 ? 's' : ''} ready — pages from the same invoice are auto-merged.`}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="pm-btn-primary" disabled={queuedFiles.length === 0} onClick={handleParse}>
+                  Analyze {queuedFiles.length > 0 ? `${queuedFiles.length} ` : ''}Invoice{queuedFiles.length !== 1 ? 's' : ''}
+                </button>
+              </div>
+            </>
+          )}
+          {step === 'review' && (
+            <>
+              <div className="pm-progress-text">
+                {totalPending > 0
+                  ? `${totalPending} item${totalPending !== 1 ? 's' : ''} still need review across ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`
+                  : `All items resolved — ready to save ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="pm-btn-primary" disabled={!canConfirmAll} onClick={handleConfirmAll}>
+                  Confirm & Save All
+                </button>
+              </div>
+            </>
+          )}
+          {step === 'success' && (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="pm-btn-primary" onClick={onClose}>Done</button>
+            </div>
+          )}
+          {step === 'error' && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="pm-btn-secondary" onClick={() => { setStep('drop'); setQueuedFiles([]); }}>Try Again</button>
+              <button className="pm-btn-secondary" onClick={onClose}>Close</button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -778,7 +1136,7 @@ export default function ClientInvoices() {
 
   function handleInvoiceSaved() {
     fetchInvoices();
-    setConfirmMsg('Invoice parsed and saved successfully.');
+    setConfirmMsg('Invoices parsed and saved successfully.');
     setTimeout(() => setConfirmMsg(''), 5000);
   }
 
@@ -819,13 +1177,10 @@ export default function ClientInvoices() {
 
     return (
       <>
-        <Head>
-          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        </Head>
+        <Head><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" /></Head>
         <style>{CSS}</style>
         <style>{`
           @keyframes spin { to { transform: rotate(360deg); } }
-          @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
           @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
           .mob2-root { font-family:'Inter',sans-serif; background:var(--bg-root); color:var(--text-primary); width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
           .mob2-header { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
@@ -861,8 +1216,6 @@ export default function ClientInvoices() {
         `}</style>
 
         <div className="mob2-root">
-
-          {/* Header */}
           <div className="mob2-header">
             <div className="mob2-logo">Opti<span>Menu</span></div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -874,7 +1227,6 @@ export default function ClientInvoices() {
             </div>
           </div>
 
-          {/* Sub bar */}
           <div className="mob2-subbar">
             <div>
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Invoice Center</div>
@@ -894,7 +1246,6 @@ export default function ClientInvoices() {
             </div>
           </div>
 
-          {/* Tab bar */}
           <div className="mob2-tabs">
             {MOB_TABS.map(t => (
               <button key={t.id} className={`mob2-tab${mobTab === t.id ? ' active' : ''}`} onClick={() => setMobTab(t.id)}>
@@ -904,7 +1255,6 @@ export default function ClientInvoices() {
             ))}
           </div>
 
-          {/* Content */}
           {loading ? (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
               <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
@@ -912,7 +1262,6 @@ export default function ClientInvoices() {
             </div>
           ) : (
             <>
-              {/* ── INVOICES TAB ── */}
               {mobTab === 'invoices' && (
                 <>
                   <div className="mob2-search">
@@ -935,7 +1284,7 @@ export default function ClientInvoices() {
                       const { ok } = getStatus(invoice);
                       return (
                         <div key={invoice.id} className={`mob2-inv-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`}
-                          onClick={() => { selectInvoice(invoice); }}>
+                          onClick={() => selectInvoice(invoice)}>
                           <div style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? 'var(--color-green)' : 'var(--color-amber)', flexShrink: 0 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{invoice.supplier || <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Unknown supplier</span>}</div>
@@ -953,130 +1302,52 @@ export default function ClientInvoices() {
                 </>
               )}
 
-              {/* ── OVERVIEW TAB ── */}
               {mobTab === 'overview' && (
                 <div className="mob2-content">
-                  {/* Stats grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     {[
                       { l: 'Total Spend', v: formatCurrencyShort(totalSpend), c: 'var(--accent)' },
                       { l: 'Avg Invoice', v: formatCurrencyShort(avgInvoice), c: 'var(--text-primary)' },
                       { l: 'Largest Invoice', v: formatCurrencyShort(largest), c: 'var(--color-amber)' },
                       { l: 'Days Since Last', v: daysSinceLast !== null ? daysSinceLast : '—', c: daysSinceLast > 7 ? 'var(--color-amber)' : 'var(--color-green)' },
-                      { l: 'This Month', v: invoicesThisMonthByDate, c: 'var(--text-primary)', sub: 'invoices by date' },
-                      { l: 'Uploaded This Mo.', v: invoicesUploadedThisMonth, c: 'var(--text-muted)', sub: 'by upload date' },
-                    ].map(({ l, v, c, sub }) => (
+                    ].map(({ l, v, c }) => (
                       <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
                         <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 6 }}>{l}</div>
                         <div style={{ fontSize: 20, fontWeight: 700, color: c, lineHeight: 1 }}>{v}</div>
-                        {sub && <div style={{ fontSize: 9, color: 'var(--text-faint)', marginTop: 4 }}>{sub}</div>}
                       </div>
                     ))}
-                  </div>
-
-                  {/* Month over Month */}
-                  <div className="mob2-card">
-                    <div className="mob2-card-title">
-                      <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                      Month over Month
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>
-                          {new Date().toLocaleDateString('en-US', { month: 'long' })}
-                        </div>
-                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--accent)', lineHeight: 1 }}>{formatCurrencyShort(thisMonthSpend)}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 10, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: .5, marginBottom: 4 }}>
-                          {new Date(currentYear, currentMonth - 1, 1).toLocaleDateString('en-US', { month: 'long' })}
-                        </div>
-                        <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrencyShort(lastMonthSpend)}</div>
-                      </div>
-                    </div>
-                    {monthPct !== null ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: monthUp ? 'var(--color-red)' : 'var(--color-green)', fontWeight: 600 }}>
-                        <span>{monthUp ? '▲' : '▼'}</span>
-                        <span>{Math.abs(monthPct)}% {monthUp ? 'above' : 'below'} last month</span>
-                      </div>
-                    ) : <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No prior month data</div>}
-                  </div>
-
-                  {/* Recent activity */}
-                  <div className="mob2-card">
-                    <div className="mob2-card-title">
-                      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                      Recent Activity
-                    </div>
-                    {invoices.slice(0, 6).map(inv => {
-                      const { ok } = getStatus(inv);
-                      return (
-                        <div key={inv.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--border-subtle)', cursor: 'pointer' }}
-                          onClick={() => { setMobTab('invoices'); selectInvoice(inv); }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: ok ? 'var(--color-green)' : 'var(--color-amber)', flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.number || 'Invoice'}{inv.supplier ? ` · ${inv.supplier}` : ''}</div>
-                          </div>
-                          {inv.amount && <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', flexShrink: 0 }}>{formatCurrencyShort(inv.amount)}</div>}
-                          <div style={{ fontSize: 10, color: 'var(--text-faint)', flexShrink: 0 }}>{timeAgo(inv.created_at)}</div>
-                        </div>
-                      );
-                    })}
-                    {invoices.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No invoice activity yet</div>}
                   </div>
                   <div style={{ height: 8 }} />
                 </div>
               )}
 
-              {/* ── SUPPLIERS TAB ── */}
               {mobTab === 'suppliers' && (
                 <div className="mob2-content">
                   <div className="mob2-card">
-                    <div className="mob2-card-title">
-                      <svg viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>
-                      Top Suppliers
-                    </div>
+                    <div className="mob2-card-title">Top Suppliers</div>
                     {topSuppliers.length > 0 ? topSuppliers.map(([name, amount], i) => {
                       const colors = ['var(--accent)', 'var(--color-amber)', 'var(--color-green)', 'var(--text-faint)'];
                       return (
                         <div key={name} style={{ marginBottom: 14 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
-                            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</div>
+                            <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{name}</div>
                             <div style={{ fontSize: 13, fontWeight: 700, color: colors[i] }}>{formatCurrencyShort(amount)}</div>
                           </div>
                           <div style={{ height: 5, background: 'var(--border-subtle)', borderRadius: 3, overflow: 'hidden' }}>
                             <div style={{ width: `${(amount / maxSupplier) * 100}%`, height: '100%', background: colors[i], borderRadius: 3 }} />
                           </div>
-                          <div style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 3 }}>{Math.round((amount / totalSpend) * 100)}% of total spend</div>
                         </div>
                       );
                     }) : <div style={{ fontSize: 12, color: 'var(--text-faint)' }}>No supplier data yet</div>}
                   </div>
-
-                  {/* All suppliers list */}
-                  {Object.keys(supplierMap).length > 4 && (
-                    <div className="mob2-card">
-                      <div className="mob2-card-title">All Suppliers</div>
-                      {Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).map(([name, amount]) => (
-                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                          <div style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '65%' }}>{name}</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrencyShort(amount)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                   <div style={{ height: 8 }} />
                 </div>
               )}
 
-              {/* ── SPENDING TAB ── */}
               {mobTab === 'spending' && (
                 <div className="mob2-content">
                   <div className="mob2-card">
-                    <div className="mob2-card-title">
-                      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                      12-Month Spend
-                    </div>
+                    <div className="mob2-card-title">12-Month Spend</div>
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 120 }}>
                       {monthlySpend.map(({ month, total }, idx) => (
                         <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
@@ -1087,26 +1358,6 @@ export default function ClientInvoices() {
                         </div>
                       ))}
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
-                      <div style={{ fontSize: 10, color: 'var(--text-faint)' }}>12-month total</div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>{formatCurrencyShort(totalSpend)}</div>
-                    </div>
-                  </div>
-
-                  {/* Monthly breakdown list */}
-                  <div className="mob2-card">
-                    <div className="mob2-card-title">Monthly Breakdown</div>
-                    {[...monthlySpend].reverse().filter(m => m.total > 0).map(({ month, total }, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{month}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ width: 60, height: 4, background: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
-                            <div style={{ width: `${(total / maxMonthly) * 100}%`, height: '100%', background: getBarColor(total), borderRadius: 2 }} />
-                          </div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', width: 55, textAlign: 'right' }}>{formatCurrencyShort(total)}</div>
-                        </div>
-                      </div>
-                    ))}
                   </div>
                   <div style={{ height: 8 }} />
                 </div>
@@ -1114,7 +1365,6 @@ export default function ClientInvoices() {
             </>
           )}
 
-          {/* Bottom nav */}
           <div className="mob2-bottom-nav">
             {NAV_ITEMS.map(({ label, path, icon }) => {
               const active = path === '/client/invoices';
@@ -1128,7 +1378,6 @@ export default function ClientInvoices() {
           </div>
         </div>
 
-        {/* Invoice detail overlay */}
         {selectedInvoice && (
           <div className="mob2-detail-overlay">
             <div className="mob2-detail-hd">
@@ -1140,8 +1389,6 @@ export default function ClientInvoices() {
               </span>
             </div>
             <div className="mob2-detail-body">
-
-              {/* Invoice fields */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {[
                   { l: 'Invoice No.', v: selectedInvoice.number || '—' },
@@ -1155,25 +1402,18 @@ export default function ClientInvoices() {
                   </div>
                 ))}
               </div>
-
-              {/* Total */}
               <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>Total Amount</div>
                 <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 20, color: 'var(--accent)' }}>{selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : '—'}</div>
               </div>
-
-              {/* File link */}
               {selectedInvoice.file_url && (
                 <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '11px 0', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   View Invoice File ↗
                 </a>
               )}
-
-              {/* Line items */}
               {loadingDetail ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 12 }}>
                   <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                   Loading items...
                 </div>
@@ -1189,22 +1429,15 @@ export default function ClientInvoices() {
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{formatCurrency(calculateItemTotal(item))}</div>
                         <div style={{ fontSize: 10, marginTop: 2 }}>
-                          {item.ingredients
-                            ? <span style={{ color: 'var(--color-green)' }}>Linked</span>
-                            : <span style={{ color: 'var(--color-amber)' }}>Unlinked</span>}
+                          {item.ingredients ? <span style={{ color: 'var(--color-green)' }}>Linked</span> : <span style={{ color: 'var(--color-amber)' }}>Unlinked</span>}
                         </div>
                       </div>
                     </div>
                   ))}
-                  <div style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 8, padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div style={{ fontSize: 13, color: 'var(--text-muted)', fontWeight: 500 }}>Calculated Total</div>
-                    <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 18, color: 'var(--accent)' }}>{formatCurrency(totalCalculated)}</div>
-                  </div>
                 </>
               ) : (
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>No line items recorded</div>
               )}
-
             </div>
           </div>
         )}
@@ -1225,82 +1458,90 @@ export default function ClientInvoices() {
       <div className="inv-root">
 
         <div className="inv-nav">
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(8px,1vw,16px)' }}>
             <div className="inv-logo">Opti<span>Menu</span></div>
-            <div style={{display:'flex',gap:2}}>
-              {tabs.map(t=>(
-                <button key={t} className={`inv-tab${t==='Invoices'?' active':''}`}
-                  onClick={()=>router.push(t==='Dashboard'?'/client/dashboard':`/client/${t.toLowerCase().replace(' ','-')}`)}>
+            <div style={{ display: 'flex', gap: 2 }}>
+              {tabs.map(t => (
+                <button key={t} className={`inv-tab${t === 'Invoices' ? ' active' : ''}`}
+                  onClick={() => router.push(t === 'Dashboard' ? '/client/dashboard' : `/client/${t.toLowerCase().replace(' ', '-')}`)}>
                   {t}
                 </button>
               ))}
             </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(6px,.7vw,12px)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.62vw,11px)',color:'var(--accent)'}}>
-              <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'clamp(6px,.7vw,12px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'clamp(9px,.62vw,11px)', color: 'var(--accent)' }}>
+              <div style={{ width: 5, height: 5, background: 'var(--accent)', borderRadius: '50%', animation: 'blink 2s infinite' }} />Active
             </div>
-            <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
-              <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
+            <div style={{ width: 'clamp(140px,13vw,240px)', height: 'clamp(26px,2.6vh,34px)', overflow: 'visible', position: 'relative' }}>
+              <UniversalSearch restaurantId={restaurantId} placeholder="Search..." />
             </div>
-            <button className="inv-upload-btn" onClick={()=>setShowParseModal(true)}>
-              <IconUpload size={11}/> Upload Invoice
+            <button className="inv-upload-btn" onClick={() => setShowParseModal(true)}>
+              <IconUpload size={11} /> Upload Invoice
             </button>
-            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile}/>
+            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={isMobile} />
           </div>
         </div>
 
         <div className="inv-wbar">
-          <div style={{display:'flex',alignItems:'baseline'}}>
+          <div style={{ display: 'flex', alignItems: 'baseline' }}>
             <span className="inv-wname">Invoice Center</span>
             <span className="inv-wsub">· {invoices.length} invoices · {formatCurrencyWhole(totalSpend)} total</span>
           </div>
           <div className="inv-wactions">
             <div className="inv-waction-item">
-              <div className="inv-waction-dot" style={{background:'var(--accent)'}}/>
-              <span className="inv-waction-val" style={{color:'var(--accent)'}}>{formatCurrencyWhole(thisMonthSpend)}</span>
-              <span>{new Date().toLocaleDateString('en-US',{month:'short'})} spend</span>
+              <div className="inv-waction-dot" style={{ background: 'var(--accent)' }} />
+              <span className="inv-waction-val" style={{ color: 'var(--accent)' }}>{formatCurrencyWhole(thisMonthSpend)}</span>
+              <span>{new Date().toLocaleDateString('en-US', { month: 'short' })} spend</span>
             </div>
             <div className="inv-waction-item">
-              <div className="inv-waction-dot" style={{background:'var(--text-faint)'}}/>
-              <span className="inv-waction-val" style={{color:'var(--text-muted)'}}>{formatCurrencyWhole(lastMonthSpend)}</span>
-              <span>{new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'short'})} spend</span>
+              <div className="inv-waction-dot" style={{ background: 'var(--text-faint)' }} />
+              <span className="inv-waction-val" style={{ color: 'var(--text-muted)' }}>{formatCurrencyWhole(lastMonthSpend)}</span>
+              <span>{new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString('en-US', { month: 'short' })} spend</span>
             </div>
-            {monthPct!==null&&(
+            {monthPct !== null && (
               <div className="inv-waction-item">
-                <div className="inv-waction-dot" style={{background:monthUp?'var(--color-red)':'var(--color-green)'}}/>
-                <span className="inv-waction-val" style={{color:monthUp?'var(--color-red)':'var(--color-green)'}}>
-                  {monthUp?'▲':'▼'} {Math.abs(monthPct)}%
+                <div className="inv-waction-dot" style={{ background: monthUp ? 'var(--color-red)' : 'var(--color-green)' }} />
+                <span className="inv-waction-val" style={{ color: monthUp ? 'var(--color-red)' : 'var(--color-green)' }}>
+                  {monthUp ? '▲' : '▼'} {Math.abs(monthPct)}%
                 </span>
                 <span>vs prior month</span>
               </div>
             )}
             <div className="inv-waction-item">
-              <div className="inv-waction-dot" style={{background:'var(--color-amber)'}}/>
-              <span className="inv-waction-val" style={{color:'var(--color-amber)'}}>{formatCurrencyWhole(avgInvoice)}</span>
+              <div className="inv-waction-dot" style={{ background: 'var(--color-amber)' }} />
+              <span className="inv-waction-val" style={{ color: 'var(--color-amber)' }}>{formatCurrencyWhole(avgInvoice)}</span>
               <span>avg invoice</span>
             </div>
           </div>
         </div>
 
-        {confirmMsg&&(
+        {confirmMsg && (
           <div className="inv-confirm-banner">
             {confirmMsg}
-            <button onClick={()=>setConfirmMsg('')} style={{background:'none',border:'none',color:'var(--color-green)',cursor:'pointer',fontSize:14}}>✕</button>
+            <button onClick={() => setConfirmMsg('')} style={{ background: 'none', border: 'none', color: 'var(--color-green)', cursor: 'pointer', fontSize: 14 }}>✕</button>
           </div>
         )}
 
-        {loading?(
-          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
-            <div style={{width:22,height:22,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-            <div style={{fontSize:'clamp(10px,.78vw,13px)',color:'var(--text-muted)'}}>Loading invoices...</div>
+        {loading ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 10 }}>
+            <div style={{ width: 22, height: 22, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
+            <div style={{ fontSize: 'clamp(10px,.78vw,13px)', color: 'var(--text-muted)' }}>Loading invoices...</div>
           </div>
-        ):(
+        ) : (
           <div className="inv-split">
             <div className="inv-list">
               <div className="inv-list-hd">
                 <div className="inv-list-title">Invoices</div>
-                <div className="inv-list-count">{filtered.length} result{filtered.length!==1?'s':''}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    placeholder="Search..."
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', outline: 'none', fontFamily: 'Inter,sans-serif', width: 'clamp(80px,8vw,130px)' }}
+                  />
+                  <div className="inv-list-count">{filtered.length}</div>
+                </div>
               </div>
               <div className="inv-tbl-head">
                 <div className="inv-th">Supplier</div>
@@ -1310,28 +1551,28 @@ export default function ClientInvoices() {
                 <div className="inv-th">Status</div>
               </div>
               <div className="inv-tbl-body">
-                {filtered.length===0?(
+                {filtered.length === 0 ? (
                   <div className="inv-empty-state">
-                    <IconFile size={36}/>
-                    <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'var(--text-muted)',fontWeight:500}}>
-                      {searchTerm?`No results for "${searchTerm}"`:'No invoices yet'}
+                    <IconFile size={36} />
+                    <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      {searchTerm ? `No results for "${searchTerm}"` : 'No invoices yet'}
                     </div>
-                    {!searchTerm&&(
-                      <button className="inv-upload-btn" onClick={()=>setShowParseModal(true)} style={{marginTop:4}}>
-                        <IconUpload size={11}/> Upload First Invoice
+                    {!searchTerm && (
+                      <button className="inv-upload-btn" onClick={() => setShowParseModal(true)} style={{ marginTop: 4 }}>
+                        <IconUpload size={11} /> Upload First Invoice
                       </button>
                     )}
                   </div>
-                ):filtered.map((invoice,idx)=>{
-                  const {label,ok}=getStatus(invoice);
+                ) : filtered.map((invoice, idx) => {
+                  const { label, ok } = getStatus(invoice);
                   return (
-                    <div key={invoice.id} className={`inv-row${selectedInvoice?.id===invoice.id?' selected':''}`}
-                      style={{animationDelay:`${idx*.02}s`}} onClick={()=>selectInvoice(invoice)}>
-                      <div className="inv-td primary">{invoice.supplier||<span style={{color:'var(--text-faint)',fontStyle:'italic'}}>Unknown</span>}</div>
-                      <div className="inv-td">{invoice.number||<span style={{color:'var(--text-faint)'}}>—</span>}</div>
-                      <div className="inv-td">{invoice.date?formatDateShort(invoice.date):<span style={{color:'var(--text-faint)'}}>—</span>}</div>
-                      <div className="inv-td amount">{invoice.amount?formatCurrency(invoice.amount):<span style={{color:'var(--text-faint)'}}>—</span>}</div>
-                      <div><span className={`inv-pill ${ok?'ok':'pend'}`}>{label}</span></div>
+                    <div key={invoice.id} className={`inv-row${selectedInvoice?.id === invoice.id ? ' selected' : ''}`}
+                      style={{ animationDelay: `${idx * .02}s` }} onClick={() => selectInvoice(invoice)}>
+                      <div className="inv-td primary">{invoice.supplier || <span style={{ color: 'var(--text-faint)', fontStyle: 'italic' }}>Unknown</span>}</div>
+                      <div className="inv-td">{invoice.number || <span style={{ color: 'var(--text-faint)' }}>—</span>}</div>
+                      <div className="inv-td">{invoice.date ? formatDateShort(invoice.date) : <span style={{ color: 'var(--text-faint)' }}>—</span>}</div>
+                      <div className="inv-td amount">{invoice.amount ? formatCurrency(invoice.amount) : <span style={{ color: 'var(--text-faint)' }}>—</span>}</div>
+                      <div><span className={`inv-pill ${ok ? 'ok' : 'pend'}`}>{label}</span></div>
                     </div>
                   );
                 })}
@@ -1341,99 +1582,96 @@ export default function ClientInvoices() {
             <div className="inv-detail">
               <div className="inv-detail-hd">
                 <div className="inv-detail-title">
-                  {selectedInvoice?`${selectedInvoice.supplier||'Invoice'} · ${selectedInvoice.number||'—'}`:'Invoice Overview'}
+                  {selectedInvoice ? `${selectedInvoice.supplier || 'Invoice'} · ${selectedInvoice.number || '—'}` : 'Invoice Overview'}
                 </div>
                 {selectedInvoice
-                  ?<span className={`inv-pill ${getStatus(selectedInvoice).ok?'ok':'pend'}`}>{getStatus(selectedInvoice).label}</span>
-                  :<div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>Select an invoice for details</div>
-                }
+                  ? <span className={`inv-pill ${getStatus(selectedInvoice).ok ? 'ok' : 'pend'}`}>{getStatus(selectedInvoice).label}</span>
+                  : <div style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>Select an invoice for details</div>}
               </div>
 
-              {!selectedInvoice&&(
+              {!selectedInvoice && (
                 <div className="inv-detail-body">
                   <div className="inv-widget">
-                    <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Key Metrics</div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'clamp(5px,.5vw,8px)'}}>
+                    <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Key Metrics</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 'clamp(5px,.5vw,8px)' }}>
                       {[
-                        {l:'Avg Invoice Size',   v:formatCurrencyWhole(avgInvoice),        c:'var(--text-primary)'},
-                        {l:'Invoices This Month',v:invoicesThisMonthByDate,                c:'var(--text-primary)'},
-                        {l:'Uploaded This Month',v:invoicesUploadedThisMonth,              c:'var(--text-muted)'},
-                        {l:'Days Since Last',    v:daysSinceLast!==null?daysSinceLast:'—', c:daysSinceLast>7?'var(--color-amber)':'var(--color-green)'},
-                        {l:'Largest Invoice',    v:formatCurrencyWhole(largest),            c:'var(--accent)'},
-                      ].map(({l,v,c})=>(
-                        <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
-                          <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
-                          <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(12px,1vw,16px)',fontWeight:700,color:c}}>{v}</div>
+                        { l: 'Avg Invoice Size', v: formatCurrencyWhole(avgInvoice), c: 'var(--text-primary)' },
+                        { l: 'Invoices This Month', v: invoicesThisMonthByDate, c: 'var(--text-primary)' },
+                        { l: 'Uploaded This Month', v: invoicesUploadedThisMonth, c: 'var(--text-muted)' },
+                        { l: 'Days Since Last', v: daysSinceLast !== null ? daysSinceLast : '—', c: daysSinceLast > 7 ? 'var(--color-amber)' : 'var(--color-green)' },
+                        { l: 'Largest Invoice', v: formatCurrencyWhole(largest), c: 'var(--accent)' },
+                      ].map(({ l, v, c }) => (
+                        <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)' }}>
+                          <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{l}</div>
+                          <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 'clamp(12px,1vw,16px)', fontWeight: 700, color: c }}>{v}</div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,8px)',flex:1,minHeight:0}}>
-                    <div className="inv-widget" style={{display:'flex',flexDirection:'column',overflow:'hidden'}}>
-                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Recent Activity</div>
-                      <div style={{flex:1,overflowY:'auto'}}>
-                        {invoices.slice(0,8).map(inv=>{
-                          const {ok}=getStatus(inv);
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(5px,.5vw,8px)', flex: 1, minHeight: 0 }}>
+                    <div className="inv-widget" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Recent Activity</div>
+                      <div style={{ flex: 1, overflowY: 'auto' }}>
+                        {invoices.slice(0, 8).map(inv => {
+                          const { ok } = getStatus(inv);
                           return (
-                            <div key={inv.id} className="inv-act-item" onClick={()=>selectInvoice(inv)}>
-                              <div className="inv-act-dot" style={{background:ok?'var(--color-green)':'var(--color-amber)'}}/>
-                              <div className="inv-act-text"><strong>{inv.number||'Invoice'}</strong>{inv.supplier?` · ${inv.supplier}`:''}</div>
-                              {inv.amount&&<div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
+                            <div key={inv.id} className="inv-act-item" onClick={() => selectInvoice(inv)}>
+                              <div className="inv-act-dot" style={{ background: ok ? 'var(--color-green)' : 'var(--color-amber)' }} />
+                              <div className="inv-act-text"><strong>{inv.number || 'Invoice'}</strong>{inv.supplier ? ` · ${inv.supplier}` : ''}</div>
+                              {inv.amount && <div className="inv-act-amount">{formatCurrencyWhole(inv.amount)}</div>}
                               <div className="inv-act-time">{timeAgo(inv.created_at)}</div>
                             </div>
                           );
                         })}
-                        {invoices.length===0&&<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No invoice activity yet</div>}
+                        {invoices.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-faint)' }}>No invoice activity yet</div>}
                       </div>
                     </div>
 
-                    <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,8px)',minHeight:0}}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'clamp(5px,.5vw,8px)', minHeight: 0 }}>
                       <div className="inv-widget">
-                        <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Month over Month</div>
-                        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:8}}>
+                        <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Month over Month</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 8 }}>
                           <div>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{new Date().toLocaleDateString('en-US',{month:'long'})}</div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:700,fontSize:'clamp(17px,1.5vw,24px)',color:'var(--accent)',lineHeight:1}}>{formatCurrencyWhole(thisMonthSpend)}</div>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{new Date().toLocaleDateString('en-US', { month: 'long' })}</div>
+                            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 700, fontSize: 'clamp(17px,1.5vw,24px)', color: 'var(--accent)', lineHeight: 1 }}>{formatCurrencyWhole(thisMonthSpend)}</div>
                           </div>
-                          <div style={{textAlign:'right'}}>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:3}}>{new Date(new Date().getFullYear(),new Date().getMonth()-1,1).toLocaleDateString('en-US',{month:'long'})}</div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(13px,1.05vw,17px)',color:'var(--text-primary)',lineHeight:1}}>{formatCurrencyWhole(lastMonthSpend)}</div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toLocaleDateString('en-US', { month: 'long' })}</div>
+                            <div style={{ fontFamily: "'Inter',sans-serif", fontWeight: 600, fontSize: 'clamp(13px,1.05vw,17px)', color: 'var(--text-primary)', lineHeight: 1 }}>{formatCurrencyWhole(lastMonthSpend)}</div>
                           </div>
                         </div>
-                        {monthPct!==null?(
-                          <div style={{display:'flex',alignItems:'center',gap:5,fontSize:'clamp(9px,.68vw,11px)',color:monthUp?'var(--color-red)':'var(--color-green)',fontWeight:600}}>
-                            <span>{monthUp?'▲':'▼'}</span><span>{Math.abs(monthPct)}% {monthUp?'above':'below'} last month</span>
+                        {monthPct !== null ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'clamp(9px,.68vw,11px)', color: monthUp ? 'var(--color-red)' : 'var(--color-green)', fontWeight: 600 }}>
+                            <span>{monthUp ? '▲' : '▼'}</span><span>{Math.abs(monthPct)}% {monthUp ? 'above' : 'below'} last month</span>
                           </div>
-                        ):(
-                          <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No prior month data</div>
-                        )}
+                        ) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-faint)' }}>No prior month data</div>}
                       </div>
 
-                      <div className="inv-widget" style={{flex:1,display:'flex',flexDirection:'column'}}>
-                        <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Top Suppliers</div>
-                        <div style={{flex:1,display:'flex',flexDirection:'column',gap:'clamp(6px,.6vh,9px)'}}>
-                          {topSuppliers.length>0?topSuppliers.map(([name,amount],i)=>{
-                            const colors=['var(--accent)','var(--color-amber)','var(--color-green)','var(--text-faint)'];
+                      <div className="inv-widget" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Top Suppliers</div>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'clamp(6px,.6vh,9px)' }}>
+                          {topSuppliers.length > 0 ? topSuppliers.map(([name, amount], i) => {
+                            const colors = ['var(--accent)', 'var(--color-amber)', 'var(--color-green)', 'var(--text-faint)'];
                             return (
-                              <div key={name} className="inv-prog-row" style={{marginBottom:0}}>
+                              <div key={name} className="inv-prog-row" style={{ marginBottom: 0 }}>
                                 <div className="inv-prog-label">{name}</div>
-                                <div className="inv-prog-track"><div className="inv-prog-fill" style={{width:`${(amount/maxSupplier)*100}%`,background:colors[i]}}/></div>
-                                <div className="inv-prog-val" style={{color:colors[i]}}>{formatCurrencyWhole(amount)}</div>
+                                <div className="inv-prog-track"><div className="inv-prog-fill" style={{ width: `${(amount / maxSupplier) * 100}%`, background: colors[i] }} /></div>
+                                <div className="inv-prog-val" style={{ color: colors[i] }}>{formatCurrencyWhole(amount)}</div>
                               </div>
                             );
-                          }):<div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-faint)'}}>No supplier data yet</div>}
+                          }) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-faint)' }}>No supplier data yet</div>}
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="inv-widget">
-                    <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>12-Month Spend</div>
+                    <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />12-Month Spend</div>
                     <div className="inv-mini-chart">
-                      {monthlySpend.map(({month,total},idx)=>(
+                      {monthlySpend.map(({ month, total }, idx) => (
                         <div key={idx} className="inv-mc-col">
-                          <div className="inv-mc-track"><div className="inv-mc-bar" style={{height:`${Math.max(2,(total/maxMonthly)*90)}%`,background:getBarColor(total)}}/></div>
+                          <div className="inv-mc-track"><div className="inv-mc-bar" style={{ height: `${Math.max(2, (total / maxMonthly) * 90)}%`, background: getBarColor(total) }} /></div>
                           <div className="inv-mc-lbl">{month}</div>
                         </div>
                       ))}
@@ -1442,76 +1680,76 @@ export default function ClientInvoices() {
                 </div>
               )}
 
-              {selectedInvoice&&(
-                <div style={{display:'flex',flexDirection:'column',height:'100%',overflow:'hidden'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)',borderBottom:'1px solid var(--border)',flexShrink:0}}>
-                    <button onClick={()=>{setSelectedInvoice(null);setInvoiceItems([]);router.replace('/client/invoices',undefined,{shallow:true});}}
-                      style={{background:'none',border:'none',cursor:'pointer',fontSize:'clamp(9px,.68vw,11px)',color:'var(--accent)',fontFamily:"'Inter',sans-serif",display:'flex',alignItems:'center',gap:4,padding:0}}>
+              {selectedInvoice && (
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', padding: 'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+                    <button onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); router.replace('/client/invoices', undefined, { shallow: true }); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: "'Inter',sans-serif", display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}>
                       ← Back to overview
                     </button>
                   </div>
 
                   <div className="inv-detail-body">
                     <div className="inv-widget">
-                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Invoice Information</div>
-                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr 1fr auto',gap:'clamp(5px,.5vw,8px)',alignItems:'stretch'}}>
+                      <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Invoice Information</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr auto', gap: 'clamp(5px,.5vw,8px)', alignItems: 'stretch' }}>
                         {[
-                          {l:'Invoice No.',  v:selectedInvoice.number||'—'},
-                          {l:'Invoice Date', v:selectedInvoice.date?formatDate(selectedInvoice.date):'—'},
-                          {l:'Supplier',     v:selectedInvoice.supplier||'—'},
-                          {l:'Upload Date',  v:formatDate(selectedInvoice.created_at)},
-                          {l:'Total Amount', v:selectedInvoice.amount?formatCurrency(selectedInvoice.amount):'—', accent:true},
-                        ].map(({l,v,accent})=>(
-                          <div key={l} style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)'}}>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.5px',marginBottom:4}}>{l}</div>
-                            <div style={{fontFamily:"'Inter',sans-serif",fontSize:'clamp(11px,.85vw,14px)',fontWeight:accent?700:500,color:accent?'var(--accent)':'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{v}</div>
+                          { l: 'Invoice No.', v: selectedInvoice.number || '—' },
+                          { l: 'Invoice Date', v: selectedInvoice.date ? formatDate(selectedInvoice.date) : '—' },
+                          { l: 'Supplier', v: selectedInvoice.supplier || '—' },
+                          { l: 'Upload Date', v: formatDate(selectedInvoice.created_at) },
+                          { l: 'Total Amount', v: selectedInvoice.amount ? formatCurrency(selectedInvoice.amount) : '—', accent: true },
+                        ].map(({ l, v, accent }) => (
+                          <div key={l} style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)' }}>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 4 }}>{l}</div>
+                            <div style={{ fontFamily: "'Inter',sans-serif", fontSize: 'clamp(11px,.85vw,14px)', fontWeight: accent ? 700 : 500, color: accent ? 'var(--accent)' : 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</div>
                           </div>
                         ))}
-                        {selectedInvoice.file_url?(
+                        {selectedInvoice.file_url ? (
                           <a href={selectedInvoice.file_url} target="_blank" rel="noopener noreferrer"
-                            style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,textDecoration:'none',cursor:'pointer',flexShrink:0,minWidth:'clamp(44px,4vw,60px)'}}>
+                            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, textDecoration: 'none', cursor: 'pointer', flexShrink: 0, minWidth: 'clamp(44px,4vw,60px)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--accent)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>Open</div>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Open</div>
                           </a>
-                        ):(
-                          <div style={{background:'var(--bg-surface)',border:'1px solid var(--border-subtle)',borderRadius:'clamp(4px,.3vw,6px)',padding:'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:4,flexShrink:0,minWidth:'clamp(44px,4vw,60px)'}}>
+                        ) : (
+                          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, flexShrink: 0, minWidth: 'clamp(44px,4vw,60px)' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                            <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.5px'}}>No file</div>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>No file</div>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    <div className="inv-widget" style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',overflow:'hidden'}}>
-                      <div className="inv-wlbl"><div style={{width:6,height:6,borderRadius:'50%',background:'var(--accent)',flexShrink:0}}/>Line Items {invoiceItems.length>0&&`(${invoiceItems.length})`}</div>
-                      {loadingDetail?(
-                        <div style={{display:'flex',alignItems:'center',gap:8,color:'var(--text-muted)',fontSize:'clamp(10px,.75vw,12px)'}}>
-                          <div style={{width:16,height:16,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
+                    <div className="inv-widget" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      <div className="inv-wlbl"><div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />Line Items {invoiceItems.length > 0 && `(${invoiceItems.length})`}</div>
+                      {loadingDetail ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: 'clamp(10px,.75vw,12px)' }}>
+                          <div style={{ width: 16, height: 16, border: '2px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin .7s linear infinite' }} />
                           Loading items...
                         </div>
-                      ):invoiceItems.length>0?(
+                      ) : invoiceItems.length > 0 ? (
                         <>
-                          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 1fr 80px',gap:5,padding:'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)',background:'var(--bg-elevated)',borderRadius:'clamp(4px,.3vw,6px)',marginBottom:4,flexShrink:0}}>
-                            {['Item','Qty','Unit Cost','Total','Status'].map(h=>(
-                              <div key={h} style={{fontSize:'clamp(7px,.58vw,10px)',fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.6px'}}>{h}</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)', background: 'var(--bg-elevated)', borderRadius: 'clamp(4px,.3vw,6px)', marginBottom: 4, flexShrink: 0 }}>
+                            {['Item', 'Qty', 'Unit Cost', 'Total', 'Status'].map(h => (
+                              <div key={h} style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>{h}</div>
                             ))}
                           </div>
-                          <div style={{flex:1,overflowY:'auto',minHeight:0}}>
-                            {invoiceItems.map(item=>(
+                          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+                            {invoiceItems.map(item => (
                               <div key={item.id} className="inv-item-row">
-                                <div className="inv-itd name">{item.item_name||'—'}</div>
-                                <div className="inv-itd">{item.quantity?`${item.quantity} ${item.unit||''}`.trim():'—'}</div>
+                                <div className="inv-itd name">{item.item_name || '—'}</div>
+                                <div className="inv-itd">{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}</div>
                                 <div className="inv-itd">{formatCurrency(item.unit_cost)}</div>
                                 <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
-                                <div>{item.ingredients?<span className="inv-linked">Linked</span>:<span className="inv-unlinked">Unlinked</span>}</div>
+                                <div>{item.ingredients ? <span className="inv-linked">Linked</span> : <span className="inv-unlinked">Unlinked</span>}</div>
                               </div>
                             ))}
                           </div>
                         </>
-                      ):(
-                        <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',flex:1,gap:8}}>
-                          <IconFile size={36}/>
-                          <div style={{fontSize:'clamp(11px,.85vw,14px)',color:'var(--text-muted)',fontWeight:500}}>No line items recorded</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 8 }}>
+                          <IconFile size={36} />
+                          <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-muted)', fontWeight: 500 }}>No line items recorded</div>
                         </div>
                       )}
                     </div>
@@ -1523,11 +1761,11 @@ export default function ClientInvoices() {
         )}
       </div>
 
-      {showParseModal&&restaurantId&&(
-        <ParseModal restaurantId={restaurantId} onClose={()=>setShowParseModal(false)} onSaved={handleInvoiceSaved}/>
+      {showParseModal && restaurantId && (
+        <ParseModal restaurantId={restaurantId} onClose={() => setShowParseModal(false)} onSaved={handleInvoiceSaved} />
       )}
-      {tourProps&&<TourOverlay {...tourProps}/>}
-      <TourDataBanner/>
+      {tourProps && <TourOverlay {...tourProps} />}
+      <TourDataBanner />
     </>
   );
 }

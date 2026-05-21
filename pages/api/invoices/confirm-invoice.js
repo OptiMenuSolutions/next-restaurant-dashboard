@@ -21,6 +21,24 @@ function normalizeName(name) {
   return (name || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+// FIX #1: Resolve the correct unit cost and invoice unit from the new parse-invoice
+// output shape (cost_per_lb / cost_per_each / standard_unit) or the legacy shape (unit_cost / unit).
+function resolveUnitCost(item) {
+  // New shape from parse-invoice
+  if (item.standard_unit !== undefined) {
+    const cost = item.standard_unit === 'lb'    ? item.cost_per_lb
+               : item.standard_unit === 'each'  ? item.cost_per_each
+               : item.standard_unit === 'oz'    ? item.cost_per_lb  // oz stored as $/lb, convert below
+               : item.standard_unit === 'gal'   ? item.cost_per_each
+               : item.standard_unit === 'case'  ? item.cost_per_each
+               : (item.cost_per_lb ?? item.cost_per_each ?? null);
+    const unit = item.standard_unit || item.quantity_unit || 'each';
+    return { unit_cost: cost ?? null, unit };
+  }
+  // Legacy shape
+  return { unit_cost: item.unit_cost ?? null, unit: item.unit ?? 'each' };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
@@ -66,29 +84,37 @@ export default async function handler(req, res) {
     results.invoice_id = invoiceRecord.id;
 
     // ── Step 2: Batch-create new ingredients ──────────────────────────────────
-    // For new ingredients, convert the invoice unit cost to cost-per-standard-unit
-    // before storing. e.g. $3.50/lb → $0.21875/oz
-    const newIngredientItems = activeItems.filter(
-      i => !i.selected_ingredient_id && i.match_status === 'new' && i.confirm_new
-    );
+    // FIX #5: warn when confirm_new is missing on a new ingredient item
+    const newIngredientItems = activeItems.filter(i => {
+      if (!i.selected_ingredient_id && i.match_status === 'new') {
+        if (!i.confirm_new) {
+          console.warn(`[confirm-invoice] Skipping new ingredient "${i.item_name_normalized || i.item_name}" — confirm_new flag not set`);
+          return false;
+        }
+        return true;
+      }
+      return false;
+    });
 
     const newIngredientIdMap = {};
 
     if (newIngredientItems.length > 0) {
       const toInsert = newIngredientItems.map(item => {
-        const ingName  = item.confirmed_name || item.item_name;
-        const stdUnit  = getStandardUnitForIngredient(item.unit, ingName);
-        const stdPrice = item.unit_cost
-          ? convertInvoiceCostToStandardUnit(item.unit_cost, item.unit, ingName)
+        // FIX #1: use resolveUnitCost for new ingredients too
+        const { unit_cost, unit } = resolveUnitCost(item);
+        const ingName  = item.confirmed_name || item.item_name_normalized || item.item_name;
+        const stdUnit  = getStandardUnitForIngredient(unit, ingName);
+        const stdPrice = unit_cost
+          ? convertInvoiceCostToStandardUnit(unit_cost, unit, ingName)
           : null;
 
         return {
           restaurant_id,
           name:                ingName,
-          unit:                stdUnit,           // store standard unit (oz, fl oz, each)
+          unit:                stdUnit,
           standard_unit:       stdUnit,
-          original_unit:       item.unit || 'each', // preserve original invoice unit
-          last_price:          stdPrice,          // cost per standard unit
+          original_unit:       unit || 'each',
+          last_price:          stdPrice,
           last_ordered_at:     invoiceDate,
           ingredient_category: 'weight',
           is_sample:           false,
@@ -105,7 +131,7 @@ export default async function handler(req, res) {
         results.errors.push('Failed to batch-create ingredients: ' + createError.message);
       } else {
         for (const item of newIngredientItems) {
-          const targetName = (item.confirmed_name || item.item_name || '').toLowerCase().trim();
+          const targetName = (item.confirmed_name || item.item_name_normalized || item.item_name || '').toLowerCase().trim();
           const match = createdIngredients.find(
             c => c.name.toLowerCase().trim() === targetName
           );
@@ -118,22 +144,24 @@ export default async function handler(req, res) {
     }
 
     // ── Step 3: Batch-update existing ingredient prices ───────────────────────
-    // Convert invoice unit cost to per-standard-unit before storing.
-    // Also update the unit field to match (keeps unit and last_price in sync).
     const ingredientUpdates = {};
     for (const item of activeItems) {
       const ingId = item.selected_ingredient_id || newIngredientIdMap[item._id] || null;
-      if (ingId && item.unit_cost) {
-        const ingName  = item.selected_ingredient_name || item.item_name;
-        const stdPrice = convertInvoiceCostToStandardUnit(item.unit_cost, item.unit, ingName);
-        const stdUnit  = getStandardUnitForIngredient(item.unit, ingName);
+      if (ingId) {
+        // FIX #1: use resolveUnitCost instead of item.unit_cost / item.unit directly
+        const { unit_cost, unit } = resolveUnitCost(item);
+        if (unit_cost) {
+          const ingName  = item.selected_ingredient_name || item.item_name_normalized || item.item_name;
+          const stdPrice = convertInvoiceCostToStandardUnit(unit_cost, unit, ingName);
+          const stdUnit  = getStandardUnitForIngredient(unit, ingName);
 
-        ingredientUpdates[ingId] = {
-          last_price:      stdPrice,   // cost per standard unit (oz, fl oz, each)
-          unit:            stdUnit,    // keep unit in sync with what last_price is per
-          last_ordered_at: invoiceDate,
-          is_estimated:    false,
-        };
+          ingredientUpdates[ingId] = {
+            last_price:      stdPrice,
+            unit:            stdUnit,
+            last_ordered_at: invoiceDate,
+            is_estimated:    false,
+          };
+        }
       }
     }
 
@@ -154,27 +182,27 @@ export default async function handler(req, res) {
     await Promise.all(updatePromises);
 
     // ── Step 4: Batch-insert all invoice_items ────────────────────────────────
-    // Store the ORIGINAL invoice unit and unit_cost here (not standardized).
-    // This preserves the source-of-truth for the invoice as it actually appeared.
     const invoiceItemsToInsert = activeItems.map(item => {
       const ingredientId =
         item.selected_ingredient_id ||
         newIngredientIdMap[item._id] ||
         null;
 
-      const lineTotal = item.line_total || (
-        (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0)
-      );
+      // FIX #1: derive unit_cost and unit from new or legacy shape
+      const { unit_cost, unit } = resolveUnitCost(item);
+
+      const qty = parseFloat(item.quantity_ordered ?? item.quantity) || 0;
+      const lineTotal = item.line_total || (qty * (parseFloat(unit_cost) || 0));
 
       return {
         invoice_id:                 invoiceRecord.id,
-        item_name:                  item.item_name,
-        quantity:                   item.quantity   || null,
-        unit:                       item.unit       || null,  // original invoice unit
-        unit_cost:                  item.unit_cost  || null,  // original invoice unit cost
-        amount:                     lineTotal       || null,
-        ingredient_name_normalized: normalizeName(item.item_name),
-        category:                   item.category   || null,
+        item_name:                  item.item_name_normalized || item.item_name,
+        quantity:                   item.quantity_ordered ?? item.quantity ?? null,
+        unit:                       item.quantity_unit || unit || null,
+        unit_cost:                  unit_cost || null,
+        amount:                     lineTotal || null,
+        ingredient_name_normalized: normalizeName(item.item_name_normalized || item.item_name),
+        category:                   item.category || null,
         ingredient_id:              ingredientId,
       };
     });
@@ -190,46 +218,47 @@ export default async function handler(req, res) {
     }
 
     // ── Step 5: Recompute menu item costs for affected ingredients ────────────
-    // Now that last_price is stored as cost-per-standard-unit, we use
-    // calculateStandardizedCost() to properly handle unit conversion between
-    // the recipe unit (e.g. oz) and whatever the ingredient's standard unit is.
-    const updatedIngredientIds = Object.keys(ingredientUpdates);
+    // FIX #2: include newly created ingredient IDs so brand-new ingredients
+    // also trigger menu item cost recomputation.
+    const updatedIngredientIds = [
+      ...Object.keys(ingredientUpdates),
+      ...Object.values(newIngredientIdMap),
+    ];
 
     if (updatedIngredientIds.length > 0) {
       const { data: affectedComponents } = await supabase
         .from('component_ingredients')
-        .select(`
-          ingredient_id,
-          quantity,
-          unit,
-          menu_item_components (
-            id,
-            menu_item_id,
-            menu_items (
-              id,
-              name,
-              price,
-              cost
-            )
-          )
-        `)
+        .select('ingredient_id, menu_item_components(menu_item_id)')
         .in('ingredient_id', updatedIngredientIds);
 
       const affectedMenuItemIds = [
         ...new Set(
           (affectedComponents || [])
-            .map(ci => ci.menu_item_components?.menu_items?.id)
+            .map(ci => ci.menu_item_components?.menu_item_id)
             .filter(Boolean)
         )
       ];
 
       if (affectedMenuItemIds.length > 0) {
+        // FIX #3: query menu_items directly for old costs instead of inferring
+        // from affectedComponents (which may only have one row per menu item).
+        const { data: menuItemRecords } = await supabase
+          .from('menu_items')
+          .select('id, name, cost')
+          .in('id', affectedMenuItemIds);
+
+        const oldCostMap = {};
+        const nameMap    = {};
+        for (const mi of (menuItemRecords || [])) {
+          oldCostMap[mi.id] = parseFloat(mi.cost || 0);
+          nameMap[mi.id]    = mi.name;
+        }
+
         // Load all components for affected menu items
         const { data: allComps } = await supabase
           .from('menu_item_components')
           .select(`
             menu_item_id,
-            cost,
             component_ingredients (
               quantity,
               unit,
@@ -243,21 +272,6 @@ export default async function handler(req, res) {
           `)
           .in('menu_item_id', affectedMenuItemIds);
 
-        // Build old cost and name maps
-        const oldCostMap = {};
-        const nameMap = {};
-        for (const ci of (affectedComponents || [])) {
-          const menuItem = ci.menu_item_components?.menu_items;
-          if (menuItem) {
-            oldCostMap[menuItem.id] = parseFloat(menuItem.cost || 0);
-            nameMap[menuItem.id]    = menuItem.name;
-          }
-        }
-
-        // Recompute cost per menu item using proper unit conversion.
-        // last_price is now per standard unit (oz or fl oz).
-        // calculateStandardizedCost converts the recipe qty+unit to that
-        // same standard unit before multiplying.
         const newCostMap = {};
         for (const comp of (allComps || [])) {
           const mid = comp.menu_item_id;
@@ -270,14 +284,11 @@ export default async function handler(req, res) {
             const ingName    = ci.ingredients?.name || '';
 
             if (unitCost > 0 && qty > 0) {
-              // calculateStandardizedCost handles the unit conversion:
-              // converts qty from recipeUnit to standard unit, then × unitCost
               newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingName);
             }
           }
         }
 
-        // Batch-update menu items whose cost actually changed + log history
         const costUpdatePromises = Object.entries(newCostMap)
           .filter(([mid, newCost]) => {
             const rounded = Math.round(newCost * 100) / 100;
