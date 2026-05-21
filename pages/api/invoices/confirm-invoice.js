@@ -24,19 +24,43 @@ function normalizeName(name) {
 // FIX #1: Resolve the correct unit cost and invoice unit from the new parse-invoice
 // output shape (cost_per_lb / cost_per_each / standard_unit) or the legacy shape (unit_cost / unit).
 function resolveUnitCost(item) {
-  // New shape from parse-invoice
-  if (item.standard_unit !== undefined) {
-    const cost = item.standard_unit === 'lb'    ? item.cost_per_lb
-               : item.standard_unit === 'each'  ? item.cost_per_each
-               : item.standard_unit === 'oz'    ? item.cost_per_lb  // oz stored as $/lb, convert below
-               : item.standard_unit === 'gal'   ? item.cost_per_each
-               : item.standard_unit === 'case'  ? item.cost_per_each
-               : (item.cost_per_lb ?? item.cost_per_each ?? null);
-    const unit = item.standard_unit || item.quantity_unit || 'each';
-    return { unit_cost: cost ?? null, unit };
+  // New shape: pack + size + size_unit + invoice_price — server does the math
+  if (item.invoice_price !== undefined) {
+    let unitCost, unit;
+
+    if (item.catch_weight && item.actual_weight && item.pack) {
+      // Catch-weight: actual_weight = line_total / invoice_price (already derived by parser)
+      const totalActualUnits = item.pack * item.actual_weight;
+      unitCost = totalActualUnits > 0 ? item.invoice_price / totalActualUnits : null;
+      unit     = item.size_unit || 'lb';
+
+    } else if (item.pack && item.size && item.size_unit) {
+      // Standard case pricing: cost per smallest unit
+      const totalUnits = item.pack * item.size;
+      unitCost = totalUnits > 0 ? item.invoice_price / totalUnits : null;
+      unit     = item.size_unit;
+
+    } else if (item.size_unit === 'each' || item.standard_unit === 'each') {
+      // Count item — price per each
+      unitCost = item.invoice_price || null;
+      unit     = 'each';
+
+    } else {
+      unitCost = null;
+      unit     = item.size_unit || 'each';
+    }
+
+    return { unit_cost: unitCost, unit };
   }
-  // Legacy shape
-  return { unit_cost: item.unit_cost ?? null, unit: item.unit ?? 'each' };
+
+  // Legacy shape fallback (cost_per_lb / cost_per_each)
+  const cost = item.standard_unit === 'lb'    ? item.cost_per_lb
+             : item.standard_unit === 'each'  ? item.cost_per_each
+             : item.standard_unit === 'oz'    ? item.cost_per_lb
+             : item.standard_unit === 'gal'   ? item.cost_per_each
+             : item.standard_unit === 'case'  ? item.cost_per_each
+             : (item.cost_per_lb ?? item.cost_per_each ?? null);
+  return { unit_cost: cost ?? null, unit: item.standard_unit || item.quantity_unit || 'each' };
 }
 
 export default async function handler(req, res) {

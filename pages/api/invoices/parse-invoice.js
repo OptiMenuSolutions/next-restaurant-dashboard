@@ -121,25 +121,34 @@ If you have both line_total AND total_weight_lbs from a weight column:
   cost_per_lb = line_total ÷ total_weight_lbs
   confidence = "high"
 
-METHOD 3 (requires pack size interpretation): Unit price ÷ lbs per unit
-If you have unit_price and must derive from pack size:
-  - Use your food service knowledge to interpret the pack size
-  - "4/10 LB" = 4 units × 10 lb each = 40 lb/case → cost_per_lb = unit_price ÷ 40
-  - "6/" with no weight = ambiguous, use common sense for this product type
-  - Validate by checking: does the derived cost_per_lb make sense for this ingredient?
-    (Chicken breast $3-6/lb, beef $5-15/lb, produce $0.50-5/lb, seafood $5-30/lb, etc.)
-  - If derived price seems wrong, try the other interpretation
-  confidence = "medium" if you're confident in interpretation, "low" if guessing
+METHOD 3 (case-priced items): Extract raw values only — do NOT compute cost per unit yourself
+  Extract these fields directly from the invoice:
+    pack          = number of units per case (e.g. 4)
+    size          = size of each unit (e.g. 27)
+    size_unit     = unit of that size (e.g. "oz", "lb", "ct", "gal")
+    invoice_price = the price as printed on the invoice (per case)
+  Leave cost_per_lb and cost_per_each as null — the server will compute from pack × size.
+  confidence = "medium" if pack/size are clearly readable, "low" if ambiguous
+
+  CATCH-WEIGHT ITEMS — when unit column differs from size_unit:
+  If the invoice has a separate "unit" column (e.g. "LB") that differs from size_unit (e.g. "OZ"):
+    catch_weight  = true
+    actual_weight = line_total / invoice_price  ← derive from the math, not handwriting
+    size_unit     = the unit column value (e.g. "lb")
+  Example: size="7 OZ", unit column="LB", price=$14.50, extension=$144.42
+    → catch_weight=true, actual_weight=144.42/14.50=9.96, size_unit="lb"
 
 METHOD 4: Count-based items (eggs, lobster tails, avocados, etc.)
 If the item is naturally counted rather than weighed:
-  cost_per_each = unit_price ÷ count_per_case (if applicable)
-  Set cost_per_lb = null, standard_unit = "each"
-  confidence = "high" if count is clear
+  pack          = case count if applicable (e.g. 12 for a flat of eggs)
+  size          = 1
+  size_unit     = "each"
+  invoice_price = price as printed
+  confidence    = "high" if count is clear
 
 METHOD 5: Cannot determine
-If you genuinely cannot derive cost_per_lb or cost_per_each with reasonable confidence:
-  Set cost_per_lb = null, cost_per_each = null
+If you genuinely cannot extract pack, size, size_unit, or invoice_price:
+  Set all four to null
   confidence = "low"
   Explain in confidence_reason
 
@@ -189,8 +198,12 @@ Return ONLY valid JSON with this exact structure:
       "total_weight_lbs": number or null,
       "unit_price": number or null,
       "line_total": number or null,
-      "cost_per_lb": number or null,
-      "cost_per_each": number or null,
+      "pack": number or null,
+      "size": number or null,
+      "size_unit": "lb | oz | each | gal | fl oz | ct",
+      "invoice_price": number or null,
+      "catch_weight": boolean,
+      "actual_weight": number or null,
       "standard_unit": "lb | oz | each | gal | case",
       "confidence": "high | medium | low",
       "confidence_reason": "string explaining uncertainty, or null if high confidence"
