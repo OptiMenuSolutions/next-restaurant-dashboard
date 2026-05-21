@@ -282,6 +282,7 @@ const CSS = `
   /* Right detail panel */
   .pm-detail { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
   .pm-detail-body { flex: 1; overflow-y: auto; padding: clamp(12px,1.2vh,18px) clamp(14px,1.2vw,20px); display: flex; flex-direction: column; gap: clamp(10px,1vh,16px); }
+  .pm-detail-body > * { flex-shrink: 0; }
 
   /* Invoice header card */
   .pm-inv-hd { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: clamp(10px,1vw,14px); flex-shrink: 0; }
