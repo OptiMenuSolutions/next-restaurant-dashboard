@@ -28,11 +28,16 @@ function resolveUnitCost(item) {
   if (item.invoice_price !== undefined) {
     let unitCost, unit;
 
-    if (item.catch_weight && item.actual_weight && item.pack) {
-      // Catch-weight: actual_weight = line_total / invoice_price (already derived by parser)
-      const totalActualUnits = item.pack * item.actual_weight;
-      unitCost = totalActualUnits > 0 ? item.invoice_price / totalActualUnits : null;
-      unit     = item.size_unit || 'lb';
+    if (item.catch_weight && item.actual_weight) {
+      if (item.pack) {
+        // Multiple catch-weight units: total cost spread across pack × actual_weight
+        const totalActualUnits = item.pack * item.actual_weight;
+        unitCost = totalActualUnits > 0 ? item.invoice_price / totalActualUnits : null;
+      } else {
+        // Single catch-weight item: invoice_price IS the per-unit cost already
+        unitCost = item.invoice_price;
+      }
+      unit = item.size_unit || 'lb';
 
     } else if (item.pack && item.size && item.size_unit) {
       // Standard case pricing: cost per smallest unit

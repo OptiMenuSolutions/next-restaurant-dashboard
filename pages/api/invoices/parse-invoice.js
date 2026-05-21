@@ -135,6 +135,15 @@ METHOD 3 (case-priced items): Extract raw values only — do NOT compute cost pe
     Try splitting differently: pack=1, size=50 → $37.50 / 50 = $0.75/lb. Use food
     service knowledge to sanity check (sugar ~$0.50-1.00/lb, chicken ~$1-3/lb, etc.)
 
+    SHIPPED vs ORDERED quantity warning:
+    The invoice shows both ORDERED and SHIPPED quantities. Never use the total
+    shipped weight column to infer pack size. Instead:
+      - Use only the pack/size column to determine case contents
+      - Use SHIPPED quantity × pack × size to validate your reading against line_total
+    Example: ordered=8, shipped=7, pack_size="40 LB", price=$50, extension=$350
+      → 7 shipped × $50 = $350 ✓ → pack=1, size=40, size_unit=lb
+      → DO NOT infer size=20 from total weight 140 lb ÷ 7 cases
+
   Leave cost_per_lb and cost_per_each as null — the server will compute from pack × size.
   confidence = "medium" if pack/size are clearly readable, "low" if ambiguous
 
