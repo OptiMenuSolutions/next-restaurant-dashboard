@@ -322,7 +322,7 @@ const CSS = `
   .pm-line-item.status-ambiguous { border-left: 3px solid var(--color-amber); }
   .pm-line-item.status-new { border-left: 3px solid var(--accent); }
   .pm-line-item.dismissed { opacity: .4; }
-  .pm-li-hd { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 130px; gap: 8px; padding: clamp(7px,.7vh,10px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
+  .pm-li-hd { display: grid; grid-template-columns: 1.6fr 0.7fr 0.7fr 0.7fr 0.8fr 0.8fr 130px; gap: 8px; padding: clamp(7px,.7vh,10px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
   .pm-li-hd:hover { background: rgba(255,255,255,.02); }
   .pm-li-name { font-size: clamp(10px,.78vw,12px); font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pm-li-meta { font-size: clamp(7px,.6vw,9px); color: var(--text-muted); margin-top: 1px; }
@@ -409,14 +409,22 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
   const lineTotal = item.line_total ?? null;
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
 
-  const displayQty = item.quantity_shipped ?? item.quantity_ordered ?? '';
-  const displayCost = item.invoice_price ?? '';
+  // Derived display values
+  const orderedCases = item.quantity_shipped ?? item.quantity_ordered ?? 0;
+  const unitsPerCase = (item.pack ?? 1) * (item.size ?? 1);
+  const totalQty = orderedCases * unitsPerCase;
+  const unitCost = lineTotal && totalQty > 0
+    ? Math.round((lineTotal / totalQty) * 10000) / 10000
+    : null;
+  const sizeUnit = item.size_unit || item.quantity_unit || '';
 
   return (
     <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
       <div className="pm-li-hd"
         onClick={item.match_status !== 'auto' ? onToggle : undefined}
-        style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default' }}>
+        style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default', gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.7fr 0.8fr 0.8fr 130px' }}>
+
+        {/* Item name */}
         <div style={{ minWidth: 0 }}>
           <div className="pm-li-name">{item.item_name_normalized || item.item_name_raw}</div>
           {item.item_name_raw && item.item_name_normalized && item.item_name_raw !== item.item_name_normalized &&
@@ -428,60 +436,69 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
             <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
 
-        {/* Editable qty */}
+        {/* Ordered cases — editable */}
         <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <input
               type="number"
-              value={displayQty}
+              value={orderedCases}
               onChange={e => {
-                const newQty = parseFloat(e.target.value);
-                if (newQty > 0 && lineTotal) {
+                const newOrdered = parseFloat(e.target.value);
+                if (newOrdered > 0) {
                   onEdit(item._id, {
-                    quantity_shipped: newQty,
-                    quantity_ordered: newQty,
-                    invoice_price: Math.round((lineTotal / newQty) * 10000) / 10000,
+                    quantity_shipped: newOrdered,
+                    quantity_ordered: newOrdered,
                   });
                 }
               }}
-              style={{ width: 'clamp(36px,3.5vw,52px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
             />
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>
-              {item.quantity_unit || ''}
-            </span>
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>CS</span>
           </div>
         </div>
 
-        {/* Editable unit cost */}
-        <div className="pm-li-cell val" onClick={e => e.stopPropagation()}>
+        {/* Units per case — editable */}
+        <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>$</span>
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>×</span>
             <input
               type="number"
-              value={displayCost}
+              value={unitsPerCase}
               onChange={e => {
-                const newCost = parseFloat(e.target.value);
-                if (newCost > 0 && lineTotal) {
+                const newUnitsPerCase = parseFloat(e.target.value);
+                if (newUnitsPerCase > 0) {
+                  // Back-calculate: keep pack=1, update size to newUnitsPerCase
                   onEdit(item._id, {
-                    invoice_price: newCost,
-                    quantity_shipped: Math.round((lineTotal / newCost) * 10000) / 10000,
-                    quantity_ordered: Math.round((lineTotal / newCost) * 10000) / 10000,
+                    pack: 1,
+                    size: newUnitsPerCase,
                   });
                 }
               }}
-              style={{ width: 'clamp(40px,3.8vw,56px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
             />
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>
-              /{item.size_unit || item.quantity_unit || ''}
-            </span>
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{sizeUnit}</span>
           </div>
         </div>
 
-        {/* Fixed line total */}
+        {/* Total qty — read only */}
+        <div className="pm-li-cell" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>=</span>
+          <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontWeight: 500 }}>
+            {totalQty > 0 ? `${Math.round(totalQty * 1000) / 1000} ${sizeUnit}` : '—'}
+          </span>
+        </div>
+
+        {/* Unit cost — read only, derived */}
+        <div className="pm-li-cell val">
+          {unitCost ? `${formatCurrency(unitCost)}/${sizeUnit}` : '—'}
+        </div>
+
+        {/* Line total — fixed */}
         <div className="pm-li-cell val">
           {lineTotal ? formatCurrency(lineTotal) : '—'}
         </div>
 
+        {/* Status */}
         <div className="pm-li-status">
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
