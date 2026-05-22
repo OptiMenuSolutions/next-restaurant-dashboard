@@ -185,6 +185,12 @@ If you genuinely cannot extract pack, size, size_unit, or invoice_price:
   confidence = "low"
   Explain in confidence_reason
 
+  ORDERED vs SHIPPED:
+  quantity_ordered = the number in the ORDERED column
+  quantity_shipped = the number in the SHIPPED column
+  Always use quantity_shipped for cost validation (extension = shipped × price).
+  If only one quantity column exists, use it for both.
+
 FOOD vs NON-FOOD CLASSIFICATION:
 Mark is_food = false for:
 - Cleaning supplies (bleach, sanitizer, soap, degreasers, glass cleaner)
