@@ -329,6 +329,10 @@ const CSS = `
   .pm-li-cell { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); }
   .pm-li-cell.val { color: var(--accent); font-weight: 600; }
   .pm-li-status { display: flex; align-items: center; gap: 5px; font-size: clamp(8px,.62vw,10px); font-weight: 600; }
+  .pm-li-hd input::placeholder { color: var(--text-faint) !important; font-size: clamp(9px,.68vw,11px); }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
 
   /* Candidate options */
   .pm-candidates { padding: clamp(8px,.8vh,12px) clamp(10px,.9vw,14px); border-top: 1px solid var(--border-subtle); display: flex; flex-direction: column; gap: 5px; }
@@ -410,8 +414,14 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
 
   // Derived display values
-  const orderedCases = item.quantity_shipped ?? item.quantity_ordered ?? 0;
-  const unitsPerCase = (item.pack ?? 1) * (item.size ?? 1);
+  const orderedCases = item.quantity_shipped ?? item.quantity_ordered ?? '';
+  const unitsPerCase = item.pack != null && item.size != null
+    ? (item.pack * item.size)
+    : item.pack != null
+    ? item.pack
+    : item.size != null
+    ? item.size
+    : '';
   const totalQty = orderedCases * unitsPerCase;
   const unitCost = lineTotal && totalQty > 0
     ? Math.round((lineTotal / totalQty) * 10000) / 10000
@@ -440,11 +450,18 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
         <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <input
-              type="number"
-              value={orderedCases}
+              type="text"
+              inputMode="decimal"
+              value={orderedCases === '' ? '' : String(orderedCases)}
+              placeholder="—"
               onChange={e => {
-                const newOrdered = parseFloat(e.target.value);
-                if (newOrdered > 0) {
+                const raw = e.target.value.replace(/[^0-9.]/g, '');
+                if (raw === '') {
+                  onEdit(item._id, { quantity_shipped: null, quantity_ordered: null });
+                  return;
+                }
+                const newOrdered = parseFloat(raw);
+                if (!isNaN(newOrdered) && newOrdered > 0) {
                   onEdit(item._id, {
                     quantity_shipped: newOrdered,
                     quantity_ordered: newOrdered,
@@ -462,19 +479,22 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>×</span>
             <input
-              type="number"
-              value={unitsPerCase}
+              type="text"
+              inputMode="decimal"
+              value={unitsPerCase === '' ? '' : String(unitsPerCase)}
+              placeholder="—"
               onChange={e => {
-                const newUnitsPerCase = parseFloat(e.target.value);
-                if (newUnitsPerCase > 0) {
-                  // Back-calculate: keep pack=1, update size to newUnitsPerCase
-                  onEdit(item._id, {
-                    pack: 1,
-                    size: newUnitsPerCase,
-                  });
+                const raw = e.target.value.replace(/[^0-9.]/g, '');
+                if (raw === '') {
+                  onEdit(item._id, { pack: null, size: null });
+                  return;
+                }
+                const newUnitsPerCase = parseFloat(raw);
+                if (!isNaN(newUnitsPerCase) && newUnitsPerCase > 0) {
+                  onEdit(item._id, { pack: 1, size: newUnitsPerCase });
                 }
               }}
-              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
             />
             <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{sizeUnit}</span>
           </div>
