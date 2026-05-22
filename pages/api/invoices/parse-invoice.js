@@ -575,7 +575,7 @@ export default async function handler(req, res) {
       // - No cost_per_lb and no cost_per_each (chef must enter manually)
       // - Low confidence on cost derivation
       // - Ambiguous ingredient match
-      const needsCostInput = !item.cost_per_lb && !item.cost_per_each;
+      const needsCostInput = !item.invoice_price && !item.catch_weight;
       const needsReview = needsCostInput
         || item.confidence === 'low'
         || matchResult.status === 'ambiguous'

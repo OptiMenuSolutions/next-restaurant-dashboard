@@ -407,7 +407,7 @@ const NAV_ITEMS = [
 
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
-function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit }) {
+function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers' }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
@@ -456,8 +456,17 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
       );
     }
 
-    // Editable cell
+    // Editable cell — read-only in matches mode
     const isAmount = col.key === 'line_total';
+
+    if (mode === 'matches') {
+      return (
+        <div key={col.key} className="pm-li-cell" style={{ color: isAmount ? 'var(--accent)' : 'var(--text-muted)' }}>
+          {isAmount && val != null ? formatCurrency(val) : (val ?? '—')}
+        </div>
+      );
+    }
+
     return (
       <div key={col.key} className="pm-li-cell val" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -513,24 +522,32 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
     <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
       <div
         className="pm-li-hd"
-        onClick={item.match_status !== 'auto' ? onToggle : undefined}
-        style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default', gridTemplateColumns: gridTemplate }}
+        onClick={mode === 'matches' && item.match_status !== 'auto' ? onToggle : undefined}
+        style={{ cursor: mode === 'matches' && item.match_status !== 'auto' ? 'pointer' : 'default', gridTemplateColumns: gridTemplate }}
       >
         {columns.map(col => renderCell(col))}
 
         {/* Status always last */}
         <div className="pm-li-status">
-          <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
-          <span style={{ color: matchColor }}>{matchLabel}</span>
-          {item.confidence && item.confidence !== 'high' && (
-            <span className={`pm-conf-badge pm-conf-${item.confidence}`}>{item.confidence}</span>
+          {mode === 'numbers' ? (
+            <span className={`pm-conf-badge pm-conf-${item.confidence || 'medium'}`}>
+              {item.confidence || 'medium'}
+            </span>
+          ) : (
+            <>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
+              <span style={{ color: matchColor }}>{matchLabel}</span>
+              {item.confidence && item.confidence !== 'high' && (
+                <span className={`pm-conf-badge pm-conf-${item.confidence}`}>{item.confidence}</span>
+              )}
+              {item.match_status !== 'auto' &&
+                <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>}
+            </>
           )}
-          {item.match_status !== 'auto' &&
-            <span style={{ color: 'var(--text-muted)', marginLeft: 'auto' }}>{expanded ? '▴' : '▾'}</span>}
         </div>
       </div>
 
-      {expanded && item.match_status === 'ambiguous' && (
+      {mode === 'matches' && expanded && item.match_status === 'ambiguous' && (
         <div className="pm-candidates">
           <div className="pm-cand-title">Which ingredient is this?</div>
           {(item.match_candidates || []).map(candidate => {
@@ -561,7 +578,7 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
         </div>
       )}
 
-      {expanded && item.match_status === 'new' && (
+      {mode === 'matches' && expanded && item.match_status === 'new' && (
         <div className="pm-new-confirm">
           <div className="pm-new-lbl">New ingredient — confirm to add to your inventory</div>
           <div>
@@ -594,6 +611,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   const [activeGroupKey, setActiveGroupKey] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [savedResult, setSavedResult] = useState(null);
+  const [reviewStep, setReviewStep] = useState('numbers');
 
   const PARSE_STAGES = [
     { msg: 'Compressing images...', sub: 'Optimizing files for upload' },
@@ -654,6 +672,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   async function handleParse() {
     if (!queuedFiles.length) return;
     setStep('parsing');
+    setReviewStep('numbers');
     setErrorMsg('');
 
     try {
@@ -822,7 +841,8 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           <div className="pm-title">
             {step === 'drop' && 'Upload Invoices'}
             {step === 'parsing' && 'Analyzing Invoices...'}
-            {step === 'review' && `Review & Confirm · ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
+            {step === 'review' && reviewStep === 'numbers' && `Step 1 of 2 — Review Numbers · ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
+            {step === 'review' && reviewStep === 'matches' && `Step 2 of 2 — Match Ingredients · ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
             {step === 'saving' && 'Saving...'}
             {step === 'success' && 'Invoices Saved'}
             {step === 'error' && 'Something went wrong'}
@@ -975,8 +995,8 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                             <div className="pm-sidebar-inv-num">
                               {g.invoice.invoice_number || 'No number'}
                             </div>
-                            <div className={`pm-sidebar-inv-badge ${pending > 0 ? 'warn' : 'ok'}`}>
-                              {pending > 0 ? pending : '✓'}
+                            <div className={`pm-sidebar-inv-badge ${reviewStep === 'matches' && pending > 0 ? 'warn' : 'ok'}`}>
+                              {reviewStep === 'matches' && pending > 0 ? pending : '✓'}
                             </div>
                           </div>
                         );
@@ -1028,27 +1048,10 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                       )}
                     </div>
 
-                    {/* Summary pills */}
-                    {(() => {
-                      const items = activeGroup.lineItems;
-                      const autoCount = items.filter(i => i.match_status === 'auto' && !i.dismissed).length;
-                      const ambigCount = items.filter(i => i.match_status === 'ambiguous' && !i.dismissed).length;
-                      const newCount = items.filter(i => i.match_status === 'new' && !i.dismissed).length;
-                      const noCostCount = items.filter(i => i.needs_cost_input && !i.dismissed).length;
-                      return (
-                        <div className="pm-summary">
-                          {autoCount > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {autoCount} auto-matched</div>}
-                          {ambigCount > 0 && <div className="pm-sum-pill pm-sum-ambig">! {ambigCount} need review</div>}
-                          {newCount > 0 && <div className="pm-sum-pill pm-sum-new">+ {newCount} new</div>}
-                          {noCostCount > 0 && <div className="pm-sum-pill pm-sum-warn">⚠ {noCostCount} missing cost</div>}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Needs review section */}
-                    {activeGroup.lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
+                    {/* ── STEP 1: NUMBERS ── */}
+                    {reviewStep === 'numbers' && (
                       <>
-                        <div className="pm-section-title">Needs Your Review</div>
+                        {/* Column header */}
                         {activeGroup.columns?.length > 0 && (
                           <div style={{
                             display: 'grid',
@@ -1068,63 +1071,18 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                               </div>
                             ))}
                             <div style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
-                              Status
+                              Confidence
                             </div>
                           </div>
                         )}
-                        {activeGroup.lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => {
-                          return (
-                            <LineItemCard
-                              key={item._id}
-                              item={item}
-                              columns={activeGroup.columns || []}
-                              expanded={activeGroup._expandedId === item._id}
-                              onToggle={() => setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : {
-                                ...g, _expandedId: g._expandedId === item._id ? null : item._id,
-                              }))}
-                              onSelectCandidate={(_, cand) => selectCandidate(activeGroup.key, item._id, cand)}
-                              onConfirmNew={(_, confirmed) => confirmNew(activeGroup.key, item._id, confirmed)}
-                              onDismiss={() => dismissItem(activeGroup.key, item._id)}
-                              onUpdateName={(_, name) => updateConfirmedName(activeGroup.key, item._id, name)}
-                              onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
-                            />
-                          );
-                        })}
-                      </>
-                    )}
 
-                    {/* Auto-matched section */}
-                    {activeGroup.lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
-                      <>
-                        <div className="pm-section-title" style={{ marginTop: 8 }}>Auto-Matched</div>
-                        {activeGroup.columns?.length > 0 && (
-                          <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: activeGroup.columns.map(col =>
-                              col.key === 'item_name_normalized' ? '1.8fr'
-                              : col.key === 'unit_cost_derived' ? '0.9fr'
-                              : col.key === 'line_total' ? '0.7fr'
-                              : '0.6fr'
-                            ).join(' ') + ' 130px',
-                            gap: 8,
-                            padding: 'clamp(4px,.4vh,6px) clamp(10px,.9vw,14px)',
-                            marginBottom: 4,
-                          }}>
-                            {activeGroup.columns.map(col => (
-                              <div key={col.key} style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
-                                {col.label}
-                              </div>
-                            ))}
-                            <div style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
-                              Status
-                            </div>
-                          </div>
-                        )}
-                        {activeGroup.lineItems.filter(i => i.match_status === 'auto' && !i.dismissed).map(item => (
+                        {/* All line items — editable */}
+                        {activeGroup.lineItems.filter(i => !i.dismissed).map(item => (
                           <LineItemCard
                             key={item._id}
                             item={item}
                             columns={activeGroup.columns || []}
+                            mode="numbers"
                             expanded={false}
                             onToggle={() => {}}
                             onSelectCandidate={() => {}}
@@ -1134,25 +1092,113 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                             onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
                           />
                         ))}
+
+                        {/* Dismissed */}
+                        {activeGroup.lineItems.some(i => i.dismissed) && (
+                          <>
+                            <div className="pm-section-title" style={{ marginTop: 8 }}>Dismissed</div>
+                            {activeGroup.lineItems.filter(i => i.dismissed).map(item => (
+                              <div key={item._id} className="pm-line-item dismissed"
+                                style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
+                                  {item.item_name_normalized || item.item_name_raw}
+                                </div>
+                                <button onClick={() => restoreItem(activeGroup.key, item._id)}
+                                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
+                                  Restore
+                                </button>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </>
                     )}
 
-                    {/* Dismissed section */}
-                    {activeGroup.lineItems.some(i => i.dismissed) && (
+                    {/* ── STEP 2: MATCHES ── */}
+                    {reviewStep === 'matches' && (
                       <>
-                        <div className="pm-section-title" style={{ marginTop: 8 }}>Dismissed</div>
-                        {activeGroup.lineItems.filter(i => i.dismissed).map(item => (
-                          <div key={item._id} className="pm-line-item dismissed"
-                            style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
-                              {item.item_name_normalized || item.item_name_raw}
+                        {/* Summary pills */}
+                        {(() => {
+                          const items = activeGroup.lineItems;
+                          const autoCount = items.filter(i => i.match_status === 'auto' && !i.dismissed).length;
+                          const ambigCount = items.filter(i => i.match_status === 'ambiguous' && !i.dismissed).length;
+                          const newCount = items.filter(i => i.match_status === 'new' && !i.dismissed).length;
+                          const noCostCount = items.filter(i => i.needs_cost_input && !i.dismissed).length;
+                          return (
+                            <div className="pm-summary">
+                              {autoCount > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {autoCount} auto-matched</div>}
+                              {ambigCount > 0 && <div className="pm-sum-pill pm-sum-ambig">! {ambigCount} need review</div>}
+                              {newCount > 0 && <div className="pm-sum-pill pm-sum-new">+ {newCount} new</div>}
+                              {noCostCount > 0 && <div className="pm-sum-pill pm-sum-warn">⚠ {noCostCount} missing cost</div>}
                             </div>
-                            <button onClick={() => restoreItem(activeGroup.key, item._id)}
-                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
-                              Restore
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })()}
+
+                        {/* Needs review */}
+                        {activeGroup.lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
+                          <>
+                            <div className="pm-section-title">Needs Your Review</div>
+                            {activeGroup.columns?.length > 0 && (
+                              <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: activeGroup.columns.map(col =>
+                                  col.key === 'item_name_normalized' ? '1.8fr'
+                                  : col.key === 'unit_cost_derived' ? '0.9fr'
+                                  : col.key === 'line_total' ? '0.7fr'
+                                  : '0.6fr'
+                                ).join(' ') + ' 130px',
+                                gap: 8,
+                                padding: 'clamp(4px,.4vh,6px) clamp(10px,.9vw,14px)',
+                                marginBottom: 4,
+                              }}>
+                                {activeGroup.columns.map(col => (
+                                  <div key={col.key} style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                                    {col.label}
+                                  </div>
+                                ))}
+                                <div style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                                  Status
+                                </div>
+                              </div>
+                            )}
+                            {activeGroup.lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => (
+                              <LineItemCard
+                                key={item._id}
+                                item={item}
+                                columns={activeGroup.columns || []}
+                                mode="matches"
+                                expanded={activeGroup._expandedId === item._id}
+                                onToggle={() => setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : {
+                                  ...g, _expandedId: g._expandedId === item._id ? null : item._id,
+                                }))}
+                                onSelectCandidate={(_, cand) => selectCandidate(activeGroup.key, item._id, cand)}
+                                onConfirmNew={(_, confirmed) => confirmNew(activeGroup.key, item._id, confirmed)}
+                                onDismiss={() => dismissItem(activeGroup.key, item._id)}
+                                onUpdateName={(_, name) => updateConfirmedName(activeGroup.key, item._id, name)}
+                                onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
+                              />
+                            ))}
+                          </>
+                        )}
+
+                        {/* Dismissed */}
+                        {activeGroup.lineItems.some(i => i.dismissed) && (
+                          <>
+                            <div className="pm-section-title" style={{ marginTop: 8 }}>Dismissed</div>
+                            {activeGroup.lineItems.filter(i => i.dismissed).map(item => (
+                              <div key={item._id} className="pm-line-item dismissed"
+                                style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>
+                                  {item.item_name_normalized || item.item_name_raw}
+                                </div>
+                                <button onClick={() => restoreItem(activeGroup.key, item._id)}
+                                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 'clamp(8px,.62vw,10px)', fontFamily: 'Inter, sans-serif' }}>
+                                  Restore
+                                </button>
+                              </div>
+                            ))}
+                          </>
+                        )}
                       </>
                     )}
 
@@ -1184,7 +1230,20 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
               </div>
             </>
           )}
-          {step === 'review' && (
+          {step === 'review' && reviewStep === 'numbers' && (
+            <>
+              <div className="pm-progress-text">
+                Verify quantities and prices before matching to your ingredient library.
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="pm-btn-primary" onClick={() => setReviewStep('matches')}>
+                  Review Matches →
+                </button>
+              </div>
+            </>
+          )}
+          {step === 'review' && reviewStep === 'matches' && (
             <>
               <div className="pm-progress-text">
                 {totalPending > 0
@@ -1192,7 +1251,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                   : `All items resolved — ready to save ${invoiceGroups.length} invoice${invoiceGroups.length !== 1 ? 's' : ''}`}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="pm-btn-secondary" onClick={onClose}>Cancel</button>
+                <button className="pm-btn-secondary" onClick={() => setReviewStep('numbers')}>← Back to Numbers</button>
                 <button className="pm-btn-primary" disabled={!canConfirmAll} onClick={handleConfirmAll}>
                   Confirm & Save All
                 </button>
