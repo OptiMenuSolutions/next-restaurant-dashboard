@@ -720,6 +720,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           groupMap[key] = {
             key,
             invoice: data.invoice,
+            columns: data.invoice.columns || [],
             fileUrl: publicUrl,
             duplicate: data.duplicate || false,
             lineItems: [],

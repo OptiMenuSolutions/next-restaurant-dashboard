@@ -215,6 +215,41 @@ Convert supplier abbreviations to standard chef-readable names:
 - Remove supplier codes, brand names, and origin unless relevant
 
 ════════════════════════════════════════
+STEP 2.5 — DEFINE COLUMNS
+════════════════════════════════════════
+
+Before outputting line items, define the columns that appear on THIS invoice.
+Only include columns that actually exist on the invoice. Do not invent columns.
+
+Rules:
+- Always include "item_name_normalized" as the first column, editable, type "text"
+- Always include "unit_cost_derived" as the last column, editable=false, type "number"
+  This is computed as line_total / (quantity_shipped × pack × size) and is never on the invoice
+- Between those two, include only columns that appear on the invoice
+
+Common columns and their keys:
+  quantity_ordered   — number of cases/units ordered
+  quantity_shipped   — number of cases/units shipped (include if different from ordered)
+  quantity_unit      — unit of the quantity column (CS, LB, EA, GA) — editable=false
+  pack               — number of units per case
+  size               — size of each unit
+  size_unit          — unit of the size (lb, oz, ct, gal) — editable=false
+  line_total         — the extended price / line total from the invoice
+  pack_size_raw      — the raw pack size string if pack/size are combined on the invoice
+
+Example for a Performance Foodservice invoice:
+  [
+    { "key": "item_name_normalized", "label": "Item", "editable": true, "type": "text" },
+    { "key": "quantity_shipped", "label": "Shipped", "editable": true, "type": "number" },
+    { "key": "quantity_unit", "label": "Unit", "editable": false, "type": "text" },
+    { "key": "pack", "label": "Pack", "editable": true, "type": "number" },
+    { "key": "size", "label": "Size", "editable": true, "type": "number" },
+    { "key": "size_unit", "label": "Unit", "editable": false, "type": "text" },
+    { "key": "line_total", "label": "Price", "editable": true, "type": "number" },
+    { "key": "unit_cost_derived", "label": "Unit Cost", "editable": false, "type": "number" }
+  ]
+
+════════════════════════════════════════
 STEP 3 — OUTPUT FORMAT
 ════════════════════════════════════════
 
@@ -226,6 +261,14 @@ Return ONLY valid JSON with this exact structure:
   "invoice_date": "string — YYYY-MM-DD format, or null",
   "total_amount": number or null,
   "format_notes": "brief description of the invoice format you identified — e.g. 'Price column is $/lb, LBS column is total weight delivered'",
+  "columns": [
+    {
+      "key": "string — field name on the line item object this column maps to",
+      "label": "string — human readable column header",
+      "editable": boolean,
+      "type": "number | text"
+    }
+  ],
   "line_items": [
     {
       "item_name_raw": "string — exact text from invoice",
@@ -573,6 +616,7 @@ export default async function handler(req, res) {
         invoice_date:   extracted.invoice_date,
         total_amount:   extracted.total_amount,
         format_notes:   extracted.format_notes || null,
+        columns:        extracted.columns || [],
         confidence:     extracted.confidence || {},
       },
       line_items: lineItemsWithMatches,
