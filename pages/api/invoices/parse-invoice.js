@@ -226,6 +226,7 @@ Return ONLY valid JSON with this exact structure:
       "item_name_normalized": "string — clean chef-readable name",
       "is_food": boolean,
       "quantity_ordered": number or null,
+      "quantity_shipped": number or null,
       "quantity_unit": "string — CS, LB, PC, EA, GA, etc. or null",
       "pack_size_raw": "string — pack size as written, or null if not present",
       "total_weight_lbs": number or null,

@@ -222,13 +222,13 @@ export default async function handler(req, res) {
 
       // Total delivered quantity in base units
       let totalQty;
-      if (item.catch_weight && item.actual_weight && item.pack) {
-        totalQty = item.pack * item.actual_weight;
+      if (item.catch_weight && item.actual_weight) {
+        totalQty = item.pack ? item.pack * item.actual_weight : item.actual_weight;
       } else if (item.pack && item.size) {
-        const orderedCases = item.quantity_ordered ?? 1;
-        totalQty = orderedCases * item.pack * item.size;
+        const shippedCases = item.quantity_shipped ?? item.quantity_ordered ?? 1;
+        totalQty = shippedCases * item.pack * item.size;
       } else {
-        totalQty = item.quantity_ordered ?? null;
+        totalQty = item.quantity_shipped ?? item.quantity_ordered ?? null;
       }
 
       return {
