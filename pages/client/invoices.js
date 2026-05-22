@@ -508,9 +508,35 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           </span>
         </div>
 
-        {/* Unit cost — read only, derived */}
-        <div className="pm-li-cell val">
-          {unitCost ? `${formatCurrency(unitCost)}/${sizeUnit}` : '—'}
+        {/* Unit cost — editable */}
+        <div className="pm-li-cell val" onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>$</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={unitCost === null ? '' : String(unitCost)}
+              placeholder="—"
+              onChange={e => {
+                const raw = e.target.value.replace(/[^0-9.]/g, '');
+                if (raw === '') return;
+                const newUnitCost = parseFloat(raw);
+                if (!isNaN(newUnitCost) && newUnitCost > 0 && lineTotal) {
+                  const newTotalQty = Math.round((lineTotal / newUnitCost) * 10000) / 10000;
+                  const newOrdered = unitsPerCase > 0
+                    ? Math.round((newTotalQty / unitsPerCase) * 10000) / 10000
+                    : newTotalQty;
+                  onEdit(item._id, {
+                    quantity_shipped: newOrdered,
+                    quantity_ordered: newOrdered,
+                    invoice_price: Math.round((lineTotal / newOrdered) * 10000) / 10000,
+                  });
+                }
+              }}
+              style={{ width: 'clamp(40px,3.8vw,56px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+            />
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>/{sizeUnit}</span>
+          </div>
         </div>
 
         {/* Line total — fixed */}
