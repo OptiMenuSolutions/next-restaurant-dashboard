@@ -484,9 +484,18 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
                 onEdit(item._id, { [col.key]: null });
                 return;
               }
-              const parsed = col.type === 'number' ? parseFloat(raw) : raw;
-              if (col.type === 'number' && isNaN(parsed)) return;
-              onEdit(item._id, { [col.key]: parsed });
+              // Store raw string while typing to preserve decimal point mid-entry
+              if (col.type === 'number') {
+                if (raw.endsWith('.') || raw.endsWith('.0') || raw.endsWith('.00')) {
+                  onEdit(item._id, { [col.key]: raw });
+                  return;
+                }
+                const parsed = parseFloat(raw);
+                if (isNaN(parsed)) return;
+                onEdit(item._id, { [col.key]: parsed });
+              } else {
+                onEdit(item._id, { [col.key]: raw });
+              }
             }}
             style={{
               width: col.key === 'item_name_normalized'

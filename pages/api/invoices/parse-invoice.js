@@ -75,7 +75,7 @@ function safeParseJSON(text) {
 async function extractInvoiceData(ocrText, restaurantId) {
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
+    max_tokens: 16000,
     messages: [{
       role: 'user',
       content: [{
@@ -320,7 +320,7 @@ IMPORTANT RULES:
   console.log(`[parse-invoice] Sonnet stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
 
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('Invoice too large to parse in one pass. Try uploading one page at a time.');
+    throw new Error('Invoice response was too large to process. Please try again.');
   }
 
   const raw = response.content[0]?.text || '{}';
