@@ -407,35 +407,35 @@ const NAV_ITEMS = [
 
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
-function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit }) {
+function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
-  const lineTotal = item.line_total ?? null;
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
 
-  // Derived display values
-  const orderedCases = item.quantity_shipped ?? item.quantity_ordered ?? '';
-  const unitsPerCase = item.pack != null && item.size != null
-    ? (item.pack * item.size)
-    : item.pack != null
-    ? item.pack
-    : item.size != null
-    ? item.size
-    : '';
+  // Derived unit cost — always computed, never editable
+  const orderedCases = item.quantity_shipped ?? item.quantity_ordered ?? 0;
+  const unitsPerCase = (item.pack ?? 1) * (item.size ?? 1);
   const totalQty = orderedCases * unitsPerCase;
+  const lineTotal = item.line_total ?? null;
   const unitCost = lineTotal && totalQty > 0
     ? Math.round((lineTotal / totalQty) * 10000) / 10000
     : null;
   const sizeUnit = item.size_unit || item.quantity_unit || '';
 
-  return (
-    <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
-      <div className="pm-li-hd"
-        onClick={item.match_status !== 'auto' ? onToggle : undefined}
-        style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default', gridTemplateColumns: '1.6fr 0.7fr 0.7fr 0.7fr 0.8fr 0.8fr 130px' }}>
+  function renderCell(col) {
+    const val = item[col.key];
 
-        {/* Item name */}
-        <div style={{ minWidth: 0 }}>
+    if (col.key === 'unit_cost_derived') {
+      return (
+        <div key={col.key} className="pm-li-cell val">
+          {unitCost ? `${formatCurrency(unitCost)}/${sizeUnit}` : '—'}
+        </div>
+      );
+    }
+
+    if (col.key === 'item_name_normalized') {
+      return (
+        <div key={col.key} style={{ minWidth: 0 }}>
           <div className="pm-li-name">{item.item_name_normalized || item.item_name_raw}</div>
           {item.item_name_raw && item.item_name_normalized && item.item_name_raw !== item.item_name_normalized &&
             <div className="pm-li-meta" style={{ color: 'var(--text-faint)' }}>Raw: {item.item_name_raw}</div>}
@@ -445,106 +445,80 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           {item.match_status === 'new' && item.confirm_new &&
             <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
+      );
+    }
 
-        {/* Ordered cases — editable */}
-        <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={orderedCases === '' ? '' : String(orderedCases)}
-              placeholder="—"
-              onChange={e => {
-                const raw = e.target.value.replace(/[^0-9.]/g, '');
-                if (raw === '') {
-                  onEdit(item._id, { quantity_shipped: null, quantity_ordered: null });
-                  return;
-                }
-                const newOrdered = parseFloat(raw);
-                if (!isNaN(newOrdered) && newOrdered > 0) {
-                  onEdit(item._id, {
-                    quantity_shipped: newOrdered,
-                    quantity_ordered: newOrdered,
-                  });
-                }
-              }}
-              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
-            />
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>CS</span>
-          </div>
+    if (!col.editable) {
+      return (
+        <div key={col.key} className="pm-li-cell">
+          {val ?? '—'}
         </div>
+      );
+    }
 
-        {/* Units per case — editable */}
-        <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>×</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={unitsPerCase === '' ? '' : String(unitsPerCase)}
-              placeholder="—"
-              onChange={e => {
-                const raw = e.target.value.replace(/[^0-9.]/g, '');
-                if (raw === '') {
-                  onEdit(item._id, { pack: null, size: null });
-                  return;
-                }
-                const newUnitsPerCase = parseFloat(raw);
-                if (!isNaN(newUnitsPerCase) && newUnitsPerCase > 0) {
-                  onEdit(item._id, { pack: 1, size: newUnitsPerCase });
-                }
-              }}
-              style={{ width: 'clamp(32px,3vw,46px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
-            />
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>{sizeUnit}</span>
-          </div>
+    // Editable cell
+    const isAmount = col.key === 'line_total';
+    return (
+      <div key={col.key} className="pm-li-cell val" onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+          {isAmount && <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>$</span>}
+          <input
+            type="text"
+            inputMode={col.type === 'number' ? 'decimal' : 'text'}
+            value={val != null ? String(val) : ''}
+            placeholder="—"
+            onChange={e => {
+              const raw = col.type === 'number'
+                ? e.target.value.replace(/[^0-9.]/g, '')
+                : e.target.value;
+              if (raw === '') {
+                onEdit(item._id, { [col.key]: null });
+                return;
+              }
+              const parsed = col.type === 'number' ? parseFloat(raw) : raw;
+              if (col.type === 'number' && isNaN(parsed)) return;
+              onEdit(item._id, { [col.key]: parsed });
+            }}
+            style={{
+              width: col.key === 'item_name_normalized'
+                ? '100%'
+                : col.type === 'number'
+                ? 'clamp(36px,3.5vw,52px)'
+                : 'clamp(60px,6vw,100px)',
+              background: 'var(--bg-inset)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              padding: '2px 5px',
+              fontSize: 'clamp(9px,.68vw,11px)',
+              color: isAmount ? 'var(--accent)' : 'var(--text-primary)',
+              fontFamily: 'Inter,sans-serif',
+              textAlign: col.type === 'number' ? 'right' : 'left',
+              outline: 'none',
+            }}
+          />
         </div>
+      </div>
+    );
+  }
 
-        {/* Total qty — read only */}
-        <div className="pm-li-cell" style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-          <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-faint)' }}>=</span>
-          <span style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontWeight: 500 }}>
-            {totalQty > 0 ? `${Math.round(totalQty * 1000) / 1000} ${sizeUnit}` : '—'}
-          </span>
-        </div>
+  // Build grid template from columns
+  const gridTemplate = columns.map(col =>
+    col.key === 'item_name_normalized' ? '1.8fr'
+    : col.key === 'unit_cost_derived' ? '0.9fr'
+    : col.key === 'line_total' ? '0.7fr'
+    : '0.6fr'
+  ).join(' ') + ' 130px';
 
-        {/* Unit cost — editable */}
-        <div className="pm-li-cell val" onClick={e => e.stopPropagation()}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>$</span>
-            <input
-              type="text"
-              inputMode="decimal"
-              value={unitCost === null ? '' : String(unitCost)}
-              placeholder="—"
-              onChange={e => {
-                const raw = e.target.value.replace(/[^0-9.]/g, '');
-                if (raw === '') return;
-                const newUnitCost = parseFloat(raw);
-                if (!isNaN(newUnitCost) && newUnitCost > 0 && lineTotal) {
-                  const newTotalQty = Math.round((lineTotal / newUnitCost) * 10000) / 10000;
-                  const newOrdered = unitsPerCase > 0
-                    ? Math.round((newTotalQty / unitsPerCase) * 10000) / 10000
-                    : newTotalQty;
-                  onEdit(item._id, {
-                    quantity_shipped: newOrdered,
-                    quantity_ordered: newOrdered,
-                    invoice_price: Math.round((lineTotal / newOrdered) * 10000) / 10000,
-                  });
-                }
-              }}
-              style={{ width: 'clamp(40px,3.8vw,56px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
-            />
-            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>/{sizeUnit}</span>
-          </div>
-        </div>
+  return (
+    <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
+      <div
+        className="pm-li-hd"
+        onClick={item.match_status !== 'auto' ? onToggle : undefined}
+        style={{ cursor: item.match_status !== 'auto' ? 'pointer' : 'default', gridTemplateColumns: gridTemplate }}
+      >
+        {columns.map(col => renderCell(col))}
 
-        {/* Line total — fixed */}
-        <div className="pm-li-cell val">
-          {lineTotal ? formatCurrency(lineTotal) : '—'}
-        </div>
-
-        {/* Status */}
+        {/* Status always last */}
         <div className="pm-li-status">
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
@@ -1064,11 +1038,35 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                     {activeGroup.lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
                       <>
                         <div className="pm-section-title">Needs Your Review</div>
+                        {activeGroup.columns?.length > 0 && (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: activeGroup.columns.map(col =>
+                              col.key === 'item_name_normalized' ? '1.8fr'
+                              : col.key === 'unit_cost_derived' ? '0.9fr'
+                              : col.key === 'line_total' ? '0.7fr'
+                              : '0.6fr'
+                            ).join(' ') + ' 130px',
+                            gap: 8,
+                            padding: 'clamp(4px,.4vh,6px) clamp(10px,.9vw,14px)',
+                            marginBottom: 4,
+                          }}>
+                            {activeGroup.columns.map(col => (
+                              <div key={col.key} style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                                {col.label}
+                              </div>
+                            ))}
+                            <div style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                              Status
+                            </div>
+                          </div>
+                        )}
                         {activeGroup.lineItems.filter(i => i.match_status !== 'auto' && !i.dismissed).map(item => {
                           return (
                             <LineItemCard
                               key={item._id}
                               item={item}
+                              columns={activeGroup.columns || []}
                               expanded={activeGroup._expandedId === item._id}
                               onToggle={() => setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : {
                                 ...g, _expandedId: g._expandedId === item._id ? null : item._id,
@@ -1092,6 +1090,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                           <LineItemCard
                             key={item._id}
                             item={item}
+                            columns={activeGroup.columns || []}
                             expanded={false}
                             onToggle={() => {}}
                             onSelectCandidate={() => {}}
