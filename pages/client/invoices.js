@@ -690,11 +690,22 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
         const key = invoiceMergeKey(data.invoice);
-        if (!groupMap[key]) {
+        if (!groupMap[key]) {       
+          const DEFAULT_COLUMNS = [
+            { key: 'item_name_normalized', label: 'Item', editable: true, type: 'text' },
+            { key: 'quantity_shipped', label: 'Shipped', editable: true, type: 'number' },
+            { key: 'quantity_unit', label: 'Unit', editable: false, type: 'text' },
+            { key: 'pack', label: 'Pack', editable: true, type: 'number' },
+            { key: 'size', label: 'Size', editable: true, type: 'number' },
+            { key: 'size_unit', label: 'Unit', editable: false, type: 'text' },
+            { key: 'line_total', label: 'Price', editable: true, type: 'number' },
+            { key: 'unit_cost_derived', label: 'Unit Cost', editable: false, type: 'number' },
+          ];
+
           groupMap[key] = {
             key,
             invoice: data.invoice,
-            columns: data.invoice.columns || [],
+            columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
             duplicate: data.duplicate || false,
             lineItems: [],
@@ -1086,6 +1097,29 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                     {activeGroup.lineItems.some(i => i.match_status === 'auto' && !i.dismissed) && (
                       <>
                         <div className="pm-section-title" style={{ marginTop: 8 }}>Auto-Matched</div>
+                        {activeGroup.columns?.length > 0 && (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: activeGroup.columns.map(col =>
+                              col.key === 'item_name_normalized' ? '1.8fr'
+                              : col.key === 'unit_cost_derived' ? '0.9fr'
+                              : col.key === 'line_total' ? '0.7fr'
+                              : '0.6fr'
+                            ).join(' ') + ' 130px',
+                            gap: 8,
+                            padding: 'clamp(4px,.4vh,6px) clamp(10px,.9vw,14px)',
+                            marginBottom: 4,
+                          }}>
+                            {activeGroup.columns.map(col => (
+                              <div key={col.key} style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                                {col.label}
+                              </div>
+                            ))}
+                            <div style={{ fontSize: 'clamp(7px,.58vw,9px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>
+                              Status
+                            </div>
+                          </div>
+                        )}
                         {activeGroup.lineItems.filter(i => i.match_status === 'auto' && !i.dismissed).map(item => (
                           <LineItemCard
                             key={item._id}
@@ -1097,6 +1131,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                             onConfirmNew={() => {}}
                             onDismiss={() => dismissItem(activeGroup.key, item._id)}
                             onUpdateName={() => {}}
+                            onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
                           />
                         ))}
                       </>
