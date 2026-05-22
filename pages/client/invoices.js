@@ -215,7 +215,11 @@ const CSS = `
   .inv-act-time { font-size: clamp(8px,.6vw,10px); color: var(--text-faint); flex-shrink: 0; white-space: nowrap; }
 
   /* ── INVOICE DETAIL ── */
-  .inv-item-row { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 80px; gap: 5px; padding: clamp(5px,.5vh,8px) clamp(8px,.7vw,12px); border: 1px solid var(--border); border-top: none; align-items: center; }
+  .inv-item-row { border-bottom: 1px solid var(--border-subtle); align-items: center; }
+  .inv-item-row:first-child { border-top: 1px solid var(--border); }
+  .inv-item-row:last-child { border-radius: 0 0 6px 6px; border-bottom: none; }
+  .inv-item-row:nth-child(odd) { background: var(--bg-elevated); }
+  .inv-item-row:nth-child(even) { background: var(--bg-surface); }
   .inv-item-row:last-child { border-radius: 0 0 6px 6px; }
   .inv-item-row:nth-child(odd) { background: var(--bg-elevated); }
   .inv-item-row:nth-child(even) { background: var(--bg-surface); }
@@ -399,18 +403,14 @@ const NAV_ITEMS = [
 
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
-function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName }) {
+function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
-  const lineTotal = item.line_total || ((parseFloat(item.quantity_ordered) || 0) * (parseFloat(item.unit_price) || 0));
-  const displayCost = item.unit_price_per_unit && item.unit_price_unit
-    ? `${formatCurrency(item.unit_price_per_unit)}/${item.unit_price_unit}`
-    : item.cost_per_lb
-    ? `${formatCurrency(item.cost_per_lb)}/lb`
-    : item.cost_per_each
-    ? `${formatCurrency(item.cost_per_each)}/ea`
-    : '—';
+  const lineTotal = item.line_total ?? null;
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
+
+  const displayQty = item.quantity_shipped ?? item.quantity_ordered ?? '';
+  const displayCost = item.invoice_price ?? '';
 
   return (
     <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
@@ -427,11 +427,61 @@ function LineItemCard({ item, expanded, onToggle, onSelectCandidate, onConfirmNe
           {item.match_status === 'new' && item.confirm_new &&
             <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
-        <div className="pm-li-cell">
-          {item.quantity_ordered ? `${item.quantity_ordered} ${item.quantity_unit || ''}` : '—'}
+
+        {/* Editable qty */}
+        <div className="pm-li-cell" onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <input
+              type="number"
+              value={displayQty}
+              onChange={e => {
+                const newQty = parseFloat(e.target.value);
+                if (newQty > 0 && lineTotal) {
+                  onEdit(item._id, {
+                    quantity_shipped: newQty,
+                    quantity_ordered: newQty,
+                    invoice_price: Math.round((lineTotal / newQty) * 10000) / 10000,
+                  });
+                }
+              }}
+              style={{ width: 'clamp(36px,3.5vw,52px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-primary)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+            />
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>
+              {item.quantity_unit || ''}
+            </span>
+          </div>
         </div>
-        <div className="pm-li-cell val">{displayCost}</div>
-        <div className="pm-li-cell val">{lineTotal ? formatCurrency(lineTotal) : '—'}</div>
+
+        {/* Editable unit cost */}
+        <div className="pm-li-cell val" onClick={e => e.stopPropagation()}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>$</span>
+            <input
+              type="number"
+              value={displayCost}
+              onChange={e => {
+                const newCost = parseFloat(e.target.value);
+                if (newCost > 0 && lineTotal) {
+                  onEdit(item._id, {
+                    invoice_price: newCost,
+                    quantity_shipped: Math.round((lineTotal / newCost) * 10000) / 10000,
+                    quantity_ordered: Math.round((lineTotal / newCost) * 10000) / 10000,
+                  });
+                }
+              }}
+              style={{ width: 'clamp(40px,3.8vw,56px)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 5px', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: 'Inter,sans-serif', textAlign: 'right', outline: 'none' }}
+            />
+            <span style={{ fontSize: 'clamp(8px,.6vw,10px)', color: 'var(--text-muted)' }}>
+              /{item.size_unit || item.quantity_unit || ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Fixed line total */}
+        <div className="pm-li-cell val">
+          {lineTotal ? formatCurrency(lineTotal) : '—'}
+        </div>
+
         <div className="pm-li-status">
           <div style={{ width: 7, height: 7, borderRadius: '50%', background: matchColor, flexShrink: 0 }} />
           <span style={{ color: matchColor }}>{matchLabel}</span>
@@ -963,6 +1013,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                               onConfirmNew={(_, confirmed) => confirmNew(activeGroup.key, item._id, confirmed)}
                               onDismiss={() => dismissItem(activeGroup.key, item._id)}
                               onUpdateName={(_, name) => updateConfirmedName(activeGroup.key, item._id, name)}
+                              onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
                             />
                           );
                         })}
@@ -1085,6 +1136,7 @@ export default function ClientInvoices() {
   const [showParseModal, setShowParseModal] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState('');
   const [mobTab, setMobTab] = useState('invoices');
+  const [showRawNames, setShowRawNames] = useState(false);
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
@@ -1729,17 +1781,44 @@ export default function ClientInvoices() {
                         </div>
                       ) : invoiceItems.length > 0 ? (
                         <>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)', background: 'var(--bg-elevated)', borderRadius: 'clamp(4px,.3vw,6px)', marginBottom: 4, flexShrink: 0 }}>
-                            {['Item', 'Qty', 'Unit Cost', 'Total', 'Status'].map(h => (
-                              <div key={h} style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>{h}</div>
-                            ))}
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)', background: 'var(--bg-elevated)', borderRadius: 'clamp(4px,.3vw,6px)', marginBottom: 4, flexShrink: 0 }}>
+                            <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                              onClick={() => setShowRawNames(r => !r)}>
+                              Item {showRawNames ? '↕ invoice' : '↕ normalized'}
+                            </div>
+                            <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                              <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px', textAlign: 'right' }}>QTY</div>
+                              <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}></div>
+                            </div>
+                            <div style={{ gridColumn: 'span 2', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                              <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px', textAlign: 'right' }}>COST</div>
+                              <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}></div>
+                            </div>
+                            <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>TOTAL</div>
+                            <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px' }}>STATUS</div>
                           </div>
                           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                             {invoiceItems.map(item => (
-                              <div key={item.id} className="inv-item-row">
-                                <div className="inv-itd name">{item.item_name || '—'}</div>
-                                <div className="inv-itd">{item.quantity ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}</div>
-                                <div className="inv-itd">{item.unit_cost ? `${formatCurrency(item.unit_cost)}/${item.unit || ''}` : '—'}</div>
+                              <div key={item.id} className="inv-item-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(5px,.5vh,8px) clamp(8px,.7vw,12px)', borderBottom: '1px solid var(--border-subtle)', alignItems: 'center' }}>
+                                <div className="inv-itd name" style={{ cursor: item.ingredients ? 'pointer' : 'default' }}
+                                  onClick={() => item.ingredients && setShowRawNames(r => !r)}
+                                  title={showRawNames ? item.ingredients?.name : item.item_name}>
+                                  {item.ingredients
+                                    ? (showRawNames ? item.item_name : item.ingredients.name) || '—'
+                                    : item.item_name || '—'}
+                                </div>
+                                <div className="inv-itd" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                  {item.quantity ?? '—'}
+                                </div>
+                                <div className="inv-itd" style={{ textAlign: 'left' }}>
+                                  {item.unit || ''}
+                                </div>
+                                <div className="inv-itd" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                                  {item.unit_cost ? formatCurrency(item.unit_cost) : '—'}
+                                </div>
+                                <div className="inv-itd" style={{ textAlign: 'left' }}>
+                                  {item.unit || ''}
+                                </div>
                                 <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
                                 <div>{item.ingredients ? <span className="inv-linked">Linked</span> : <span className="inv-unlinked">Unlinked</span>}</div>
                               </div>
