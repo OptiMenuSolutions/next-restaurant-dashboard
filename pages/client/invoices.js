@@ -296,9 +296,9 @@ const CSS = `
   .pm-inv-field-val { font-size: clamp(11px,.85vw,13px); color: var(--text-primary); font-weight: 500; }
   .pm-inv-field-val.accent { color: var(--accent); font-family: 'Inter', sans-serif; font-weight: 600; font-size: clamp(13px,1.1vw,17px); }
   .pm-conf-badge { display: inline-block; font-size: clamp(7px,.58vw,9px); padding: 1px 5px; border-radius: 4px; margin-left: 4px; }
-  .pm-conf-high { background: rgba(42,138,90,.15); color: var(--color-green); }
-  .pm-conf-medium { background: rgba(212,160,32,.15); color: var(--color-amber); }
-  .pm-conf-low { background: rgba(192,64,64,.15); color: var(--color-red); }
+  .pm-conf-high { background: rgba(2,164,186,.1); color: var(--accent); }
+  .pm-conf-medium { background: rgba(2,164,186,.08); color: var(--text-muted); }
+  .pm-conf-low { background: rgba(2,164,186,.06); color: var(--text-faint); }
 
   /* Format notes */
   .pm-format-note { font-size: clamp(8px,.62vw,10px); color: var(--text-faint); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-subtle); font-style: italic; }
@@ -306,10 +306,10 @@ const CSS = `
   /* Summary pills */
   .pm-summary { display: flex; gap: 6px; flex-wrap: wrap; }
   .pm-sum-pill { display: flex; align-items: center; gap: 5px; font-size: clamp(9px,.68vw,11px); padding: 3px 9px; border-radius: 20px; font-weight: 500; }
-  .pm-sum-auto { background: rgba(42,138,90,.1); color: var(--color-green); border: 1px solid rgba(42,138,90,.2); }
-  .pm-sum-ambig { background: rgba(212,160,32,.1); color: var(--color-amber); border: 1px solid rgba(212,160,32,.2); }
-  .pm-sum-new { background: rgba(2,164,186,.1); color: var(--accent); border: 1px solid rgba(2,164,186,.2); }
-  .pm-sum-warn { background: rgba(192,64,64,.1); color: var(--color-red); border: 1px solid rgba(192,64,64,.2); }
+  .pm-sum-auto { background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
+  .pm-sum-ambig { background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
+  .pm-sum-new { background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
+  .pm-sum-warn { background: rgba(2,164,186,.08); color: var(--accent); border: 1px solid rgba(2,164,186,.15); }
 
   /* Section title */
   .pm-section-title { font-size: clamp(9px,.7vw,11px); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
@@ -318,8 +318,8 @@ const CSS = `
   /* Line item cards */
   .pm-line-item { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 5px; transition: border-color .15s; }
   .pm-line-item:last-child { margin-bottom: 0; }
-  .pm-line-item.status-auto { border-left: 3px solid var(--color-green); }
-  .pm-line-item.status-ambiguous { border-left: 3px solid var(--color-amber); }
+  .pm-line-item.status-auto { border-left: 3px solid var(--accent); }
+  .pm-line-item.status-ambiguous { border-left: 3px solid var(--accent); }
   .pm-line-item.status-new { border-left: 3px solid var(--accent); }
   .pm-line-item.dismissed { opacity: .4; }
   .pm-li-hd { display: grid; grid-template-columns: 1.6fr 0.7fr 0.7fr 0.7fr 0.8fr 0.8fr 130px; gap: 8px; padding: clamp(7px,.7vh,10px) clamp(10px,.9vw,14px); align-items: center; cursor: pointer; }
@@ -842,7 +842,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   }
 
   return (
-    <div className="pm-bg" onClick={e => { if (e.target === e.currentTarget && step !== 'saving' && step !== 'parsing') onClose(); }}>
+    <div className="pm-bg">
       <div className="pm-modal">
 
         {/* Header */}
