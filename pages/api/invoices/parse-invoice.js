@@ -11,7 +11,13 @@ import fs from 'fs';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
 
-export const config = { api: { bodyParser: false } };
+export const config = { 
+  api: { 
+    bodyParser: false,
+    responseLimit: false,
+  },
+  maxDuration: 300,
+};
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const supabase = createClient(
