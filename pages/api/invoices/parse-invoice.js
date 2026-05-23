@@ -81,7 +81,7 @@ function safeParseJSON(text) {
 async function extractInvoiceData(ocrText, restaurantId) {
   const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
-    max_tokens: 32000,
+    max_tokens: 16000,
     messages: [{
       role: 'user',
       content: [{
