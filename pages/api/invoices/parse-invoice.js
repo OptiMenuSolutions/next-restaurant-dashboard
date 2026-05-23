@@ -79,7 +79,7 @@ function safeParseJSON(text) {
 // ─── Claude Sonnet: extract invoice data from OCR text ───────────────────────
 
 async function extractInvoiceData(ocrText, restaurantId) {
-  const response = await anthropic.messages.create({
+  const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 32000,
     messages: [{
@@ -316,20 +316,22 @@ IMPORTANT RULES:
     }],
   });
 
+  const finalResponse = await response.finalMessage();
+
   await logAiUsage({
     feature: 'invoice_parse',
     model: 'claude-sonnet-4-6',
-    usage: response.usage,
+    usage: finalResponse.usage,
     restaurantId,
   });
 
-  console.log(`[parse-invoice] Sonnet stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+  console.log(`[parse-invoice] Sonnet stop_reason: ${finalResponse.stop_reason} | input=${finalResponse.usage?.input_tokens} output=${finalResponse.usage?.output_tokens}`);
 
-  if (response.stop_reason === 'max_tokens') {
-    throw new Error('Invoice response was too large to process. Please try again.');
+  if (finalResponse.stop_reason === 'max_tokens') {
+    console.warn('[parse-invoice] max_tokens hit — attempting partial parse');
   }
 
-  const raw = response.content[0]?.text || '{}';
+  const raw = finalResponse.content[0]?.text || '{}';
   return safeParseJSON(raw);
 }
 
