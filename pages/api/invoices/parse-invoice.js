@@ -81,12 +81,14 @@ function safeParseJSON(text) {
 async function extractInvoiceData(ocrText, restaurantId) {
   const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
-    max_tokens: 16000,
+    max_tokens: 20000,
     messages: [{
       role: 'user',
       content: [{
         type: 'text',
         text: `You are an expert at reading food service supplier invoices. You have been given raw text extracted by OCR from a supplier invoice. Your job is to extract every line item and determine the cost per standard unit for each food ingredient.
+
+CRITICAL: Output ONLY raw JSON. No preamble, no explanation, no markdown, no "I'll work through this" text. Start your response with { and end with }. Any text before or after the JSON will break the parser.
 
 Here is the raw OCR text from the invoice:
 
