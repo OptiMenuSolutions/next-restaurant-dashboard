@@ -1085,8 +1085,20 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                           </div>
                         )}
 
-                        {/* All line items — editable */}
-                        {activeGroup.lineItems.filter(i => !i.dismissed).map(item => (
+                        {/* Summary of skipped items */}
+                        {(() => {
+                          const skipped = activeGroup.lineItems.filter(i => i.skip_number_review && !i.dismissed).length;
+                          const needsReview = activeGroup.lineItems.filter(i => !i.skip_number_review && !i.dismissed).length;
+                          return (
+                            <div className="pm-summary">
+                              {needsReview > 0 && <div className="pm-sum-pill pm-sum-ambig">⚠ {needsReview} need number review</div>}
+                              {skipped > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {skipped} high confidence — skipped</div>}
+                            </div>
+                          );
+                        })()}
+
+                        {/* Only medium/low confidence items — editable */}
+                        {activeGroup.lineItems.filter(i => !i.skip_number_review && !i.dismissed).map(item => (
                           <LineItemCard
                             key={item._id}
                             item={item}
@@ -1101,6 +1113,17 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                             onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
                           />
                         ))}
+
+                        {/* Empty state — all items high confidence */}
+                        {activeGroup.lineItems.filter(i => !i.skip_number_review && !i.dismissed).length === 0 && (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 20px', gap: 10 }}>
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"/>
+                            </svg>
+                            <div style={{ fontSize: 'clamp(11px,.85vw,14px)', color: 'var(--text-primary)', fontWeight: 500 }}>All items parsed with high confidence</div>
+                            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>Proceed to match ingredients</div>
+                          </div>
+                        )}
 
                         {/* Dismissed */}
                         {activeGroup.lineItems.some(i => i.dismissed) && (
@@ -1133,9 +1156,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                           const ambigCount = items.filter(i => i.match_status === 'ambiguous' && !i.dismissed).length;
                           const newCount = items.filter(i => i.match_status === 'new' && !i.dismissed).length;
                           const noCostCount = items.filter(i => i.needs_cost_input && !i.dismissed).length;
+                          const numberCleared = items.filter(i => i.skip_number_review && !i.dismissed).length;
                           return (
                             <div className="pm-summary">
                               {autoCount > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {autoCount} auto-matched</div>}
+                              {numberCleared > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {numberCleared} numbers cleared</div>}
                               {ambigCount > 0 && <div className="pm-sum-pill pm-sum-ambig">! {ambigCount} need review</div>}
                               {newCount > 0 && <div className="pm-sum-pill pm-sum-new">+ {newCount} new</div>}
                               {noCostCount > 0 && <div className="pm-sum-pill pm-sum-warn">⚠ {noCostCount} missing cost</div>}

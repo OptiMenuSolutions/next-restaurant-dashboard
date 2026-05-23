@@ -54,8 +54,26 @@ async function extractTextWithVision(fileBuffer, mediaType) {
 
   const data = await response.json();
   const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
-  console.log(`[vision] Extracted ${text.length} characters`);
-  return text;
+  
+  // Extract low-confidence words from Vision API
+  const pages = data.responses?.[0]?.fullTextAnnotation?.pages || [];
+  const lowConfidenceWords = [];
+  for (const page of pages) {
+    for (const block of (page.blocks || [])) {
+      for (const para of (block.paragraphs || [])) {
+        for (const word of (para.words || [])) {
+          const conf = word.confidence ?? 1;
+          if (conf < 0.85) {
+            const wordText = (word.symbols || []).map(s => s.text).join('');
+            lowConfidenceWords.push({ word: wordText, confidence: Math.round(conf * 100) });
+          }
+        }
+      }
+    }
+  }
+
+  console.log(`[vision] Extracted ${text.length} characters, ${lowConfidenceWords.length} low-confidence words`);
+  return { text, lowConfidenceWords };
 }
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
@@ -78,7 +96,7 @@ function safeParseJSON(text) {
 
 // ─── Claude Sonnet: extract invoice data from OCR text ───────────────────────
 
-async function extractInvoiceData(ocrText, restaurantId) {
+async function extractInvoiceData({ text: ocrText, lowConfidenceWords }, restaurantId) {
   const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 20000,
@@ -96,6 +114,13 @@ Here is the raw OCR text from the invoice:
 ${ocrText}
 ---
 
+${lowConfidenceWords.length > 0 ? `
+GOOGLE VISION LOW CONFIDENCE WORDS (these may be misread):
+${lowConfidenceWords.map(w => `"${w.word}" (${w.confidence}% confidence)`).join(', ')}
+
+When any of these words appear in a line item's numbers, set confidence = "low" for that item.
+` : ''}
+
 ════════════════════════════════════════
 STEP 1 — IDENTIFY THE INVOICE STRUCTURE
 ════════════════════════════════════════
@@ -110,6 +135,12 @@ Different suppliers use different formats. Common patterns:
 - Some suppliers price by lb directly (PRICE = $/lb, LBS column = total weight)
 - Some suppliers price by case (UNIT PRICE = $/case, PACK SIZE tells you what's in the case)
 - Some suppliers price by each, gallon, or other units
+
+IMPORTANT — Some invoices have a WEIGHT column between the item description and UNIT COST.
+The WEIGHT column shows actual delivered weight in lbs and is NOT a price.
+The UNIT COST column comes AFTER the weight column and contains the actual price per case.
+Example: "60.000  252.60" — 60.000 is the weight in lbs, 252.60 is the extended price.
+Never use the WEIGHT column value as invoice_price or unit_cost. Instead, use it as a separate total_weight_lbs field to derive cost_per_lb if needed.
 
 ════════════════════════════════════════
 STEP 2 — EXTRACT EACH LINE ITEM
@@ -542,10 +573,10 @@ export default async function handler(req, res) {
     // ── Step 1: OCR ──────────────────────────────────────────────────────────
     console.log('[parse-invoice] Running Vision OCR...');
     const t0 = Date.now();
-    const ocrText = await extractTextWithVision(fileBuffer, mediaType);
+    const ocrResult = await extractTextWithVision(fileBuffer, mediaType);
     console.log(`[parse-invoice] OCR done in ${Date.now() - t0}ms`);
 
-    if (!ocrText || ocrText.length < 50) {
+    if (!ocrResult?.text || ocrResult.text.length < 50) {
       try { fs.unlinkSync(file.filepath); } catch {}
       return res.status(400).json({ error: 'Could not extract text from image. Try a clearer photo.' });
     }
@@ -553,7 +584,7 @@ export default async function handler(req, res) {
     // ── Step 2: Claude Sonnet extraction ─────────────────────────────────────
     console.log('[parse-invoice] Running Sonnet extraction...');
     const t1 = Date.now();
-    const extracted = await extractInvoiceData(ocrText, restaurantId);
+    const extracted = await extractInvoiceData(ocrResult, restaurantId);
     console.log(`[parse-invoice] Sonnet extraction done in ${Date.now() - t1}ms`);
     
     if (!extracted) {
@@ -604,6 +635,7 @@ export default async function handler(req, res) {
           : null,
         needs_cost_input: needsCostInput,
         needs_review: needsReview,
+        skip_number_review: item.confidence === 'high',
       };
     });
 
@@ -631,7 +663,7 @@ export default async function handler(req, res) {
       },
       line_items: lineItemsWithMatches,
       non_food_items: nonFoodItems,
-      ocr_text: ocrText, // include raw OCR so confirm modal can display it if needed
+      ocr_text: ocrResult.text, // include raw OCR so confirm modal can display it if needed
       summary: {
         total_items:          allLineItems.length,
         food_items:           foodItems.length,
