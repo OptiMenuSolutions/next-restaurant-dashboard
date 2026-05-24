@@ -137,10 +137,19 @@ For catch-weight items:
 
 NEVER output an item where the math is wrong and confidence is "high". A math mismatch ALWAYS means at least "medium" confidence, and requires a re-read attempt first.
 
-ROW ISOLATION — read one row at a time:
-Each line item's numbers (pack size, unit cost, extended) ONLY come from that item's own row.
-Never use a number from an adjacent row. If you are unsure which row a number belongs to, 
-trace it horizontally across the full row before assigning it.
+ROW ISOLATION — this is the most important rule:
+Before extracting ANY numbers for a line item, first read the complete horizontal text
+of that single row from left edge to right edge and put it in the "raw_row_text" field.
+Only numbers that appear in that raw_row_text may be used for that item's invoice_price,
+line_total, pack, or size. If a number is not in raw_row_text, it cannot be used.
+
+This prevents row bleeding — where a number from the row above or below gets misassigned.
+If an item description contains words from two different products (e.g. "FOIL ROLL" mixed
+with "RANCH DRESSING"), you have fused two rows — split them into separate items.
+
+LOC COLUMN WARNING:
+The first column (LOC) contains location codes: DRY, FRZ, CLR, or a number.
+These are NOT part of the pack size. Never put "DRY", "FRZ", "CLR" in pack_size_raw.
 
 FOOD vs NON-FOOD:
 is_food = false for: cleaning supplies, paper products, plastic wrap, foil, garbage bags, gloves, equipment, fuel surcharges, delivery fees, taxes
@@ -176,6 +185,7 @@ STEP 3 — OUTPUT FORMAT
   ],
   "line_items": [
     {
+      "raw_row_text": "complete text read horizontally across this single row, verbatim",
       "item_name_raw": "exact text from invoice",
       "item_name_normalized": "clean chef-readable name",
       "is_food": boolean,
@@ -388,15 +398,18 @@ function matchLineItem(lineItem, restaurantIngredients) {
 async function checkDuplicateInvoice(restaurantId, supplier, invoiceNumber) {
   if (!invoiceNumber) return false;
 
+  // Normalize: strip whitespace so '24319 55' and '2431955' are treated as the same
+  const normalizedNumber = String(invoiceNumber).replace(/\s+/g, '');
+
   const { data } = await supabase
     .from('invoices')
     .select('id, date')
     .eq('restaurant_id', restaurantId)
-    .eq('number', invoiceNumber)
+    .eq('number', normalizedNumber)
     .maybeSingle();
 
   if (data) {
-    console.warn(`[parse-invoice] Duplicate invoice detected: ${invoiceNumber} (id: ${data.id})`);
+    console.warn(`[parse-invoice] Duplicate invoice detected: ${normalizedNumber} (id: ${data.id})`);
     return { duplicate: true, existing_id: data.id, existing_date: data.date };
   }
 
@@ -476,10 +489,26 @@ export default async function handler(req, res) {
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
 
     const allLineItems = extracted.line_items || [];
-    const foodItems = allLineItems.filter(i => i.is_food);
-    const nonFoodItems = allLineItems.filter(i => !i.is_food);
 
-    console.log(`[parse-invoice] ${allLineItems.length} total items: ${foodItems.length} food, ${nonFoodItems.length} non-food`);
+    // Filter out placeholder items Claude returns when a page is unreadable
+    // (summary/totals pages, sideways photos, etc.) — identified by having no
+    // invoice_price, no pack, and a null or generic item name.
+    const readableItems = allLineItems.filter(item => {
+      const hasPrice = item.invoice_price != null;
+      const hasPack  = item.pack != null;
+      const hasName  = item.item_name_raw &&
+        !item.item_name_raw.toLowerCase().includes('not legible') &&
+        !item.item_name_raw.toLowerCase().includes('detail') &&
+        !item.item_name_raw.toLowerCase().includes('frozen (');
+      return hasPrice || hasPack || hasName;
+    });
+
+    const foodItems    = readableItems.filter(i => i.is_food);
+    const nonFoodItems = readableItems.filter(i => !i.is_food);
+
+    const skippedCount = allLineItems.length - readableItems.length;
+    if (skippedCount > 0) console.log(`[parse-invoice] Skipped ${skippedCount} unreadable/placeholder items`);
+    console.log(`[parse-invoice] ${readableItems.length} readable items: ${foodItems.length} food, ${nonFoodItems.length} non-food`);
 
     const lineItemsWithMatches = foodItems.map((item, idx) => {
       const matchResult = matchLineItem(item, restaurantIngredients);
@@ -522,7 +551,9 @@ export default async function handler(req, res) {
       duplicate: duplicateCheck || false,
       invoice: {
         supplier:       extracted.supplier,
-        invoice_number: extracted.invoice_number,
+        invoice_number: extracted.invoice_number
+          ? String(extracted.invoice_number).replace(/\s+/g, '')
+          : null,
         invoice_date:   extracted.invoice_date,
         total_amount:   extracted.total_amount,
         format_notes:   extracted.format_notes || null,
@@ -532,7 +563,7 @@ export default async function handler(req, res) {
       line_items: lineItemsWithMatches,
       non_food_items: nonFoodItems,
       summary: {
-        total_items:           allLineItems.length,
+        total_items:           readableItems.length,
         food_items:            foodItems.length,
         non_food_items:        nonFoodItems.length,
         auto_matched:          autoCount,
