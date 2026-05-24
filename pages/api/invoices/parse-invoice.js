@@ -1,6 +1,6 @@
 // pages/api/invoices/parse-invoice.js
-// Invoice parser: Google Vision OCR → Claude Sonnet extraction.
-// Extracts invoice header + line items with cost_per_lb derivation.
+// Invoice parser: Claude Sonnet vision → structured extraction.
+// Sends invoice images directly to Claude — no intermediate OCR step.
 // Returns structured data for client-side confirmation UI.
 // The separate /api/invoices/confirm-invoice route handles all DB writes.
 
@@ -11,8 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
 
-export const config = { 
-  api: { 
+export const config = {
+  api: {
     bodyParser: false,
     responseLimit: false,
   },
@@ -24,57 +24,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-// ─── Google Vision OCR ────────────────────────────────────────────────────────
-
-async function extractTextWithVision(fileBuffer, mediaType) {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_VISION_API_KEY is not set');
-
-  const base64Image = fileBuffer.toString('base64');
-
-  const response = await fetch(
-    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          image: { content: base64Image },
-          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-        }],
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Google Vision API error: ${err}`);
-  }
-
-  const data = await response.json();
-  const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
-  
-  // Extract low-confidence words from Vision API
-  const pages = data.responses?.[0]?.fullTextAnnotation?.pages || [];
-  const lowConfidenceWords = [];
-  for (const page of pages) {
-    for (const block of (page.blocks || [])) {
-      for (const para of (block.paragraphs || [])) {
-        for (const word of (para.words || [])) {
-          const conf = word.confidence ?? 1;
-          if (conf < 0.85) {
-            const wordText = (word.symbols || []).map(s => s.text).join('');
-            lowConfidenceWords.push({ word: wordText, confidence: Math.round(conf * 100) });
-          }
-        }
-      }
-    }
-  }
-
-  console.log(`[vision] Extracted ${text.length} characters, ${lowConfidenceWords.length} low-confidence words`);
-  return { text, lowConfidenceWords };
-}
 
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
 
@@ -94,241 +43,135 @@ function safeParseJSON(text) {
   return null;
 }
 
-// ─── Claude Sonnet: extract invoice data from OCR text ───────────────────────
+// ─── Claude Sonnet vision: extract invoice data directly from image ────────────
 
-async function extractInvoiceData({ text: ocrText, lowConfidenceWords }, restaurantId) {
+async function extractInvoiceData(fileBuffer, mediaType, restaurantId) {
+  const base64Image = fileBuffer.toString('base64');
+
   const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 20000,
     messages: [{
       role: 'user',
-      content: [{
-        type: 'text',
-        text: `You are an expert at reading food service supplier invoices. You have been given raw text extracted by OCR from a supplier invoice. Your job is to extract every line item and determine the cost per standard unit for each food ingredient.
+      content: [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mediaType,
+            data: base64Image,
+          },
+        },
+        {
+          type: 'text',
+          text: `You are an expert at reading food service supplier invoices. You are looking directly at an invoice image. Your job is to read every line item exactly as printed and extract structured data.
 
-CRITICAL: Output ONLY raw JSON. No preamble, no explanation, no markdown, no "I'll work through this" text. Start your response with { and end with }. Any text before or after the JSON will break the parser.
-
-Here is the raw OCR text from the invoice:
-
----
-${ocrText}
----
-
-${lowConfidenceWords.length > 0 ? `
-GOOGLE VISION LOW CONFIDENCE WORDS (these may be misread):
-${lowConfidenceWords.map(w => `"${w.word}" (${w.confidence}% confidence)`).join(', ')}
-
-When any of these words appear in a line item's numbers, set confidence = "low" for that item.
-` : ''}
+CRITICAL: Output ONLY raw JSON. No preamble, no explanation, no markdown fences. Start your response with { and end with }.
 
 ════════════════════════════════════════
-STEP 1 — IDENTIFY THE INVOICE STRUCTURE
+STEP 1 — READ THE INVOICE STRUCTURE
 ════════════════════════════════════════
 
-First, identify the supplier and understand the invoice format:
-- What does the PRICE or UNIT COST column represent? ($/lb, $/case, $/each, $/gallon, etc.)
-- Is there a separate WEIGHT or LBS column showing total weight delivered?
-- Is there a PACK SIZE column? What format does it use?
-- Is there an AMOUNT or EXTENDED column showing the line total?
+Look at the column headers on this invoice and identify:
+1. What does the UNIT COST column represent? (per case, per lb, per each, per gallon?)
+2. Is there a WEIGHT column showing actual delivered weight in lbs?
+3. What does the PACK SIZE column look like? (e.g. "36 1 LB" = 36 units × 1 lb each)
+4. Is there an EXTENDED or AMOUNT column showing the line total?
 
-Different suppliers use different formats. Common patterns:
-- Some suppliers price by lb directly (PRICE = $/lb, LBS column = total weight)
-- Some suppliers price by case (UNIT PRICE = $/case, PACK SIZE tells you what's in the case)
-- Some suppliers price by each, gallon, or other units
-
-IMPORTANT — Some invoices have a WEIGHT column between the item description and UNIT COST.
-The WEIGHT column shows actual delivered weight in lbs and is NOT a price.
-The UNIT COST column comes AFTER the weight column and contains the actual price per case.
-Example: "60.000  252.60" — 60.000 is the weight in lbs, 252.60 is the extended price.
-Never use the WEIGHT column value as invoice_price or unit_cost. Instead, use it as a separate total_weight_lbs field to derive cost_per_lb if needed.
+MAXIMUM QUALITY FOODS invoices (common format you will see):
+- UNIT COST = price per CASE (not per lb)
+- PACK SIZE encodes "pack × size unit" e.g. "36 1 LB" means 36 units, 1 lb each
+- WEIGHT column = actual delivered lbs for catch-weight items (block cheeses, deli meats)
+- EXTENDED = line total = quantity shipped × unit cost per case
+- Columns: LOC | ORD | SHP | ITEM# | PACK SIZE | BRAND | DESCRIPTION | VEN ITEM# | WEIGHT | UNIT COST | EXTENDED
 
 ════════════════════════════════════════
 STEP 2 — EXTRACT EACH LINE ITEM
 ════════════════════════════════════════
 
-For each line item, extract all available data and derive cost_per_lb or cost_per_each.
+For EVERY line item, read the values DIRECTLY from the image. Do not estimate or infer pack/size — read them exactly as printed.
 
-COST DERIVATION HIERARCHY — use the first method that applies:
+PACK SIZE PARSING — read carefully:
+"4 1 GAL"    → pack=4, size=1, size_unit="gal"
+"36 1 LB"    → pack=36, size=1, size_unit="lb"
+"8 6 LB"     → pack=8, size=6, size_unit="lb"
+"6 5 LB"     → pack=6, size=5, size_unit="lb"
+"12 12 CT"   → pack=12, size=12, size_unit="ct"
+"6 #10 CAN"  → pack=6, size=1, size_unit="each" (standard #10 can)
+"1 50 LBS"   → pack=1, size=50, size_unit="lb"
+"20 200 CT"  → pack=20, size=200, size_unit="ct"
+"2 10 LB"    → pack=2, size=10, size_unit="lb"
+"6 2 LTR"    → pack=6, size=2, size_unit="l"
+"4 4 GAL"    → pack=4, size=4, size_unit="gal"
+"1 2000 CT"  → pack=1, size=2000, size_unit="ct"
 
-METHOD 1 (most reliable): Direct weight pricing
-If the invoice has a weight/LBS column AND a price column that is clearly $/lb:
-  cost_per_lb = price_column_value
-  confidence = "high"
+UNIT COST on this invoice format = price per CASE. invoice_price = the UNIT COST column value.
 
-METHOD 2 (reliable when weight column exists): Total cost ÷ total weight
-If you have both line_total AND total_weight_lbs from a weight column:
-  cost_per_lb = line_total ÷ total_weight_lbs
-  confidence = "high"
+CATCH-WEIGHT ITEMS:
+Some items (block cheeses, deli meats) have a WEIGHT column with the actual delivered lbs.
+For these items:
+  catch_weight = true
+  actual_weight = the value in the WEIGHT column
+  invoice_price = the UNIT COST column value (which is $/lb for these items)
+  pack = null, size = null
 
-METHOD 3 (case-priced items): Extract raw values only — do NOT compute cost per unit yourself
-  Extract these fields directly from the invoice:
-    pack          = number of units per case (e.g. 4)
-    size          = size of each unit (e.g. 27)
-    size_unit     = unit of that size (e.g. "oz", "lb", "ct", "gal")
-    invoice_price = the price as printed on the invoice (per case)
+How to identify catch-weight: the WEIGHT column has a value AND the unit cost is clearly a per-lb price (typically $2-15/lb range for cheese/meat). If UNIT COST is clearly a per-case price ($20-200), it is NOT catch-weight even if a weight column value exists.
 
-    IMPORTANT — OCR spacing errors in pack/size fields:
-    The pack and size columns are often run together by OCR. Validate your reading
-    by checking: does invoice_price / (pack × size) produce a reasonable unit cost?
-    Example: OCR reads "150 LB" but $37.50 / 150 = $0.25/lb seems too cheap for sugar.
-    Try splitting differently: pack=1, size=50 → $37.50 / 50 = $0.75/lb. Use food
-    service knowledge to sanity check (sugar ~$0.50-1.00/lb, chicken ~$1-3/lb, etc.)
+VALIDATION CHECK — before outputting each item, verify:
+  quantity_shipped × invoice_price ≈ line_total (within rounding)
+  If NOT, re-examine your reading of invoice_price and quantity_shipped.
 
-    SHIPPED vs ORDERED quantity warning:
-    The invoice shows both ORDERED and SHIPPED quantities. Never use the total
-    shipped weight column to infer pack size. Instead:
-      - Use only the pack/size column to determine case contents
-      - Use SHIPPED quantity × pack × size to validate your reading against line_total
-    Example: ordered=8, shipped=7, pack_size="40 LB", price=$50, extension=$350
-      → 7 shipped × $50 = $350 ✓ → pack=1, size=40, size_unit=lb
-      → DO NOT infer size=20 from total weight 140 lb ÷ 7 cases
-
-  Leave cost_per_lb and cost_per_each as null — the server will compute from pack × size.
-  confidence = "medium" if pack/size are clearly readable, "low" if ambiguous
-
-  PER-LB ITEMS — when the unit column is "LB" and price is per lb:
-    If quantity_unit = "LB" and invoice_price is clearly a per-lb price:
-      catch_weight  = false
-      pack          = 1
-      size          = line_total / invoice_price  ← actual lbs delivered
-      size_unit     = "lb"
-    Example: unit="LB", price=$14.50, extension=$144.42
-      → pack=1, size=9.96, size_unit="lb", catch_weight=false
-
-CATCH-WEIGHT ITEMS — when unit column differs from size_unit:
-  If the invoice has a separate "unit" column (e.g. "LB") that differs from size_unit (e.g. "OZ"):
-    catch_weight  = true
-    actual_weight = line_total / invoice_price  ← derive from the math, not handwriting
-    pack          = null
-    size          = null
-    size_unit     = the unit column value (e.g. "lb")
-  Example: size="7 OZ", unit column="LB", price=$14.50, extension=$144.42
-    → catch_weight=true, actual_weight=144.42/14.50=9.96, size_unit="lb"
-
-  Do NOT set catch_weight=true just because a total weight column exists.
-  catch_weight is ONLY for items where the unit column and size_unit differ.
-  Example: "140 LB" in a weight column with pack="1", size="40", size_unit="lb"
-    → catch_weight=false, pack=1, size=40, size_unit="lb"
-
-METHOD 4: Count-based items (eggs, lobster tails, avocados, etc.)
-If the item is naturally counted rather than weighed:
-  pack          = case count if applicable (e.g. 12 for a flat of eggs)
-  size          = 1
-  size_unit     = "each"
-  invoice_price = price as printed
-  confidence    = "high" if count is clear
-
-METHOD 5: Cannot determine
-If you genuinely cannot extract pack, size, size_unit, or invoice_price:
-  Set all four to null
-  confidence = "low"
-  Explain in confidence_reason
-
-  ORDERED vs SHIPPED:
-  quantity_ordered = the number in the ORDERED column
-  quantity_shipped = the number in the SHIPPED column
-  Always use quantity_shipped for cost validation (extension = shipped × price).
-  If only one quantity column exists, use it for both.
-
-FOOD vs NON-FOOD CLASSIFICATION:
-Mark is_food = false for:
-- Cleaning supplies (bleach, sanitizer, soap, degreasers, glass cleaner)
-- Paper products (napkins, toilet paper, paper towels, to-go containers, cups)
-- Kitchen equipment or supplies (scrubbers, brushes, gloves)
-- Fuel surcharges, delivery fees, taxes, adjustments
-- Decorative items, toothpicks, bamboo skewers used as decorations
-Mark is_food = true for:
-- All food ingredients, even if processed (frozen fries, pre-made sauces, spice blends)
-- Cooking oils, vinegars, condiments
-- Food packaging that is part of the product (sausage casings, etc.)
-When in doubt, mark is_food = true
+FOOD vs NON-FOOD:
+is_food = false for: cleaning supplies, paper products, plastic wrap, foil, garbage bags, gloves, equipment, fuel surcharges, delivery fees, taxes
+is_food = true for: all food ingredients, cooking oils, condiments, beverages, spices, dairy, produce, meat, seafood, frozen foods, baking ingredients
 
 INGREDIENT NAME NORMALIZATION:
-Convert supplier abbreviations to standard chef-readable names:
-- "CHIX BRS BNLS SKNLS" → "Chicken Breast Boneless Skinless"
-- "2OZ SLIDER SUPER THICK" → "Beef Slider Patty 2oz"
-- "SALMON FILLET S/ON 3-4 PREMIUM PC" → "Salmon Fillet Skin-On 3-4oz"
-- "21-25 T/ON White India 5/2" → "Shrimp 21-25ct Tail-On White"
-- "BABY BACK RIBS IBP" → "Baby Back Ribs"
-- Preserve size/count information that is useful (e.g. "7oz", "21-25ct")
-- Remove supplier codes, brand names, and origin unless relevant
-
-════════════════════════════════════════
-STEP 2.5 — DEFINE COLUMNS
-════════════════════════════════════════
-
-Before outputting line items, define the columns that appear on THIS invoice.
-Only include columns that actually exist on the invoice. Do not invent columns.
-
-Rules:
-- Always include "item_name_normalized" as the first column, editable, type "text"
-- Always include "unit_cost_derived" as the last column, editable=false, type "number"
-  This is computed as line_total / (quantity_shipped × pack × size) and is never on the invoice
-- Between those two, include only columns that appear on the invoice
-
-Common columns and their keys:
-  quantity_ordered   — number of cases/units ordered
-  quantity_shipped   — number of cases/units shipped (include if different from ordered)
-  quantity_unit      — unit of the quantity column (CS, LB, EA, GA) — editable=false
-  pack               — number of units per case
-  size               — size of each unit
-  size_unit          — unit of the size (lb, oz, ct, gal) — editable=false
-  line_total         — the extended price / line total from the invoice
-  pack_size_raw      — the raw pack size string if pack/size are combined on the invoice
-
-Example for a Performance Foodservice invoice:
-  [
-    { "key": "item_name_normalized", "label": "Item", "editable": true, "type": "text" },
-    { "key": "quantity_shipped", "label": "Shipped", "editable": true, "type": "number" },
-    { "key": "quantity_unit", "label": "Unit", "editable": false, "type": "text" },
-    { "key": "pack", "label": "Pack", "editable": true, "type": "number" },
-    { "key": "size", "label": "Size", "editable": true, "type": "number" },
-    { "key": "size_unit", "label": "Unit", "editable": false, "type": "text" },
-    { "key": "line_total", "label": "Price", "editable": true, "type": "number" },
-    { "key": "unit_cost_derived", "label": "Unit Cost", "editable": false, "type": "number" }
-  ]
+Convert supplier abbreviations to clean chef-readable names:
+"CHIX BRS BNLS SKNLS" → "Chicken Breast Boneless Skinless"
+"CHDR LF YLW" → "Cheddar Cheese Yellow Loaf"
+"MOZZ WM LF" → "Mozzarella Whole Milk Loaf"
+"CLR 18 X 2000" → skip — this is plastic film wrap (non-food)
+"COSMO'S HOT CHERRY SLICED PEPPER" → "Cherry Peppers Sliced Hot"
+Preserve size/count info useful for a chef (e.g. "7oz", "21-25ct", "#10 Can")
+Remove vendor codes, item numbers from the name
 
 ════════════════════════════════════════
 STEP 3 — OUTPUT FORMAT
 ════════════════════════════════════════
 
-Return ONLY valid JSON with this exact structure:
-
 {
-  "supplier": "string — supplier company name",
-  "invoice_number": "string — invoice or order number",
-  "invoice_date": "string — YYYY-MM-DD format, or null",
+  "supplier": "string",
+  "invoice_number": "string or null",
+  "invoice_date": "YYYY-MM-DD or null",
   "total_amount": number or null,
-  "format_notes": "brief description of the invoice format you identified — e.g. 'Price column is $/lb, LBS column is total weight delivered'",
+  "format_notes": "brief description of what UNIT COST represents on this invoice",
   "columns": [
     {
-      "key": "string — field name on the line item object this column maps to",
-      "label": "string — human readable column header",
+      "key": "string",
+      "label": "string",
       "editable": boolean,
       "type": "number | text"
     }
   ],
   "line_items": [
     {
-      "item_name_raw": "string — exact text from invoice",
-      "item_name_normalized": "string — clean chef-readable name",
+      "item_name_raw": "exact text from invoice",
+      "item_name_normalized": "clean chef-readable name",
       "is_food": boolean,
       "quantity_ordered": number or null,
       "quantity_shipped": number or null,
-      "quantity_unit": "string — CS, LB, PC, EA, GA, etc. or null",
-      "pack_size_raw": "string — pack size as written, or null if not present",
-      "total_weight_lbs": number or null,
-      "unit_price": number or null,
-      "line_total": number or null,
+      "quantity_unit": "CS | LB | EA | GA or null",
+      "pack_size_raw": "pack size as printed, e.g. '36 1 LB'",
       "pack": number or null,
       "size": number or null,
-      "size_unit": "lb | oz | each | gal | fl oz | ct",
+      "size_unit": "lb | oz | each | gal | l | ct | fl oz",
       "invoice_price": number or null,
+      "line_total": number or null,
       "catch_weight": boolean,
       "actual_weight": number or null,
       "standard_unit": "lb | oz | each | gal | case",
       "confidence": "high | medium | low",
-      "confidence_reason": "string explaining uncertainty, or null if high confidence"
+      "confidence_reason": "string if not high, otherwise null"
     }
   ],
   "confidence": {
@@ -339,13 +182,26 @@ Return ONLY valid JSON with this exact structure:
   }
 }
 
-IMPORTANT RULES:
-- Extract EVERY line item, including non-food items (mark them is_food: false)
-- Never invent or estimate values not present or derivable from the invoice
-- Never output a cost_per_lb that you are not at least medium confidence about
-- If OCR text is garbled or a field is truly unreadable, use null
-- Do not include outstanding balance lines, previous invoice references, or payment history as line items`,
-      }],
+COLUMNS to include for a Maximum Quality Foods invoice:
+[
+  { "key": "item_name_normalized", "label": "Item", "editable": true, "type": "text" },
+  { "key": "quantity_shipped", "label": "Shipped", "editable": true, "type": "number" },
+  { "key": "pack", "label": "Pack", "editable": true, "type": "number" },
+  { "key": "size", "label": "Size", "editable": true, "type": "number" },
+  { "key": "size_unit", "label": "Unit", "editable": false, "type": "text" },
+  { "key": "invoice_price", "label": "Case Price", "editable": true, "type": "number" },
+  { "key": "line_total", "label": "Extended", "editable": true, "type": "number" },
+  { "key": "unit_cost_derived", "label": "Unit Cost", "editable": false, "type": "number" }
+]
+
+RULES:
+- confidence = "high" when you can read the value clearly from the image with no ambiguity
+- confidence = "medium" when a value is slightly unclear but you are reasonably sure
+- confidence = "low" only when genuinely unreadable — set that field to null
+- Do NOT include subtotals, tax lines, fuel surcharges, or payment summary rows as line items
+- Read quantity_shipped from the SHP column (not ORD)`,
+        },
+      ],
     }],
   });
 
@@ -462,8 +318,6 @@ async function loadRestaurantIngredients(restaurantId) {
 }
 
 // ─── Match a line item against restaurant ingredients ─────────────────────────
-// Higher auto-confirm threshold (0.90) since wrong ingredient matches
-// corrupt cost calculations silently.
 
 const AUTO_THRESHOLD      = 0.90;
 const AMBIGUOUS_THRESHOLD = 0.45;
@@ -473,7 +327,6 @@ function matchLineItem(lineItem, restaurantIngredients) {
     return { status: 'new', matches: [] };
   }
 
-  // Only match food items
   if (!lineItem.is_food) {
     return { status: 'non_food', matches: [] };
   }
@@ -562,60 +415,52 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Unsupported file type. Upload JPG, PNG, WEBP, or PDF.' });
   }
 
+  // Claude vision supports JPEG, PNG, WEBP, GIF — not PDF natively in the messages API.
+  // For PDFs, we reject with a helpful message for now.
+  if (isPDF) {
+    return res.status(400).json({ 
+      error: 'PDF upload: please upload individual page images (JPG or PNG) for best results. PDF support coming soon.' 
+    });
+  }
+
   try {
     const fileBuffer = fs.readFileSync(file.filepath);
 
-    const mediaType = isPDF ? 'application/pdf'
-      : ext === '.png'  ? 'image/png'
-      : ext === '.webp' ? 'image/webp'
-      : 'image/jpeg';
+    const mediaType = ext === '.png'  ? 'image/png'
+                    : ext === '.webp' ? 'image/webp'
+                    : 'image/jpeg';
 
-    // ── Step 1: OCR ──────────────────────────────────────────────────────────
-    console.log('[parse-invoice] Running Vision OCR...');
+    // ── Step 1: Claude Sonnet vision extraction ───────────────────────────────
+    console.log('[parse-invoice] Running Sonnet vision extraction...');
     const t0 = Date.now();
-    const ocrResult = await extractTextWithVision(fileBuffer, mediaType);
-    console.log(`[parse-invoice] OCR done in ${Date.now() - t0}ms`);
+    const extracted = await extractInvoiceData(fileBuffer, mediaType, restaurantId);
+    console.log(`[parse-invoice] Sonnet vision done in ${Date.now() - t0}ms`);
+    console.log('[parse-invoice] format_notes:', extracted?.format_notes);
 
-    if (!ocrResult?.text || ocrResult.text.length < 50) {
-      try { fs.unlinkSync(file.filepath); } catch {}
-      return res.status(400).json({ error: 'Could not extract text from image. Try a clearer photo.' });
-    }
-
-    // ── Step 2: Claude Sonnet extraction ─────────────────────────────────────
-    console.log('[parse-invoice] Running Sonnet extraction...');
-    const t1 = Date.now();
-    const extracted = await extractInvoiceData(ocrResult, restaurantId);
-    console.log(`[parse-invoice] Sonnet extraction done in ${Date.now() - t1}ms`);
-    
     if (!extracted) {
       try { fs.unlinkSync(file.filepath); } catch {}
       return res.status(500).json({ error: 'Could not parse invoice structure. Try a clearer image.' });
     }
 
-    // ── Step 3: Duplicate check ───────────────────────────────────────────────
+    // ── Step 2: Duplicate check ───────────────────────────────────────────────
     const duplicateCheck = await checkDuplicateInvoice(
       restaurantId,
       extracted.supplier,
       extracted.invoice_number
     );
 
-    // ── Step 4: Load restaurant ingredients + match ───────────────────────────
+    // ── Step 3: Load restaurant ingredients + match ───────────────────────────
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
 
-    // Only process food items — filter non-food before matching
     const allLineItems = extracted.line_items || [];
     const foodItems = allLineItems.filter(i => i.is_food);
     const nonFoodItems = allLineItems.filter(i => !i.is_food);
 
     console.log(`[parse-invoice] ${allLineItems.length} total items: ${foodItems.length} food, ${nonFoodItems.length} non-food`);
-    
+
     const lineItemsWithMatches = foodItems.map((item, idx) => {
       const matchResult = matchLineItem(item, restaurantIngredients);
 
-      // Flag items that need review:
-      // - No cost_per_lb and no cost_per_each (chef must enter manually)
-      // - Low confidence on cost derivation
-      // - Ambiguous ingredient match
       const needsCostInput = !item.invoice_price && !item.catch_weight;
       const needsReview = needsCostInput
         || item.confidence === 'low'
@@ -639,12 +484,12 @@ export default async function handler(req, res) {
       };
     });
 
-    // ── Step 5: Summary ───────────────────────────────────────────────────────
-    const autoCount       = lineItemsWithMatches.filter(i => i.match_status === 'auto' && !i.needs_review).length;
-    const ambiguousCount  = lineItemsWithMatches.filter(i => i.match_status === 'ambiguous').length;
-    const newCount        = lineItemsWithMatches.filter(i => i.match_status === 'new').length;
-    const lowConfCount    = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
-    const noCostCount     = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
+    // ── Step 4: Summary ───────────────────────────────────────────────────────
+    const autoCount      = lineItemsWithMatches.filter(i => i.match_status === 'auto' && !i.needs_review).length;
+    const ambiguousCount = lineItemsWithMatches.filter(i => i.match_status === 'ambiguous').length;
+    const newCount       = lineItemsWithMatches.filter(i => i.match_status === 'new').length;
+    const lowConfCount   = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
+    const noCostCount    = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
 
     try { fs.unlinkSync(file.filepath); } catch {}
 
@@ -663,15 +508,14 @@ export default async function handler(req, res) {
       },
       line_items: lineItemsWithMatches,
       non_food_items: nonFoodItems,
-      ocr_text: ocrResult.text, // include raw OCR so confirm modal can display it if needed
       summary: {
-        total_items:          allLineItems.length,
-        food_items:           foodItems.length,
-        non_food_items:       nonFoodItems.length,
-        auto_matched:         autoCount,
-        needs_review:         ambiguousCount + newCount,
-        low_confidence_cost:  lowConfCount,
-        needs_cost_input:     noCostCount,
+        total_items:           allLineItems.length,
+        food_items:            foodItems.length,
+        non_food_items:        nonFoodItems.length,
+        auto_matched:          autoCount,
+        needs_review:          ambiguousCount + newCount,
+        low_confidence_cost:   lowConfCount,
+        needs_cost_input:      noCostCount,
         requires_confirmation: ambiguousCount > 0 || newCount > 0 || lowConfCount > 0 || noCostCount > 0,
       },
     });
