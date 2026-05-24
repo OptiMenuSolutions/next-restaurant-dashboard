@@ -519,7 +519,8 @@ export default async function handler(req, res) {
     }
 
     // Log the transcription for debugging
-    console.log('[parse-invoice] Transcription preview:\n', transcription.slice(0, 500));
+    console.log('[parse-invoice] Full transcription:\n', transcription);
+    streamStatus(res, 'Transcription complete', `${transcription.split('\n').length} rows read`);
 
     // ── Pass 2: Parse markdown table to JSON ──────────────────────────────────
     const t1 = Date.now();
@@ -658,6 +659,7 @@ export default async function handler(req, res) {
           invoice_date:   extracted.invoice_date,
           total_amount:   extracted.total_amount,
           format_notes:   extracted.format_notes || null,
+          transcription:  transcription,
           columns:        extracted.columns || [],
           confidence:     extracted.confidence || {},
         },
