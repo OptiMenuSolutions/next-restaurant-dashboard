@@ -361,6 +361,23 @@ const CSS = `
   .pm-dismiss-btn { background: none; border: 1px solid var(--border); border-radius: 5px; padding: 5px 12px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted); cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s; }
   .pm-dismiss-btn:hover { color: var(--color-red); border-color: rgba(192,64,64,.3); }
 
+  .pm-manage-btn {
+    background: none; border: 1px solid var(--border); border-radius: 5px;
+    padding: 4px 10px; font-size: clamp(9px,.68vw,11px); color: var(--text-muted);
+    cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s;
+    white-space: nowrap;
+  }
+  .pm-manage-btn.active { border-color: rgba(192,64,64,.4); color: var(--color-red); }
+  .pm-manage-btn:hover { border-color: var(--text-faint); color: var(--text-primary); }
+  .pm-manage-btn.active:hover { border-color: var(--color-red); }
+  .pm-li-dismiss-x {
+    width: 20px; height: 20px; border-radius: 50%; background: var(--color-red);
+    border: none; color: white; font-size: 11px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    transition: transform .15s, opacity .15s; line-height: 1;
+  }
+  .pm-li-dismiss-x:hover { transform: scale(1.1); }
+
   /* Buttons */
   .pm-btn-primary { background: var(--accent); border: none; border-radius: 6px; padding: clamp(8px,.8vh,11px) clamp(18px,1.6vw,26px); font-size: clamp(11px,.85vw,13px); font-weight: 600; color: var(--bg-root); cursor: pointer; font-family: 'Inter', sans-serif; transition: background .2s; white-space: nowrap; }
   .pm-btn-primary:hover { background: #01bcd4; }
@@ -528,7 +545,14 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
   ).join(' ') + ' 130px';
 
   return (
-    <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}>
+    <div className={`pm-line-item status-${item.match_status}${item.dismissed ? ' dismissed' : ''}`}
+      style={{ display: 'flex', alignItems: 'stretch' }}>
+      {manageMode && !item.dismissed && (
+        <div style={{ display: 'flex', alignItems: 'center', padding: '0 10px', borderRight: '1px solid var(--border)', background: 'rgba(192,64,64,.04)', flexShrink: 0 }}>
+          <button className="pm-li-dismiss-x" onClick={e => { e.stopPropagation(); onDismiss(item._id); }} title="Ignore this item">✕</button>
+        </div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
       <div
         className="pm-li-hd"
         onClick={mode === 'matches' && item.match_status !== 'auto' ? onToggle : undefined}
@@ -603,6 +627,7 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
         </div>
       )}
     </div>
+    </div>
   );
 }
 
@@ -621,6 +646,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [savedResult, setSavedResult] = useState(null);
   const [reviewStep, setReviewStep] = useState('numbers');
+  const [manageMode, setManageMode] = useState(false);
 
   const PARSE_STAGES = [
     { msg: 'Compressing images...', sub: 'Optimizing files for upload' },
@@ -682,6 +708,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
     if (!queuedFiles.length) return;
     setStep('parsing');
     setReviewStep('numbers');
+    setManageMode(false);
     setErrorMsg('');
 
     try {
@@ -856,7 +883,17 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             {step === 'success' && 'Invoices Saved'}
             {step === 'error' && 'Something went wrong'}
           </div>
-          {step !== 'saving' && <button className="pm-close" onClick={onClose}>✕</button>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {step === 'review' && (
+              <button
+                className={`pm-manage-btn${manageMode ? ' active' : ''}`}
+                onClick={() => setManageMode(m => !m)}
+              >
+                {manageMode ? 'Done' : 'Manage'}
+              </button>
+            )}
+            {step !== 'saving' && <button className="pm-close" onClick={onClose}>✕</button>}
+          </div>
         </div>
 
         {/* Body */}
