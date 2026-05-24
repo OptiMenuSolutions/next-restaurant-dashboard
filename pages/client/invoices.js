@@ -804,8 +804,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
-        const canonicalNumber = getCanonicalNumber(data.invoice);
-        const key = invoiceMergeKey({ ...data.invoice, invoice_number: canonicalNumber });
+        const key = invoiceMergeKey(data.invoice);
         if (!groupMap[key]) {       
           const DEFAULT_COLUMNS = [
             { key: 'item_name_normalized', label: 'Item', editable: true, type: 'text' },
@@ -822,7 +821,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             key,
             invoice: {
               ...data.invoice,
-              invoice_number: canonicalNumber,
+              invoice_number: normalizeInvoiceNumber(data.invoice.invoice_number),
             },
             columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
