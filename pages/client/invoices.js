@@ -735,7 +735,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       }));
 
       // Step 3: parse each file
-      setParseStage(PARSE_STAGES[2]);
+      // (streaming handles status updates from here)
       // Parse files sequentially so streaming status messages stay coherent
       const parseResults = [];
       for (const { file, publicUrl } of uploadResults) {
@@ -782,7 +782,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       }
 
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
-      setParseStage(PARSE_STAGES[3]);
+      setParseStage({ msg: 'Grouping invoices...', sub: 'Merging pages from the same invoice' });
 
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
@@ -823,7 +823,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         groupMap[key].lineItems.push(...newItems);
       }
 
-      setParseStage(PARSE_STAGES[4]);
+      setParseStage({ msg: 'Almost done...', sub: 'Finalizing results' });
       const groups = Object.values(groupMap);
       setInvoiceGroups(groups);
       setActiveGroupKey(groups[0]?.key || null);
