@@ -802,49 +802,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
       setParseStage({ msg: 'Grouping invoices...', sub: 'Merging pages from the same invoice' });
 
-      // First pass: collect all invoice numbers per supplier with their confidence
-      const invoiceNumbersBySupplier = {};
-      for (const { data } of parseResults) {
-        const supplier = (data.invoice.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
-        const number = normalizeInvoiceNumber(data.invoice.invoice_number);
-        const confidence = data.invoice.confidence?.invoice_number || 'low';
-        if (!number) continue;
-        if (!invoiceNumbersBySupplier[supplier]) invoiceNumbersBySupplier[supplier] = [];
-        invoiceNumbersBySupplier[supplier].push({ number, confidence });
-      }
-
-      // Second pass: for each supplier, find the most confident invoice number.
-      // Any other number from the same supplier that is ≥85% positionally similar
-      // gets corrected to the high-confidence read — almost certainly an OCR misread.
-      const canonicalNumbers = {}; // supplier → canonical invoice number
-      for (const [supplier, entries] of Object.entries(invoiceNumbersBySupplier)) {
-        const ranked = [...entries].sort((a, b) => {
-          const order = { high: 0, medium: 1, low: 2 };
-          return (order[a.confidence] ?? 2) - (order[b.confidence] ?? 2);
-        });
-        const best = ranked[0].number;
-        canonicalNumbers[supplier] = best;
-        // Log corrections for debugging
-        for (const { number, confidence } of ranked.slice(1)) {
-          const sim = invoiceNumberSimilarity(best, number);
-          if (sim >= 0.85 && number !== best) {
-            console.log(`[merge] Correcting invoice number "${number}" → "${best}" (similarity: ${(sim*100).toFixed(0)}%, best confidence: ${ranked[0].confidence})`);
-          }
-        }
-      }
-
-      // Helper: get the canonical invoice number for a parsed result
-      function getCanonicalNumber(invoice) {
-        const supplier = (invoice.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
-        const number = normalizeInvoiceNumber(invoice.invoice_number);
-        if (!number) return number;
-        const canonical = canonicalNumbers[supplier];
-        if (canonical && invoiceNumberSimilarity(canonical, number) >= 0.85) {
-          return canonical;
-        }
-        return number;
-      }
-
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
         const canonicalNumber = getCanonicalNumber(data.invoice);
