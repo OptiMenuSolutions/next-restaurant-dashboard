@@ -661,14 +661,8 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   const [savedResult, setSavedResult] = useState(null);
   const [reviewStep, setReviewStep] = useState('numbers');
   const [manageMode, setManageMode] = useState(false);
-
-  const PARSE_STAGES = [
-    { msg: 'Compressing images...', sub: 'Optimizing files for upload' },
-    { msg: 'Uploading invoices...', sub: 'Sending files to server' },
-    { msg: 'Reading invoices with Claude...', sub: 'Scanning line items and pricing' },
-    { msg: 'Matching to your inventory...', sub: 'Comparing against existing ingredients' },
-    { msg: 'Almost done...', sub: 'Finalizing results' },
-  ];
+  const [missingPageWarning, setMissingPageWarning] = useState(null); // { groupKey, invoiceTotal, lineTotal }
+  const [latePagePrompt, setLatePagePrompt] = useState(null); // { groupKey, existing_id, existing_date, existing_number }
 
   // ── Derived: total pending count across all invoice groups ─────────────────
   const totalPending = invoiceGroups.reduce((sum, g) => {
@@ -727,11 +721,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
     try {
       // Step 1: compress
-      setParseStage(PARSE_STAGES[0]);
+      setParseStage({ msg: 'Compressing images...', sub: 'Optimizing for upload' });
       const compressed = await Promise.all(queuedFiles.map(f => compressImage(f)));
 
       // Step 2: upload to Supabase storage in parallel
-      setParseStage(PARSE_STAGES[1]);
+      setParseStage({ msg: 'Uploading to secure storage...', sub: 'Files stored before analysis' });
       const uploadResults = await Promise.all(compressed.map(async (file) => {
         const filePath = `${restaurantId}/${Date.now()}_${file.name}`;
         const { error } = await supabase.storage.from('invoices').upload(filePath, file);
@@ -742,16 +736,50 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
       // Step 3: parse each file
       setParseStage(PARSE_STAGES[2]);
-      const parseResults = await Promise.all(uploadResults.map(async ({ file, publicUrl }) => {
+      // Parse files sequentially so streaming status messages stay coherent
+      const parseResults = [];
+      for (const { file, publicUrl } of uploadResults) {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('restaurant_id', restaurantId);
         formData.append('file_url', publicUrl);
-        const res = await fetch('/api/invoices/parse-invoice', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (!res.ok || !data.success) throw new Error(data.error || `Parse failed for ${file.name}`);
-        return { data, publicUrl };
-      }));
+
+        const fetchRes = await fetch('/api/invoices/parse-invoice', { method: 'POST', body: formData });
+        if (!fetchRes.ok) throw new Error(`Parse failed for ${file.name}`);
+
+        // Read the NDJSON stream line by line
+        const reader = fetchRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let resultData = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // incomplete line stays in buffer
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.type === 'status') {
+                setParseStage({ msg: event.message, sub: event.detail || '' });
+              } else if (event.type === 'result') {
+                resultData = event.data;
+              } else if (event.type === 'error') {
+                throw new Error(event.error || `Parse failed for ${file.name}`);
+              }
+            } catch (parseErr) {
+              if (parseErr.message.includes('Parse failed')) throw parseErr;
+              // Ignore JSON parse errors on partial lines
+            }
+          }
+        }
+
+        if (!resultData?.success) throw new Error(`Parse failed for ${file.name}`);
+        parseResults.push({ data: resultData, publicUrl });
+      }
 
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
       setParseStage(PARSE_STAGES[3]);
@@ -799,7 +827,36 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       const groups = Object.values(groupMap);
       setInvoiceGroups(groups);
       setActiveGroupKey(groups[0]?.key || null);
-      setStep('review');
+
+      // Check for missing pages: if invoice total is high-confidence and
+      // line item sum differs by more than 2%, warn before proceeding.
+      const warnings = [];
+      for (const g of groups) {
+        const totalAmount = g.invoice.total_amount;
+        const totalConf = g.invoice.confidence?.total_amount;
+        if (totalAmount && totalConf === 'high') {
+          const lineSum = g.lineItems.reduce((s, i) => s + (i.line_total || 0), 0);
+          const diff = Math.abs(lineSum - totalAmount);
+          if (diff / totalAmount > 0.02) {
+            warnings.push({ groupKey: g.key, invoiceTotal: totalAmount, lineTotal: lineSum });
+          }
+        }
+        // Check for late-page duplicates
+        if (g.duplicate?.duplicate) {
+          setLatePagePrompt({
+            groupKey:        g.key,
+            existing_id:     g.duplicate.existing_id,
+            existing_date:   g.duplicate.existing_date,
+            existing_number: g.duplicate.existing_number || g.invoice.invoice_number,
+            existing_supplier: g.duplicate.existing_supplier || g.invoice.supplier,
+          });
+        }
+      }
+      if (warnings.length > 0) {
+        setMissingPageWarning(warnings[0]); // show first offending invoice
+      } else {
+        setStep('review');
+      }
 
     } catch (err) {
       setErrorMsg(err.message || 'Something went wrong');
@@ -827,6 +884,33 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
     updateLineItem(groupKey, itemId, { dismissed: true });
   }
 
+  function acknowledgeMissingPage() {
+    setMissingPageWarning(null);
+    setStep('review');
+  }
+
+  function acceptLatePageMerge() {
+    if (!latePagePrompt) return;
+    setInvoiceGroups(prev => prev.map(g =>
+      g.key !== latePagePrompt.groupKey ? g : {
+        ...g,
+        appendToInvoiceId: latePagePrompt.existing_id,
+        duplicate: false, // clear duplicate banner
+      }
+    ));
+    setLatePagePrompt(null);
+    setStep('review');
+  }
+
+  function rejectLatePageMerge() {
+    // User wants a new invoice record — clear the duplicate flag and proceed
+    setInvoiceGroups(prev => prev.map(g =>
+      g.key !== latePagePrompt?.groupKey ? g : { ...g, duplicate: false }
+    ));
+    setLatePagePrompt(null);
+    setStep('review');
+  }
+
   function updateConfirmedName(groupKey, itemId, name) {
     updateLineItem(groupKey, itemId, { confirmed_name: name });
   }
@@ -846,10 +930,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            restaurant_id: restaurantId,
-            invoice: group.invoice,
-            line_items: group.lineItems,
-            file_url: group.fileUrl,
+            restaurant_id:        restaurantId,
+            invoice:              group.invoice,
+            line_items:           group.lineItems,
+            file_url:             group.fileUrl,
+            append_to_invoice_id: group.appendToInvoiceId || null,
           }),
         });
         const data = await res.json();
@@ -887,7 +972,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
   return (
     <div className="pm-bg">
-      <div className="pm-modal">
+      <div className="pm-modal" style={{ position: 'relative' }}>
 
         {/* Header */}
         <div className="pm-hd">
@@ -974,18 +1059,10 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           {step === 'parsing' && (
             <div className="pm-parsing">
               <div className="pm-spin" />
-              <div className="pm-parse-title">{parseStage.msg}</div>
-              <div className="pm-parse-sub">{parseStage.sub}</div>
-              <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
-                {PARSE_STAGES.map((s, i) => (
-                  <div key={i} style={{
-                    width: s.msg === parseStage.msg ? 16 : 5,
-                    height: 5, borderRadius: 3,
-                    background: PARSE_STAGES.indexOf(parseStage) >= i ? 'var(--accent)' : 'var(--border)',
-                    transition: 'all .4s ease',
-                  }} />
-                ))}
-              </div>
+              <div className="pm-parse-title" style={{ marginBottom: 4 }}>{parseStage.msg}</div>
+              {parseStage.sub && (
+                <div className="pm-parse-sub" style={{ marginBottom: 0 }}>{parseStage.sub}</div>
+              )}
             </div>
           )}
 
@@ -1330,6 +1407,58 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           )}
         </div>
       </div>
+
+      {/* ── MISSING PAGE WARNING MODAL ── */}
+      {missingPageWarning && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 12 }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--color-amber)', borderRadius: 10, padding: '28px 32px', maxWidth: 420, width: '90%', textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>⚠️</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Possible missing page
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+              Your line items add up to <strong style={{ color: 'var(--text-primary)' }}>${missingPageWarning.lineTotal.toFixed(2)}</strong> but the invoice total is <strong style={{ color: 'var(--color-amber)' }}>${missingPageWarning.invoiceTotal.toFixed(2)}</strong>.
+              <br /><br />
+              Did you upload all pages of this invoice?
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="pm-btn-secondary" onClick={() => { setMissingPageWarning(null); setStep('drop'); setQueuedFiles([]); }}>
+                ← Go back and add pages
+              </button>
+              <button className="pm-btn-primary" onClick={acknowledgeMissingPage}>
+                Yes, I have all pages
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LATE PAGE MERGE PROMPT ── */}
+      {latePagePrompt && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, borderRadius: 12 }}>
+          <div style={{ background: 'var(--bg-surface)', border: '1px solid rgba(2,164,186,.4)', borderRadius: 10, padding: '28px 32px', maxWidth: 440, width: '90%', textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 12 }}>📄</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 }}>
+              Existing invoice found
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 20 }}>
+              Invoice <strong style={{ color: 'var(--accent)' }}>#{latePagePrompt.existing_number}</strong> from <strong style={{ color: 'var(--text-primary)' }}>{latePagePrompt.existing_supplier}</strong> is already on file
+              {latePagePrompt.existing_date ? ` (${latePagePrompt.existing_date})` : ''}.
+              <br /><br />
+              Is this a missing page you forgot to upload?
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="pm-btn-secondary" onClick={rejectLatePageMerge}>
+                No — create new invoice
+              </button>
+              <button className="pm-btn-primary" onClick={acceptLatePageMerge}>
+                Yes — add to existing
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

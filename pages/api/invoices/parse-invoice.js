@@ -1,8 +1,10 @@
 // pages/api/invoices/parse-invoice.js
 // Invoice parser: Claude Sonnet vision → structured extraction.
-// Sends invoice images directly to Claude — no intermediate OCR step.
-// Returns structured data for client-side confirmation UI.
-// The separate /api/invoices/confirm-invoice route handles all DB writes.
+// Streams newline-delimited JSON events so the client can show live status.
+// Event shapes:
+//   { type: 'status', message: string, detail?: string }
+//   { type: 'result', data: { success, file_url, duplicate, invoice, line_items, non_food_items, summary } }
+//   { type: 'error',  error: string }
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
@@ -25,6 +27,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ─── Stream helpers ───────────────────────────────────────────────────────────
+
+function streamEvent(res, event) {
+  res.write(JSON.stringify(event) + '\n');
+}
+
+function streamStatus(res, message, detail) {
+  streamEvent(res, { type: 'status', message, detail: detail || null });
+}
+
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
 
 function safeParseJSON(text) {
@@ -45,8 +57,13 @@ function safeParseJSON(text) {
 
 // ─── Claude Sonnet vision: extract invoice data directly from image ────────────
 
-async function extractInvoiceData(fileBuffer, mediaType, restaurantId) {
+async function extractInvoiceData(fileBuffer, mediaType, restaurantId, res, fileName) {
   const base64Image = fileBuffer.toString('base64');
+
+  streamStatus(res,
+    `Reading ${fileName || 'invoice'} with Claude Vision...`,
+    'Scanning columns, line items, and pricing'
+  );
 
   const response = await anthropic.messages.stream({
     model: 'claude-sonnet-4-6',
@@ -324,12 +341,11 @@ function normalizeName(name) {
 // ─── Fuzzy match score between two strings ────────────────────────────────────
 
 function matchScore(invoiceName, dbName) {
-  const na = normalizeName(invoiceName); // invoice (longer, more descriptive)
-  const nb = normalizeName(dbName);      // db ingredient name (often a short label)
+  const na = normalizeName(invoiceName);
+  const nb = normalizeName(dbName);
   if (na === nb) return 1.0;
-  if (nb.includes(na)) return 0.90; // invoice name fully contained in db name (rare)
+  if (nb.includes(na)) return 0.90;
 
-  // Token overlap: what fraction of db name tokens appear in the invoice name?
   const tokensA = na.split(' ').filter(t => t.length > 2);
   const tokensB = nb.split(' ').filter(t => t.length > 2);
   const setA = new Set(tokensA);
@@ -337,15 +353,11 @@ function matchScore(invoiceName, dbName) {
   if (tokensB.length === 0) return 0;
 
   const matched = tokensB.filter(t => setA.has(t)).length;
-  const dbCoverage = matched / tokensB.length; // fraction of db tokens found in invoice
+  const dbCoverage = matched / tokensB.length;
 
   if (dbCoverage === 0) return 0;
 
-  // Specificity bonus: longer db names that match are more trustworthy.
-  // "Extra Virgin Olive Oil" matching is more meaningful than "Butter" matching.
-  // Cap at 0.89 so only exact matches (1.0) and full-string containment (0.90) auto-confirm.
   const specificityBonus = Math.min(0.15, tokensB.length * 0.04);
-
   return Math.min(0.89, dbCoverage * 0.75 + specificityBonus);
 }
 
@@ -440,8 +452,6 @@ function matchLineItem(lineItem, restaurantIngredients) {
   const top = scored[0];
 
   if (top.score >= AUTO_THRESHOLD) {
-    // Only block auto-confirm if a competitor is within 0.05 of the top score.
-    // A score-1.0 match is never blocked by a 0.85 competitor.
     const closeCompetitors = scored.filter(
       (s, i) => i > 0 && s.score >= top.score - 0.05
     );
@@ -458,22 +468,39 @@ function matchLineItem(lineItem, restaurantIngredients) {
 
 // ─── Duplicate invoice check ──────────────────────────────────────────────────
 
+function normalizeInvoiceNumber(raw) {
+  return (raw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .replace(/[Ss]/g, '5')
+    .replace(/[Oo]/g, '0')
+    .replace(/[Ii|l]/g, '1')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Zz]/g, '2')
+    .replace(/[Gg]/g, '6');
+}
+
 async function checkDuplicateInvoice(restaurantId, supplier, invoiceNumber) {
   if (!invoiceNumber) return false;
 
-  // Normalize: strip whitespace so '24319 55' and '2431955' are treated as the same
-  const normalizedNumber = String(invoiceNumber).replace(/\s+/g, '');
+  const normalizedNumber = normalizeInvoiceNumber(invoiceNumber);
 
   const { data } = await supabase
     .from('invoices')
-    .select('id, date')
+    .select('id, date, supplier, number')
     .eq('restaurant_id', restaurantId)
     .eq('number', normalizedNumber)
     .maybeSingle();
 
   if (data) {
     console.warn(`[parse-invoice] Duplicate invoice detected: ${normalizedNumber} (id: ${data.id})`);
-    return { duplicate: true, existing_id: data.id, existing_date: data.date };
+    return {
+      duplicate:     true,
+      existing_id:   data.id,
+      existing_date: data.date,
+      existing_supplier: data.supplier,
+      existing_number:   data.number,
+    };
   }
 
   return false;
@@ -484,16 +511,26 @@ async function checkDuplicateInvoice(restaurantId, supplier, invoiceNumber) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
+  // Set up streaming response
+  res.setHeader('Content-Type', 'application/x-ndjson');
+  res.setHeader('Transfer-Encoding', 'chunked');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.flushHeaders();
+
   const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
   let fields, files;
   try {
     [fields, files] = await form.parse(req);
   } catch {
-    return res.status(400).json({ error: 'Failed to parse upload' });
+    streamEvent(res, { type: 'error', error: 'Failed to parse upload' });
+    return res.end();
   }
 
   const file = Array.isArray(files.file) ? files.file[0] : files.file;
-  if (!file) return res.status(400).json({ error: 'No file provided' });
+  if (!file) {
+    streamEvent(res, { type: 'error', error: 'No file provided' });
+    return res.end();
+  }
 
   const restaurantId = Array.isArray(fields.restaurant_id)
     ? fields.restaurant_id[0]
@@ -504,23 +541,24 @@ export default async function handler(req, res) {
     : fields.file_url;
 
   if (!restaurantId) {
-    return res.status(400).json({ error: 'restaurant_id is required' });
+    streamEvent(res, { type: 'error', error: 'restaurant_id is required' });
+    return res.end();
   }
 
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   if (!allowed.includes(file.mimetype) && !isPDF) {
-    return res.status(400).json({ error: 'Unsupported file type. Upload JPG, PNG, WEBP, or PDF.' });
+    streamEvent(res, { type: 'error', error: 'Unsupported file type. Upload JPG, PNG, WEBP, or PDF.' });
+    return res.end();
   }
 
-  // Claude vision supports JPEG, PNG, WEBP, GIF — not PDF natively in the messages API.
-  // For PDFs, we reject with a helpful message for now.
   if (isPDF) {
-    return res.status(400).json({ 
-      error: 'PDF upload: please upload individual page images (JPG or PNG) for best results. PDF support coming soon.' 
-    });
+    streamEvent(res, { type: 'error', error: 'PDF upload: please upload individual page images (JPG or PNG) for best results.' });
+    return res.end();
   }
+
+  const fileName = file.originalFilename || 'invoice';
 
   try {
     const fileBuffer = fs.readFileSync(file.filepath);
@@ -530,16 +568,24 @@ export default async function handler(req, res) {
                     : 'image/jpeg';
 
     // ── Step 1: Claude Sonnet vision extraction ───────────────────────────────
-    console.log('[parse-invoice] Running Sonnet vision extraction...');
     const t0 = Date.now();
-    const extracted = await extractInvoiceData(fileBuffer, mediaType, restaurantId);
+    const extracted = await extractInvoiceData(fileBuffer, mediaType, restaurantId, res, fileName);
     console.log(`[parse-invoice] Sonnet vision done in ${Date.now() - t0}ms`);
-    console.log('[parse-invoice] format_notes:', extracted?.format_notes);
 
     if (!extracted) {
       try { fs.unlinkSync(file.filepath); } catch {}
-      return res.status(500).json({ error: 'Could not parse invoice structure. Try a clearer image.' });
+      streamEvent(res, { type: 'error', error: 'Could not parse invoice structure. Try a clearer image.' });
+      return res.end();
     }
+
+    const supplier = extracted.supplier || 'Unknown Supplier';
+    const foodCount = (extracted.line_items || []).filter(i => i.is_food).length;
+    const nonFoodCount = (extracted.line_items || []).filter(i => !i.is_food).length;
+
+    streamStatus(res,
+      `Found ${foodCount} food item${foodCount !== 1 ? 's' : ''} from ${supplier}`,
+      nonFoodCount > 0 ? `Plus ${nonFoodCount} non-food items filtered out` : 'Checking for duplicates...'
+    );
 
     // ── Step 2: Duplicate check ───────────────────────────────────────────────
     const duplicateCheck = await checkDuplicateInvoice(
@@ -548,14 +594,23 @@ export default async function handler(req, res) {
       extracted.invoice_number
     );
 
+    if (duplicateCheck) {
+      streamStatus(res,
+        `Invoice #${duplicateCheck.existing_number} already on file`,
+        'Will prompt to merge or create new'
+      );
+    }
+
     // ── Step 3: Load restaurant ingredients + match ───────────────────────────
+    streamStatus(res,
+      'Matching to your ingredient library...',
+      'Comparing against ingredients you already track'
+    );
+
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
 
     const allLineItems = extracted.line_items || [];
 
-    // Filter out placeholder items Claude returns when a page is unreadable
-    // (summary/totals pages, sideways photos, etc.) — identified by having no
-    // invoice_price, no pack, and a null or generic item name.
     const readableItems = allLineItems.filter(item => {
       const hasPrice = item.invoice_price != null;
       const hasPack  = item.pack != null;
@@ -571,25 +626,25 @@ export default async function handler(req, res) {
 
     const skippedCount = allLineItems.length - readableItems.length;
     if (skippedCount > 0) console.log(`[parse-invoice] Skipped ${skippedCount} unreadable/placeholder items`);
-    console.log(`[parse-invoice] ${readableItems.length} readable items: ${foodItems.length} food, ${nonFoodItems.length} non-food`);
 
-    const lineItemsWithMatches = foodItems.map((item, idx) => {
+    // Match items and stream individual match results for interesting items
+    const lineItemsWithMatches = [];
+    let autoCount = 0, newCount = 0, ambiguousCount = 0;
+
+    for (let idx = 0; idx < foodItems.length; idx++) {
+      const item = foodItems[idx];
       const matchResult = matchLineItem(item, restaurantIngredients);
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
-      // needs_review: user must look at this item in the review UI
-      // skip_number_review: numbers are confirmed good — only show ingredient matching UI
       const needsReview = needsCostInput
         || item.confidence === 'low'
         || matchResult.status === 'ambiguous'
         || matchResult.status === 'new';
 
-      // Numbers are trustworthy when confidence is high or medium-with-derived-math.
-      // New ingredients still need review for name confirmation, but not number checking.
       const skipNumberReview = item.confidence === 'high'
         || (item.confidence === 'medium' && !needsCostInput);
 
-      return {
+      lineItemsWithMatches.push({
         _id: `item_${idx}`,
         ...item,
         match_status: matchResult.status,
@@ -603,58 +658,82 @@ export default async function handler(req, res) {
         needs_cost_input: needsCostInput,
         needs_review: needsReview,
         skip_number_review: skipNumberReview,
-      };
-    });
+      });
 
-    // ── Step 4: Summary ───────────────────────────────────────────────────────
-    const autoCount      = lineItemsWithMatches.filter(i => i.match_status === 'auto' && !i.needs_review).length;
-    const ambiguousCount = lineItemsWithMatches.filter(i => i.match_status === 'ambiguous').length;
-    const newCount       = lineItemsWithMatches.filter(i => i.match_status === 'new').length;
-    const lowConfCount   = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
-    const noCostCount    = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
+      if (matchResult.status === 'auto') {
+        autoCount++;
+        // Stream a status for every few auto-matches so the UI feels alive
+        if (autoCount <= 3 || autoCount % 5 === 0) {
+          streamStatus(res,
+            `Matched: ${item.item_name_normalized || item.item_name_raw}`,
+            `→ ${matchResult.matches[0]?.name} in your library`
+          );
+        }
+      } else if (matchResult.status === 'new') {
+        newCount++;
+        if (newCount <= 2) {
+          streamStatus(res,
+            `New ingredient: ${item.item_name_normalized || item.item_name_raw}`,
+            'Will add to your library when confirmed'
+          );
+        }
+      } else {
+        ambiguousCount++;
+      }
+    }
+
+    // Final status before result
+    const reviewNeeded = lineItemsWithMatches.filter(i => i.needs_review).length;
+    streamStatus(res,
+      reviewNeeded > 0
+        ? `${reviewNeeded} item${reviewNeeded !== 1 ? 's' : ''} need your review`
+        : 'All items matched — ready to confirm',
+      `${autoCount} auto-matched · ${newCount} new · ${ambiguousCount} ambiguous`
+    );
+
+    // ── Summary ───────────────────────────────────────────────────────────────
+    const lowConfCount = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
+    const noCostCount  = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
 
     try { fs.unlinkSync(file.filepath); } catch {}
 
-    return res.status(200).json({
-      success: true,
-      file_url: fileUrl || null,
-      duplicate: duplicateCheck || false,
-      invoice: {
-        supplier:       extracted.supplier,
-        invoice_number: extracted.invoice_number
-          ? String(extracted.invoice_number)
-              .trim()
-              .replace(/\s+/g, '')
-              .replace(/[Ss]/g, '5')
-              .replace(/[Oo]/g, '0')
-              .replace(/[Ii|l]/g, '1')
-              .replace(/[Bb]/g, '8')
-              .replace(/[Zz]/g, '2')
-              .replace(/[Gg]/g, '6')
-          : null,
-        invoice_date:   extracted.invoice_date,
-        total_amount:   extracted.total_amount,
-        format_notes:   extracted.format_notes || null,
-        columns:        extracted.columns || [],
-        confidence:     extracted.confidence || {},
-      },
-      line_items: lineItemsWithMatches,
-      non_food_items: nonFoodItems,
-      summary: {
-        total_items:           readableItems.length,
-        food_items:            foodItems.length,
-        non_food_items:        nonFoodItems.length,
-        auto_matched:          autoCount,
-        needs_review:          ambiguousCount + newCount,
-        low_confidence_cost:   lowConfCount,
-        needs_cost_input:      noCostCount,
-        requires_confirmation: ambiguousCount > 0 || newCount > 0 || lowConfCount > 0 || noCostCount > 0,
+    // ── Stream final result ───────────────────────────────────────────────────
+    streamEvent(res, {
+      type: 'result',
+      data: {
+        success:    true,
+        file_url:   fileUrl || null,
+        duplicate:  duplicateCheck || false,
+        invoice: {
+          supplier:       extracted.supplier,
+          invoice_number: normalizeInvoiceNumber(extracted.invoice_number),
+          invoice_date:   extracted.invoice_date,
+          total_amount:   extracted.total_amount,
+          format_notes:   extracted.format_notes || null,
+          columns:        extracted.columns || [],
+          confidence:     extracted.confidence || {},
+        },
+        line_items:     lineItemsWithMatches,
+        non_food_items: nonFoodItems,
+        summary: {
+          total_items:           readableItems.length,
+          food_items:            foodItems.length,
+          non_food_items:        nonFoodItems.length,
+          auto_matched:          autoCount,
+          needs_review:          ambiguousCount + newCount,
+          low_confidence_cost:   lowConfCount,
+          needs_cost_input:      noCostCount,
+          requires_confirmation: ambiguousCount > 0 || newCount > 0 || lowConfCount > 0 || noCostCount > 0,
+        },
       },
     });
+
+    res.end();
 
   } catch (err) {
     console.error('[parse-invoice] Error:', err);
     try { fs.unlinkSync(file.filepath); } catch {}
-    return res.status(500).json({ error: err.message || 'Failed to parse invoice' });
+    streamEvent(res, { type: 'error', error: err.message || 'Failed to parse invoice' });
+    res.end();
   }
 }

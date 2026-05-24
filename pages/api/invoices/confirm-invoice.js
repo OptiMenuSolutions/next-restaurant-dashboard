@@ -70,13 +70,14 @@ export default async function handler(req, res) {
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
   catch { return res.status(400).json({ error: 'Invalid JSON body' }); }
 
-  const { restaurant_id, invoice, line_items, file_url } = body;
+  const { restaurant_id, invoice, line_items, file_url, append_to_invoice_id } = body;
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
 
   const activeItems = (line_items || []).filter(i => !i.dismissed);
   const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
+  const appendMode  = !!append_to_invoice_id;
 
   const results = {
     invoice_id: null,
@@ -87,25 +88,34 @@ export default async function handler(req, res) {
   };
 
   try {
-    // ── Step 1: Create invoice record ─────────────────────────────────────────
-    const { data: invoiceRecord, error: invoiceError } = await supabase
-      .from('invoices')
-      .insert({
-        restaurant_id,
-        supplier:   invoice.supplier       || null,
-        number:     invoice.invoice_number || null,
-        date:       invoice.invoice_date   || null,
-        amount:     invoice.total_amount   || null,
-        file_url:   file_url               || null,
-        is_sample:  false,
-      })
-      .select('id')
-      .single();
+    // ── Step 1: Create or reuse invoice record ────────────────────────────────
+    let invoiceRecord;
+    if (appendMode) {
+      // Late page — append to existing invoice instead of creating a new one
+      invoiceRecord = { id: append_to_invoice_id };
+      results.invoice_id = append_to_invoice_id;
+      console.log(`[confirm-invoice] Append mode — adding to invoice ${append_to_invoice_id}`);
+    } else {
+      const { data, error: invoiceError } = await supabase
+        .from('invoices')
+        .insert({
+          restaurant_id,
+          supplier:   invoice.supplier       || null,
+          number:     invoice.invoice_number || null,
+          date:       invoice.invoice_date   || null,
+          amount:     invoice.total_amount   || null,
+          file_url:   file_url               || null,
+          is_sample:  false,
+        })
+        .select('id')
+        .single();
 
-    if (invoiceError) {
-      return res.status(500).json({ error: 'Failed to create invoice: ' + invoiceError.message });
+      if (invoiceError) {
+        return res.status(500).json({ error: 'Failed to create invoice: ' + invoiceError.message });
+      }
+      invoiceRecord = data;
+      results.invoice_id = data.id;
     }
-    results.invoice_id = invoiceRecord.id;
 
     // ── Step 2: Batch-create new ingredients ──────────────────────────────────
     // FIX #5: warn when confirm_new is missing on a new ingredient item
