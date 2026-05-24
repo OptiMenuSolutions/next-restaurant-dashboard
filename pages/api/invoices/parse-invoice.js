@@ -117,9 +117,30 @@ For these items:
 
 How to identify catch-weight: the WEIGHT column has a value AND the unit cost is clearly a per-lb price (typically $2-15/lb range for cheese/meat). If UNIT COST is clearly a per-case price ($20-200), it is NOT catch-weight even if a weight column value exists.
 
-VALIDATION CHECK — before outputting each item, verify:
-  quantity_shipped × invoice_price ≈ line_total (within rounding)
-  If NOT, re-examine your reading of invoice_price and quantity_shipped.
+MANDATORY MATH VALIDATION — do this for EVERY item before outputting:
+
+For standard (non-catch-weight) items:
+  expected_total = quantity_shipped × invoice_price
+  Does expected_total ≈ line_total? (within $0.10)
+  → YES: confidence = "high", proceed
+  → NO: You have a reading error. Try these in order:
+      1. Re-read invoice_price — did you grab a number from the wrong column or wrong row?
+      2. Re-read quantity_shipped — is it different from quantity_ordered?
+      3. Re-read line_total — is it actually from this row or the row above/below?
+      After correction, if expected_total still doesn't match, set confidence = "low" and explain.
+
+For catch-weight items:
+  expected_total = actual_weight × invoice_price
+  Does expected_total ≈ line_total? (within $0.10)
+  → YES: confidence = "high", proceed
+  → NO: Re-read actual_weight and invoice_price. If still wrong, set confidence = "low".
+
+NEVER output an item where the math is wrong and confidence is "high". A math mismatch ALWAYS means at least "medium" confidence, and requires a re-read attempt first.
+
+ROW ISOLATION — read one row at a time:
+Each line item's numbers (pack size, unit cost, extended) ONLY come from that item's own row.
+Never use a number from an adjacent row. If you are unsure which row a number belongs to, 
+trace it horizontally across the full row before assigning it.
 
 FOOD vs NON-FOOD:
 is_food = false for: cleaning supplies, paper products, plastic wrap, foil, garbage bags, gloves, equipment, fuel surcharges, delivery fees, taxes
@@ -346,8 +367,10 @@ function matchLineItem(lineItem, restaurantIngredients) {
   const top = scored[0];
 
   if (top.score >= AUTO_THRESHOLD) {
+    // Only block auto-confirm if a competitor is within 0.05 of the top score.
+    // A score-1.0 match is never blocked by a 0.85 competitor.
     const closeCompetitors = scored.filter(
-      (s, i) => i > 0 && s.score >= AUTO_THRESHOLD - 0.10
+      (s, i) => i > 0 && s.score >= top.score - 0.05
     );
     if (!closeCompetitors.length) {
       return { status: 'auto', matches: [top] };
