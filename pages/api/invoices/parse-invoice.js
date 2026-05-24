@@ -109,33 +109,89 @@ UNIT COST on this invoice format = price per CASE. invoice_price = the UNIT COST
 
 CATCH-WEIGHT ITEMS:
 Some items (block cheeses, deli meats) have a WEIGHT column with the actual delivered lbs.
-For these items:
-  catch_weight = true
-  actual_weight = the value in the WEIGHT column
-  invoice_price = the UNIT COST column value (which is $/lb for these items)
-  pack = null, size = null
+Use this decision tree for every item that has a WEIGHT column value:
 
-How to identify catch-weight: the WEIGHT column has a value AND the unit cost is clearly a per-lb price (typically $2-15/lb range for cheese/meat). If UNIT COST is clearly a per-case price ($20-200), it is NOT catch-weight even if a weight column value exists.
+  Step A: Try catch-weight math first: actual_weight × unit_cost_column ≈ line_total?
+    → YES: catch_weight = true, invoice_price = unit_cost_column value, actual_weight = weight column value, pack = null, size = null
+    → NO: Try standard math: quantity_shipped × unit_cost_column ≈ line_total?
+      → YES: catch_weight = false, invoice_price = unit_cost_column value (weight column is informational only)
+      → NO: You have a reading error — re-read all three values
 
-MANDATORY MATH VALIDATION — do this for EVERY item before outputting:
+The weight column value appearing in a row does NOT automatically mean catch_weight=true.
+Test the math. If actual_weight × unit_cost = line_total, it IS catch-weight.
+If qty_shipped × unit_cost = line_total, it is NOT catch-weight.
 
-For standard (non-catch-weight) items:
-  expected_total = quantity_shipped × invoice_price
-  Does expected_total ≈ line_total? (within $0.10)
-  → YES: confidence = "high", proceed
-  → NO: You have a reading error. Try these in order:
-      1. Re-read invoice_price — did you grab a number from the wrong column or wrong row?
-      2. Re-read quantity_shipped — is it different from quantity_ordered?
-      3. Re-read line_total — is it actually from this row or the row above/below?
-      After correction, if expected_total still doesn't match, set confidence = "low" and explain.
+X/Y FORMAT IN DESCRIPTIONS — always parse this as pack/size:
+When a product description contains a fraction-style notation like "5/2", "12/2.5", "1/10",
+this is ALWAYS pack/size — meaning X packs of Y lbs each per case.
+  pack = X (the number before the slash)
+  size = Y (the number after the slash)
+  size_unit = "lb" (default for seafood unless otherwise stated)
 
-For catch-weight items:
-  expected_total = actual_weight × invoice_price
-  Does expected_total ≈ line_total? (within $0.10)
-  → YES: confidence = "high", proceed
-  → NO: Re-read actual_weight and invoice_price. If still wrong, set confidence = "low".
+After reading pack/size from the X/Y notation, ALWAYS validate with this math:
+  total_lbs = quantity_shipped × pack × size
+  If total_lbs × invoice_price ≈ line_total → invoice_price is per lb (correct interpretation)
+  If quantity_shipped × invoice_price ≈ line_total → invoice_price is per case
 
-NEVER output an item where the math is wrong and confidence is "high". A math mismatch ALWAYS means at least "medium" confidence, and requires a re-read attempt first.
+Example — Ocean Seafood Depot format:
+  "4 CS  21-25 T/ON White India 5/2  UNIT PRICE: 6.50  AMOUNT: 260.00"
+  → pack=5, size=2, size_unit="lb"
+  → total_lbs = 4 × 5 × 2 = 40 lb
+  → 40 × $6.50 = $260.00 ✓ → invoice_price is per lb
+  → catch_weight = true, actual_weight = 40, invoice_price = 6.50
+
+  "3 CS  31-40 T/OFF White Ecuador 5/2  UNIT PRICE: 5.95  AMOUNT: 178.50"
+  → total_lbs = 3 × 5 × 2 = 30 lb
+  → 30 × $5.95 = $178.50 ✓ → invoice_price is per lb
+  → catch_weight = true, actual_weight = 30, invoice_price = 5.95
+
+  "40.4 LB  SALMON FILLET S/ON 3-4  UNIT PRICE: 9.99  AMOUNT: 403.60"
+  → quantity_unit = LB, no pack/size needed
+  → 40.4 × $9.99 = $403.60 ✓ → catch_weight = true, actual_weight = 40.4, invoice_price = 9.99
+
+  "1 CS  Squid Tubes 12/2.5  UNIT PRICE: 195.00  AMOUNT: 195.00"
+  → pack=12, size=2.5 → total_lbs = 1 × 12 × 2.5 = 30 lb → 30 × 195 ≠ 195
+  → test per-case: 1 × 195 = 195 ✓ → invoice_price IS per case here
+  → catch_weight = false, invoice_price = 195.00
+
+MANDATORY MATH VALIDATION AND DERIVATION — do this for EVERY item before outputting:
+
+Every row has 5 numbers: qty_shipped, pack, size, invoice_price, line_total.
+They satisfy one of these two equations:
+  Standard:      qty_shipped × invoice_price = line_total  (invoice_price = price per case)
+  Per-lb:        qty_shipped × pack × size × invoice_price = line_total  (invoice_price = price per lb)
+
+These numbers are mathematically locked. If you can read 4 of them clearly, derive the 5th.
+Never output a row as uncertain just because one number was hard to read — solve for it.
+
+DERIVATION RULES — use whichever applies:
+
+If you have qty, pack, size, invoice_price but line_total is unclear:
+  line_total = qty × pack × size × invoice_price  (per-lb)
+  OR line_total = qty × invoice_price  (per-case)
+  Test both; whichever gives a plausible dollar amount is correct.
+
+If you have qty, pack, size, line_total but invoice_price is unclear:
+  invoice_price = line_total / (qty × pack × size)  (per-lb) — verify it's a plausible $/lb
+  OR invoice_price = line_total / qty  (per-case) — verify it's a plausible $/case
+
+If you have pack, size, invoice_price, line_total but qty is unclear:
+  qty = line_total / (pack × size × invoice_price)  (per-lb)
+  OR qty = line_total / invoice_price  (per-case)
+  Round to nearest whole number; if not close to a whole number, try the other formula.
+
+If you have qty, invoice_price, line_total but pack/size are unclear:
+  Verify: qty × invoice_price ≈ line_total? → per-case pricing, pack/size are informational only
+  OR: total_lbs = line_total / invoice_price; average_lbs_per_case = total_lbs / qty
+
+CONFIDENCE RULES after derivation:
+  All 5 values consistent (read or derived) → confidence = "high"
+  4 values read cleanly, 1 derived and plausible → confidence = "high"
+  3 values read, 2 derived but math checks out → confidence = "medium"
+  Cannot make math work with any combination → confidence = "low", explain what you tried
+
+NEVER output confidence = "low" when the math is solvable. Low confidence is only for rows
+where you genuinely cannot read enough values to derive the rest.
 
 ROW ISOLATION — this is the most important rule:
 Before extracting ANY numbers for a line item, first read the complete horizontal text
@@ -267,23 +323,30 @@ function normalizeName(name) {
 
 // ─── Fuzzy match score between two strings ────────────────────────────────────
 
-function matchScore(a, b) {
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
+function matchScore(invoiceName, dbName) {
+  const na = normalizeName(invoiceName); // invoice (longer, more descriptive)
+  const nb = normalizeName(dbName);      // db ingredient name (often a short label)
   if (na === nb) return 1.0;
-  if (na.includes(nb) || nb.includes(na)) return 0.85;
+  if (nb.includes(na)) return 0.90; // invoice name fully contained in db name (rare)
 
-  const tokensA = new Set(na.split(' '));
-  const tokensB = new Set(nb.split(' '));
-  const intersection = [...tokensA].filter(t => tokensB.has(t)).length;
-  const union = new Set([...tokensA, ...tokensB]).size;
-  const jaccard = intersection / union;
+  // Token overlap: what fraction of db name tokens appear in the invoice name?
+  const tokensA = na.split(' ').filter(t => t.length > 2);
+  const tokensB = nb.split(' ').filter(t => t.length > 2);
+  const setA = new Set(tokensA);
 
-  const firstA = na.split(' ')[0];
-  const firstB = nb.split(' ')[0];
-  const firstBonus = firstA === firstB && firstA.length > 3 ? 0.15 : 0;
+  if (tokensB.length === 0) return 0;
 
-  return Math.min(1.0, jaccard + firstBonus);
+  const matched = tokensB.filter(t => setA.has(t)).length;
+  const dbCoverage = matched / tokensB.length; // fraction of db tokens found in invoice
+
+  if (dbCoverage === 0) return 0;
+
+  // Specificity bonus: longer db names that match are more trustworthy.
+  // "Extra Virgin Olive Oil" matching is more meaningful than "Butter" matching.
+  // Cap at 0.89 so only exact matches (1.0) and full-string containment (0.90) auto-confirm.
+  const specificityBonus = Math.min(0.15, tokensB.length * 0.04);
+
+  return Math.min(0.89, dbCoverage * 0.75 + specificityBonus);
 }
 
 // ─── Load restaurant ingredients with menu item usage ────────────────────────
@@ -514,10 +577,17 @@ export default async function handler(req, res) {
       const matchResult = matchLineItem(item, restaurantIngredients);
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
+      // needs_review: user must look at this item in the review UI
+      // skip_number_review: numbers are confirmed good — only show ingredient matching UI
       const needsReview = needsCostInput
         || item.confidence === 'low'
         || matchResult.status === 'ambiguous'
         || matchResult.status === 'new';
+
+      // Numbers are trustworthy when confidence is high or medium-with-derived-math.
+      // New ingredients still need review for name confirmation, but not number checking.
+      const skipNumberReview = item.confidence === 'high'
+        || (item.confidence === 'medium' && !needsCostInput);
 
       return {
         _id: `item_${idx}`,
@@ -532,7 +602,7 @@ export default async function handler(req, res) {
           : null,
         needs_cost_input: needsCostInput,
         needs_review: needsReview,
-        skip_number_review: item.confidence === 'high',
+        skip_number_review: skipNumberReview,
       };
     });
 
