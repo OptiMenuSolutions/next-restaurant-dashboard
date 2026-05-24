@@ -737,8 +737,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       // Step 3: parse each file
       // (streaming handles status updates from here)
       // Parse files sequentially so streaming status messages stay coherent
-      const parseResults = [];
-      for (const { file, publicUrl } of uploadResults) {
+      const parseResults = await Promise.all(uploadResults.map(async ({ file, publicUrl }) => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('restaurant_id', restaurantId);
@@ -758,7 +757,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          buffer = lines.pop(); // incomplete line stays in buffer
+          buffer = lines.pop();
           for (const line of lines) {
             if (!line.trim()) continue;
             try {
@@ -772,14 +771,13 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
               }
             } catch (parseErr) {
               if (parseErr.message.includes('Parse failed')) throw parseErr;
-              // Ignore JSON parse errors on partial lines
             }
           }
         }
 
         if (!resultData?.success) throw new Error(`Parse failed for ${file.name}`);
-        parseResults.push({ data: resultData, publicUrl });
-      }
+        return { data: resultData, publicUrl };
+      }));
 
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
       setParseStage({ msg: 'Grouping invoices...', sub: 'Merging pages from the same invoice' });
