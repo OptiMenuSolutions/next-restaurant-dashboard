@@ -136,6 +136,20 @@ function normalizeInvoiceNumber(raw) {
     .replace(/[Gg]/g, '6');
 }
 
+// Returns the fraction of digit positions that match between two numeric strings.
+// "2425707" vs "2429707" → 6/7 = 0.857
+function invoiceNumberSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (Math.abs(a.length - b.length) > 1) return 0; // length too different
+  let matches = 0;
+  for (let i = 0; i < maxLen; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+  return matches / maxLen;
+}
+
 function invoiceMergeKey(inv) {
   const supplier = (inv.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
   const number = normalizeInvoiceNumber(inv.invoice_number);
@@ -438,7 +452,7 @@ const NAV_ITEMS = [
 
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
-function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers', manageMode = false }) {
+function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers', manageMode = false, onForceNew }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
@@ -621,6 +635,12 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
           })}
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             <button className="pm-dismiss-btn" onClick={() => onDismiss(item._id)}>Skip this item</button>
+            <button
+              className="pm-new-confirm-btn"
+              onClick={() => onForceNew(item._id)}
+            >
+              + Create new ingredient
+            </button>
           </div>
         </div>
       )}
@@ -782,9 +802,53 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
       setParseStage({ msg: 'Grouping invoices...', sub: 'Merging pages from the same invoice' });
 
+      // First pass: collect all invoice numbers per supplier with their confidence
+      const invoiceNumbersBySupplier = {};
+      for (const { data } of parseResults) {
+        const supplier = (data.invoice.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
+        const number = normalizeInvoiceNumber(data.invoice.invoice_number);
+        const confidence = data.invoice.confidence?.invoice_number || 'low';
+        if (!number) continue;
+        if (!invoiceNumbersBySupplier[supplier]) invoiceNumbersBySupplier[supplier] = [];
+        invoiceNumbersBySupplier[supplier].push({ number, confidence });
+      }
+
+      // Second pass: for each supplier, find the most confident invoice number.
+      // Any other number from the same supplier that is ≥85% positionally similar
+      // gets corrected to the high-confidence read — almost certainly an OCR misread.
+      const canonicalNumbers = {}; // supplier → canonical invoice number
+      for (const [supplier, entries] of Object.entries(invoiceNumbersBySupplier)) {
+        const ranked = [...entries].sort((a, b) => {
+          const order = { high: 0, medium: 1, low: 2 };
+          return (order[a.confidence] ?? 2) - (order[b.confidence] ?? 2);
+        });
+        const best = ranked[0].number;
+        canonicalNumbers[supplier] = best;
+        // Log corrections for debugging
+        for (const { number, confidence } of ranked.slice(1)) {
+          const sim = invoiceNumberSimilarity(best, number);
+          if (sim >= 0.85 && number !== best) {
+            console.log(`[merge] Correcting invoice number "${number}" → "${best}" (similarity: ${(sim*100).toFixed(0)}%, best confidence: ${ranked[0].confidence})`);
+          }
+        }
+      }
+
+      // Helper: get the canonical invoice number for a parsed result
+      function getCanonicalNumber(invoice) {
+        const supplier = (invoice.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
+        const number = normalizeInvoiceNumber(invoice.invoice_number);
+        if (!number) return number;
+        const canonical = canonicalNumbers[supplier];
+        if (canonical && invoiceNumberSimilarity(canonical, number) >= 0.85) {
+          return canonical;
+        }
+        return number;
+      }
+
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
-        const key = invoiceMergeKey(data.invoice);
+        const canonicalNumber = getCanonicalNumber(data.invoice);
+        const key = invoiceMergeKey({ ...data.invoice, invoice_number: canonicalNumber });
         if (!groupMap[key]) {       
           const DEFAULT_COLUMNS = [
             { key: 'item_name_normalized', label: 'Item', editable: true, type: 'text' },
@@ -801,7 +865,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             key,
             invoice: {
               ...data.invoice,
-              invoice_number: normalizeInvoiceNumber(data.invoice.invoice_number),
+              invoice_number: canonicalNumber,
             },
             columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
@@ -885,6 +949,15 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
   function acknowledgeMissingPage() {
     setMissingPageWarning(null);
     setStep('review');
+  }
+
+  function forceNewIngredient(groupKey, itemId) {
+    updateLineItem(groupKey, itemId, {
+      match_status: 'new',
+      match_candidates: [],
+      selected_ingredient_id: null,
+      selected_ingredient_name: null,
+    });
   }
 
   function acceptLatePageMerge() {
