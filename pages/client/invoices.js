@@ -136,6 +136,34 @@ function normalizeInvoiceNumber(raw) {
     .replace(/[Gg]/g, '6');
 }
 
+function fuzzyMergeInvoiceNumbers(results) {
+  // Build a list of all unique normalized invoice numbers across this upload batch
+  const numbers = results
+    .map(r => normalizeInvoiceNumber(r.data.invoice.invoice_number))
+    .filter(Boolean);
+
+  // For each number, check if any other number in the batch differs by exactly 1 digit
+  // If so, pick the one that appears most often (or the first one) as canonical
+  const canonical = {};
+  for (const num of numbers) {
+    if (canonical[num]) continue; // already resolved
+    const similar = numbers.filter(other => {
+      if (other === num) return false;
+      if (other.length !== num.length) return false;
+      let diffs = 0;
+      for (let i = 0; i < num.length; i++) {
+        if (num[i] !== other[i]) diffs++;
+      }
+      return diffs <= 1;
+    });
+    // Map all similar numbers to this one
+    for (const s of similar) {
+      canonical[s] = num;
+    }
+  }
+  return canonical; // { wrongNumber: correctNumber }
+}
+
 // Returns the fraction of digit positions that match between two numeric strings.
 // "2425707" vs "2429707" → 6/7 = 0.857
 function invoiceNumberSimilarity(a, b) {
@@ -802,9 +830,13 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       // Step 4: match to inventory (already done server-side), group by supplier+invoice_number
       setParseStage({ msg: 'Grouping invoices...', sub: 'Merging pages from the same invoice' });
 
+      const numberCorrections = fuzzyMergeInvoiceNumbers(parseResults);
+
       const groupMap = {};
       for (const { data, publicUrl } of parseResults) {
-        const key = invoiceMergeKey(data.invoice);
+        const rawNumber = normalizeInvoiceNumber(data.invoice.invoice_number);
+        const correctedNumber = numberCorrections[rawNumber] || rawNumber;
+        const key = invoiceMergeKey({ ...data.invoice, invoice_number: correctedNumber });
         if (!groupMap[key]) {       
           const DEFAULT_COLUMNS = [
             { key: 'item_name_normalized', label: 'Item', editable: true, type: 'text' },
@@ -821,7 +853,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             key,
             invoice: {
               ...data.invoice,
-              invoice_number: normalizeInvoiceNumber(data.invoice.invoice_number),
+              invoice_number: correctedNumber,
             },
             columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
