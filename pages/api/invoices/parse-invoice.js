@@ -622,7 +622,15 @@ export default async function handler(req, res) {
       invoice: {
         supplier:       extracted.supplier,
         invoice_number: extracted.invoice_number
-          ? String(extracted.invoice_number).replace(/\s+/g, '')
+          ? String(extracted.invoice_number)
+              .trim()
+              .replace(/\s+/g, '')
+              .replace(/[Ss]/g, '5')
+              .replace(/[Oo]/g, '0')
+              .replace(/[Ii|l]/g, '1')
+              .replace(/[Bb]/g, '8')
+              .replace(/[Zz]/g, '2')
+              .replace(/[Gg]/g, '6')
           : null,
         invoice_date:   extracted.invoice_date,
         total_amount:   extracted.total_amount,

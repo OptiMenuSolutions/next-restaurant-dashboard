@@ -122,9 +122,23 @@ async function compressImage(file) {
 
 // ─── Merge key for grouping multi-page invoices ───────────────────────────────
 
+// Normalize OCR letter/digit confusions in invoice numbers.
+// Common misreads: S↔5, O↔0, I↔1, B↔8, Z↔2, G↔6, l↔1
+function normalizeInvoiceNumber(raw) {
+  return (raw || '')
+    .trim()
+    .replace(/\s+/g, '')           // strip spaces (e.g. "24319 55" → "2431955")
+    .replace(/[Ss]/g, '5')
+    .replace(/[Oo]/g, '0')
+    .replace(/[Ii|l]/g, '1')
+    .replace(/[Bb]/g, '8')
+    .replace(/[Zz]/g, '2')
+    .replace(/[Gg]/g, '6');
+}
+
 function invoiceMergeKey(inv) {
   const supplier = (inv.supplier || 'unknown').toLowerCase().trim().replace(/\s+/g, '_');
-  const number = (inv.invoice_number || '').trim();
+  const number = normalizeInvoiceNumber(inv.invoice_number);
   return number ? `${supplier}__${number}` : `${supplier}__${Date.now()}_${Math.random()}`;
 }
 
@@ -759,7 +773,10 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
           groupMap[key] = {
             key,
-            invoice: data.invoice,
+            invoice: {
+              ...data.invoice,
+              invoice_number: normalizeInvoiceNumber(data.invoice.invoice_number),
+            },
             columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
             duplicate: data.duplicate || false,
@@ -1122,18 +1139,6 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                           </div>
                         )}
 
-                        {/* Summary of skipped items */}
-                        {(() => {
-                          const skipped = activeGroup.lineItems.filter(i => i.skip_number_review && !i.dismissed).length;
-                          const needsReview = activeGroup.lineItems.filter(i => !i.skip_number_review && !i.dismissed).length;
-                          return (
-                            <div className="pm-summary">
-                              {needsReview > 0 && <div className="pm-sum-pill pm-sum-ambig">⚠ {needsReview} need number review</div>}
-                              {skipped > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {skipped} high confidence — skipped</div>}
-                            </div>
-                          );
-                        })()}
-
                         {/* Only medium/low confidence items — editable */}
                         {activeGroup.lineItems.filter(i => !i.skip_number_review && !i.dismissed).map(item => (
                           <LineItemCard
@@ -1186,26 +1191,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
                     {/* ── STEP 2: MATCHES ── */}
                     {reviewStep === 'matches' && (
-                      <>
-                        {/* Summary pills */}
-                        {(() => {
-                          const items = activeGroup.lineItems;
-                          const autoCount = items.filter(i => i.match_status === 'auto' && !i.dismissed).length;
-                          const ambigCount = items.filter(i => i.match_status === 'ambiguous' && !i.dismissed).length;
-                          const newCount = items.filter(i => i.match_status === 'new' && !i.dismissed).length;
-                          const noCostCount = items.filter(i => i.needs_cost_input && !i.dismissed).length;
-                          const numberCleared = items.filter(i => i.skip_number_review && !i.dismissed).length;
-                          return (
-                            <div className="pm-summary">
-                              {autoCount > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {autoCount} auto-matched</div>}
-                              {numberCleared > 0 && <div className="pm-sum-pill pm-sum-auto">✓ {numberCleared} numbers cleared</div>}
-                              {ambigCount > 0 && <div className="pm-sum-pill pm-sum-ambig">! {ambigCount} need review</div>}
-                              {newCount > 0 && <div className="pm-sum-pill pm-sum-new">+ {newCount} new</div>}
-                              {noCostCount > 0 && <div className="pm-sum-pill pm-sum-warn">⚠ {noCostCount} missing cost</div>}
-                            </div>
-                          );
-                        })()}
-
+                      <>                        
                         {/* Needs review */}
                         {activeGroup.lineItems.some(i => i.match_status !== 'auto' && !i.dismissed) && (
                           <>
