@@ -424,7 +424,7 @@ const NAV_ITEMS = [
 
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
-function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers' }) {
+function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers', manageMode = false }) {
   const matchColor = getMatchColor(item.match_status);
   const matchLabel = getMatchLabel(item.match_status);
   const autoMatchName = item.match_status === 'auto' ? item.match_candidates?.[0]?.name : null;
@@ -1141,6 +1141,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                             item={item}
                             columns={activeGroup.columns || []}
                             mode="numbers"
+                            manageMode={manageMode}
                             expanded={false}
                             onToggle={() => {}}
                             onSelectCandidate={() => {}}
@@ -1238,6 +1239,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                                 item={item}
                                 columns={activeGroup.columns || []}
                                 mode="matches"
+                                manageMode={manageMode}
                                 expanded={activeGroup._expandedId === item._id}
                                 onToggle={() => setInvoiceGroups(prev => prev.map(g => g.key !== activeGroup.key ? g : {
                                   ...g, _expandedId: g._expandedId === item._id ? null : item._id,
