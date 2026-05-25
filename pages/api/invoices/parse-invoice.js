@@ -185,8 +185,16 @@ PACK SIZE PARSING:
 "10.350"    → this is a WEIGHT value, not a pack size
 
 CATCH-WEIGHT ITEMS:
-If qty_unit is "LB" AND unit_price × qty ≈ line_total → catch_weight=true
-Common for seafood, deli meats, some cheeses billed by actual weight.
+The invoice table has a WEIGHT column. If a row has a non-empty value in the WEIGHT column:
+  - catch_weight=true
+  - actual_weight = the WEIGHT column value (lbs actually delivered)
+  - quantity_shipped = the SHP column value (number of cases)
+  - invoice_price = the UNIT COST column value (price per lb)
+  - Validate: actual_weight × invoice_price ≈ line_total
+Example: CHEESE MOZZARELLA WM LOAF — SHP=1, WEIGHT=50.610, UNIT COST=2.177, EXTENDED=110.18
+  → catch_weight=true, quantity_shipped=1, actual_weight=50.610, invoice_price=2.177, line_total=110.18
+Also applies when: qty_unit is "LB" AND unit_price × qty ≈ line_total (for formats without explicit WEIGHT column).
+Common for: cheeses (mozzarella, cheddar, jack, pepper jack), deli meats, seafood.
 
 MATH VALIDATION (within 5%):
   Standard:    qty × invoice_price ≈ line_total
