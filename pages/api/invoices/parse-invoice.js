@@ -85,7 +85,7 @@ async function callMistralOCR(fileBuffer, mimeType) {
   const body = {
     model: 'mistral-ocr-latest',
     document: documentPayload,
-    // No table_format — inline markdown is more reliable than referenced HTML files
+    table_format: 'html', // tables returned in page.tables[], we replace placeholders below
   };
 
   const response = await fetch('https://api.mistral.ai/v1/ocr', {
@@ -104,9 +104,24 @@ async function callMistralOCR(fileBuffer, mimeType) {
 
   const data = await response.json();
 
-  // Combine markdown from all pages
+  // Combine markdown from all pages, replacing table placeholders with actual table content
   const pages = data.pages || [];
-  const fullText = pages.map(p => p.markdown || '').join('\n\n');
+  const fullText = pages.map(p => {
+    let markdown = p.markdown || '';
+
+    // Replace [tbl-X.html](tbl-X.html) placeholders with actual HTML table content
+    if (p.tables && p.tables.length > 0) {
+      for (const table of p.tables) {
+        const tableId = table.id || '';
+        const placeholder = `[${tableId}](${tableId})`;
+        if (tableId && markdown.includes(placeholder)) {
+          markdown = markdown.replace(placeholder, table.content || '');
+        }
+      }
+    }
+
+    return markdown;
+  }).join('\n\n');
 
   console.log(`[parse-invoice] Mistral OCR: ${pages.length} page(s), ${fullText.length} chars`);
   console.log(`[parse-invoice] OCR full text:\n${fullText.slice(0, 2000)}`);
