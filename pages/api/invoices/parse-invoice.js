@@ -1,11 +1,11 @@
 // pages/api/invoices/parse-invoice.js
 // Two-pass invoice parser:
-//   Pass 1 (Google Document AI Invoice Parser):
-//     - Sends image to Document AI which handles OCR, layout, rotation natively
-//     - Returns structured entities: line items, supplier, dates, totals
-//     - Converts entities into clean structured rows for Pass 2
+//   Pass 1 (Mistral OCR):
+//     - Sends image/PDF to Mistral OCR API
+//     - Returns markdown with HTML tables, handles rotation natively
+//     - Simple API key auth, no service accounts needed
 //   Pass 2 (Claude text-only):
-//     - Receives structured rows from Document AI
+//     - Receives clean markdown from Mistral
 //     - Normalizes ingredient names, classifies food/non-food
 //     - Parses pack sizes, validates math, derives unit costs
 // Streams newline-delimited JSON events for live UI status updates.
@@ -59,232 +59,146 @@ function safeParseJSON(text) {
   return null;
 }
 
-// ─── PASS 1: Google Document AI ───────────────────────────────────────────────
-// Sends image to Document AI Invoice Parser.
-// Returns structured entities with confidence scores.
-// Handles rotation, layout, and table detection natively.
+// ─── PASS 1: Mistral OCR ──────────────────────────────────────────────────────
+// Sends image or PDF to Mistral OCR API.
+// Returns markdown text with HTML tables preserved.
+// Handles rotation, layout, and skew natively — no coordinate work needed.
 
-async function callDocumentAI(fileBuffer, mimeType) {
+async function callMistralOCR(fileBuffer, mimeType) {
   const base64Content = fileBuffer.toString('base64');
 
-  const requestBody = {
-    rawDocument: {
-      content: base64Content,
-      mimeType,
-    },
+  // Mistral OCR accepts either image_url or document types
+  // For base64 we use image_url with a data URI for images,
+  // or document_url with base64 for PDFs
+  const isPDF = mimeType === 'application/pdf';
+
+  const documentPayload = isPDF
+    ? {
+        type: 'document_url',
+        document_url: `data:application/pdf;base64,${base64Content}`,
+      }
+    : {
+        type: 'image_url',
+        image_url: `data:${mimeType};base64,${base64Content}`,
+      };
+
+  const body = {
+    model: 'mistral-ocr-latest',
+    document: documentPayload,
+    table_format: 'html', // preserves table structure as HTML
   };
 
-  const endpoint = process.env.GOOGLE_DOCUMENT_AI_ENDPOINT;
-  const apiKey = process.env.GOOGLE_VISION_API_KEY;
-
-  const response = await fetch(`${endpoint}?key=${apiKey}`, {
+  const response = await fetch('https://api.mistral.ai/v1/ocr', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+    },
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Document AI error ${response.status}: ${errText}`);
+    throw new Error(`Mistral OCR error ${response.status}: ${errText}`);
   }
 
   const data = await response.json();
-  return data.document;
-}
 
-// ─── PASS 1: Extract structured data from Document AI response ────────────────
-// Document AI returns entities with types like:
-//   supplier_name, invoice_id, invoice_date, total_amount
-//   line_item (with properties: description, quantity, unit_price, amount)
-// We extract these into a clean structure for Pass 2.
+  // Combine markdown from all pages
+  const pages = data.pages || [];
+  const fullText = pages.map(p => p.markdown || '').join('\n\n');
 
-function extractFromDocumentAI(document) {
-  const entities = document.entities || [];
+  console.log(`[parse-invoice] Mistral OCR: ${pages.length} page(s), ${fullText.length} chars`);
+  console.log(`[parse-invoice] OCR text preview:\n${fullText.slice(0, 500)}`);
 
-  // Extract top-level fields
-  let supplier = null;
-  let invoiceNumber = null;
-  let invoiceDate = null;
-  let totalAmount = null;
-  const lineItems = [];
-
-  // Helper to get entity text value
-  function entityText(entity) {
-    return entity.normalizedValue?.text || entity.mentionText || null;
-  }
-
-  for (const entity of entities) {
-    const type = entity.type;
-    const text = entityText(entity);
-    const confidence = entity.confidence || 0;
-
-    switch (type) {
-      case 'supplier_name':
-        if (!supplier || confidence > 0.5) supplier = text;
-        break;
-      case 'invoice_id':
-        if (!invoiceNumber || confidence > 0.5) invoiceNumber = text;
-        break;
-      case 'invoice_date':
-        // Prefer normalizedValue for ISO date
-        invoiceDate = entity.normalizedValue?.dateValue
-          ? `${entity.normalizedValue.dateValue.year}-${String(entity.normalizedValue.dateValue.month).padStart(2,'0')}-${String(entity.normalizedValue.dateValue.day).padStart(2,'0')}`
-          : text;
-        break;
-      case 'total_amount':
-        totalAmount = parseFloat(
-          (entity.normalizedValue?.moneyValue?.units || text || '0')
-            .toString()
-            .replace(/[^0-9.]/g, '')
-        ) || null;
-        break;
-      case 'line_item': {
-        // Line items have nested properties
-        const props = {};
-        for (const prop of (entity.properties || [])) {
-          const propText = entityText(prop);
-          props[prop.type] = propText;
-        }
-
-        const rawDescription = props['line_item/description'] || null;
-        const rawQty = props['line_item/quantity'] || null;
-        const rawUnitPrice = props['line_item/unit_price'] || null;
-        const rawAmount = props['line_item/amount'] || null;
-
-        // Parse numeric values
-        const qty = rawQty
-          ? parseFloat(rawQty.replace(/[^0-9.]/g, '')) || null
-          : null;
-        const unitPrice = rawUnitPrice
-          ? parseFloat(rawUnitPrice.replace(/[^0-9.]/g, '')) || null
-          : null;
-        const amount = rawAmount
-          ? parseFloat(rawAmount.replace(/[^0-9.]/g, '')) || null
-          : null;
-
-        if (rawDescription || unitPrice || amount) {
-          lineItems.push({
-            description: rawDescription,
-            quantity_raw: rawQty,
-            quantity: qty,
-            unit_price_raw: rawUnitPrice,
-            unit_price: unitPrice,
-            amount_raw: rawAmount,
-            amount,
-            confidence: entity.confidence || 0,
-          });
-        }
-        break;
-      }
-    }
-  }
-
-  // Also grab full text for context
-  const fullText = document.text || '';
-
-  console.log(`[parse-invoice] Document AI extracted: supplier="${supplier}" invoice="${invoiceNumber}" date="${invoiceDate}" total=${totalAmount} lineItems=${lineItems.length}`);
-
-  return { supplier, invoiceNumber, invoiceDate, totalAmount, lineItems, fullText };
+  return fullText;
 }
 
 // ─── PASS 2: Claude text-only parsing ────────────────────────────────────────
-// Receives structured data from Document AI.
-// Claude's job: normalize names, classify food/non-food, parse pack sizes,
-// validate math, detect catch-weight items.
+// Receives clean markdown from Mistral OCR.
+// Claude normalizes names, classifies food/non-food, parses pack sizes,
+// validates math, detects catch-weight items.
 
-async function parseWithClaude(docAIResult, restaurantId, res) {
-  streamStatus(res, 'Extracting line items...', 'Normalizing and classifying items');
-
-  const { supplier, invoiceNumber, invoiceDate, totalAmount, lineItems, fullText } = docAIResult;
-
-  // Format line items for Claude
-  const itemsText = lineItems.map((item, i) => {
-    const parts = [
-      `Item ${i + 1}:`,
-      item.description ? `  description: "${item.description}"` : null,
-      item.quantity_raw ? `  quantity: "${item.quantity_raw}"` : null,
-      item.unit_price_raw ? `  unit_price: "${item.unit_price_raw}"` : null,
-      item.amount_raw ? `  amount: "${item.amount_raw}"` : null,
-      item.confidence ? `  confidence: ${(item.confidence * 100).toFixed(0)}%` : null,
-    ].filter(Boolean);
-    return parts.join('\n');
-  }).join('\n\n');
-
-  // Include first 800 chars of full text for context Document AI may have missed
-  const contextText = fullText.slice(0, 800);
+async function parseWithClaude(ocrText, restaurantId, res) {
+  streamStatus(res, 'Extracting line items...', 'Parsing rows and computing unit costs');
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 16000,
     messages: [{
       role: 'user',
-      content: `You are an expert at parsing food service supplier invoice data. Google Document AI has already extracted the following structured data from an invoice. Your job is to normalize, classify, and validate this data.
+      content: `You are an expert at parsing food service supplier invoice data. Mistral OCR has extracted the following text from an invoice image. Parse it into structured JSON.
 
 CRITICAL: Output ONLY raw JSON. No preamble, no explanation, no markdown fences. Start with { and end with }.
 
 ════════════════════════════════════════
-DOCUMENT AI EXTRACTED HEADER
+OCR EXTRACTED TEXT
 ════════════════════════════════════════
-Supplier: ${supplier || 'unknown'}
-Invoice Number: ${invoiceNumber || 'unknown'}
-Invoice Date: ${invoiceDate || 'unknown'}
-Total Amount: ${totalAmount || 'unknown'}
+${ocrText}
 
 ════════════════════════════════════════
-DOCUMENT AI EXTRACTED LINE ITEMS
-════════════════════════════════════════
-${itemsText || 'No line items extracted'}
-
-════════════════════════════════════════
-FULL TEXT CONTEXT (first 800 chars)
-════════════════════════════════════════
-${contextText}
-
-════════════════════════════════════════
-YOUR TASKS
+PARSING RULES
 ════════════════════════════════════════
 
-For each line item:
+ROW CLASSIFICATION — classify each row before extracting:
+- "line_item": has a product description and at least one price/qty value → extract
+- "subtotal": SUBTOTAL / DRY TOTAL / CLR TOTAL / FRZ TOTAL / COOLER → SKIP
+- "total": INVOICE TOTAL / AMOUNT DUE / TOTAL INVOICE DUE → extract as total_amount only
+- "tax_fee": TAX / FUEL SURCHARGE / HANDLING → extract value only
+- "header": column labels → skip
+- "blank": empty → skip
 
-1. NORMALIZE the description to a clean chef-readable ingredient name:
-   "CHIX BRS BNLS SKNLS" → "Chicken Breast Boneless Skinless"
-   "MOZZ WM LF" → "Mozzarella Whole Milk Loaf"
-   "COUNTRY MA BUTTER SALTED SOLIDS" → "Country Manor Butter Salted Solids"
-   "21-25 T/ON White India 5/2" → "Shrimp 21-25 Count Tail-On White India Farmed"
-   "5-8inTubes Only Squid Ocean Tide 12/2.5" → "Squid Tubes 5-8 inch Wild New Zealand"
-   "SALMON FILLET S/ON 3-4 PREMIUM PC" → "Salmon Fillet Skin-On 3-4 lb Premium Cut"
-   Remove vendor codes, item numbers, brand names. Preserve size info.
+CRITICAL — SUBTOTAL CONTAMINATION:
+The last line item before a subtotal row has its OWN extended price, not the subtotal.
+Validate: line_total ≈ qty × invoice_price (within 5%).
+If line_total is dramatically larger than expected, you grabbed the subtotal — reject it.
 
-2. CLASSIFY food vs non-food:
-   is_food=false: cleaning supplies, paper goods, foil, bags, gloves, equipment, fees, taxes
-   is_food=true: all food ingredients, oils, condiments, beverages, dairy, produce, meat, seafood, spices
+UNIT PRICE:
+The column labeled "unit cost", "unit price", "price", or "each" = price per CASE.
+Set invoice_price = that value exactly. Do NOT divide it further.
 
-3. PARSE pack size from the description or quantity field:
-   "36 1 LB" → pack=36, size=1, size_unit="lb"
-   "4 1 GAL" → pack=4, size=1, size_unit="gal"
-   "8 6 LB" → pack=8, size=6, size_unit="lb"
-   "6 1 DZ" → pack=6, size=1, size_unit="dz"
-   "5/2" → pack=5, size=2, size_unit="lb"
-   "12/2.5" → pack=12, size=2.5, size_unit="lb"
-   "1/10" → pack=1, size=10, size_unit="lb"
-   "12 12 CT" → pack=12, size=12, size_unit="ct"
+PACK SIZE PARSING:
+"36 1 LB"   → pack=36, size=1, size_unit="lb"
+"4 1 GAL"   → pack=4, size=1, size_unit="gal"
+"8 6 LB"    → pack=8, size=6, size_unit="lb"
+"6 1 DZ"    → pack=6, size=1, size_unit="dz"
+"1 50 LB"   → pack=1, size=50, size_unit="lb"
+"5/2"       → pack=5, size=2, size_unit="lb"
+"12/2.5"    → pack=12, size=2.5, size_unit="lb"
+"1/10"      → pack=1, size=10, size_unit="lb"
+"12 12 CT"  → pack=12, size=12, size_unit="ct"
+"10.350"    → this is a WEIGHT value, not a pack size
 
-4. DETERMINE invoice_price (price per case):
-   The unit_price from Document AI is the price per CASE. Use it directly as invoice_price.
+CATCH-WEIGHT ITEMS:
+If qty_unit is "LB" AND unit_price × qty ≈ line_total → catch_weight=true
+Common for seafood, deli meats, some cheeses billed by actual weight.
 
-5. DETECT catch-weight items:
-   If qty_unit is "LB" AND unit_price × quantity ≈ amount → catch_weight=true
-   Common for seafood (salmon, tuna), deli meats, some cheeses
+MATH VALIDATION (within 5%):
+  Standard:    qty × invoice_price ≈ line_total
+  Per-unit:    qty × pack × size × invoice_price ≈ line_total
+  Catch-weight: actual_weight × invoice_price ≈ line_total
+Derive missing values from the others. If none work → confidence="low"
 
-6. VALIDATE math (within 5%):
-   Standard: quantity × invoice_price ≈ amount
-   Per-unit: quantity × pack × size × invoice_price ≈ amount
-   Catch-weight: actual_weight × invoice_price ≈ amount
-   If math fails, set confidence="low"
+IGNORE: handwritten annotations, circled numbers, crossed-out values, watermarks, signatures.
 
-7. SKIP subtotal/total rows — Document AI sometimes includes section subtotals as line items.
-   Signs: description contains "SUBTOTAL", "TOTAL", "DRY TOTAL", "CLR TOTAL", "FRZ TOTAL",
-   or amount is much larger than any individual item.
+FOOD vs NON-FOOD:
+is_food=false: cleaning supplies, paper goods, foil, bags, gloves, equipment, fees, taxes
+is_food=true: all food, oils, condiments, beverages, dairy, produce, meat, seafood, spices
+
+INGREDIENT NAME NORMALIZATION:
+"CHIX BRS BNLS SKNLS" → "Chicken Breast Boneless Skinless"
+"MOZZ WM LF" → "Mozzarella Whole Milk Loaf"
+"COUNTRY MA BUTTER SALTED SOLIDS" → "Country Manor Butter Salted Solids"
+"21-25 T/ON White India 5/2" → "Shrimp 21-25 Count Tail-On White India Farmed"
+"5-8inTubes Only Squid Ocean Tide 12/2.5" → "Squid Tubes 5-8 inch Wild New Zealand"
+"SALMON FILLET S/ON 3-4 PREMIUM PC" → "Salmon Fillet Skin-On 3-4 lb Premium Cut"
+Remove vendor codes, item numbers, brand names from the normalized name.
+Preserve size info (e.g. "7oz", "21-25ct").
+
+CONFIDENCE:
+"high"   = all values readable and math checks out
+"medium" = one value derived, math checks out
+"low"    = math fails or values unreadable
 
 ════════════════════════════════════════
 OUTPUT FORMAT
@@ -295,7 +209,7 @@ OUTPUT FORMAT
   "invoice_number": "string or null",
   "invoice_date": "YYYY-MM-DD or null",
   "total_amount": number or null,
-  "format_notes": "brief description of any parsing issues",
+  "format_notes": "brief description of format and any issues",
   "columns": [
     { "key": "item_name_normalized", "label": "Item", "editable": true, "type": "text" },
     { "key": "quantity_shipped", "label": "Shipped", "editable": true, "type": "number" },
@@ -308,7 +222,7 @@ OUTPUT FORMAT
   ],
   "line_items": [
     {
-      "item_name_raw": "exact description from Document AI",
+      "item_name_raw": "exact text from OCR",
       "item_name_normalized": "clean chef-readable name",
       "is_food": boolean,
       "quantity_ordered": number or null,
@@ -552,7 +466,6 @@ export default async function handler(req, res) {
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
 
-  // Document AI supports PDF natively — no longer rejecting PDFs
   const mimeType = isPDF ? 'application/pdf'
     : ext === '.png' ? 'image/png'
     : ext === '.webp' ? 'image/webp'
@@ -569,25 +482,24 @@ export default async function handler(req, res) {
   try {
     const fileBuffer = fs.readFileSync(file.filepath);
 
-    // ── Pass 1: Document AI ───────────────────────────────────────────────────
-    streamStatus(res, `Reading ${fileName}...`, 'Extracting with Google Document AI');
+    // ── Pass 1: Mistral OCR ───────────────────────────────────────────────────
+    streamStatus(res, `Reading ${fileName}...`, 'Extracting text with Mistral OCR');
 
     const t0 = Date.now();
-    const document = await callDocumentAI(fileBuffer, mimeType);
-    const docAIResult = extractFromDocumentAI(document);
-    console.log(`[parse-invoice] Document AI done in ${Date.now() - t0}ms — ${docAIResult.lineItems.length} raw line items`);
+    const ocrText = await callMistralOCR(fileBuffer, mimeType);
+    console.log(`[parse-invoice] Mistral OCR done in ${Date.now() - t0}ms`);
 
-    if (!docAIResult.lineItems.length && !docAIResult.fullText) {
+    if (!ocrText || ocrText.trim().length < 20) {
       try { fs.unlinkSync(file.filepath); } catch {}
       streamEvent(res, { type: 'error', error: 'Could not read invoice. Try a clearer photo.' });
       return res.end();
     }
 
-    streamStatus(res, 'Normalizing items...', `${docAIResult.lineItems.length} items found`);
+    streamStatus(res, 'OCR complete', 'Parsing line items...');
 
-    // ── Pass 2: Claude normalization ──────────────────────────────────────────
+    // ── Pass 2: Claude parsing ────────────────────────────────────────────────
     const t1 = Date.now();
-    const extracted = await parseWithClaude(docAIResult, restaurantId, res);
+    const extracted = await parseWithClaude(ocrText, restaurantId, res);
     console.log(`[parse-invoice] Pass 2 done in ${Date.now() - t1}ms`);
 
     if (!extracted) {
