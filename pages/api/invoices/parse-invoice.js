@@ -85,7 +85,7 @@ async function callMistralOCR(fileBuffer, mimeType) {
   const body = {
     model: 'mistral-ocr-latest',
     document: documentPayload,
-    table_format: 'html', // preserves table structure as HTML
+    // No table_format — inline markdown is more reliable than referenced HTML files
   };
 
   const response = await fetch('https://api.mistral.ai/v1/ocr', {
@@ -109,7 +109,7 @@ async function callMistralOCR(fileBuffer, mimeType) {
   const fullText = pages.map(p => p.markdown || '').join('\n\n');
 
   console.log(`[parse-invoice] Mistral OCR: ${pages.length} page(s), ${fullText.length} chars`);
-  console.log(`[parse-invoice] OCR text preview:\n${fullText.slice(0, 500)}`);
+  console.log(`[parse-invoice] OCR full text:\n${fullText.slice(0, 2000)}`);
 
   return fullText;
 }
