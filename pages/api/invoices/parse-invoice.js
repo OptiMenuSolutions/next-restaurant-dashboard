@@ -287,6 +287,75 @@ OUTPUT FORMAT
   return safeParseJSON(raw);
 }
 
+// ─── Pass 2.5: Claude Haiku cost sanity check ─────────────────────────────────
+// Receives all food line items after Pass 2.
+// Flags items with implausible unit costs, wrong units, or math failures.
+// Returns an array of flags indexed to match foodItems array.
+
+async function sanityCheckCosts(foodItems, restaurantId) {
+  if (!foodItems.length) return [];
+
+  const itemList = foodItems.map((item, idx) => {
+    const pack = item.pack ?? '?';
+    const size = item.size ?? '?';
+    const sizeUnit = item.size_unit ?? '?';
+    const price = item.invoice_price ?? '?';
+    const lineTotal = item.line_total ?? '?';
+    const qty = item.quantity_shipped ?? item.quantity_ordered ?? '?';
+    const catchWeight = item.catch_weight ? `catch-weight: ${item.actual_weight ?? '?'} lb` : null;
+
+    return `${idx}: "${item.item_name_normalized || item.item_name_raw}" | qty=${qty} | pack=${pack} | size=${size} ${sizeUnit} | case_price=$${price} | line_total=$${lineTotal}${catchWeight ? ` | ${catchWeight}` : ''}`;
+  }).join('\n');
+
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 2000,
+    messages: [{
+      role: 'user',
+      content: `You are a food service cost expert reviewing parsed invoice line items for errors.
+
+For each item, check:
+1. MATH: Does qty × case_price ≈ line_total (within 10%)? For catch-weight: actual_weight × case_price ≈ line_total?
+2. UNIT COST PLAUSIBILITY: Is the implied cost-per-lb/each reasonable for this ingredient type?
+3. UNIT SANITY: Does the unit make sense for the ingredient (e.g. "gal" for chicken is wrong)?
+
+Common errors to catch:
+- case_price is 10x too low (e.g. shrimp at $0.65/case when line_total implies $6.50)
+- LBS column grabbed instead of quantity (e.g. qty=90 when it should be 9 cases)  
+- Wrong unit assigned (e.g. gal for chicken wings, oz where lb expected)
+- Line total grabbed from subtotal row (dramatically too high)
+
+ITEMS TO CHECK:
+${itemList}
+
+Return ONLY raw JSON. No markdown, no explanation.
+Flag ONLY items that have a clear problem. Items that look correct should NOT appear in output.
+
+{
+  "flags": [
+    {
+      "index": 0,
+      "reason": "brief description of the problem"
+    }
+  ]
+}`,
+    }],
+  });
+
+  await logAiUsage({
+    feature: 'invoice_sanity',
+    model: 'claude-haiku-4-5-20251001',
+    usage: response.usage,
+    restaurantId,
+  });
+
+  console.log(`[parse-invoice] Pass 2.5 sanity: input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+
+  const raw = response.content[0]?.text || '{}';
+  const parsed = safeParseJSON(raw);
+  return parsed?.flags || [];
+}
+
 // ─── Normalize ingredient name for matching ───────────────────────────────────
 
 function normalizeName(name) {
@@ -604,6 +673,21 @@ export default async function handler(req, res) {
     const foodItems    = readableItems.filter(i => i.is_food);
     const nonFoodItems = readableItems.filter(i => !i.is_food);
 
+    // ── Pass 2.5: Cost sanity check ───────────────────────────────────────────
+    streamStatus(res, 'Checking costs for errors...', `Reviewing ${foodItems.length} food items`);
+
+    const sanityFlags = await sanityCheckCosts(foodItems, restaurantId);
+    const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
+    const flagReasonMap = {};
+    for (const f of sanityFlags) flagReasonMap[f.index] = f.reason;
+
+    if (sanityFlags.length > 0) {
+      streamStatus(res,
+        `${sanityFlags.length} item${sanityFlags.length !== 1 ? 's' : ''} flagged for review`,
+        'Possible cost or unit errors detected'
+      );
+    }
+
     // ── Pass 3: Claude ingredient matching (batched) ───────────────────────────
     streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
 
@@ -617,17 +701,24 @@ export default async function handler(req, res) {
       const matchResult = matchResults[idx] || { status: 'new', matches: [] };
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
+      const isSanityFlagged = flaggedIndexes.has(idx);
+      const sanityReason    = flagReasonMap[idx] || null;
+
       const needsReview = needsCostInput
         || item.confidence === 'low'
+        || isSanityFlagged
         || matchResult.status === 'ambiguous'
         || matchResult.status === 'new';
 
-      const skipNumberReview = item.confidence === 'high'
-        || (item.confidence === 'medium' && !needsCostInput);
+      const skipNumberReview = !isSanityFlagged
+        && (item.confidence === 'high'
+          || (item.confidence === 'medium' && !needsCostInput));
 
       lineItemsWithMatches.push({
         _id: `item_${idx}`,
         ...item,
+        sanity_flagged:           isSanityFlagged,
+        sanity_reason:            sanityReason,
         match_status:             matchResult.status,
         match_candidates:         matchResult.matches,
         selected_ingredient_id:   matchResult.status === 'auto' ? matchResult.matches[0]?.id   : null,

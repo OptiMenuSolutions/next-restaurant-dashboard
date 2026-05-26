@@ -889,7 +889,11 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         const correctedNumber = numberCorrections[rawNumber] || rawNumber;
         const key = invoiceMergeKey({ ...data.invoice, invoice_number: correctedNumber });
         if (!rawLineItemSumByGroup[key]) rawLineItemSumByGroup[key] = 0;
-        rawLineItemSumByGroup[key] += (data.line_items || []).reduce((s, i) => s + (i.line_total || 0), 0);
+        // Only sum food items — non-food is filtered out before display,
+        // so comparing all items to the invoice total triggers false positives.
+        rawLineItemSumByGroup[key] += (data.line_items || [])
+          .filter(i => i.is_food)
+          .reduce((s, i) => s + (i.line_total || 0), 0);
       }
 
       for (const g of groups) {
