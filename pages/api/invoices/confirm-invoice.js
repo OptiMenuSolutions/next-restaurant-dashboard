@@ -70,7 +70,7 @@ export default async function handler(req, res) {
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
   catch { return res.status(400).json({ error: 'Invalid JSON body' }); }
 
-  const { restaurant_id, invoice, line_items, file_url, append_to_invoice_id } = body;
+  const { restaurant_id, invoice, line_items, file_url, ocr_text, append_to_invoice_id } = body;
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
@@ -105,6 +105,7 @@ export default async function handler(req, res) {
           date:       invoice.invoice_date   || null,
           amount:     invoice.total_amount   || null,
           file_url:   file_url               || null,
+          ocr_text:   ocr_text               || null,
           is_sample:  false,
         })
         .select('id')

@@ -857,6 +857,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             },
             columns: data.invoice.columns?.length > 0 ? data.invoice.columns : DEFAULT_COLUMNS,
             fileUrl: publicUrl,
+            ocrText: data.ocr_text || null,
             duplicate: data.duplicate || false,
             lineItems: [],
           };
@@ -881,11 +882,21 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
       // Check for missing pages: if invoice total is high-confidence and
       // line item sum differs by more than 2%, warn before proceeding.
       const warnings = [];
+      // Build a map of raw parse results (food + non-food) keyed by group key for total validation
+      const rawLineItemSumByGroup = {};
+      for (const { data } of parseResults) {
+        const rawNumber = normalizeInvoiceNumber(data.invoice.invoice_number);
+        const correctedNumber = numberCorrections[rawNumber] || rawNumber;
+        const key = invoiceMergeKey({ ...data.invoice, invoice_number: correctedNumber });
+        if (!rawLineItemSumByGroup[key]) rawLineItemSumByGroup[key] = 0;
+        rawLineItemSumByGroup[key] += (data.line_items || []).reduce((s, i) => s + (i.line_total || 0), 0);
+      }
+
       for (const g of groups) {
         const totalAmount = g.invoice.total_amount;
         const totalConf = g.invoice.confidence?.total_amount;
         if (totalAmount && totalConf === 'high') {
-          const lineSum = g.lineItems.reduce((s, i) => s + (i.line_total || 0), 0);
+          const lineSum = rawLineItemSumByGroup[g.key] ?? g.lineItems.reduce((s, i) => s + (i.line_total || 0), 0);
           const diff = Math.abs(lineSum - totalAmount);
           if (diff / totalAmount > 0.02) {
             warnings.push({ groupKey: g.key, invoiceTotal: totalAmount, lineTotal: lineSum });
@@ -993,6 +1004,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             invoice:              group.invoice,
             line_items:           group.lineItems,
             file_url:             group.fileUrl,
+            ocr_text:             group.ocrText || null,
             append_to_invoice_id: group.appendToInvoiceId || null,
           }),
         });
@@ -1541,6 +1553,7 @@ export default function ClientInvoices() {
   const [confirmMsg, setConfirmMsg] = useState('');
   const [mobTab, setMobTab] = useState('invoices');
   const [showRawNames, setShowRawNames] = useState(false);
+  const [selectedInvoiceOcrText, setSelectedInvoiceOcrText] = useState(null);
 
   const tabs = ['Dashboard', 'Invoices', 'Ingredients', 'Menu Items', 'Analytics'];
   const isTour = router.query.tour === 'true';
@@ -1585,7 +1598,12 @@ export default function ClientInvoices() {
     setSelectedInvoice(invoice);
     setLoadingDetail(true);
     if (!isMobile) router.replace(`/client/invoices?selected=${invoice.id}`, undefined, { shallow: true });
-    const { data } = await supabase.from('invoice_items').select('*, ingredients(name, unit)').eq('invoice_id', invoice.id).order('item_name');
+    const [{ data }, { data: invoiceDetail }] = await Promise.all([
+      supabase.from('invoice_items').select('*, ingredients(name, unit)').eq('invoice_id', invoice.id).order('item_name'),
+      supabase.from('invoices').select('ocr_text').eq('id', invoice.id).single(),
+    ]);
+    if (invoiceDetail?.ocr_text) setSelectedInvoiceOcrText(invoiceDetail.ocr_text);
+    else setSelectedInvoiceOcrText(null);
     setInvoiceItems(data || []);
     setLoadingDetail(false);
   }
@@ -2139,7 +2157,7 @@ export default function ClientInvoices() {
               {selectedInvoice && (
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', padding: 'clamp(6px,.6vw,10px) clamp(10px,1vw,16px)', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-                    <button onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); router.replace('/client/invoices', undefined, { shallow: true }); }}
+                    <button onClick={() => { setSelectedInvoice(null); setInvoiceItems([]); setSelectedInvoiceOcrText(null); router.replace('/client/invoices', undefined, { shallow: true }); }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--accent)', fontFamily: "'Inter',sans-serif", display: 'flex', alignItems: 'center', gap: 4, padding: 0 }}>
                       ← Back to overview
                     </button>
@@ -2173,6 +2191,23 @@ export default function ClientInvoices() {
                             <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>No file</div>
                           </div>
                         )}
+                        {selectedInvoiceOcrText && (
+                          <button
+                            onClick={() => {
+                              const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${selectedInvoice.supplier || 'Invoice'} · ${selectedInvoice.number || ''}</title><style>body{font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 20px;color:#222;line-height:1.6}table{border-collapse:collapse;width:100%;margin:12px 0}td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5;font-weight:600}h1,h2,h3{margin-top:1.4em}pre{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto}</style></head><body>${selectedInvoiceOcrText.replace(/\n/g, '<br>')}</body></html>`;
+                              const blob = new Blob([html], { type: 'text/html' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.target = '_blank';
+                              a.click();
+                              setTimeout(() => URL.revokeObjectURL(url), 1000);
+                            }}
+                            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'clamp(4px,.3vw,6px)', padding: 'clamp(6px,.6vh,9px) clamp(8px,.7vw,10px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer', flexShrink: 0, minWidth: 'clamp(44px,4vw,60px)', fontFamily: 'Inter,sans-serif' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <div style={{ fontSize: 'clamp(7px,.55vw,9px)', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Export</div>
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -2185,7 +2220,7 @@ export default function ClientInvoices() {
                         </div>
                       ) : invoiceItems.length > 0 ? (
                         <>
-                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)', background: 'var(--bg-elevated)', borderRadius: 'clamp(4px,.3vw,6px)', marginBottom: 4, flexShrink: 0 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 5, padding: 'clamp(4px,.4vh,6px) clamp(8px,.7vw,12px)', background: 'var(--bg-elevated)', borderRadius: 'clamp(4px,.3vw,6px)', marginBottom: 4, flexShrink: 0 }}>
                             <div style={{ fontSize: 'clamp(7px,.58vw,10px)', fontWeight: 600, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                               onClick={() => setShowRawNames(r => !r)}>
                               Item {showRawNames ? '↕ invoice' : '↕ normalized'}
@@ -2203,13 +2238,18 @@ export default function ClientInvoices() {
                           </div>
                           <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                             {invoiceItems.map(item => (
-                              <div key={item.id} className="inv-item-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 80px', gap: 5, padding: 'clamp(5px,.5vh,8px) clamp(8px,.7vw,12px)', borderBottom: '1px solid var(--border-subtle)', alignItems: 'center' }}>
-                                <div className="inv-itd name" style={{ cursor: item.ingredients ? 'pointer' : 'default' }}
-                                  onClick={() => item.ingredients && setShowRawNames(r => !r)}
-                                  title={showRawNames ? item.ingredients?.name : item.item_name}>
+                              <div key={item.id} className="inv-item-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', gap: 5, padding: 'clamp(5px,.5vh,8px) clamp(8px,.7vw,12px)', borderBottom: '1px solid var(--border-subtle)', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                  <div className="inv-itd name" style={{ cursor: item.ingredients ? 'pointer' : 'default', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                    onClick={() => item.ingredients && setShowRawNames(r => !r)}
+                                    title={showRawNames ? item.ingredients?.name : item.item_name}>
+                                    {item.ingredients
+                                      ? (showRawNames ? item.item_name : item.ingredients.name) || '—'
+                                      : item.item_name || '—'}
+                                  </div>
                                   {item.ingredients
-                                    ? (showRawNames ? item.item_name : item.ingredients.name) || '—'
-                                    : item.item_name || '—'}
+                                    ? <span className="inv-linked" style={{ flexShrink: 0 }}>Linked</span>
+                                    : <span className="inv-unlinked" style={{ flexShrink: 0 }}>Unlinked</span>}
                                 </div>
                                 <div className="inv-itd" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                                   {item.quantity ?? '—'}
@@ -2224,7 +2264,6 @@ export default function ClientInvoices() {
                                   {item.unit || ''}
                                 </div>
                                 <div className="inv-itd val">{formatCurrency(calculateItemTotal(item))}</div>
-                                <div>{item.ingredients ? <span className="inv-linked">Linked</span> : <span className="inv-unlinked">Unlinked</span>}</div>
                               </div>
                             ))}
                           </div>

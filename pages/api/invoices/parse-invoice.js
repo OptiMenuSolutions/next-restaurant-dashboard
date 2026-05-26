@@ -676,6 +676,7 @@ export default async function handler(req, res) {
       data: {
         success:   true,
         file_url:  fileUrl || null,
+        ocr_text:  ocrText || null,
         duplicate: duplicateCheck || false,
         invoice: {
           supplier:       extracted.supplier,
