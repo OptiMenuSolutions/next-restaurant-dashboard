@@ -297,26 +297,88 @@ function normalizeName(name) {
     .trim();
 }
 
-// ─── Fuzzy match score ────────────────────────────────────────────────────────
+// ─── Pass 3: Claude-powered ingredient matching ───────────────────────────────
+// Sends all food line items + the restaurant's ingredient library to Claude Haiku.
+// Returns a match decision for each item: auto / ambiguous / new + candidates.
 
-function matchScore(invoiceName, dbName) {
-  const na = normalizeName(invoiceName);
-  const nb = normalizeName(dbName);
-  if (na === nb) return 1.0;
-  if (nb.includes(na)) return 0.90;
+async function matchWithClaude(foodItems, restaurantIngredients, restaurantId) {
+  if (!restaurantIngredients.length) {
+    return foodItems.map(item => ({ status: 'new', matches: [] }));
+  }
 
-  const tokensA = na.split(' ').filter(t => t.length > 2);
-  const tokensB = nb.split(' ').filter(t => t.length > 2);
-  const setA = new Set(tokensA);
+  const libraryList = restaurantIngredients
+    .map(ing => `- id:${ing.id} | "${ing.name}" | unit:${ing.unit}`)
+    .join('\n');
 
-  if (tokensB.length === 0) return 0;
+  const itemList = foodItems
+    .map((item, idx) => `${idx}: "${item.item_name_normalized || item.item_name_raw}"`)
+    .join('\n');
 
-  const matched = tokensB.filter(t => setA.has(t)).length;
-  const dbCoverage = matched / tokensB.length;
-  if (dbCoverage === 0) return 0;
+  const response = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4000,
+    messages: [{
+      role: 'user',
+      content: `You are matching invoice line items to a restaurant's ingredient library.
 
-  const specificityBonus = Math.min(0.15, tokensB.length * 0.04);
-  return Math.min(0.89, dbCoverage * 0.75 + specificityBonus);
+INGREDIENT LIBRARY:
+${libraryList}
+
+INVOICE ITEMS TO MATCH (index: name):
+${itemList}
+
+For each invoice item, decide:
+- "auto": clearly the same ingredient (same thing, just different phrasing, abbreviation, or brand noise). Pick exactly 1 match.
+- "ambiguous": plausibly matches 2–5 library ingredients but you're not certain. List up to 5 candidates by confidence order.
+- "new": no reasonable match exists in the library.
+
+RULES:
+- Be liberal with "auto" — "Chicken Breast BNLS SKNLS" → "Chicken Breast" is auto.
+- Synonyms count: "Canola Oil" → "Frying Oil" is ambiguous, not new.
+- Size/pack noise is irrelevant: "Mozzarella 5lb" → "Mozzarella" is auto.
+- Only use ingredient IDs from the library above.
+- Return ONLY raw JSON. No markdown, no explanation.
+
+OUTPUT FORMAT:
+{
+  "matches": [
+    {
+      "index": 0,
+      "status": "auto" | "ambiguous" | "new",
+      "candidates": [
+        { "id": "<ingredient_id>", "name": "<ingredient_name>", "score": 0.0–1.0 }
+      ]
+    }
+  ]
+}`,
+    }],
+  });
+
+  await logAiUsage({
+    feature: 'invoice_match',
+    model: 'claude-haiku-4-5-20251001',
+    usage: response.usage,
+    restaurantId,
+  });
+
+  console.log(`[parse-invoice] Pass 3 match: input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+
+  const raw = response.content[0]?.text || '{}';
+  const parsed = safeParseJSON(raw);
+  const matchResults = parsed?.matches || [];
+
+  // Map results back to the same shape the rest of the code expects
+  return foodItems.map((_, idx) => {
+    const result = matchResults.find(m => m.index === idx);
+    if (!result) return { status: 'new', matches: [] };
+
+    const enriched = (result.candidates || []).map(c => {
+      const libIng = restaurantIngredients.find(i => i.id === c.id);
+      return libIng ? { ...libIng, score: c.score } : null;
+    }).filter(Boolean);
+
+    return { status: result.status, matches: enriched };
+  });
 }
 
 // ─── Load restaurant ingredients ─────────────────────────────────────────────
@@ -377,34 +439,7 @@ async function loadRestaurantIngredients(restaurantId) {
   }));
 }
 
-// ─── Match line item against ingredients ──────────────────────────────────────
-
-const AUTO_THRESHOLD      = 0.90;
-const AMBIGUOUS_THRESHOLD = 0.45;
-
-function matchLineItem(lineItem, restaurantIngredients) {
-  if (!restaurantIngredients.length) return { status: 'new', matches: [] };
-  if (!lineItem.is_food) return { status: 'non_food', matches: [] };
-
-  const scored = restaurantIngredients
-    .map(ing => ({
-      ...ing,
-      score: matchScore(lineItem.item_name_normalized || lineItem.item_name_raw, ing.name),
-    }))
-    .filter(ing => ing.score >= AMBIGUOUS_THRESHOLD)
-    .sort((a, b) => b.score - a.score);
-
-  if (!scored.length) return { status: 'new', matches: [] };
-
-  const top = scored[0];
-
-  if (top.score >= AUTO_THRESHOLD) {
-    const closeCompetitors = scored.filter((s, i) => i > 0 && s.score >= top.score - 0.05);
-    if (!closeCompetitors.length) return { status: 'auto', matches: [top] };
-  }
-
-  return { status: 'ambiguous', matches: scored.slice(0, 5) };
-}
+// matchLineItem replaced by batched matchWithClaude() above
 
 // ─── Invoice number normalization ─────────────────────────────────────────────
 
@@ -554,7 +589,7 @@ export default async function handler(req, res) {
     }
 
     // ── Load ingredients + match ──────────────────────────────────────────────
-    streamStatus(res, 'Matching to your ingredient library...', 'Comparing against ingredients you already track');
+    // (matching status now emitted inside Pass 3 call)
 
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
 
@@ -569,12 +604,17 @@ export default async function handler(req, res) {
     const foodItems    = readableItems.filter(i => i.is_food);
     const nonFoodItems = readableItems.filter(i => !i.is_food);
 
+    // ── Pass 3: Claude ingredient matching (batched) ───────────────────────────
+    streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
+
+    const matchResults = await matchWithClaude(foodItems, restaurantIngredients, restaurantId);
+
     let autoCount = 0, newCount = 0, ambiguousCount = 0;
     const lineItemsWithMatches = [];
 
     for (let idx = 0; idx < foodItems.length; idx++) {
       const item = foodItems[idx];
-      const matchResult = matchLineItem(item, restaurantIngredients);
+      const matchResult = matchResults[idx] || { status: 'new', matches: [] };
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
       const needsReview = needsCostInput
