@@ -1387,6 +1387,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
                                 onDismiss={() => dismissItem(activeGroup.key, item._id)}
                                 onUpdateName={(_, name) => updateConfirmedName(activeGroup.key, item._id, name)}
                                 onEdit={(itemId, updates) => updateLineItem(activeGroup.key, itemId, updates)}
+                                onForceNew={itemId => forceNewIngredient(activeGroup.key, itemId)}
                               />
                             ))}
                           </>
