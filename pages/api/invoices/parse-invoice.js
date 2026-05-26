@@ -673,21 +673,6 @@ export default async function handler(req, res) {
     const foodItems    = readableItems.filter(i => i.is_food);
     const nonFoodItems = readableItems.filter(i => !i.is_food);
 
-    // ── Pass 2.5: Cost sanity check ───────────────────────────────────────────
-    streamStatus(res, 'Checking costs for errors...', `Reviewing ${foodItems.length} food items`);
-
-    const sanityFlags = await sanityCheckCosts(foodItems, restaurantId);
-    const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
-    const flagReasonMap = {};
-    for (const f of sanityFlags) flagReasonMap[f.index] = f.reason;
-
-    if (sanityFlags.length > 0) {
-      streamStatus(res,
-        `${sanityFlags.length} item${sanityFlags.length !== 1 ? 's' : ''} flagged for review`,
-        'Possible cost or unit errors detected'
-      );
-    }
-
     // ── Pass 3: Claude ingredient matching (batched) ───────────────────────────
     streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
 
@@ -701,24 +686,17 @@ export default async function handler(req, res) {
       const matchResult = matchResults[idx] || { status: 'new', matches: [] };
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
-      const isSanityFlagged = flaggedIndexes.has(idx);
-      const sanityReason    = flagReasonMap[idx] || null;
-
       const needsReview = needsCostInput
         || item.confidence === 'low'
-        || isSanityFlagged
         || matchResult.status === 'ambiguous'
         || matchResult.status === 'new';
 
-      const skipNumberReview = !isSanityFlagged
-        && (item.confidence === 'high'
-          || (item.confidence === 'medium' && !needsCostInput));
+      const skipNumberReview = item.confidence === 'high'
+        || (item.confidence === 'medium' && !needsCostInput);
 
       lineItemsWithMatches.push({
         _id: `item_${idx}`,
         ...item,
-        sanity_flagged:           isSanityFlagged,
-        sanity_reason:            sanityReason,
         match_status:             matchResult.status,
         match_candidates:         matchResult.matches,
         selected_ingredient_id:   matchResult.status === 'auto' ? matchResult.matches[0]?.id   : null,
