@@ -678,6 +678,10 @@ export default async function handler(req, res) {
 
     const matchResults = await matchWithClaude(foodItems, restaurantIngredients, restaurantId);
 
+    const sanityFlags = await sanityCheckCosts(foodItems, restaurantId);
+    const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
+    const sanityReasonMap = Object.fromEntries(sanityFlags.map(f => [f.index, f.reason]));
+
     let autoCount = 0, newCount = 0, ambiguousCount = 0;
     const lineItemsWithMatches = [];
 
@@ -686,8 +690,10 @@ export default async function handler(req, res) {
       const matchResult = matchResults[idx] || { status: 'new', matches: [] };
 
       const needsCostInput = !item.invoice_price && !item.catch_weight;
+      const isSanityFlagged = flaggedIndexes.has(idx);
       const needsReview = needsCostInput
         || item.confidence === 'low'
+        || isSanityFlagged
         || matchResult.status === 'ambiguous'
         || matchResult.status === 'new';
 
@@ -701,6 +707,8 @@ export default async function handler(req, res) {
         match_candidates:         matchResult.matches,
         selected_ingredient_id:   matchResult.status === 'auto' ? matchResult.matches[0]?.id   : null,
         selected_ingredient_name: matchResult.status === 'auto' ? matchResult.matches[0]?.name : null,
+        sanity_flagged: isSanityFlagged,
+        sanity_reason:  sanityReasonMap[idx] || null,
         needs_cost_input:         needsCostInput,
         needs_review:             needsReview,
         skip_number_review:       skipNumberReview,
