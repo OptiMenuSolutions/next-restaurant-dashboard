@@ -183,6 +183,9 @@ PACK SIZE PARSING:
 "1/10"      → pack=1, size=10, size_unit="lb"
 "12 12 CT"  → pack=12, size=12, size_unit="ct"
 "10.350"    → this is a WEIGHT value, not a pack size
+"6 #10"     → pack=6, size=1, size_unit="can"
+"1 6 #10"   → pack=1, size=6, size_unit="can"
+"#10 CAN"   → pack=1, size=1, size_unit="can"
 
 CATCH-WEIGHT ITEMS:
 The invoice table has a WEIGHT column. If a row has a non-empty value in the WEIGHT column:
@@ -254,7 +257,7 @@ OUTPUT FORMAT
       "pack_size_raw": "pack size as it appeared",
       "pack": number or null,
       "size": number or null,
-      "size_unit": "lb | oz | each | gal | l | ct | fl oz | dz",
+      "size_unit": "lb | oz | each | gal | l | ct | fl oz | dz | can",
       "invoice_price": number or null,
       "line_total": number or null,
       "catch_weight": boolean,
