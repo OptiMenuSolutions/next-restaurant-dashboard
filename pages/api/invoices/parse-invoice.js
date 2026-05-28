@@ -187,13 +187,20 @@ PACK SIZE PARSING:
 "1 6 #10"   → pack=1, size=6, size_unit="can"
 "#10 CAN"   → pack=1, size=1, size_unit="can"
 
+UNIT DISAMBIGUATION:
+If "oz" appears in a product name (e.g. "7oz burger", "5oz portion") but the
+purchase unit column says LB or CS, use the purchase unit column, not the
+product name size. Product name weights describe the individual item, not
+the purchase unit.
+
 CATCH-WEIGHT ITEMS:
 The invoice table has a WEIGHT column. If a row has a non-empty value in the WEIGHT column:
   - catch_weight=true
-  - actual_weight = the WEIGHT column value (lbs actually delivered)
-  - quantity_shipped = the SHP column value (number of cases)
+  - actual_weight = the WEIGHT column value exactly as printed — do NOT multiply by quantity_shipped
+  - quantity_shipped = the SHP column value (number of cases, typically a small integer like 1, 2, 3)
   - invoice_price = the UNIT COST column value (price per lb)
   - Validate: actual_weight × invoice_price ≈ line_total
+  - If quantity_shipped × actual_weight × invoice_price ≈ line_total instead, you are double-counting — divide actual_weight by quantity_shipped
 Example: CHEESE MOZZARELLA WM LOAF — SHP=1, WEIGHT=50.610, UNIT COST=2.177, EXTENDED=110.18
   → catch_weight=true, quantity_shipped=1, actual_weight=50.610, invoice_price=2.177, line_total=110.18
 Also applies when: qty_unit is "LB" AND unit_price × qty ≈ line_total (for formats without explicit WEIGHT column).
@@ -317,31 +324,66 @@ async function sanityCheckCosts(foodItems, restaurantId) {
       role: 'user',
       content: `You are a food service cost expert reviewing parsed invoice line items for errors.
 
-For each item, check:
-1. MATH: Does qty × case_price ≈ line_total (within 10%)? For catch-weight: actual_weight × case_price ≈ line_total?
-2. UNIT COST PLAUSIBILITY: Is the implied cost-per-lb/each reasonable for this ingredient type?
-3. UNIT SANITY: Does the unit make sense for the ingredient (e.g. "gal" for chicken is wrong)?
+    You are a food service cost expert reviewing parsed invoice line items for errors.
+    Be AGGRESSIVE — when in doubt, flag it. A false positive that goes to human review 
+    is far better than a wrong value that gets saved silently.
 
-Common errors to catch:
-- case_price is 10x too low (e.g. shrimp at $0.65/case when line_total implies $6.50)
-- LBS column grabbed instead of quantity (e.g. qty=90 when it should be 9 cases)  
-- Wrong unit assigned (e.g. gal for chicken wings, oz where lb expected)
-- Line total grabbed from subtotal row (dramatically too high)
+    For each item, run ALL of these checks:
 
-ITEMS TO CHECK:
-${itemList}
+    1. MATH: Does qty × case_price ≈ line_total (within 10%)?
+      For catch-weight: actual_weight × case_price ≈ line_total?
+      FLAG if math fails.
 
-Return ONLY raw JSON. No markdown, no explanation.
-Flag ONLY items that have a clear problem. Items that look correct should NOT appear in output.
+    2. QUANTITY SANITY: Is this a plausible order quantity for a single restaurant?
+      FLAG if qty seems like total weight rather than cases:
+      - Shredded cheese: should be 10-60 lb per order, not 180-360 lb
+      - Butter: should be 36-72 lb, not 1296 lb
+      - Any item where qty is suspiciously round and very large
+      FLAG if qty × pack × size produces a total weight that seems unreasonable.
 
-{
-  "flags": [
+    3. UNIT COST PLAUSIBILITY: Does the implied cost-per-lb/each make sense?
+      Use these rough benchmarks:
+      - Ground beef / chopmeat: $3-6/lb
+      - Chicken breast: $1.50-4/lb
+      - Chicken wings: $2-5/lb
+      - Shrimp 21-25ct: $5-10/lb
+      - Lobster tail: $15-35/lb
+      - Salmon fillet: $8-18/lb
+      - Mozzarella shredded: $2-4/lb
+      - Butter: $2-5/lb
+      - Cooking oil: $0.50-2/lb
+      - Pasta dry: $0.80-2/lb
+      - French fries: $1-3/lb
+      FLAG if implied unit cost is outside 3x the expected range.
+
+    4. UNIT SANITY: Does the unit make sense for this ingredient?
+      FLAG if: gal for meat/poultry/seafood, oz where lb expected for bulk items,
+      lb where each expected for portioned items, ct where lb expected for bulk.
+
+    5. PACK SIZE SANITY: Does the pack × size make sense for this product?
+      - Chicken wings: typically 1 case × 40 lb, not 8 cases × 1 gal
+      - Canned goods: typically 6 #10 cans per case
+      - Cooking oil: typically 35 lb jugs or 1 gal containers
+      FLAG if pack/size combination is implausible for the ingredient type.
+
+    6. IMPLIED TOTAL WEIGHT: qty × pack × size should be a reasonable purchase amount.
+      FLAG if the total implied weight/volume is more than 5x what a typical 
+      restaurant would order in one delivery for that ingredient.
+
+    ITEMS TO CHECK:
+    ${itemList}
+
+    Return ONLY raw JSON. No markdown, no explanation.
+    Flag ALL items that fail ANY check above. Be liberal with flagging.
+
     {
-      "index": 0,
-      "reason": "brief description of the problem"
-    }
-  ]
-}`,
+      "flags": [
+        {
+          "index": 0,
+          "reason": "brief description of which check failed and why"
+        }
+      ]
+    }`,
     }],
   });
 
