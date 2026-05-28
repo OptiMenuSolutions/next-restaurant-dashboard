@@ -478,6 +478,87 @@ const NAV_ITEMS = [
   { label: 'Analytics',   path: '/client/analytics',    icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg> },
 ];
 
+const UNIT_OPTIONS = ['oz', 'lb', 'g', 'kg', 'each', 'fl oz', 'gal', 'l', 'cup', 'tbsp', 'tsp', 'ml', 'ct', 'dz', 'can'];
+
+function UnitCombobox({ value, onChange }) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen]   = useState(false);
+  const ref = useRef(null);
+
+  const filtered = query
+    ? UNIT_OPTIONS.filter(u => u.startsWith(query.toLowerCase()))
+    : UNIT_OPTIONS;
+
+  useEffect(() => {
+    function handle(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  function commit(unit) {
+    onChange(unit);
+    setQuery(unit);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+      <input
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && filtered.length > 0) commit(filtered[0]);
+          if (e.key === 'Escape') setOpen(false);
+        }}
+        style={{
+          width: 'clamp(36px,3.5vw,52px)',
+          background: 'var(--bg-inset)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          padding: '2px 5px',
+          fontSize: 'clamp(9px,.68vw,11px)',
+          color: 'var(--text-primary)',
+          fontFamily: 'Inter,sans-serif',
+          outline: 'none',
+        }}
+      />
+      {open && filtered.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          zIndex: 100,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 5,
+          marginTop: 2,
+          minWidth: 70,
+          boxShadow: '0 4px 12px rgba(0,0,0,.3)',
+          overflow: 'hidden',
+        }}>
+          {filtered.map((u, i) => (
+            <div
+              key={u}
+              onMouseDown={() => commit(u)}
+              style={{
+                padding: '4px 8px',
+                fontSize: 'clamp(9px,.68vw,11px)',
+                color: i === 0 ? 'var(--text-primary)' : 'var(--text-muted)',
+                background: i === 0 ? 'rgba(2,164,186,.08)' : 'transparent',
+                cursor: 'pointer',
+                fontFamily: 'Inter,sans-serif',
+              }}
+            >
+              {u}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Line Item Card ───────────────────────────────────────────────────────────
 
 function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, onConfirmNew, onDismiss, onUpdateName, onEdit, mode = 'numbers', manageMode = false, onForceNew }) {
@@ -518,6 +599,16 @@ function LineItemCard({ item, columns, expanded, onToggle, onSelectCandidate, on
           {item.match_status === 'new' && item.confirm_new &&
             <div className="pm-li-meta" style={{ color: 'var(--accent)' }}>→ Will create: {item.confirmed_name}</div>}
         </div>
+      );
+    }
+
+    if (col.key === 'size_unit' && mode === 'numbers') {
+      return (
+        <UnitCombobox
+          key={col.key}
+          value={val || ''}
+          onChange={newVal => onEdit(item._id, { size_unit: newVal })}
+        />
       );
     }
 
