@@ -60,32 +60,19 @@ function safeParseJSON(text) {
 }
 
 // ─── PASS 1: Mistral OCR ──────────────────────────────────────────────────────
-// Sends image or PDF to Mistral OCR API.
-// Returns markdown text with HTML tables preserved.
-// Handles rotation, layout, and skew natively — no coordinate work needed.
 
 async function callMistralOCR(fileBuffer, mimeType) {
   const base64Content = fileBuffer.toString('base64');
-
-  // Mistral OCR accepts either image_url or document types
-  // For base64 we use image_url with a data URI for images,
-  // or document_url with base64 for PDFs
   const isPDF = mimeType === 'application/pdf';
 
   const documentPayload = isPDF
-    ? {
-        type: 'document_url',
-        document_url: `data:application/pdf;base64,${base64Content}`,
-      }
-    : {
-        type: 'image_url',
-        image_url: `data:${mimeType};base64,${base64Content}`,
-      };
+    ? { type: 'document_url', document_url: `data:application/pdf;base64,${base64Content}` }
+    : { type: 'image_url', image_url: `data:${mimeType};base64,${base64Content}` };
 
   const body = {
     model: 'mistral-ocr-latest',
     document: documentPayload,
-    table_format: 'html', // tables returned in page.tables[], we replace placeholders below
+    table_format: 'html',
   };
 
   const response = await fetch('https://api.mistral.ai/v1/ocr', {
@@ -103,13 +90,9 @@ async function callMistralOCR(fileBuffer, mimeType) {
   }
 
   const data = await response.json();
-
-  // Combine markdown from all pages, replacing table placeholders with actual table content
   const pages = data.pages || [];
   const fullText = pages.map(p => {
     let markdown = p.markdown || '';
-
-    // Replace [tbl-X.html](tbl-X.html) placeholders with actual HTML table content
     if (p.tables && p.tables.length > 0) {
       for (const table of p.tables) {
         const tableId = table.id || '';
@@ -119,7 +102,6 @@ async function callMistralOCR(fileBuffer, mimeType) {
         }
       }
     }
-
     return markdown;
   }).join('\n\n');
 
@@ -130,9 +112,6 @@ async function callMistralOCR(fileBuffer, mimeType) {
 }
 
 // ─── PASS 2: Claude text-only parsing ────────────────────────────────────────
-// Receives clean markdown from Mistral OCR.
-// Claude normalizes names, classifies food/non-food, parses pack sizes,
-// validates math, detects catch-weight items.
 
 async function parseWithClaude(ocrText, restaurantId, res) {
   streamStatus(res, 'Extracting line items...', 'Parsing rows and computing unit costs');
@@ -157,16 +136,30 @@ PARSING RULES
 
 ROW CLASSIFICATION — classify each row before extracting:
 - "line_item": has a product description and at least one price/qty value → extract
-- "subtotal": SUBTOTAL / DRY TOTAL / CLR TOTAL / FRZ TOTAL / COOLER → SKIP
+- "subtotal": SUBTOTAL / DRY TOTAL / CLR TOTAL / FRZ TOTAL / COOLER → SKIP entirely
 - "total": INVOICE TOTAL / AMOUNT DUE / TOTAL INVOICE DUE → extract as total_amount only
 - "tax_fee": TAX / FUEL SURCHARGE / HANDLING → extract value only
 - "header": column labels → skip
 - "blank": empty → skip
 
-CRITICAL — SUBTOTAL CONTAMINATION:
-The last line item before a subtotal row has its OWN extended price, not the subtotal.
-Validate: line_total ≈ qty × invoice_price (within 5%).
-If line_total is dramatically larger than expected, you grabbed the subtotal — reject it.
+CRITICAL — SUBTOTAL CONTAMINATION (quantity AND price):
+Subtotal rows accumulate values from multiple line items above them.
+NEVER use a subtotal row's quantity or price for any line item.
+The last line item before a subtotal row has its OWN values — validate both:
+  - line_total ≈ qty × invoice_price (within 5%) — if not, you grabbed the subtotal price
+  - quantity_shipped should be a small number (cases ordered) — if it's hundreds or thousands, you grabbed a subtotal quantity
+If either the quantity or price looks like an accumulation of prior rows, reject it and mark confidence="low".
+
+QUANTITY_SHIPPED — CRITICAL DEFINITION:
+quantity_shipped = the number printed in the SHP or ORD column for that row.
+This is ALWAYS the number of cases, units, or catch-weight items actually shipped.
+It is NEVER a derived total. Do NOT multiply quantity_shipped by pack or size.
+Correct examples:
+  - SHP=2, pack=6, size=5 lb → quantity_shipped=2 (2 cases shipped)
+  - SHP=4, pack=1, size=40 lb → quantity_shipped=4 (4 cases shipped)
+  - SHP=1, catch-weight=50.61 lb → quantity_shipped=1 (1 unit shipped)
+Wrong: quantity_shipped=60 when SHP=2, pack=6, size=5 lb (that's 2×6×5=60 lb total, not the shipped qty)
+Wrong: quantity_shipped=360 when SHP=2, pack=6, size=30 lb (that's total lbs, not cases)
 
 UNIT PRICE:
 The column labeled "unit cost", "unit price", "price", or "each" = price per CASE.
@@ -187,30 +180,55 @@ PACK SIZE PARSING:
 "1 6 #10"   → pack=1, size=6, size_unit="can"
 "#10 CAN"   → pack=1, size=1, size_unit="can"
 
-UNIT DISAMBIGUATION:
-If "oz" appears in a product name (e.g. "7oz burger", "5oz portion") but the
-purchase unit column says LB or CS, use the purchase unit column, not the
-product name size. Product name weights describe the individual item, not
-the purchase unit.
+UNIT DISAMBIGUATION — PURCHASE UNIT ALWAYS WINS:
+The purchase unit is whatever appears in the QTY UNIT or UOM column (CS, LB, EA, GAL, etc.).
+The product name may contain a portion size (e.g. "7oz burger", "2oz slider", "5oz portion",
+"12oz steak"). These describe the individual item size, NOT the purchase unit.
+ALWAYS use the purchase unit column, never the product name size.
+Examples:
+  - "Angus Burger 7oz" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
+  - "Slider 2oz Super Thick" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
+  - "Chicken Breast 5oz Portion" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
+  - "Salmon Fillet 8oz" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
+If no QTY_UNIT column exists, default to "lb" for meat/poultry/seafood, "each" for portioned items.
 
 CATCH-WEIGHT ITEMS:
-The invoice table has a WEIGHT column. If a row has a non-empty value in the WEIGHT column:
-  - catch_weight=true
-  - actual_weight = the WEIGHT column value exactly as printed — do NOT multiply by quantity_shipped
-  - quantity_shipped = the SHP column value (number of cases, typically a small integer like 1, 2, 3)
+Catch-weight means the item is priced by actual weight, not by case.
+Indicators: a non-empty WEIGHT column, or qty_unit="LB" where price×weight≈line_total.
+
+When catch_weight=true:
+  - actual_weight = the value in the WEIGHT column exactly as printed
+  - quantity_shipped = the SHP column value (cases shipped, typically 1–5)
   - invoice_price = the UNIT COST column value (price per lb)
-  - Validate: actual_weight × invoice_price ≈ line_total
-  - If quantity_shipped × actual_weight × invoice_price ≈ line_total instead, you are double-counting — divide actual_weight by quantity_shipped
-Example: CHEESE MOZZARELLA WM LOAF — SHP=1, WEIGHT=50.610, UNIT COST=2.177, EXTENDED=110.18
-  → catch_weight=true, quantity_shipped=1, actual_weight=50.610, invoice_price=2.177, line_total=110.18
-Also applies when: qty_unit is "LB" AND unit_price × qty ≈ line_total (for formats without explicit WEIGHT column).
-Common for: cheeses (mozzarella, cheddar, jack, pepper jack), deli meats, seafood.
+  - VALIDATION (mandatory): actual_weight × invoice_price must ≈ line_total (within 5%)
+  - If that fails, try: (actual_weight / quantity_shipped) × invoice_price ≈ line_total
+    → if that works, you were double-counting; set actual_weight = actual_weight / quantity_shipped
+  - If neither validates → confidence="low", explain in confidence_reason
+
+Correct catch-weight example:
+  CHEESE MOZZARELLA WM LOAF — SHP=1, WEIGHT=50.610, UNIT COST=2.177, EXTENDED=110.18
+  → catch_weight=true, quantity_shipped=1, actual_weight=50.610, invoice_price=2.177
+  → Validate: 50.610 × 2.177 = 110.18 ✓
+
+Wrong catch-weight example:
+  BABY BACK RIBS — SHP=6, WEIGHT=148 lb total, UNIT COST=3.10, EXTENDED=458.80
+  If you set actual_weight=888 (6×148), then 888×3.10=2752.80 ≠ 458.80 → WRONG
+  Correct: actual_weight=148, quantity_shipped=6, 148×3.10=458.80 ✓
+
+Common catch-weight items: all whole-muscle beef cuts, pork ribs, brisket, whole fish fillets,
+loaf cheeses (mozzarella, cheddar, jack, pepper jack, gruyere), deli meats, bacon slabs.
 
 MATH VALIDATION (within 5%):
-  Standard:    qty × invoice_price ≈ line_total
-  Per-unit:    qty × pack × size × invoice_price ≈ line_total
-  Catch-weight: actual_weight × invoice_price ≈ line_total
-Derive missing values from the others. If none work → confidence="low"
+  Standard:      quantity_shipped × invoice_price ≈ line_total
+  Per-unit:      quantity_shipped × pack × size × invoice_price ≈ line_total
+  Catch-weight:  actual_weight × invoice_price ≈ line_total
+Try all three. Use the one that works to set confidence.
+If none work within 5% → confidence="low", describe which values seem wrong.
+
+CONFIDENCE DEFINITION:
+"high"   = all values clearly readable from the invoice AND math validates within 5%
+"medium" = math validates but one value was derived or OCR required interpretation
+"low"    = math fails for all three formulas, OR a value is unreadable
 
 IGNORE: handwritten annotations, circled numbers, crossed-out values, watermarks, signatures.
 
@@ -225,13 +243,9 @@ INGREDIENT NAME NORMALIZATION:
 "21-25 T/ON White India 5/2" → "Shrimp 21-25 Count Tail-On White India Farmed"
 "5-8inTubes Only Squid Ocean Tide 12/2.5" → "Squid Tubes 5-8 inch Wild New Zealand"
 "SALMON FILLET S/ON 3-4 PREMIUM PC" → "Salmon Fillet Skin-On 3-4 lb Premium Cut"
+"ANGUS BURGER 7OZ" → "Angus Burger 7oz" (preserve portion size in name, but use LB as unit)
 Remove vendor codes, item numbers, brand names from the normalized name.
-Preserve size info (e.g. "7oz", "21-25ct").
-
-CONFIDENCE:
-"high"   = all values readable and math checks out
-"medium" = one value derived, math checks out
-"low"    = math fails or values unreadable
+Preserve size info (e.g. "7oz", "21-25ct") in the name only — do not use it as the purchase unit.
 
 ════════════════════════════════════════
 OUTPUT FORMAT
@@ -298,9 +312,6 @@ OUTPUT FORMAT
 }
 
 // ─── Pass 2.5: Claude Haiku cost sanity check ─────────────────────────────────
-// Receives all food line items after Pass 2.
-// Flags items with implausible unit costs, wrong units, or math failures.
-// Returns an array of flags indexed to match foodItems array.
 
 async function sanityCheckCosts(foodItems, restaurantId) {
   if (!foodItems.length) return [];
@@ -323,67 +334,68 @@ async function sanityCheckCosts(foodItems, restaurantId) {
     messages: [{
       role: 'user',
       content: `You are a food service cost expert reviewing parsed invoice line items for errors.
+Be AGGRESSIVE — when in doubt, flag it. A false positive that goes to human review
+is far better than a wrong value that gets saved silently.
 
-    You are a food service cost expert reviewing parsed invoice line items for errors.
-    Be AGGRESSIVE — when in doubt, flag it. A false positive that goes to human review 
-    is far better than a wrong value that gets saved silently.
+For each item, run ALL of these checks:
 
-    For each item, run ALL of these checks:
+1. MATH: Does qty × case_price ≈ line_total (within 10%)?
+   For catch-weight: actual_weight × case_price ≈ line_total?
+   FLAG if math fails.
 
-    1. MATH: Does qty × case_price ≈ line_total (within 10%)?
-      For catch-weight: actual_weight × case_price ≈ line_total?
-      FLAG if math fails.
+2. QUANTITY SANITY: Is this a plausible order quantity for a single restaurant?
+   quantity_shipped should always be a small number of cases (typically 1–20).
+   FLAG if quantity_shipped is suspiciously large (>50) for a case-bought item.
+   FLAG if qty seems like total weight rather than cases:
+   - Shredded cheese: 1-6 cases, not 80-360 (those are total lbs)
+   - Butter: 1-4 cases, not 36-72 (those are total lbs)
+   - Pasta: 1-4 cases, not 20-40 (those are total lbs)
+   FLAG if qty × pack × size produces a total weight that seems unreasonable for one delivery.
 
-    2. QUANTITY SANITY: Is this a plausible order quantity for a single restaurant?
-      FLAG if qty seems like total weight rather than cases:
-      - Shredded cheese: should be 10-60 lb per order, not 180-360 lb
-      - Butter: should be 36-72 lb, not 1296 lb
-      - Any item where qty is suspiciously round and very large
-      FLAG if qty × pack × size produces a total weight that seems unreasonable.
+3. UNIT COST PLAUSIBILITY: Does the implied cost-per-lb/each make sense?
+   Use these rough benchmarks:
+   - Ground beef / chopmeat: $3-6/lb
+   - Chicken breast: $1.50-4/lb
+   - Chicken wings: $2-5/lb
+   - Shrimp 21-25ct: $5-10/lb
+   - Lobster tail: $15-35/lb
+   - Salmon fillet: $8-18/lb
+   - Mozzarella shredded: $2-4/lb
+   - Butter: $2-5/lb
+   - Cooking oil: $0.50-2/lb
+   - Pasta dry: $0.80-2/lb
+   - French fries: $1-3/lb
+   FLAG if implied unit cost is outside 3x the expected range.
 
-    3. UNIT COST PLAUSIBILITY: Does the implied cost-per-lb/each make sense?
-      Use these rough benchmarks:
-      - Ground beef / chopmeat: $3-6/lb
-      - Chicken breast: $1.50-4/lb
-      - Chicken wings: $2-5/lb
-      - Shrimp 21-25ct: $5-10/lb
-      - Lobster tail: $15-35/lb
-      - Salmon fillet: $8-18/lb
-      - Mozzarella shredded: $2-4/lb
-      - Butter: $2-5/lb
-      - Cooking oil: $0.50-2/lb
-      - Pasta dry: $0.80-2/lb
-      - French fries: $1-3/lb
-      FLAG if implied unit cost is outside 3x the expected range.
+4. UNIT SANITY: Does the unit make sense for this ingredient?
+   FLAG if: gal for meat/poultry/seafood, oz where lb expected for bulk items,
+   lb where each expected for portioned items, ct where lb expected for bulk.
+   FLAG if unit is "oz" for a bulk meat/cheese item that should be in lb.
 
-    4. UNIT SANITY: Does the unit make sense for this ingredient?
-      FLAG if: gal for meat/poultry/seafood, oz where lb expected for bulk items,
-      lb where each expected for portioned items, ct where lb expected for bulk.
+5. PACK SIZE SANITY: Does the pack × size make sense for this product?
+   - Chicken wings: typically 1 case × 40 lb
+   - Canned goods: typically 6 #10 cans per case
+   - Cooking oil: typically 35 lb jugs or 1 gal containers
+   FLAG if pack/size combination is implausible for the ingredient type.
 
-    5. PACK SIZE SANITY: Does the pack × size make sense for this product?
-      - Chicken wings: typically 1 case × 40 lb, not 8 cases × 1 gal
-      - Canned goods: typically 6 #10 cans per case
-      - Cooking oil: typically 35 lb jugs or 1 gal containers
-      FLAG if pack/size combination is implausible for the ingredient type.
+6. IMPLIED TOTAL WEIGHT: qty × pack × size should be a reasonable purchase amount.
+   FLAG if the total implied weight/volume is more than 5x what a typical
+   restaurant would order in one delivery for that ingredient.
 
-    6. IMPLIED TOTAL WEIGHT: qty × pack × size should be a reasonable purchase amount.
-      FLAG if the total implied weight/volume is more than 5x what a typical 
-      restaurant would order in one delivery for that ingredient.
+ITEMS TO CHECK:
+${itemList}
 
-    ITEMS TO CHECK:
-    ${itemList}
+Return ONLY raw JSON. No markdown, no explanation.
+Flag ALL items that fail ANY check above. Be liberal with flagging.
 
-    Return ONLY raw JSON. No markdown, no explanation.
-    Flag ALL items that fail ANY check above. Be liberal with flagging.
-
+{
+  "flags": [
     {
-      "flags": [
-        {
-          "index": 0,
-          "reason": "brief description of which check failed and why"
-        }
-      ]
-    }`,
+      "index": 0,
+      "reason": "brief description of which check failed and why"
+    }
+  ]
+}`,
     }],
   });
 
@@ -412,8 +424,6 @@ function normalizeName(name) {
 }
 
 // ─── Pass 3: Claude-powered ingredient matching ───────────────────────────────
-// Sends all food line items + the restaurant's ingredient library to Claude Haiku.
-// Returns a match decision for each item: auto / ambiguous / new + candidates.
 
 async function matchWithClaude(foodItems, restaurantIngredients, restaurantId) {
   if (!restaurantIngredients.length) {
@@ -481,7 +491,6 @@ OUTPUT FORMAT:
   const parsed = safeParseJSON(raw);
   const matchResults = parsed?.matches || [];
 
-  // Map results back to the same shape the rest of the code expects
   return foodItems.map((_, idx) => {
     const result = matchResults.find(m => m.index === idx);
     if (!result) return { status: 'new', matches: [] };
@@ -552,8 +561,6 @@ async function loadRestaurantIngredients(restaurantId) {
     used_in: usageMap[ing.id] ? [...usageMap[ing.id]] : [],
   }));
 }
-
-// matchLineItem replaced by batched matchWithClaude() above
 
 // ─── Invoice number normalization ─────────────────────────────────────────────
 
@@ -702,9 +709,6 @@ export default async function handler(req, res) {
       );
     }
 
-    // ── Load ingredients + match ──────────────────────────────────────────────
-    // (matching status now emitted inside Pass 3 call)
-
     const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
 
     const readableItems = allRaw.filter(item => {
@@ -718,12 +722,12 @@ export default async function handler(req, res) {
     const foodItems    = readableItems.filter(i => i.is_food);
     const nonFoodItems = readableItems.filter(i => !i.is_food);
 
-    // ── Pass 3: Claude ingredient matching (batched) ───────────────────────────
+    // ── Pass 3: Claude ingredient matching (batched) ──────────────────────────
     streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
 
     const matchResults = await matchWithClaude(foodItems, restaurantIngredients, restaurantId);
 
-    const sanityFlags = await sanityCheckCosts(foodItems, restaurantId);
+    const sanityFlags    = await sanityCheckCosts(foodItems, restaurantId);
     const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
     const sanityReasonMap = Object.fromEntries(sanityFlags.map(f => [f.index, f.reason]));
 
@@ -734,9 +738,9 @@ export default async function handler(req, res) {
       const item = foodItems[idx];
       const matchResult = matchResults[idx] || { status: 'new', matches: [] };
 
-      const needsCostInput = !item.invoice_price && !item.catch_weight;
+      const needsCostInput  = !item.invoice_price && !item.catch_weight;
       const isSanityFlagged = flaggedIndexes.has(idx);
-      const needsReview = needsCostInput
+      const needsReview     = needsCostInput
         || item.confidence === 'low'
         || isSanityFlagged
         || matchResult.status === 'ambiguous'
@@ -752,8 +756,8 @@ export default async function handler(req, res) {
         match_candidates:         matchResult.matches,
         selected_ingredient_id:   matchResult.status === 'auto' ? matchResult.matches[0]?.id   : null,
         selected_ingredient_name: matchResult.status === 'auto' ? matchResult.matches[0]?.name : null,
-        sanity_flagged: isSanityFlagged,
-        sanity_reason:  sanityReasonMap[idx] || null,
+        sanity_flagged:           isSanityFlagged,
+        sanity_reason:            sanityReasonMap[idx] || null,
         needs_cost_input:         needsCostInput,
         needs_review:             needsReview,
         skip_number_review:       skipNumberReview,
