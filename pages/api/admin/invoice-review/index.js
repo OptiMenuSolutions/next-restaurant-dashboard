@@ -52,6 +52,20 @@ export default async function handler(req, res) {
 
     if (liErr) throw liErr;
 
+    // ── 2b. Fetch all file URLs for those invoices ────────────────────────────
+    const { data: invoiceFiles } = await supabase
+      .from('invoice_files')
+      .select('invoice_id, file_url, page_number')
+      .in('invoice_id', invoiceIds)
+      .order('page_number');
+
+    // Map: invoiceId → file[]
+    const filesByInvoice = {};
+    for (const f of (invoiceFiles || [])) {
+      if (!filesByInvoice[f.invoice_id]) filesByInvoice[f.invoice_id] = [];
+      filesByInvoice[f.invoice_id].push({ file_url: f.file_url, page_number: f.page_number });
+    }
+
     // ── 3. Fetch restaurant names ─────────────────────────────────────────────
     const { data: restaurants } = await supabase
       .from('restaurants')
@@ -119,6 +133,7 @@ export default async function handler(req, res) {
       }
       groupMap[rid].invoices.push({
         ...inv,
+        files:      filesByInvoice[inv.id] || [],
         line_items: itemsByInvoice[inv.id] || [],
       });
     }

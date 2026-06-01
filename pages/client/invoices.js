@@ -359,7 +359,7 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
             restaurant_id:        restaurantId,
             invoice:              group.invoice,
             line_items:           group.lineItems,
-            file_url:             group.fileUrl,
+            file_urls:            group.fileUrls || [],
             ocr_text:             group.ocrText || null,
             append_to_invoice_id: group.appendToInvoiceId || null,
           }),
@@ -446,12 +446,16 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
         if (!groupMap[key]) {
           groupMap[key] = {
             key,
-            invoice: { ...data.invoice, invoice_number: correctedNumber },
-            fileUrl: publicUrl,
-            ocrText: data.ocr_text || null,
+            invoice:   { ...data.invoice, invoice_number: correctedNumber },
+            fileUrls:  [],
+            ocrText:   data.ocr_text || null,
             duplicate: data.duplicate || false,
             lineItems: [],
           };
+        }
+        // Accumulate every page's URL — each file in the batch is one page
+        if (publicUrl && !groupMap[key].fileUrls.includes(publicUrl)) {
+          groupMap[key].fileUrls.push(publicUrl);
         }
         const existingRawNames = new Set(groupMap[key].lineItems.map(i => i.item_name_raw));
         const newItems = (data.line_items || [])

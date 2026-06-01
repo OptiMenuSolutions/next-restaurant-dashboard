@@ -269,11 +269,20 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
             </div>
             <div style={{ fontSize: 10, color: '#5a6080', marginTop: 2 }}>
               {fmtDate(invoice.date)} · {items.length} item{items.length !== 1 ? 's' : ''}
-              {invoice.file_url && (
-                <a href={invoice.file_url} target="_blank" rel="noreferrer"
-                  style={{ color: '#02a4ba', marginLeft: 10, textDecoration: 'none', fontSize: 10 }}>
-                  View invoice →
-                </a>
+              {invoice.files?.length > 0 && (
+                <span style={{ marginLeft: 10 }}>
+                  {invoice.files.map((f, i) => (
+                    <a
+                      key={f.file_url}
+                      href={f.file_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: '#02a4ba', textDecoration: 'none', marginRight: 8 }}
+                    >
+                      {invoice.files.length > 1 ? `Page ${f.page_number} →` : 'View invoice →'}
+                    </a>
+                  ))}
+                </span>
               )}
             </div>
           </div>

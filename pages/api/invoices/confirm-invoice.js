@@ -59,7 +59,12 @@ export default async function handler(req, res) {
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
   catch { return res.status(400).json({ error: 'Invalid JSON body' }); }
 
-  const { restaurant_id, invoice, line_items, file_url, ocr_text, append_to_invoice_id } = body;
+  const { restaurant_id, invoice, line_items, file_urls, file_url, ocr_text, append_to_invoice_id } = body;
+
+  // Support both old single file_url and new file_urls array
+  const allFileUrls = file_urls?.length
+    ? file_urls
+    : file_url ? [file_url] : [];
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
@@ -92,7 +97,7 @@ export default async function handler(req, res) {
           number:     invoice.invoice_number || null,
           date:       invoice.invoice_date   || null,
           amount:     invoice.total_amount   || null,
-          file_url:   file_url               || null,
+          file_url:   allFileUrls[0]         || null, // keep for backwards compat
           ocr_text:   ocr_text               || null,
           reviewed:   false,
           is_sample:  false,
@@ -105,6 +110,21 @@ export default async function handler(req, res) {
       }
       invoiceRecord      = data;
       results.invoice_id = data.id;
+
+      // Insert all file URLs into invoice_files
+      if (allFileUrls.length > 0) {
+        const filesToInsert = allFileUrls.map((url, idx) => ({
+          invoice_id:  data.id,
+          file_url:    url,
+          page_number: idx + 1,
+        }));
+        const { error: filesError } = await supabase
+          .from('invoice_files')
+          .insert(filesToInsert);
+        if (filesError) {
+          results.errors.push('Failed to save file URLs: ' + filesError.message);
+        }
+      }
     }
 
     // ── Step 2: Batch-create new ingredients ──────────────────────────────────
