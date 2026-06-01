@@ -29,6 +29,7 @@ const NAV = [
       { label: 'Ingredients',     href: '/admin/data/ingredients', icon: 'droplet' },
       { label: 'Invoices',        href: '/admin/data/invoices',  icon: 'file-text' },
       { label: 'POS Analytics',   href: '/admin/data/analytics', icon: 'activity' },
+      { label: 'Invoice Review',  href: '/admin/invoice-review', icon: 'check-circle' },
     ],
   },
   {

@@ -3,6 +3,7 @@
 // Accepts array of { id, quantity, unit, unit_cost, amount, ingredient_id }
 // Also re-runs ingredient last_price update for any changed ingredient links.
 
+import { withAdminAuth } from '../../../../lib/admin/withAdminAuth';
 import { createClient } from '@supabase/supabase-js';
 import {
   convertInvoiceCostToStandardUnit,
@@ -14,24 +15,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-async function verifyAdmin(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-  return profile?.role === 'admin' ? user : null;
-}
-
-export default async function handler(req, res) {
+export default withAdminAuth(async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
-
-  const adminUser = await verifyAdmin(req);
-  if (!adminUser) return res.status(403).json({ error: 'Unauthorized' });
 
   const { invoice_id, restaurant_id, items } = req.body;
   if (!invoice_id || !restaurant_id || !Array.isArray(items)) {
@@ -104,4 +89,4 @@ export default async function handler(req, res) {
     console.error('[invoice-review save-items]', err);
     return res.status(500).json({ error: err.message });
   }
-}
+});

@@ -1,6 +1,7 @@
 // pages/api/admin/invoice-review/mark-reviewed.js
 // POST: stamps an invoice and all its line items as reviewed.
 
+import { withAdminAuth } from '../../../../lib/admin/withAdminAuth';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -8,24 +9,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-async function verifyAdmin(req) {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token) return null;
-  const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-  return profile?.role === 'admin' ? user : null;
-}
-
-export default async function handler(req, res) {
+export default withAdminAuth(async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
-
-  const adminUser = await verifyAdmin(req);
-  if (!adminUser) return res.status(403).json({ error: 'Unauthorized' });
 
   const { invoice_id } = req.body;
   if (!invoice_id) return res.status(400).json({ error: 'invoice_id required' });
@@ -58,4 +43,4 @@ export default async function handler(req, res) {
     console.error('[invoice-review mark-reviewed]', err);
     return res.status(500).json({ error: err.message });
   }
-}
+});
