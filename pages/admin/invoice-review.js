@@ -497,7 +497,7 @@ export default function InvoiceReviewPage() {
 
   // Total counts for the header bar
   const totalInvoices = groups.reduce((s, g) => s + g.invoices.length, 0);
-  const totalItems    = groups.reduce((s, g) => g.invoices.reduce((ss, inv) => ss + inv.line_items.length, ss), 0);
+  const totalItems = groups.reduce((s, g) => s + g.invoices.reduce((ss, inv) => ss + inv.line_items.length, 0), 0);
 
   async function handleSave(invoiceId, restaurantId, items) {
     setSavingId(invoiceId);
