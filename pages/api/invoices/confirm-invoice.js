@@ -1,9 +1,8 @@
 // pages/api/invoices/confirm-invoice.js
-// Receives confirmed invoice data from the client after the user has resolved
-// all ambiguous ingredient matches. Writes to: invoices, invoice_items, ingredients.
-// Also updates ingredients.last_price (stored as cost-per-STANDARD-unit, e.g. per oz)
-// and ingredients.last_ordered_at.
-// OPTIMIZED: Uses batched inserts/updates instead of sequential per-item DB calls.
+// Auto-save invoice data after parse — no longer requires user confirmation.
+// Writes to: invoices, invoice_items, ingredients.
+// Stores original_quantity / original_price so the admin review screen can
+// show what Claude parsed vs what was manually corrected.
 
 import { createClient } from '@supabase/supabase-js';
 import {
@@ -21,30 +20,20 @@ function normalizeName(name) {
   return (name || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-// FIX #1: Resolve the correct unit cost and invoice unit from the new parse-invoice
-// output shape (cost_per_lb / cost_per_each / standard_unit) or the legacy shape (unit_cost / unit).
 function resolveUnitCost(item) {
-  // New shape: pack + size + size_unit + invoice_price — server does the math
   if (item.invoice_price !== undefined) {
     let unitCost, unit;
 
     if (item.catch_weight && item.actual_weight) {
-      // invoice_price is always the per-unit cost for catch-weight items
       unitCost = item.invoice_price;
       unit     = item.size_unit || 'lb';
-
     } else if (item.pack && item.size && item.size_unit) {
-
-      // Standard case pricing: cost per smallest unit
       const totalUnits = item.pack * item.size;
       unitCost = totalUnits > 0 ? item.invoice_price / totalUnits : null;
       unit     = item.size_unit;
-
     } else if (item.size_unit === 'each' || item.standard_unit === 'each') {
-      // Count item — price per each
       unitCost = item.invoice_price || null;
       unit     = 'each';
-
     } else {
       unitCost = null;
       unit     = item.size_unit || 'each';
@@ -53,12 +42,12 @@ function resolveUnitCost(item) {
     return { unit_cost: unitCost, unit };
   }
 
-  // Legacy shape fallback (cost_per_lb / cost_per_each)
-  const cost = item.standard_unit === 'lb'    ? item.cost_per_lb
-             : item.standard_unit === 'each'  ? item.cost_per_each
-             : item.standard_unit === 'oz'    ? item.cost_per_lb
-             : item.standard_unit === 'gal'   ? item.cost_per_each
-             : item.standard_unit === 'case'  ? item.cost_per_each
+  // Legacy shape fallback
+  const cost = item.standard_unit === 'lb'   ? item.cost_per_lb
+             : item.standard_unit === 'each' ? item.cost_per_each
+             : item.standard_unit === 'oz'   ? item.cost_per_lb
+             : item.standard_unit === 'gal'  ? item.cost_per_each
+             : item.standard_unit === 'case' ? item.cost_per_each
              : (item.cost_per_lb ?? item.cost_per_each ?? null);
   return { unit_cost: cost ?? null, unit: item.standard_unit || item.quantity_unit || 'each' };
 }
@@ -80,19 +69,18 @@ export default async function handler(req, res) {
   const appendMode  = !!append_to_invoice_id;
 
   const results = {
-    invoice_id: null,
-    items_saved: 0,
-    ingredients_created: 0,
-    ingredients_updated: 0,
-    errors: [],
+    invoice_id:           null,
+    items_saved:          0,
+    ingredients_created:  0,
+    ingredients_updated:  0,
+    errors:               [],
   };
 
   try {
     // ── Step 1: Create or reuse invoice record ────────────────────────────────
     let invoiceRecord;
     if (appendMode) {
-      // Late page — append to existing invoice instead of creating a new one
-      invoiceRecord = { id: append_to_invoice_id };
+      invoiceRecord      = { id: append_to_invoice_id };
       results.invoice_id = append_to_invoice_id;
       console.log(`[confirm-invoice] Append mode — adding to invoice ${append_to_invoice_id}`);
     } else {
@@ -106,6 +94,7 @@ export default async function handler(req, res) {
           amount:     invoice.total_amount   || null,
           file_url:   file_url               || null,
           ocr_text:   ocr_text               || null,
+          reviewed:   false,
           is_sample:  false,
         })
         .select('id')
@@ -114,28 +103,20 @@ export default async function handler(req, res) {
       if (invoiceError) {
         return res.status(500).json({ error: 'Failed to create invoice: ' + invoiceError.message });
       }
-      invoiceRecord = data;
+      invoiceRecord      = data;
       results.invoice_id = data.id;
     }
 
     // ── Step 2: Batch-create new ingredients ──────────────────────────────────
-    // FIX #5: warn when confirm_new is missing on a new ingredient item
-    const newIngredientItems = activeItems.filter(i => {
-      if (!i.selected_ingredient_id && i.match_status === 'new') {
-        if (!i.confirm_new) {
-          console.warn(`[confirm-invoice] Skipping new ingredient "${i.item_name_normalized || i.item_name}" — confirm_new flag not set`);
-          return false;
-        }
-        return true;
-      }
-      return false;
-    });
+    // Auto-save: create all new ingredients without requiring confirm_new flag.
+    const newIngredientItems = activeItems.filter(
+      i => !i.selected_ingredient_id && i.match_status === 'new'
+    );
 
     const newIngredientIdMap = {};
 
     if (newIngredientItems.length > 0) {
       const toInsert = newIngredientItems.map(item => {
-        // FIX #1: use resolveUnitCost for new ingredients too
         const { unit_cost, unit } = resolveUnitCost(item);
         const ingName  = item.confirmed_name || item.item_name_normalized || item.item_name;
         const stdUnit  = getStandardUnitForIngredient(unit, ingName);
@@ -183,7 +164,6 @@ export default async function handler(req, res) {
     for (const item of activeItems) {
       const ingId = item.selected_ingredient_id || newIngredientIdMap[item._id] || null;
       if (ingId) {
-        // FIX #1: use resolveUnitCost instead of item.unit_cost / item.unit directly
         const { unit_cost, unit } = resolveUnitCost(item);
         if (unit_cost) {
           const ingName  = item.selected_ingredient_name || item.item_name_normalized || item.item_name;
@@ -207,16 +187,15 @@ export default async function handler(req, res) {
         .eq('id', ingId)
         .eq('restaurant_id', restaurant_id)
         .then(({ error }) => {
-          if (error) {
-            results.errors.push(`Failed to update ingredient ${ingId}: ${error.message}`);
-          } else {
-            results.ingredients_updated++;
-          }
+          if (error) results.errors.push(`Failed to update ingredient ${ingId}: ${error.message}`);
+          else       results.ingredients_updated++;
         })
     );
     await Promise.all(updatePromises);
 
     // ── Step 4: Batch-insert all invoice_items ────────────────────────────────
+    // Store original_quantity / original_price so the admin review screen can
+    // highlight values that were changed vs what Claude originally parsed.
     const invoiceItemsToInsert = activeItems.map(item => {
       const ingredientId =
         item.selected_ingredient_id ||
@@ -224,8 +203,7 @@ export default async function handler(req, res) {
         null;
 
       const { unit_cost, unit } = resolveUnitCost(item);
-      
-      // Total delivered quantity in base units
+
       let totalQty;
       if (item.catch_weight && item.actual_weight) {
         totalQty = item.pack ? item.pack * item.actual_weight : item.actual_weight;
@@ -246,6 +224,9 @@ export default async function handler(req, res) {
         ingredient_name_normalized: normalizeName(item.item_name_normalized || item.item_name),
         category:                   item.category || null,
         ingredient_id:              ingredientId,
+        reviewed:                   false,
+        original_quantity:          totalQty,
+        original_price:             unit_cost,
       };
     });
 
@@ -260,8 +241,6 @@ export default async function handler(req, res) {
     }
 
     // ── Step 5: Recompute menu item costs for affected ingredients ────────────
-    // FIX #2: include newly created ingredient IDs so brand-new ingredients
-    // also trigger menu item cost recomputation.
     const updatedIngredientIds = [
       ...Object.keys(ingredientUpdates),
       ...Object.values(newIngredientIdMap),
@@ -282,8 +261,6 @@ export default async function handler(req, res) {
       ];
 
       if (affectedMenuItemIds.length > 0) {
-        // FIX #3: query menu_items directly for old costs instead of inferring
-        // from affectedComponents (which may only have one row per menu item).
         const { data: menuItemRecords } = await supabase
           .from('menu_items')
           .select('id, name, cost')
@@ -296,7 +273,6 @@ export default async function handler(req, res) {
           nameMap[mi.id]    = mi.name;
         }
 
-        // Load all components for affected menu items
         const { data: allComps } = await supabase
           .from('menu_item_components')
           .select(`
@@ -362,7 +338,7 @@ export default async function handler(req, res) {
     }
 
     return res.status(200).json({
-      success: true,
+      success:              true,
       invoice_id:           results.invoice_id,
       items_saved:          results.items_saved,
       ingredients_created:  results.ingredients_created,
