@@ -109,18 +109,19 @@ const NOTIF_SOURCES = [
   },
   {
     key: 'parse_failures',
-    label: 'Parse Failure',
+    label: 'Needs Review',
     icon: 'alert-triangle',
-    color: '#e85454',
-    href: '/admin/parse-quality',
+    color: '#f5a623',
+    href: '/admin/invoice-review',
     query: () =>
       supabase
         .from('invoices')
-        .select('id, created_at, restaurant_id')
-        .eq('parse_status', 'failed')
+        .select('id, created_at, restaurant_id, supplier')
+        .eq('reviewed', false)
+        .eq('is_sample', false)
         .order('created_at', { ascending: false })
         .limit(5),
-    describe: (row) => `Invoice parse failed`,
+    describe: (row) => `${row.supplier || 'Invoice'} needs review`,
   },
 ];
 
