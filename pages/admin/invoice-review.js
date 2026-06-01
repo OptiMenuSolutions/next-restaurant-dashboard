@@ -228,7 +228,7 @@ function IngredientPicker({ value, ingredientName, candidates, onChange }) {
 // ─── Invoice card ─────────────────────────────────────────────────────────────
 // Renders one invoice with all its line items, editable in the current step.
 
-function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, saving, marking }) {
+function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, saving, marking, expanded, onToggle }) {
 
   // Local editable copy of line items
   const [items, setItems] = useState(invoice.line_items.map(i => ({ ...i })));
@@ -255,13 +255,15 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
   }
 
   const hasChanges = dirty;
-  const allReviewed = items.every(i => i.reviewed);
 
   return (
     <div style={c.card}>
-      {/* Invoice header */}
-      <div style={c.cardHd}>
+      {/* Invoice header — always visible, click to expand/collapse */}
+      <div style={{ ...c.cardHd, cursor: 'pointer', userSelect: 'none' }} onClick={onToggle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: '#3a3e50', flexShrink: 0, width: 12, textAlign: 'center' }}>
+            {expanded ? '▼' : '▶'}
+          </div>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#e4e6f0' }}>
               {invoice.supplier || 'Unknown Supplier'}
@@ -271,12 +273,13 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
               {fmtDate(invoice.date)} · {items.length} item{items.length !== 1 ? 's' : ''}
               {invoice.files?.length > 0 && (
                 <span style={{ marginLeft: 10 }}>
-                  {invoice.files.map((f, i) => (
+                  {invoice.files.map((f) => (
                     <a
                       key={f.file_url}
                       href={f.file_url}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={e => e.stopPropagation()}
                       style={{ color: '#02a4ba', textDecoration: 'none', marginRight: 8 }}
                     >
                       {invoice.files.length > 1 ? `Page ${f.page_number} →` : 'View invoice →'}
@@ -292,11 +295,11 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           {saveError && (
             <span style={{ fontSize: 10, color: '#e85454' }}>{saveError}</span>
           )}
-          {hasChanges && (
+          {hasChanges && expanded && (
             <button
               onClick={handleSave}
               disabled={saving}
@@ -305,7 +308,7 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
           )}
-          {step === 'matches' && !hasChanges && (
+          {step === 'matches' && !hasChanges && expanded && (
             <button
               onClick={() => onMarkReviewed(invoice.id)}
               disabled={marking}
@@ -317,8 +320,8 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
         </div>
       </div>
 
-      {/* ── STEP 1: Numbers ── */}
-      {step === 'numbers' && (
+      {/* ── STEP 1: Numbers — only shown when expanded ── */}
+      {expanded && step === 'numbers' && (
         <div style={{ overflowX: 'auto' }}>
           <table style={c.table}>
             <thead>
@@ -393,8 +396,8 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
         </div>
       )}
 
-      {/* ── STEP 2: Matches ── */}
-      {step === 'matches' && (
+      {/* ── STEP 2: Matches — only shown when expanded ── */}
+      {expanded && step === 'matches' && (
         <div style={{ overflowX: 'auto' }}>
           <table style={c.table}>
             <thead>
@@ -473,6 +476,7 @@ export default function InvoiceReviewPage() {
   const [step, setStep]       = useState('numbers'); // 'numbers' | 'matches'
   const [savingId,  setSavingId]  = useState(null);
   const [markingId, setMarkingId] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
   const [toast, setToast]         = useState(null); // { msg, type }
 
   function showToast(msg, type = 'success') {
@@ -497,7 +501,7 @@ export default function InvoiceReviewPage() {
 
   // Total counts for the header bar
   const totalInvoices = groups.reduce((s, g) => s + g.invoices.length, 0);
-  const totalItems = groups.reduce((s, g) => s + g.invoices.reduce((ss, inv) => ss + inv.line_items.length, 0), 0);
+  const totalItems    = groups.reduce((s, g) => s + g.invoices.reduce((ss, inv) => ss + inv.line_items.length, 0), 0);
 
   async function handleSave(invoiceId, restaurantId, items) {
     setSavingId(invoiceId);
@@ -618,6 +622,8 @@ export default function InvoiceReviewPage() {
                   onMarkReviewed={handleMarkReviewed}
                   saving={savingId === invoice.id}
                   marking={markingId === invoice.id}
+                  expanded={expandedId === invoice.id}
+                  onToggle={() => setExpandedId(prev => prev === invoice.id ? null : invoice.id)}
                 />
               ))}
             </div>
