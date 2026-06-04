@@ -12,33 +12,10 @@ import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from "../../components/TourDataBanner";
 import UniversalSearch from '../../components/UniversalSearch';
 import Head from "next/head";
-
-const SHELF_LIFE = {
-  fish:2,salmon:2,tuna:2,halibut:2,cod:2,tilapia:2,mahi:2,shrimp:2,scallop:2,
-  lobster:1,crab:2,oyster:3,clam:3,swordfish:2,bass:2,snapper:2,flounder:2,trout:2,
-  "bluefin tuna":2,"seared toro":2,chicken:3,beef:4,pork:4,lamb:4,veal:3,duck:3,turkey:3,
-  steak:4,"ground beef":3,"ground pork":3,bacon:7,sausage:4,"filet mignon":4,
-  "new york strip":4,ribeye:4,"short rib":4,milk:7,cream:7,butter:14,cheese:14,
-  "heavy cream":7,"sour cream":14,yogurt:14,mozzarella:7,parmesan:30,lettuce:7,
-  spinach:5,arugula:5,kale:7,herbs:5,basil:5,parsley:7,cilantro:5,mint:7,chives:7,
-  tomato:7,strawberry:5,raspberry:3,blueberry:7,mushroom:7,avocado:4,asparagus:5,
-  corn:4,pea:5,carrot:21,onion:30,garlic:30,potato:21,apple:21,lemon:21,lime:14,
-  orange:14,beet:21,celery:14,broccoli:7,cauliflower:7,zucchini:7,pepper:10,
-  olive:60,oil:180,flour:180,sugar:365,salt:365,pasta:365,rice:365,vinegar:365,sauce:30,
-  albacore:2,yellowtail:2,toro:1,"torched albacore":2,"tempura lobster":1,
-  "spicy lobster":1,"spicy tuna":2,"spicy lobster salad":1,romanesco:7,
-  "ponzu sauce":30,"romesco sauce":30,"mango sauce":14,"white wine":365,
-  ricotta:14,wasabi:14,"shrimp tempura":2,"sushi rice":365,"arborio rice":365,
-};
-function getShelfLife(name) {
-  if (!name) return 14;
-  const lower = name.toLowerCase();
-  if (SHELF_LIFE[lower]) return SHELF_LIFE[lower];
-  for (const [key, days] of Object.entries(SHELF_LIFE)) {
-    if (lower.includes(key) || key.includes(lower.split(' ')[0])) return days;
-  }
-  return 14;
-}
+import { getShelfLife, isProtein, PROTEIN_KEYS } from "../../lib/shelfLife";
+import { computeWasteRisk } from "../../lib/computeWasteRisk";
+import { useWeekInReview } from "../../lib/useWeekInReview";
+import RecipePanel from "../../components/RecipePanel";
 
 const fmt  = (n) => !n ? "$0"    : isNaN(parseFloat(n)) ? "$0"    : parseFloat(n).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0});
 const fmtD = (n) => !n ? "$0.00" : isNaN(parseFloat(n)) ? "$0.00" : parseFloat(n).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
@@ -329,69 +306,10 @@ function PriceMovementCard({ priceByCategory }) {
   );
 }
 
-function WeekInReviewCard({ restaurantId }) {
-  const [weekData, setWeekData] = useState([]);
+function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
+  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
   const [openDay, setOpenDay]   = useState(null);
-  const [loading, setLoading]   = useState(true);
-
-  useEffect(() => { if (restaurantId) loadWeekData(); }, [restaurantId]);
-
-  async function loadWeekData() {
-    setLoading(true);
-    try {
-      const days = Array.from({length:7},(_,i) => { const d=new Date(); d.setDate(d.getDate()-i); return d.toISOString().split('T')[0]; }).reverse();
-      const fromDate = days[0];
-      const [{ data: recs },{ data: sales }] = await Promise.all([
-        supabase.from('ai_recommendations').select('generated_date,recommendations').eq('restaurant_id',restaurantId).gte('generated_date',fromDate).order('generated_date',{ascending:false}),
-        supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',fromDate),
-      ]);
-      const sixtyAgo=new Date(); sixtyAgo.setDate(sixtyAgo.getDate()-67);
-      const { data: historicSales } = await supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',sixtyAgo.toISOString().split('T')[0]).lt('sale_date',fromDate);
-      const avgByItemDay={};
-      (historicSales||[]).forEach(s => {
-        const dow=new Date(s.sale_date+'T12:00:00').getDay();
-        if(!avgByItemDay[s.item_name])avgByItemDay[s.item_name]={};
-        if(!avgByItemDay[s.item_name][dow])avgByItemDay[s.item_name][dow]=[];
-        avgByItemDay[s.item_name][dow].push(parseFloat(s.quantity_sold||0));
-      });
-      const salesByDateItem={};
-      (sales||[]).forEach(s => {
-        if(!salesByDateItem[s.sale_date])salesByDateItem[s.sale_date]={};
-        salesByDateItem[s.sale_date][s.item_name]=(salesByDateItem[s.sale_date][s.item_name]||0)+parseFloat(s.quantity_sold||0);
-      });
-      const recsMap={};
-      (recs||[]).forEach(r => { recsMap[r.generated_date]=r.recommendations||[]; });
-      const DAY_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const built=days.map(date => {
-        const dow=new Date(date+'T12:00:00').getDay();
-        const daySales=salesByDateItem[date]||{};
-        const dayRecs=recsMap[date]||[];
-        const dishes=dayRecs.slice(0,3).map((rec,i) => {
-          const name=rec.title||rec.dish||'';
-          const sold=daySales[name]||0;
-          const hist=avgByItemDay[name]?.[dow]||[];
-          const avg=hist.length>0?hist.reduce((a,b)=>a+b,0)/hist.length:null;
-          const diff=avg!==null?sold-avg:null;
-          const pct=avg!==null&&avg>0?Math.round((diff/avg)*100):null;
-          return {name,sold,avg,diff,pct,type:rec.type,ticketColor:TICKET_COLORS[i]};
-        });
-        const extraSold=Math.round(dishes.reduce((s,d)=>s+(d.diff||0),0)*10)/10;
-        const wasteSaved=Math.round(dayRecs.reduce((s,r,i)=>{
-          if(r.type==='inventory'){const dish=dishes[i];return s+Math.max(0,(dish?.diff||0))*8;}
-          return s;
-        },0));
-        return {date,dayLabel:DAY_NAMES[dow],dishes,extraSold,wasteSaved};
-      });
-      setWeekData(built);
-    } catch(e){ console.error('[WeekInReview]',e); }
-    finally { setLoading(false); }
-  }
-
-  const weekExtraSold  = Math.round(weekData.reduce((s,d)=>s+Math.max(0,d.extraSold),0)*10)/10;
-  const weekWasteSaved = weekData.reduce((s,d)=>s+d.wasteSaved,0);
-  const daysWithData   = weekData.filter(d=>d.dishes.length>0).length;
-  const hitRate        = daysWithData>0?Math.round((weekData.filter(d=>d.extraSold>0).length/daysWithData)*100):0;
-  const maxWaste       = Math.max(...weekData.map(d=>d.wasteSaved),1);
+  const maxWaste       = Math.max(...weekData.map(d => d.wasteSaved), 1);
   const openDayData    = weekData.find(d=>d.date===openDay);
   const handleDayClick = (date) => setOpenDay(prev=>prev===date?null:date);
 
@@ -521,69 +439,10 @@ function WeekInReviewCard({ restaurantId }) {
 }
 
 // ── MOBILE WEEK IN REVIEW ────────────────────────────────────────────────────
-function MobileWeekInReview({ restaurantId }) {
-  const [weekData, setWeekData] = useState([]);
+function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
+  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
   const [openDay, setOpenDay] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => { if (restaurantId) loadWeekData(); }, [restaurantId]);
-
-  async function loadWeekData() {
-    setLoading(true);
-    try {
-      const days = Array.from({length:7},(_,i) => { const d=new Date(); d.setDate(d.getDate()-i); return d.toISOString().split('T')[0]; }).reverse();
-      const fromDate = days[0];
-      const [{ data: recs },{ data: sales }] = await Promise.all([
-        supabase.from('ai_recommendations').select('generated_date,recommendations').eq('restaurant_id',restaurantId).gte('generated_date',fromDate).order('generated_date',{ascending:false}),
-        supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',fromDate),
-      ]);
-      const sixtyAgo=new Date(); sixtyAgo.setDate(sixtyAgo.getDate()-67);
-      const { data: historicSales } = await supabase.from('pos_sales').select('item_name,quantity_sold,sale_date').eq('restaurant_id',restaurantId).gte('sale_date',sixtyAgo.toISOString().split('T')[0]).lt('sale_date',fromDate);
-      const avgByItemDay={};
-      (historicSales||[]).forEach(s => {
-        const dow=new Date(s.sale_date+'T12:00:00').getDay();
-        if(!avgByItemDay[s.item_name])avgByItemDay[s.item_name]={};
-        if(!avgByItemDay[s.item_name][dow])avgByItemDay[s.item_name][dow]=[];
-        avgByItemDay[s.item_name][dow].push(parseFloat(s.quantity_sold||0));
-      });
-      const salesByDateItem={};
-      (sales||[]).forEach(s => {
-        if(!salesByDateItem[s.sale_date])salesByDateItem[s.sale_date]={};
-        salesByDateItem[s.sale_date][s.item_name]=(salesByDateItem[s.sale_date][s.item_name]||0)+parseFloat(s.quantity_sold||0);
-      });
-      const recsMap={};
-      (recs||[]).forEach(r => { recsMap[r.generated_date]=r.recommendations||[]; });
-      const DAY_NAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-      const built=days.map(date => {
-        const dow=new Date(date+'T12:00:00').getDay();
-        const daySales=salesByDateItem[date]||{};
-        const dayRecs=recsMap[date]||[];
-        const dishes=dayRecs.slice(0,3).map((rec,i) => {
-          const name=rec.title||rec.dish||'';
-          const sold=daySales[name]||0;
-          const hist=avgByItemDay[name]?.[dow]||[];
-          const avg=hist.length>0?hist.reduce((a,b)=>a+b,0)/hist.length:null;
-          const diff=avg!==null?sold-avg:null;
-          const pct=avg!==null&&avg>0?Math.round((diff/avg)*100):null;
-          return {name,sold,avg,diff,pct,type:rec.type,ticketColor:TICKET_COLORS[i]};
-        });
-        const extraSold=Math.round(dishes.reduce((s,d)=>s+(d.diff||0),0)*10)/10;
-        const wasteSaved=Math.round(dayRecs.reduce((s,r,i)=>{
-          if(r.type==='inventory'){const dish=dishes[i];return s+Math.max(0,(dish?.diff||0))*8;}
-          return s;
-        },0));
-        return {date,dayLabel:DAY_NAMES[dow],dishes,extraSold,wasteSaved};
-      });
-      setWeekData(built);
-    } catch(e){ console.error('[MobileWeekInReview]',e); }
-    finally { setLoading(false); }
-  }
-
-  const weekExtraSold  = Math.round(weekData.reduce((s,d)=>s+Math.max(0,d.extraSold),0)*10)/10;
-  const weekWasteSaved = weekData.reduce((s,d)=>s+d.wasteSaved,0);
-  const daysWithData   = weekData.filter(d=>d.dishes.length>0).length;
-  const hitRate        = daysWithData>0?Math.round((weekData.filter(d=>d.extraSold>0).length/daysWithData)*100):0;
-  const openDayData    = weekData.find(d=>d.date===openDay);
+  const openDayData = weekData.find(d => d.date === openDay);
 
   if (loading) return (
     <div style={{padding:'20px',textAlign:'center'}}>
@@ -785,45 +644,14 @@ export default function ClientDashboard() {
         supabase.from("pos_sales").select("item_name,quantity_sold,sale_date").eq("restaurant_id",restId),
       ]);
       setMenuItemsFull(menuItems||[]);
-      const wasteRisk=computeWasteRisk(invoiceItems||[],invoices||[],posSales||[]);
+      const wasteRisk = computeWasteRisk(invoiceItems||[], invoices||[], posSales||[], menuItems||[]);
       const priceByCategory=computePriceByCategory(invoiceItems||[]);
       const processed=processDashboardData(invoices||[],ingredients||[],menuItems||[],wasteRisk,priceByCategory);
       setData(processed);setLoading(false);
       fetchAIRecommendations(processed,restId);
     }catch(err){setError("Failed to fetch dashboard data: "+err.message);setLoading(false);}
   }
-
-  const PROTEIN_KEYS=new Set(['fish','salmon','tuna','halibut','cod','tilapia','mahi','shrimp','scallop','lobster','crab','oyster','clam','swordfish','bass','snapper','flounder','trout','bluefin tuna','seared toro','chicken','beef','pork','lamb','veal','duck','turkey','steak','ground beef','ground pork','bacon','sausage','filet mignon','new york strip','ribeye','short rib']);
-  function isProtein(name){const lower=(name||'').toLowerCase();if(PROTEIN_KEYS.has(lower))return true;for(const key of PROTEIN_KEYS){if(lower.includes(key))return true;}return false;}
-
-  function computeWasteRisk(invoiceItems,invoices,posSales){
-    const invoiceDateMap={};
-    (invoices||[]).forEach(inv=>{if(inv.id&&inv.date)invoiceDateMap[inv.id]=inv.date;});
-    const posByItem={};
-    (posSales||[]).forEach(s=>{const key=(s.item_name||'').toLowerCase().trim();if(!posByItem[key])posByItem[key]={};posByItem[key][s.sale_date]=(posByItem[key][s.sale_date]||0)+parseFloat(s.quantity_sold||0);});
-    const latestByIngredient={};
-    (invoiceItems||[]).forEach(item=>{
-      const name=(item.ingredient_name_normalized||item.item_name||'').trim();if(!name)return;
-      const dateStr=item.invoices?.date||invoiceDateMap[item.invoice_id];if(!dateStr)return;
-      const date=new Date(dateStr);if(isNaN(date.getTime()))return;
-      if(!latestByIngredient[name]||date>latestByIngredient[name].date){latestByIngredient[name]={date,unit:item.unit,quantity:parseFloat(item.quantity||0),unitCost:parseFloat(item.unit_cost||0),invoiceId:item.invoice_id||item.invoices?.id,invoiceDate:dateStr};}
-    });
-    const today=new Date();today.setHours(0,0,0,0);
-    const risks=Object.entries(latestByIngredient).map(([name,info])=>{
-      const shelfLife=getShelfLife(name);
-      const deliveryDate=new Date(info.date);deliveryDate.setHours(0,0,0,0);
-      const daysSinceDelivery=Math.floor((today-deliveryDate)/(1000*60*60*24));
-      const daysLeft=shelfLife-daysSinceDelivery;
-      let soldSinceDelivery=0;
-      const nameLower=name.toLowerCase().trim();
-      if(posByItem[nameLower])Object.entries(posByItem[nameLower]).forEach(([saleDate,qty])=>{if(saleDate>=info.invoiceDate)soldSinceDelivery+=qty;});
-      return {name,daysLeft,shelfLife,daysSinceDelivery,deliveryDate:info.invoiceDate,invoiceId:info.invoiceId,unit:info.unit,invoicedQty:info.quantity,remainingQty:Math.max(0,info.quantity-soldSinceDelivery),totalValue:(Math.max(0,info.quantity-soldSinceDelivery))*info.unitCost,protein:isProtein(name)};
-    });
-    const proteins=risks.filter(r=>r.protein).sort((a,b)=>a.daysSinceDelivery-b.daysSinceDelivery).slice(0,4);
-    const others=risks.filter(r=>!r.protein&&r.daysLeft>=0&&r.daysLeft<=5).sort((a,b)=>a.daysLeft-b.daysLeft);
-    return [...proteins,...others];
-  }
-
+  
   function computePriceByCategory(invoiceItems){
     const catMap={};
     (invoiceItems||[]).forEach(item=>{
@@ -1091,7 +919,7 @@ export default function ClientDashboard() {
                     <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                     Week in Review
                   </div>
-                  <MobileWeekInReview restaurantId={restaurantId}/>
+                  <MobileWeekInReview restaurantId={restaurantId} wasteRisk={data.wasteRisk} menuItems={menuItemsFull}/>
                 </div>
               )}
               {mobTab==='prices' && (
@@ -1155,39 +983,6 @@ export default function ClientDashboard() {
 
   function handleRecClick(i) {
     setSelectedRec(prev => prev === i ? null : i);
-  }
-
-  function RecipePanel({ rec, menuItems, wasteRisk }) {
-    if (!rec) return null;
-    const dishName = rec.title || rec.dish || '';
-    const dishLower = dishName.toLowerCase().trim();
-    const menuItem = (menuItems||[]).find(m => m.name?.toLowerCase().trim()===dishLower)
-      || (menuItems||[]).find(m => dishLower.includes(m.name?.toLowerCase().trim()) || m.name?.toLowerCase().trim().includes(dishLower));
-    const atRiskNames = new Set((wasteRisk||[]).map(w => w.name?.toLowerCase().trim()));
-    if (!menuItem?.menu_item_components?.length) return (
-      <div style={{padding:'clamp(8px,.8vw,12px)',fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.62vw,11px)',color:'var(--text-faint)'}}>
-        Recipe not linked — add ingredients in Menu Items
-      </div>
-    );
-    return (
-      <div style={{padding:'clamp(8px,.8vw,12px)'}}>
-        <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:'0.8px',marginBottom:'clamp(6px,.6vh,10px)',fontFamily:'Inter,sans-serif'}}>Recipe Breakdown</div>
-        {menuItem.menu_item_components.map((comp,ci) => (
-          <div key={ci} style={{marginBottom:'clamp(5px,.5vh,8px)'}}>
-            <div style={{fontSize:'clamp(9px,.72vw,12px)',color:'var(--text-primary)',fontWeight:600,fontFamily:'Courier New,monospace',marginBottom:2}}>— {comp.name||`Component ${ci+1}`}</div>
-            {(comp.component_ingredients||[]).map((ci2,ii) => {
-              const ingName = ci2.ingredients?.name||ci2.name||'';
-              const isAtRisk = atRiskNames.has(ingName.toLowerCase().trim());
-              return (
-                <div key={ii} style={{fontSize:'clamp(8px,.65vw,11px)',color:isAtRisk?'var(--color-red)':'var(--text-secondary)',fontFamily:'Courier New,monospace',paddingLeft:12,lineHeight:1.7,fontWeight:isAtRisk?600:'normal'}}>
-                  &nbsp;&nbsp;· {ingName}{ci2.quantity?` (${ci2.quantity})`:''}{isAtRisk?' ⚠':''}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    );
   }
 
   return (
@@ -1364,7 +1159,11 @@ export default function ClientDashboard() {
               <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:0,overflow:'hidden'}}>
                 {/* Week in Review — takes ~60% of height */}
                 <div style={{flex:'3 1 0',minHeight:0,overflow:'hidden'}}>
-                  <WeekInReviewCard restaurantId={restaurantId}/>
+                  <WeekInReviewCard 
+                    restaurantId={restaurantId} 
+                    wasteRisk={data.wasteRisk} 
+                    menuItems={menuItemsFull}
+                  />
                 </div>
                 {/* Bottom: Waste Risk + Price Movement — takes ~40% */}
                 <div style={{flex:'2 1 0',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',marginTop:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
