@@ -1,5 +1,5 @@
 // pages/client/menu-items.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import supabase from '../../lib/supabaseClient';
@@ -387,50 +387,61 @@ export default function ClientMenuItems() {
 
   function handleSortChange(e) { const [field, dir] = e.target.value.split('-'); setSortBy(field); setSortOrder(dir); }
 
-  const filtered = menuItems
-    .filter(i => (i.name || '').toLowerCase().includes(searchTerm.toLowerCase()))
-    .sort((a, b) => {
-      let va, vb;
-      switch (sortBy) {
-        case 'name': va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase(); break;
-        case 'price': va = parseFloat(a.price || 0); vb = parseFloat(b.price || 0); break;
-        case 'cost': va = parseFloat(a.cost || 0); vb = parseFloat(b.cost || 0); break;
-        case 'margin': va = getMarginNum(a.price, a.cost) || 0; vb = getMarginNum(b.price, b.cost) || 0; break;
-        default: return 0;
-      }
-      if (va < vb) return sortOrder === 'asc' ? -1 : 1;
-      if (va > vb) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
+  const filtered = useMemo(() =>
+    menuItems
+      .filter(i => (i.name || '').toLowerCase().includes(searchTerm.toLowerCase()))
+      .sort((a, b) => {
+        let va, vb;
+        switch (sortBy) {
+          case 'name': va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase(); break;
+          case 'price': va = parseFloat(a.price || 0); vb = parseFloat(b.price || 0); break;
+          case 'cost': va = parseFloat(a.cost || 0); vb = parseFloat(b.cost || 0); break;
+          case 'margin': va = getMarginNum(a.price, a.cost) || 0; vb = getMarginNum(b.price, b.cost) || 0; break;
+          default: return 0;
+        }
+        if (va < vb) return sortOrder === 'asc' ? -1 : 1;
+        if (va > vb) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      }),
+  [menuItems, searchTerm, sortBy, sortOrder]);
 
-  const itemsWithMargins = menuItems.filter(i => getMarginNum(i.price, i.cost) !== null);
-  const avgMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + getMarginNum(i.price, i.cost), 0) / itemsWithMargins.length : 0;
-  const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).length;
-  const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).slice(0, 3);
-  const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
-  const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
-  const maxBucket = Math.max(bucket(0, 40), bucket(40, 60), bucket(60, 75), bucket(75, 100), 1);
+  const { itemsWithMargins, avgMargin, belowTarget, lowMargin, topMargin, noData, bucket, maxBucket } = useMemo(() => {
+    const itemsWithMargins = menuItems.filter(i => getMarginNum(i.price, i.cost) !== null);
+    const avgMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + getMarginNum(i.price, i.cost), 0) / itemsWithMargins.length : 0;
+    const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).length;
+    const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).slice(0, 3);
+    const topMargin = [...itemsWithMargins].sort((a, b) => getMarginNum(b.price, b.cost) - getMarginNum(a.price, a.cost)).slice(0, 5);
+    const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
+    const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
+    const maxBucket = Math.max(bucket(0, 40), bucket(40, 60), bucket(60, 75), bucket(75, 100), 1);
+    return { itemsWithMargins, avgMargin, belowTarget, lowMargin, topMargin, noData, bucket, maxBucket };
+  }, [menuItems]);
 
-  const totalCost = selectedItemData
-    ? selectedItemData.components.length > 0
-      ? (() => {
-        const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0);
-        const stored = parseFloat(selectedItemData.item?.cost || 0);
-        // If calculated sum is more than 3× the stored cost, the component data is
-        // likely incomplete or using wrong units — fall back to the stored cost
-        return (stored > 0 && compSum > stored * 3) ? stored : compSum;
-      })()
-      : selectedItemData.ingredients.length > 0
-        ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
-        : parseFloat(selectedItemData.item?.cost || 0)
-    : 0;
-
-  const profitMargin = selectedItemData ? getMarginNum(selectedItemData.item?.price, totalCost) : null;
   function getMultiplier(id) { return multipliers[id] ?? 1.0; }
   function setMultiplier(id, val) { setMultipliers(prev => ({ ...prev, [id]: Math.max(0, Math.min(2, val)) })); }
-  const optimizedCost = selectedItemData ? (selectedItemData.components.length > 0 ? selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0) * getMultiplier(c.id), 0) : totalCost * getMultiplier('all')) : 0;
-  const effectivePrice = parseFloat(optimizedPrice ?? selectedItemData?.item?.price ?? 0);
-  const optimizedMargin = effectivePrice > 0 ? ((effectivePrice - optimizedCost) / effectivePrice) * 100 : null;
+
+  const { totalCost, profitMargin, optimizedCost, effectivePrice, optimizedMargin } = useMemo(() => {
+    const totalCost = selectedItemData
+      ? selectedItemData.components.length > 0
+        ? (() => {
+          const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0);
+          const stored = parseFloat(selectedItemData.item?.cost || 0);
+          return (stored > 0 && compSum > stored * 3) ? stored : compSum;
+        })()
+        : selectedItemData.ingredients.length > 0
+          ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
+          : parseFloat(selectedItemData.item?.cost || 0)
+      : 0;
+    const profitMargin = selectedItemData ? getMarginNum(selectedItemData.item?.price, totalCost) : null;
+    const optimizedCost = selectedItemData
+      ? selectedItemData.components.length > 0
+        ? selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0) * (multipliers[c.id] ?? 1.0), 0)
+        : totalCost * (multipliers['all'] ?? 1.0)
+      : 0;
+    const effectivePrice = parseFloat(optimizedPrice ?? selectedItemData?.item?.price ?? 0);
+    const optimizedMargin = effectivePrice > 0 ? ((effectivePrice - optimizedCost) / effectivePrice) * 100 : null;
+    return { totalCost, profitMargin, optimizedCost, effectivePrice, optimizedMargin };
+  }, [selectedItemData, multipliers, optimizedPrice]);
 
   function toggleComp(id) { setExpandedComponents(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; }); }
 

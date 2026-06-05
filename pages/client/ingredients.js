@@ -1,5 +1,5 @@
 // pages/client/ingredients.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import supabase from '../../lib/supabaseClient';
@@ -255,35 +255,44 @@ export default function ClientIngredients() {
     return sortOrder === 'asc' ? ' ↑' : ' ↓';
   }
 
-  const filtered = ingredients
-    .filter(i => { const s = searchTerm.toLowerCase(); return (i.name || '').toLowerCase().includes(s) || (i.unit || '').toLowerCase().includes(s); })
-    .sort((a, b) => {
-      let va, vb;
-      switch (sortBy) {
-        case 'name': va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase(); break;
-        case 'last_price': va = parseFloat(a.last_price) || 0; vb = parseFloat(b.last_price) || 0; break;
-        case 'unit': va = (a.unit || '').toLowerCase(); vb = (b.unit || '').toLowerCase(); break;
-        case 'last_ordered_at': va = new Date(a.last_ordered_at || 0); vb = new Date(b.last_ordered_at || 0); break;
-        default: return 0;
-      }
-      if (va < vb) return sortOrder === 'asc' ? -1 : 1;
-      if (va > vb) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
+  const filtered = useMemo(() =>
+    ingredients
+      .filter(i => { const s = searchTerm.toLowerCase(); return (i.name || '').toLowerCase().includes(s) || (i.unit || '').toLowerCase().includes(s); })
+      .sort((a, b) => {
+        let va, vb;
+        switch (sortBy) {
+          case 'name': va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase(); break;
+          case 'last_price': va = parseFloat(a.last_price) || 0; vb = parseFloat(b.last_price) || 0; break;
+          case 'unit': va = (a.unit || '').toLowerCase(); vb = (b.unit || '').toLowerCase(); break;
+          case 'last_ordered_at': va = new Date(a.last_ordered_at || 0); vb = new Date(b.last_ordered_at || 0); break;
+          default: return 0;
+        }
+        if (va < vb) return sortOrder === 'asc' ? -1 : 1;
+        if (va > vb) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      }),
+  [ingredients, searchTerm, sortBy, sortOrder]);
 
-  const priced = ingredients.filter(i => i.last_price && parseFloat(i.last_price) > 0);
-  const unpriced = ingredients.filter(i => !i.last_price || parseFloat(i.last_price) === 0);
-  const avgPrice = priced.length > 0 ? priced.reduce((s, i) => s + parseFloat(i.last_price), 0) / priced.length : 0;
-  const highest = priced.length > 0 ? Math.max(...priced.map(i => parseFloat(i.last_price))) : 0;
-  const topExpensive = [...priced].sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price)).slice(0, 5);
-  const maxPrice = topExpensive[0] ? parseFloat(topExpensive[0].last_price) : 1;
+  const { priced, unpriced, avgPrice, highest, topExpensive, maxPrice } = useMemo(() => {
+    const priced = ingredients.filter(i => i.last_price && parseFloat(i.last_price) > 0);
+    const unpriced = ingredients.filter(i => !i.last_price || parseFloat(i.last_price) === 0);
+    const avgPrice = priced.length > 0 ? priced.reduce((s, i) => s + parseFloat(i.last_price), 0) / priced.length : 0;
+    const highest = priced.length > 0 ? Math.max(...priced.map(i => parseFloat(i.last_price))) : 0;
+    const topExpensive = [...priced].sort((a, b) => parseFloat(b.last_price) - parseFloat(a.last_price)).slice(0, 5);
+    const maxPrice = topExpensive[0] ? parseFloat(topExpensive[0].last_price) : 1;
+    return { priced, unpriced, avgPrice, highest, topExpensive, maxPrice };
+  }, [ingredients]);
+
   const expColors = ['var(--color-red)', 'var(--color-amber)', 'var(--color-amber)', 'var(--accent)', 'var(--accent)'];
 
-  const prices = priceHistory.map(p => p.price);
-  const avgIng = prices.length > 0 ? prices.reduce((s, p) => s + p, 0) / prices.length : 0;
-  const firstPrice = prices[0];
-  const lastPrice = prices[prices.length - 1];
-  const priceChangePct = firstPrice ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+  const { prices, avgIng, firstPrice, lastPrice, priceChangePct } = useMemo(() => {
+    const prices = priceHistory.map(p => p.price);
+    const avgIng = prices.length > 0 ? prices.reduce((s, p) => s + p, 0) / prices.length : 0;
+    const firstPrice = prices[0];
+    const lastPrice = prices[prices.length - 1];
+    const priceChangePct = firstPrice ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+    return { prices, avgIng, firstPrice, lastPrice, priceChangePct };
+  }, [priceHistory]);
 
   const NAV_ITEMS = [
     { label: 'Dashboard',   path: '/client/dashboard',   icon: <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },

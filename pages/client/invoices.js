@@ -825,29 +825,40 @@ export default function ClientInvoices() {
   }
 
   // ── Derived stats ──────────────────────────────────────────────────────────
-  const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear  = now.getFullYear();
-  const totalSpend   = invoices.reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
-  const thisMonthSpend = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
-  const avgInvoice   = invoices.length > 0 ? totalSpend / invoices.length : 0;
-  const largest      = invoices.length > 0 ? Math.max(...invoices.map(i => parseFloat(i.amount || 0))) : 0;
-  const lastInvoice  = invoices[0];
-  const daysSinceLast = lastInvoice?.date ? (() => { const [y, m, d] = lastInvoice.date.split('T')[0].split('-').map(Number); return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000); })() : null;
-  const invoicesThisMonthByDate   = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).length;
-  const invoicesUploadedThisMonth = invoices.filter(i => { if (!i.created_at) return false; const d = new Date(i.created_at); return d.getFullYear() === currentYear && d.getMonth() === currentMonth; }).length;
-  const supplierMap = {};
-  invoices.forEach(i => { if (i.supplier) { const key = i.supplier.trim(); supplierMap[key] = Math.round(((supplierMap[key] || 0) + (Math.round(parseFloat(i.amount || 0) * 100) / 100)) * 100) / 100; } });
-  const topSuppliers = Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const maxSupplier  = topSuppliers[0]?.[1] || 1;
-  const monthlySpend = Array.from({ length: 12 }, (_, i) => { const d = new Date(currentYear, currentMonth - 11 + i, 1); const yr = d.getFullYear(); const mo = d.getMonth(); const total = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === yr && (m - 1) === mo; }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0); return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total }; });
-  const maxMonthly   = Math.max(...monthlySpend.map(m => m.total), 1);
-  const lastMonthDate  = new Date(currentYear, currentMonth - 1, 1);
-  const lastMonthSpend = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth(); }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
-  const monthDelta = thisMonthSpend - lastMonthSpend;
-  const monthPct   = lastMonthSpend > 0 ? Math.round((monthDelta / lastMonthSpend) * 100) : null;
-  const monthUp    = monthDelta >= 0;
-  const filtered   = invoices.filter(i => { const s = searchTerm.toLowerCase(); return (i.number || '').toLowerCase().includes(s) || (i.supplier || '').toLowerCase().includes(s); });
+  const {
+    currentMonth, currentYear, totalSpend, thisMonthSpend, avgInvoice, largest,
+    lastInvoice, daysSinceLast, invoicesThisMonthByDate, invoicesUploadedThisMonth,
+    supplierMap, topSuppliers, maxSupplier, monthlySpend, maxMonthly,
+    lastMonthSpend, monthDelta, monthPct, monthUp,
+  } = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear  = now.getFullYear();
+    const totalSpend   = invoices.reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
+    const thisMonthSpend = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).reduce((s, i) => s + (Math.round(parseFloat(i.amount || 0) * 100) / 100), 0);
+    const avgInvoice   = invoices.length > 0 ? totalSpend / invoices.length : 0;
+    const largest      = invoices.length > 0 ? Math.max(...invoices.map(i => parseFloat(i.amount || 0))) : 0;
+    const lastInvoice  = invoices[0];
+    const daysSinceLast = lastInvoice?.date ? (() => { const [y, m, d] = lastInvoice.date.split('T')[0].split('-').map(Number); return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000); })() : null;
+    const invoicesThisMonthByDate   = invoices.filter(i => { if (!i.date) return false; const [y, m] = i.date.split('T')[0].split('-').map(Number); return y === currentYear && m - 1 === currentMonth; }).length;
+    const invoicesUploadedThisMonth = invoices.filter(i => { if (!i.created_at) return false; const d = new Date(i.created_at); return d.getFullYear() === currentYear && d.getMonth() === currentMonth; }).length;
+    const supplierMap = {};
+    invoices.forEach(i => { if (i.supplier) { const key = i.supplier.trim(); supplierMap[key] = Math.round(((supplierMap[key] || 0) + (Math.round(parseFloat(i.amount || 0) * 100) / 100)) * 100) / 100; } });
+    const topSuppliers = Object.entries(supplierMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    const maxSupplier  = topSuppliers[0]?.[1] || 1;
+    const monthlySpend = Array.from({ length: 12 }, (_, i) => { const d = new Date(currentYear, currentMonth - 11 + i, 1); const yr = d.getFullYear(); const mo = d.getMonth(); const total = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === yr && (m - 1) === mo; }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0); return { month: d.toLocaleDateString('en-US', { month: 'short' }).slice(0, 1), total }; });
+    const maxMonthly   = Math.max(...monthlySpend.map(m => m.total), 1);
+    const lastMonthDate  = new Date(currentYear, currentMonth - 1, 1);
+    const lastMonthSpend = invoices.filter(inv => { if (!inv.date) return false; const [y, m] = inv.date.split('T')[0].split('-').map(Number); return y === lastMonthDate.getFullYear() && (m - 1) === lastMonthDate.getMonth(); }).reduce((s, inv) => s + (Math.round(parseFloat(inv.amount || 0) * 100) / 100), 0);
+    const monthDelta = thisMonthSpend - lastMonthSpend;
+    const monthPct   = lastMonthSpend > 0 ? Math.round((monthDelta / lastMonthSpend) * 100) : null;
+    const monthUp    = monthDelta >= 0;
+    return { currentMonth, currentYear, totalSpend, thisMonthSpend, avgInvoice, largest, lastInvoice, daysSinceLast, invoicesThisMonthByDate, invoicesUploadedThisMonth, supplierMap, topSuppliers, maxSupplier, monthlySpend, maxMonthly, lastMonthSpend, monthDelta, monthPct, monthUp };
+  }, [invoices]);
+
+  const filtered = useMemo(() =>
+    invoices.filter(i => { const s = searchTerm.toLowerCase(); return (i.number || '').toLowerCase().includes(s) || (i.supplier || '').toLowerCase().includes(s); }),
+  [invoices, searchTerm]);
 
   // ── MOBILE LAYOUT ──────────────────────────────────────────────────────────
   if (isMobile) {

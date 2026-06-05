@@ -256,7 +256,20 @@ function WasteRow({ item, router }) {
 
 function PriceMovementCard({ priceByCategory }) {
   const [selectedCat, setSelectedCat] = useState(null);
-  const categories = Object.keys(priceByCategory).sort();
+  const categories = useMemo(() => Object.keys(priceByCategory).sort(), [priceByCategory]);
+
+  const categoryAvgHistories = useMemo(() => {
+    const result = {};
+    categories.forEach(cat => {
+      const d = priceByCategory[cat];
+      const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
+      result[cat] = Array.from({ length: maxLen }, (_, idx) => {
+        const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      });
+    });
+    return result;
+  }, [priceByCategory, categories]);
   const [globalMin, globalMax] = useMemo(() => {
     let min=Infinity, max=-Infinity;
     Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
@@ -279,8 +292,7 @@ function PriceMovementCard({ priceByCategory }) {
         {categories.length===0 && <div className="db-empty">No price history yet</div>}
         {!selectedCat && categories.map(cat => {
           const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-          const maxLen=Math.max(...d.ingredients.map(i=>i.history.length));
-          const avgHistory=Array.from({length:maxLen},(_,idx) => { const vals=d.ingredients.map(i=>i.history[idx]??i.history[i.history.length-1]).filter(Boolean); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; });
+          const avgHistory = categoryAvgHistories[cat];
           return (
             <div key={cat} className="db-pm-cat-row" onClick={() => setSelectedCat(cat)}>
               <div className="db-pm-cat-name">{cat||'Uncategorized'}</div>
@@ -534,7 +546,20 @@ function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
 // ── MOBILE PRICE MOVEMENT ────────────────────────────────────────────────────
 function MobilePriceMovement({ priceByCategory }) {
   const [selectedCat, setSelectedCat] = useState(null);
-  const categories = Object.keys(priceByCategory).sort();
+  const categories = useMemo(() => Object.keys(priceByCategory).sort(), [priceByCategory]);
+
+  const categoryAvgHistories = useMemo(() => {
+    const result = {};
+    categories.forEach(cat => {
+      const d = priceByCategory[cat];
+      const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
+      result[cat] = Array.from({ length: maxLen }, (_, idx) => {
+        const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
+        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      });
+    });
+    return result;
+  }, [priceByCategory, categories]);
   const [globalMin, globalMax] = useMemo(() => {
     let min=Infinity, max=-Infinity;
     Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
@@ -549,8 +574,7 @@ function MobilePriceMovement({ priceByCategory }) {
       {categories.length===0 && <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',padding:16}}>No price history yet</div>}
       {!selectedCat && categories.map(cat => {
         const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-        const maxLen=Math.max(...d.ingredients.map(i=>i.history.length));
-        const avgHistory=Array.from({length:maxLen},(_,idx) => { const vals=d.ingredients.map(i=>i.history[idx]??i.history[i.history.length-1]).filter(Boolean); return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0; });
+        const avgHistory = categoryAvgHistories[cat];
         return (
           <div key={cat} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,marginBottom:8,cursor:'pointer'}} onClick={()=>setSelectedCat(cat)}>
             <div style={{flex:1,fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cat||'Uncategorized'}</div>

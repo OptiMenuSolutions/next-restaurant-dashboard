@@ -1,5 +1,5 @@
 // pages/client/analytics.js
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import supabase from '../../lib/supabaseClient';
@@ -207,6 +207,7 @@ function TrendLine({ data, valueKey = 'rev', color = 'var(--accent)' }) {
 function CategoryBars({ data }) {
   if (!data || !data.length) return <div style={{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, fontSize:11, color:'var(--text-muted)' }}>No category data</div>;
   const max = Math.max(...data.map(d => d.value), 1);
+  const total = data.reduce((s, x) => s + x.value, 0);
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:'clamp(5px,.5vh,9px)', flex:1, minHeight:0, justifyContent:'space-evenly' }}>
       {data.map((d, i) => (
@@ -216,7 +217,7 @@ function CategoryBars({ data }) {
             <div style={{ height:'100%', borderRadius:3, background: CAT_COLORS[i % CAT_COLORS.length], width:`${(d.value/max)*100}%`, transition:'width .4s ease' }}/>
           </div>
           <div style={{ fontSize:'clamp(9px,.68vw,11px)', fontWeight:600, color: CAT_COLORS[i % CAT_COLORS.length], minWidth:'clamp(40px,4vw,65px)', textAlign:'right', flexShrink:0 }}>{formatCurrency(d.value)}</div>
-          <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', minWidth:28, textAlign:'right', flexShrink:0 }}>{((d.value/data.reduce((s,x)=>s+x.value,0))*100).toFixed(0)}%</div>
+          <div style={{ fontSize:'clamp(8px,.6vw,10px)', color:'var(--text-muted)', minWidth:28, textAlign:'right', flexShrink:0 }}>{((d.value/total)*100).toFixed(0)}%</div>
         </div>
       ))}
     </div>
@@ -229,12 +230,13 @@ function ByDayCards({ dayOfWeekData, allSales, dateRange, dayView }) {
   const maxQty = Math.max(...dayOfWeekData.map(d => d.qty), 1);
   const maxRev = Math.max(...dayOfWeekData.map(d => d.rev), 1);
 
-  const dayCatData = selectedDay ? (() => {
+  const dayCatData = useMemo(() => {
+    if (!selectedDay) return [];
     const daySales = allSales.filter(s => s.day_of_week === selectedDay);
     const catMap = {};
     for (const s of daySales) { const cat = s.category || 'Uncategorized'; catMap[cat] = (catMap[cat] || 0) + parseFloat(s.revenue || 0); }
     return Object.entries(catMap).sort((a,b) => b[1]-a[1]).map(([name,value]) => ({name,value}));
-  })() : [];
+  }, [selectedDay, allSales]);
 
   if (selectedDay) {
     const dayData = dayOfWeekData.find(d => d.day === selectedDay);
@@ -811,9 +813,9 @@ export default function AnalyticsPage() {
     } catch(err) { setUploadMsg('Upload failed: '+err.message); setUploadStep('mapping'); }
   }
 
-  const maxTopQty = topSellers[0]?.qty||1;
-  const maxTopRev = Math.max(...topSellers.map(i => i.rev), 1);
-  const maxHourQty = Math.max(...hourlyData.map(h => h.qty), 1);
+  const maxTopQty = useMemo(() => topSellers[0]?.qty || 1, [topSellers]);
+  const maxTopRev = useMemo(() => Math.max(...topSellers.map(i => i.rev), 1), [topSellers]);
+  const maxHourQty = useMemo(() => Math.max(...hourlyData.map(h => h.qty), 1), [hourlyData]);
 
   const MAPPER_FIELDS = [
     {f:'item_name',req:true},{f:'sale_date',req:true},{f:'quantity_sold',req:true},{f:'revenue',req:true},
