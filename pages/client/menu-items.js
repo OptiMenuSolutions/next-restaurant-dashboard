@@ -320,13 +320,19 @@ export default function ClientMenuItems() {
   }, [selectedItemData]);
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push('/client/login'); return; }
-    setUserEmail(user.email || '');
-    const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
-    if (!profile?.restaurant_id) return;
-    setRestaurantId(profile.restaurant_id);
-    setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/client/login'); return; }
+      setUserEmail(user.email || '');
+      const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
+      if (!profile?.restaurant_id) { setLoading(false); return; }
+      setRestaurantId(profile.restaurant_id);
+      setUserName(profile.full_name ? profile.full_name.trim().split(' ')[0] : 'User');
+    } catch (err) {
+      console.error('[menu-items] init error:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function fetchMenuItems() {
