@@ -25,7 +25,9 @@ function formatHour(h) {
 }
 function getMarginColor(m) {
   if (!m) return 'var(--text-muted)';
-  if (m >= 60) return 'var(--color-green)'; if (m >= 40) return 'var(--accent)'; if (m >= 25) return 'var(--color-amber)'; return 'var(--color-red)';
+  if (m >= 70) return 'var(--color-green)';
+  if (m >= 60) return 'var(--accent)';
+  return 'var(--color-red)';
 }
 function formatDateLabel(dateStr) {
   if (!dateStr) return '';
@@ -581,23 +583,29 @@ export default function AnalyticsPage() {
   }, [router.isReady, isTour]);
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push('/client/login'); return; }
-    setUserEmail(user.email || '');
-    const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
-    if (!profile?.restaurant_id) { setLoading(false); return; }
-    if (!isTour) { setRestaurantId(profile.restaurant_id); await loadSalesData(profile.restaurant_id); }
-    setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
-    setLoading(false);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/client/login'); return; }
+      setUserEmail(user.email || '');
+      const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
+      if (!profile?.restaurant_id) { setLoading(false); return; }
+      if (!isTour) { setRestaurantId(profile.restaurant_id); await loadSalesData(profile.restaurant_id); }
+      setUserName(profile.full_name ? profile.full_name.trim().split(' ')[0] : 'User');
+    } catch (err) {
+      console.error('[analytics] init error:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function loadSalesData(restId) {
     const PAGE_SIZE = 1000;
+    const MAX_PAGES = 10; // hard cap at 10k rows
     let allRows = [];
     let from = 0;
-    let keepGoing = true;
+    let pages = 0;
 
-    while (keepGoing) {
+    while (pages < MAX_PAGES) {
       const { data, error } = await supabase
         .from('pos_sales')
         .select('*')
@@ -608,7 +616,8 @@ export default function AnalyticsPage() {
       if (error || !data?.length) break;
 
       allRows = allRows.concat(data);
-      keepGoing = data.length === PAGE_SIZE;
+      pages++;
+      if (data.length < PAGE_SIZE) break;
       from += PAGE_SIZE;
     }
 
@@ -777,13 +786,20 @@ export default function AnalyticsPage() {
       const { data: session, error: sessionErr } = await supabase.from('upload_sessions').insert({ restaurant_id: restaurantId, filename: pendingFilename, row_count: normalized.length, date_from: dateFrom, date_to: dateTo, pos_system: selectedPOS }).select().single();
       if (sessionErr) throw sessionErr;
       const taggedRows = normalized.map(r => ({ ...r, upload_session_id: session.id }));
-      await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId).gte('sale_date', dateFrom).lte('sale_date', dateTo);
       const CHUNK = 500;
+      const insertedIds = [];
       for (let i = 0; i < taggedRows.length; i += CHUNK) {
-        const { error } = await supabase.from('pos_sales').insert(taggedRows.slice(i, i+CHUNK));
-        if (error) throw error;
-        setUploadProgress(Math.min(99, Math.round(((i+CHUNK)/taggedRows.length)*100)));
+        const { data: inserted, error } = await supabase.from('pos_sales').insert(taggedRows.slice(i, i + CHUNK)).select('id');
+        if (error) {
+          // roll back any rows we already inserted this session
+          if (insertedIds.length) await supabase.from('pos_sales').delete().in('id', insertedIds);
+          throw error;
+        }
+        inserted?.forEach(r => insertedIds.push(r.id));
+        setUploadProgress(Math.min(90, Math.round(((i + CHUNK) / taggedRows.length) * 90)));
       }
+      // only delete the old rows once all new rows are safely inserted
+      await supabase.from('pos_sales').delete().eq('restaurant_id', restaurantId).gte('sale_date', dateFrom).lte('sale_date', dateTo).not('upload_session_id', 'eq', session.id);
       try { await supabase.from('activity_logs').insert({ restaurant_id: restaurantId, activity_type: 'pos_upload', title: 'POS Data Uploaded', subtitle: pendingFilename, details: `Imported ${normalized.length} records from ${dateFrom} to ${dateTo}`, metadata: { session_id: session.id, row_count: normalized.length, date_from: dateFrom, date_to: dateTo } }); } catch {}
       setUploadProgress(100);
       setUploadSuccessMsg(`Successfully imported ${normalized.length} records across ${[...new Set(normalized.map(r=>r.sale_date))].length} days.`);

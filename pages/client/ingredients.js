@@ -8,9 +8,11 @@ import ProfileDropdown from '../../components/ProfileDropdown';
 import { useTour } from '../../lib/useTour';
 import TourOverlay from '../../components/TourOverlay';
 import { fetchSampleData } from '../../lib/seedSampleData';
+import { isProtein } from '../../lib/shelfLife';
 import TourDataBanner from '../../components/TourDataBanner';
 import UniversalSearch from '../../components/UniversalSearch';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
 
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
@@ -162,7 +164,7 @@ export default function ClientIngredients() {
     router.prefetch('/client/ingredients');
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
-  }, []);
+  }, [router]);
 
   const { tourProps } = useTour('ingredients', restaurantId);
 
@@ -172,22 +174,33 @@ export default function ClientIngredients() {
   }, [router.isReady, isTour]);
 
   async function init() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { router.push('/client/login'); return; }
-    setUserEmail(user.email || '');
-    const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
-    if (!profile?.restaurant_id) { setLoading(false); return; }
-    setRestaurantId(profile.restaurant_id);
-    setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.push('/client/login'); return; }
+      setUserEmail(user.email || '');
+      const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
+      if (!profile?.restaurant_id) { setLoading(false); return; }
+      setRestaurantId(profile.restaurant_id);
+      setUserName(profile.full_name ? profile.full_name.trim().split(' ')[0] : 'User');
+    } catch (err) {
+      console.error('[ingredients] init error:', err);
+      setLoading(false);
+    }
   }
 
   async function fetchIngredients() {
     setLoading(true);
-    const { data } = await supabase.from('ingredients').select('*').eq('restaurant_id', restaurantId).order('name');
-    setIngredients(data || []);
-    setLoading(false);
-    const { selected } = router.query;
-    if (selected && data) { const found = data.find(i => i.id === selected); if (found) selectIngredient(found); }
+    try {
+      const { data, error } = await supabase.from('ingredients').select('*').eq('restaurant_id', restaurantId).order('name').limit(1000);
+      if (error) throw error;
+      setIngredients(data || []);
+      const { selected } = router.query;
+      if (selected && data) { const found = data.find(i => i.id === selected); if (found) selectIngredient(found); }
+    } catch (err) {
+      console.error('[ingredients] fetchIngredients error:', err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function selectIngredient(ingredient) {
@@ -222,7 +235,8 @@ export default function ClientIngredients() {
       .eq('ingredient_id', ingredient.id)
       .not('unit_cost', 'is', null)
       .gt('unit_cost', 0)
-      .order('invoices(date)', { ascending: false });
+      .order('invoices(date)', { ascending: false })
+      .limit(500);
 
     const history = (data || []).filter(i => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
     setPurchaseHistory(history);
@@ -464,20 +478,9 @@ export default function ClientIngredients() {
                         <div key={h} style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: .6 }}>{h}</div>
                       ))}
                     </div>
-                    {topExpensive.slice(0, 4).map(ing => {
-                      const curr = parseFloat(ing.last_price);
-                      const prev = (curr * 0.9).toFixed(2);
-                      const change = ((curr - parseFloat(prev)) / parseFloat(prev) * 100).toFixed(1);
-                      return (
-                        <div key={ing.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 6, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)', alignItems: 'center' }}>
-                          <div style={{ fontSize: 12, color: 'var(--text-primary)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ing.name}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>${prev}</div>
-                          <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{formatCurrencyShort(curr)}</div>
-                          <div style={{ fontSize: 11, color: 'var(--color-red)', fontWeight: 600 }}>+{change}%</div>
-                        </div>
-                      );
-                    })}
-                    {topExpensive.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No price data available yet</div>}
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '6px 0' }}>
+                      Select an ingredient to view price change history
+                    </div>
                   </div>
                   <div style={{ height: 8 }} />
                 </div>
@@ -802,16 +805,21 @@ export default function ClientIngredients() {
                     <div className="ing-w">
                       <div className="ing-wlbl">
                         <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
-                        Most Purchased
+                        Recently Ordered
                       </div>
-                      {priced.slice(0, 5).map((ing, i) => (
-                        <div key={ing.id} className="ing-freq-item">
-                          <div className="ing-freq-rank">{i + 1}</div>
-                          <div className="ing-freq-name">{ing.name}</div>
-                          <div className="ing-freq-price">{formatCurrencyShort(ing.last_price)}</div>
-                        </div>
-                      ))}
-                      {priced.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
+                      {(() => {
+                        const recentProteins = ingredients
+                          .filter(i => i.last_ordered_at && isProtein(i.name))
+                          .sort((a, b) => new Date(b.last_ordered_at) - new Date(a.last_ordered_at))
+                          .slice(0, 5);
+                        return recentProteins.length > 0 ? recentProteins.map((ing, i) => (
+                          <div key={ing.id} className="ing-freq-item">
+                            <div className="ing-freq-rank">{i + 1}</div>
+                            <div className="ing-freq-name">{ing.name}</div>
+                            <div className="ing-freq-price">{formatDateShort(ing.last_ordered_at)}</div>
+                          </div>
+                        )) : <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)' }}>No proteins ordered yet</div>;
+                      })()}
                     </div>
                   </div>
 
@@ -826,20 +834,9 @@ export default function ClientIngredients() {
                       <div className="ing-rise-th">Current</div>
                       <div className="ing-rise-th">Change</div>
                     </div>
-                    {topExpensive.slice(0, 4).map(ing => {
-                      const curr = parseFloat(ing.last_price);
-                      const prev = (curr * 0.9).toFixed(2);
-                      const change = ((curr - parseFloat(prev)) / parseFloat(prev) * 100).toFixed(1);
-                      return (
-                        <div key={ing.id} className="ing-rise-row">
-                          <div className="ing-rise-name">{ing.name}</div>
-                          <div className="ing-rise-prev">${prev}</div>
-                          <div className="ing-rise-curr">{formatCurrencyShort(curr)}</div>
-                          <div className="ing-rise-chg">+{change}%</div>
-                        </div>
-                      );
-                    })}
-                    {topExpensive.length === 0 && <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', padding: '6px 0' }}>No price data available yet</div>}
+                    <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: 'var(--text-muted)', padding: '6px 0' }}>
+                      Select an ingredient to view price change history
+                    </div>
                   </div>
 
                   <div className="ing-hint">Select an ingredient to view price history and purchase records →</div>
