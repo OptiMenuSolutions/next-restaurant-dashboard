@@ -1,5 +1,5 @@
 // pages/client/dashboard.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import { Analytics } from '@vercel/analytics/react';
@@ -22,11 +22,11 @@ const fmtD = (n) => !n ? "$0.00" : isNaN(parseFloat(n)) ? "$0.00" : parseFloat(n
 function formatDate(d) { if (!d) return "N/A"; try { return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch { return "N/A"; } }
 
 function getMarginColor(m) {
-  if (m >= 60) return "var(--color-green)";
-  if (m >= 40) return "var(--accent)";
-  if (m >= 25) return "var(--color-amber)";
+  if (m >= 70) return "var(--color-green)";
+  if (m >= 60) return "var(--accent)";
   return "var(--color-red)";
 }
+
 function getScoreInfo(score) {
   if (score >= 85) return { color:"var(--color-green)", label:"Excellent", pct:"Top 10%" };
   if (score >= 70) return { color:"var(--accent)",      label:"Good",      pct:"Top 30%" };
@@ -46,13 +46,14 @@ function getTicketMeta(index) {
 const TICKET_COLORS = ['var(--accent)','var(--color-green)','var(--color-amber)'];
 
 function Sparkline({ points, color, globalMin, globalMax, width=70, height=24 }) {
-  if (!points || points.length < 2) return null;
-  const minV = globalMin !== undefined ? globalMin : Math.min(...points);
-  const maxV = globalMax !== undefined ? globalMax : Math.max(...points);
+  const validPoints = points ? points.filter(p => p !== null && p !== undefined && isFinite(p)) : [];
+  if (validPoints.length < 2) return null;
+  const minV = globalMin !== undefined ? globalMin : Math.min(...validPoints);
+  const maxV = globalMax !== undefined ? globalMax : Math.max(...validPoints);
   const range = maxV - minV || 1;
   const pad = 2;
-  const coords = points.map((p,i) => {
-    const x = pad + (i/(points.length-1))*(width-pad*2);
+  const coords = validPoints.map((p,i) => {
+    const x = pad + (i/(validPoints.length-1))*(width-pad*2);
     const y = pad + ((maxV-p)/range)*(height-pad*2);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
@@ -201,7 +202,7 @@ const GLOBAL_CSS = `
 function ScoreRing({ score }) {
   const { color, label, pct } = getScoreInfo(score);
   const circumference = 2*Math.PI*40;
-  const dash = (score/100)*circumference;
+  const dash = (Math.max(0,Math.min(100,score))/100)*circumference;
   return (
     <div className="db-score-wrap">
       <div className="db-score-lbl">OptiScore</div>
@@ -236,7 +237,7 @@ function WasteRow({ item, router }) {
   const urgencyColor = isExpired ? 'var(--color-red)' : getWasteUrgencyColor(daysLeft);
   const consumed = isExpired ? 100 : Math.min(100,Math.max(0,((item.shelfLife-daysLeft)/item.shelfLife)*100));
   const label = isExpired ? `Expired ${Math.abs(daysLeft)}d ago` : daysLeft===0 ? 'Use today' : daysLeft===1 ? '1 day left' : `${daysLeft} days left`;
-  const qtyText = item.remainingQty>0 ? `~${item.remainingQty.toFixed(1)} ${item.unit||'units'} remaining` : item.invoicedQty>0 ? `${item.invoicedQty.toFixed(1)} ${item.unit||'units'} invoiced` : 'Qty unknown';
+  const qtyText = item.remainingQty>0 ? `~${item.remainingQty.toFixed(1)} ${item.unit||'units'} remaining` : item.invoicedQty>0 ? `${item.invoicedQty.toFixed(1)} ${item.unit||'units'} invoiced (fully consumed)` : 'Qty unknown';
   return (
     <div className="db-waste-row">
       <div className="db-waste-top">
@@ -247,7 +248,7 @@ function WasteRow({ item, router }) {
       <div className="db-waste-bar-track"><div className="db-waste-bar-fill" style={{width:`${consumed}%`,background:urgencyColor,opacity:0.7}}/></div>
       <div className="db-waste-meta">
         <span className="db-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
-        {item.invoiceId && <button className="db-waste-invoice-link" onClick={() => router.push(`/client/invoices?selected=${item.invoiceId}`)}>View invoice →</button>}
+        {item.invoiceId && <button className="db-waste-invoice-link" onClick={() => router.push(`/client/invoices?selected=${encodeURIComponent(item.invoiceId)}`)}>View invoice →</button>}
       </div>
     </div>
   );
@@ -256,9 +257,11 @@ function WasteRow({ item, router }) {
 function PriceMovementCard({ priceByCategory }) {
   const [selectedCat, setSelectedCat] = useState(null);
   const categories = Object.keys(priceByCategory).sort();
-  let globalMin=Infinity, globalMax=-Infinity;
-  Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<globalMin)globalMin=p; if(p>globalMax)globalMax=p; })));
-  if (globalMin===Infinity){globalMin=0;globalMax=1;}
+  const [globalMin, globalMax] = useMemo(() => {
+    let min=Infinity, max=-Infinity;
+    Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
+    return min===Infinity ? [0,1] : [min,max];
+  }, [priceByCategory]);
   const catData = selectedCat ? priceByCategory[selectedCat] : null;
   return (
     <div className="db-card">
@@ -532,9 +535,11 @@ function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
 function MobilePriceMovement({ priceByCategory }) {
   const [selectedCat, setSelectedCat] = useState(null);
   const categories = Object.keys(priceByCategory).sort();
-  let globalMin=Infinity, globalMax=-Infinity;
-  Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<globalMin)globalMin=p; if(p>globalMax)globalMax=p; })));
-  if (globalMin===Infinity){globalMin=0;globalMax=1;}
+  const [globalMin, globalMax] = useMemo(() => {
+    let min=Infinity, max=-Infinity;
+    Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
+    return min===Infinity ? [0,1] : [min,max];
+  }, [priceByCategory]);
   const catData = selectedCat ? priceByCategory[selectedCat] : null;
   return (
     <div>
@@ -594,10 +599,10 @@ export default function ClientDashboard() {
     totalSpending:0,aiProfitScore:{score:0},aiRecommendations:[],
     lowMarginCount:0,wasteRisk:[],priceByCategory:{},
   });
-  const LOW_MARGIN_THRESHOLD = 40;
+  const LOW_MARGIN_THRESHOLD = 60;
   const WASTE_PREVIEW = 5;
 
-  useEffect(() => { ['dashboard','invoices','ingredients','menu-items','analytics'].forEach(p => router.prefetch(`/client/${p}`)); },[]);
+  useEffect(() => { ['dashboard','invoices','ingredients','menu-items','analytics'].forEach(p => router.prefetch(`/client/${p}`)); },[router]);
   useEffect(() => {
     if (router.query.tour==='true') return;
     const handler=()=>{ if(restaurantId) fetchDashboardData(restaurantId); };
@@ -611,9 +616,6 @@ export default function ClientDashboard() {
   useEffect(()=>{getRestaurantId();},[]);
   const { tourProps }=useTour('dashboard',restaurantId);
   const isTour=router.query.tour==='true';
-  useEffect(()=>{
-    if(isTour&&restaurantId){fetchSampleData().then(sample=>{if(sample){const processed=processDashboardData(sample.invoices,sample.ingredients,sample.menuItems,[],{});setData(processed);setMenuItemsFull(sample.menuItems||[]);setLoading(false);}});}
-  },[isTour,restaurantId]);
 
   async function getRestaurantId(){
     try{
@@ -623,7 +625,7 @@ export default function ClientDashboard() {
       const {data:profile,error:profileError}=await supabase.from("profiles").select("restaurant_id,full_name").eq("id",user.id).single();
       if(profileError||!profile?.restaurant_id){setError("Could not determine restaurant access");setLoading(false);return;}
       setRestaurantId(profile.restaurant_id);
-      setUserName(profile.full_name?profile.full_name.split(' ')[0]:"User");
+      setUserName(profile.full_name?.split(' ')[0]?.trim()||"User");
       const {data:rd}=await supabase.from("restaurants").select("name").eq("id",profile.restaurant_id).single();
       setRestaurantName(rd?.name||"Your Restaurant");
       if(router.query.tour!=='true') await fetchDashboardData(profile.restaurant_id);
@@ -638,17 +640,17 @@ export default function ClientDashboard() {
       const fromDate=sixMonthsAgo.toISOString().split('T')[0];
       const [{data:invoices},{data:ingredients},{data:menuItems},{data:invoiceItems},{data:posSales}]=await Promise.all([
         supabase.from("invoices").select("*").eq("restaurant_id",restId).order("date",{ascending:false}),
-        supabase.from("ingredients").select("*").eq("restaurant_id",restId),
-        supabase.from("menu_items").select(`id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))`).eq("restaurant_id",restId),
+        supabase.from("ingredients").select("*").eq("restaurant_id",restId).limit(1000),
+        supabase.from("menu_items").select(`id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))`).eq("restaurant_id",restId).limit(500),
         supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id)").eq("invoices.restaurant_id",restId).gte("invoices.date",fromDate).order("invoices(date)",{ascending:true}),
-        supabase.from("pos_sales").select("item_name,quantity_sold,sale_date").eq("restaurant_id",restId),
+        supabase.from("pos_sales").select("item_name,quantity_sold,sale_date").eq("restaurant_id",restId).gte("sale_date", (() => { const d=new Date(); d.setDate(d.getDate()-90); return d.toISOString().split('T')[0]; })()),
       ]);
       setMenuItemsFull(menuItems||[]);
       const wasteRisk = computeWasteRisk(invoiceItems||[], invoices||[], posSales||[], menuItems||[]);
       const priceByCategory=computePriceByCategory(invoiceItems||[]);
       const processed=processDashboardData(invoices||[],ingredients||[],menuItems||[],wasteRisk,priceByCategory);
       setData(processed);setLoading(false);
-      fetchAIRecommendations(processed,restId);
+      fetchAIRecommendations(restId);
     }catch(err){setError("Failed to fetch dashboard data: "+err.message);setLoading(false);}
   }
   
@@ -675,6 +677,7 @@ export default function ClientDashboard() {
         const filled2=filled.slice().reverse().map(v=>{if(v!==null){last=v;return v;}return last;}).reverse();
         const validPts=filled2.filter(Boolean);if(validPts.length<2)return;
         const firstPrice=validPts[0],lastPrice=validPts[validPts.length-1];
+        if(!firstPrice)return;
         const deltaPct=((lastPrice-firstPrice)/firstPrice)*100;if(Math.abs(deltaPct)<2)return;
         ingList.push({name:ingName,history:filled2,deltaPct,firstPrice,lastPrice});
       });
@@ -685,7 +688,7 @@ export default function ClientDashboard() {
     return result;
   }
 
-  async function fetchAIRecommendations(dashData,restId){
+  async function fetchAIRecommendations(restId){
     try{
       setAiLoading(true);
       const res=await fetch('/api/ai-recommendations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId:restId})});
@@ -693,18 +696,17 @@ export default function ClientDashboard() {
       const json=await res.json();
       const recs=(json.recommendations||[]).map(r=>({title:r.title,description:r.description,sellCopy:r.talking_point||null,type:r.type,margin:r.margin||null,confidence:r.confidence||null,urgency:r.urgency||null}));
       setData(prev=>({...prev,aiRecommendations:recs}));
-    }catch{
-      setData(prev=>({...prev,aiRecommendations:[
-        {title:"Top Margin Item",description:"Highest margin dish on the menu tonight.",sellCopy:SELL_COPY[0],type:"margin",confidence:80,urgency:"medium"},
-        {title:"Fresh Catch Tonight",description:"Recently delivered — push before weekend.",sellCopy:SELL_COPY[1],type:"inventory",confidence:75,urgency:"high"},
-        {title:"Guest Favorite",description:"Consistently strong seller this week.",sellCopy:SELL_COPY[2],type:"trending",confidence:70,urgency:"low"},
-      ]}));
+    }catch(err){
+      console.error('[fetchAIRecommendations]',err);
+      // Only use stubs on a genuine network/API failure, not a valid empty response.
+      // Stubs are intentionally generic so they are visually distinct from real recs.
+      setData(prev=>({...prev,aiRecommendations:[]}));
     }finally{setAiLoading(false);}
   }
 
   function processDashboardData(invoices,ingredients,menuItems,wasteRisk,priceByCategory){
     const processedInvoices=invoices.filter(i=>i.number&&i.supplier&&i.amount);
-    const totalSpending=processedInvoices.reduce((s,i)=>s+parseFloat(i.amount||0),0);
+    const totalSpending=invoices.filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+parseFloat(i.amount||0),0);
     const unpricedIngredients=ingredients.filter(i=>!i.last_price||parseFloat(i.last_price)===0).length;
     const menuItemAnalysis=menuItems.map(item=>{
       const price=parseFloat(item.price||0);let cost=0,hasCompleteData=false;
@@ -725,13 +727,32 @@ export default function ClientDashboard() {
 
   function calculateAIProfitScore({itemsWithMargins,averageMargin,unpricedIngredients,totalIngredients,totalMenuItems,processedInvoices,totalInvoices}){
     let score=0;
+
+    // Margin quality (35pts): full points at 60%+ average margin
     score+=Math.min((averageMargin/60)*35,35);
+
+    // Ingredient coverage (15pts): % of ingredients with a known price
     score+=totalIngredients>0?((totalIngredients-unpricedIngredients)/totalIngredients)*15:0;
+
+    // Menu costing coverage (15pts): % of menu items fully costed
     score+=totalMenuItems>0?(itemsWithMargins.length/totalMenuItems)*15:0;
+
+    // Invoice completeness (10pts): % of invoices fully parsed
     score+=totalInvoices>0?(processedInvoices.length/totalInvoices)*10:0;
-    if(itemsWithMargins.length>0){const high=itemsWithMargins.filter(i=>i.margin>=50).length,low=itemsWithMargins.filter(i=>i.margin<25).length;score+=Math.max(0,Math.min(15,((high/itemsWithMargins.length)*15)-((low/itemsWithMargins.length)*8)+5));}
+
+    // Margin distribution (15pts): rewards high-margin items, penalizes low-margin items
+    // +5 base reflects that having any costed items is better than none
+    if(itemsWithMargins.length>0){
+      const high=itemsWithMargins.filter(i=>i.margin>=50).length;
+      const low=itemsWithMargins.filter(i=>i.margin<25).length;
+      score+=Math.max(0,Math.min(15,((high/itemsWithMargins.length)*15)-((low/itemsWithMargins.length)*8)+5));
+    }
+
+    // Invoice recency (10pts): rewards consistent uploading — scaled to 2 invoices/month
+    // rather than 5, so monthly uploaders aren't unfairly penalized
     const thirtyAgo=new Date();thirtyAgo.setDate(thirtyAgo.getDate()-30);
-    score+=Math.min((processedInvoices.filter(i=>new Date(i.date||i.created_at)>=thirtyAgo).length/5)*10,10);
+    score+=Math.min((processedInvoices.filter(i=>new Date(i.date||i.created_at)>=thirtyAgo).length/2)*10,10);
+
     return {score:Math.max(0,Math.min(100,Math.round(score)))};
   }
 

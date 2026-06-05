@@ -110,7 +110,7 @@ function normalizeInvoiceNumber(raw) {
   return (raw || '')
     .trim().replace(/\s+/g, '')
     .replace(/[Ss]/g, '5').replace(/[Oo]/g, '0')
-    .replace(/[Ii|l]/g, '1').replace(/[Bb]/g, '8')
+    .replace(/[Iil]/g, '1').replace(/[Bb]/g, '8')
     .replace(/[Zz]/g, '2').replace(/[Gg]/g, '6');
 }
 
@@ -770,7 +770,7 @@ export default function ClientInvoices() {
     router.prefetch('/client/ingredients');
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
-  }, []);
+  }, [router]);
 
   const { tourProps } = useTour('invoices', restaurantId);
 
@@ -786,22 +786,29 @@ export default function ClientInvoices() {
     const { data: profile } = await supabase.from('profiles').select('restaurant_id, full_name').eq('id', user.id).single();
     if (!profile?.restaurant_id) return;
     setRestaurantId(profile.restaurant_id);
-    setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
+    setUserName(profile.full_name?.split(' ')[0]?.trim() || 'User');
   }
 
   async function fetchInvoices() {
     setLoading(true);
-    const { data } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('date', { ascending: false, nullsFirst: false });
-    setInvoices(data || []);
-    setLoading(false);
-    const { selected } = router.query;
-    if (selected && data) { const found = data.find(i => i.id === selected); if (found) selectInvoice(found); }
+    try {
+      const { data, error } = await supabase.from('invoices').select('*').eq('restaurant_id', restaurantId).order('date', { ascending: false, nullsFirst: false }).limit(1000);
+      if (error) throw error;
+      setInvoices(data || []);
+      const { selected } = router.query;
+      if (selected && data) { const found = data.find(i => i.id === selected); if (found) selectInvoice(found); }
+    } catch (err) {
+      console.error('[fetchInvoices]', err);
+      setInvoices([]);
+    } finally {
+      setLoading(false);
+    }
   }
-
+  
   async function selectInvoice(invoice) {
     setSelectedInvoice(invoice);
     setLoadingDetail(true);
-    if (!isMobile) router.replace(`/client/invoices?selected=${invoice.id}`, undefined, { shallow: true });
+    if (!isMobile) router.replace(`/client/invoices?selected=${encodeURIComponent(invoice.id)}`, undefined, { shallow: true });
     const [{ data }, { data: invoiceDetail }] = await Promise.all([
       supabase.from('invoice_items').select('*, ingredients(name, unit)').eq('invoice_id', invoice.id).order('item_name'),
       supabase.from('invoices').select('ocr_text').eq('id', invoice.id).single(),

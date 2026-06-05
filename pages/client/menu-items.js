@@ -13,6 +13,8 @@ import { fetchSampleData } from '../../lib/seedSampleData';
 import TourDataBanner from '../../components/TourDataBanner';
 import ParseReviewModal from '../../components/ParseReviewModal';
 
+const LOW_MARGIN_THRESHOLD = 60;
+
 function formatCurrency(amount) {
   if (amount === null || amount === undefined || amount === '') return '--';
   const n = parseFloat(amount);
@@ -36,8 +38,7 @@ function getMarginNum(price, cost) {
 function getMarginColor(margin) {
   if (margin === null || margin === undefined) return 'var(--text-muted)';
   if (margin >= 70) return 'var(--color-green)';
-  if (margin >= 50) return 'var(--accent)';
-  if (margin >= 30) return 'var(--color-amber)';
+  if (margin >= 60) return 'var(--accent)';
   return 'var(--color-red)';
 }
 
@@ -305,7 +306,7 @@ export default function ClientMenuItems() {
     router.prefetch('/client/ingredients');
     router.prefetch('/client/menu-items');
     router.prefetch('/client/analytics');
-  }, []);
+  }, [router]);
 
   const { tourProps } = useTour('menu-items', restaurantId);
 
@@ -333,7 +334,7 @@ export default function ClientMenuItems() {
     const { data } = await supabase.from('menu_items').select(`
       *, menu_item_ingredients(quantity, ingredients(id, name, unit, last_price)),
       menu_item_components(id, name, cost, component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, last_price, unit, last_ordered_at, is_estimated)))
-    `).eq('restaurant_id', restaurantId).order('name');
+    `).eq('restaurant_id', restaurantId).order('name').limit(500);
     setMenuItems(data || []);
     setLoading(false);
   }
@@ -398,8 +399,8 @@ export default function ClientMenuItems() {
 
   const itemsWithMargins = menuItems.filter(i => getMarginNum(i.price, i.cost) !== null);
   const avgMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + getMarginNum(i.price, i.cost), 0) / itemsWithMargins.length : 0;
-  const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).length;
-  const topMargin = [...itemsWithMargins].sort((a, b) => getMarginNum(b.price, b.cost) - getMarginNum(a.price, a.cost)).slice(0, 4);
+  const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).length;
+  const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).slice(0, 3);
   const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).slice(0, 3);
   const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
   const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
@@ -407,11 +408,17 @@ export default function ClientMenuItems() {
 
   const totalCost = selectedItemData
     ? selectedItemData.components.length > 0
-      ? (() => { const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0); const stored = parseFloat(selectedItemData.item?.cost || 0); return (stored > 0 && compSum > stored * 3) ? stored : compSum; })()
+      ? (() => {
+        const compSum = selectedItemData.components.reduce((s, c) => s + (c.calculatedCost || c.storedCost || 0), 0);
+        const stored = parseFloat(selectedItemData.item?.cost || 0);
+        // If calculated sum is more than 3× the stored cost, the component data is
+        // likely incomplete or using wrong units — fall back to the stored cost
+        return (stored > 0 && compSum > stored * 3) ? stored : compSum;
+      })()
       : selectedItemData.ingredients.length > 0
         ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
         : parseFloat(selectedItemData.item?.cost || 0)
-    : 0;
+    : 0;setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
 
   const profitMargin = selectedItemData ? getMarginNum(selectedItemData.item?.price, totalCost) : null;
   function getMultiplier(id) { return multipliers[id] ?? 1.0; }
@@ -460,60 +467,58 @@ export default function ClientMenuItems() {
     setEditSaving(true); setEditSaveMsg(null);
     const menuItemId = selectedItemData.item.id;
     const errors = [];
-    for (const comp of editComponents) {
-      let componentId = comp.id;
-      if (comp.isNew) {
-        function calcIngCost(ing) {
-          const unitCost = parseFloat(ing.unitCost || 0);
-          if (unitCost === 0) return 0;
-          try {
-            const calc = typeof calculateStandardizedCost === 'function'
-              ? calculateStandardizedCost(ing.quantity, ing.unit, unitCost, ing.standardUnit || ing.unit)
-              : null;
-            return (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(ing.quantity || 0) * unitCost;
-          } catch { return parseFloat(ing.quantity || 0) * unitCost; }
-        }
-        const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
-        const { data: newComp, error } = await supabase.from('menu_item_components').insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).select('id').single();
-        if (error) { errors.push(`Failed to create component "${comp.name}"`); continue; }
-        componentId = newComp.id;
-      } else {
-        function calcIngCost(ing) {
-          const unitCost = parseFloat(ing.unitCost || 0);
-          if (unitCost === 0) return 0;
-          try {
-            const calc = typeof calculateStandardizedCost === 'function'
-              ? calculateStandardizedCost(ing.quantity, ing.unit, unitCost, ing.standardUnit || ing.unit)
-              : null;
-            return (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(ing.quantity || 0) * unitCost;
-          } catch { return parseFloat(ing.quantity || 0) * unitCost; }
-        }
-        const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
-        await supabase.from('menu_item_components').update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).eq('id', componentId);
-      }
-      for (const ing of comp.ingredients) {
-        if (!ing.ingredientId) { errors.push(`"${ing.name}" has no ingredient selected`); continue; }
-        if (!ing.isEstimated && ing.unitCost > 0) await supabase.from('ingredients').update({ last_price: ing.unitCost, is_estimated: false }).eq('id', ing.ingredientId);
-        if (ing.isNew) await supabase.from('component_ingredients').insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
-        else await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
-      }
-    }
-    const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => {
-      const unitCost = parseFloat(i.unitCost || 0);
-      if (unitCost === 0) return ss;
+
+    function calcIngCost(ing) {
+      const unitCost = parseFloat(ing.unitCost || 0);
+      if (unitCost === 0) return 0;
       try {
         const calc = typeof calculateStandardizedCost === 'function'
-          ? calculateStandardizedCost(i.quantity, i.unit, unitCost, i.standardUnit || i.unit)
+          ? calculateStandardizedCost(ing.quantity, ing.unit, unitCost, ing.standardUnit || ing.unit)
           : null;
-        return ss + ((calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(i.quantity || 0) * unitCost);
-      } catch {
-        return ss + parseFloat(i.quantity || 0) * unitCost;
+        return (calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(ing.quantity || 0) * unitCost;
+      } catch { return parseFloat(ing.quantity || 0) * unitCost; }
+    }
+
+    try {
+      for (const comp of editComponents) {
+        let componentId = comp.id;
+        if (comp.isNew) {
+          const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
+          const { data: newComp, error } = await supabase.from('menu_item_components').insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).select('id').single();
+          if (error) { errors.push(`Failed to create component "${comp.name}"`); continue; }
+          componentId = newComp.id;
+        } else {
+          const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
+          await supabase.from('menu_item_components').update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).eq('id', componentId);
+        }
+        for (const ing of comp.ingredients) {
+          if (!ing.ingredientId) { errors.push(`"${ing.name}" has no ingredient selected`); continue; }
+          if (!ing.isEstimated && ing.unitCost > 0) await supabase.from('ingredients').update({ last_price: ing.unitCost, is_estimated: false }).eq('id', ing.ingredientId);
+          if (ing.isNew) await supabase.from('component_ingredients').insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
+          else await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
+        }
       }
-    }, 0), 0);
-    await supabase.from('menu_items').update({ cost: Math.round(newTotalCost * 100) / 100 }).eq('id', menuItemId);
-    setEditSaving(false);
-    if (errors.length > 0) { setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` }); }
-    else { setEditSaveMsg({ type: 'success', text: 'Saved successfully' }); setEditDirty(false); await fetchItemDetail(menuItemId); await fetchMenuItems(); }
+      const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => {
+        const unitCost = parseFloat(i.unitCost || 0);
+        if (unitCost === 0) return ss;
+        try {
+          const calc = typeof calculateStandardizedCost === 'function'
+            ? calculateStandardizedCost(i.quantity, i.unit, unitCost, i.standardUnit || i.unit)
+            : null;
+          return ss + ((calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(i.quantity || 0) * unitCost);
+        } catch {
+          return ss + parseFloat(i.quantity || 0) * unitCost;
+        }
+      }, 0), 0);
+      await supabase.from('menu_items').update({ cost: Math.round(newTotalCost * 100) / 100 }).eq('id', menuItemId);
+      if (errors.length > 0) { setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` }); }
+      else { setEditSaveMsg({ type: 'success', text: 'Saved successfully' }); setEditDirty(false); await fetchItemDetail(menuItemId); await fetchMenuItems(); }
+    } catch (err) {
+      console.error('[saveItemEdits]', err);
+      setEditSaveMsg({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
+    } finally {
+      setEditSaving(false);
+    }
   }
 
   // ── Detail tab renderers (desktop) ───────────────────────────────────────
