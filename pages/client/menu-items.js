@@ -401,7 +401,6 @@ export default function ClientMenuItems() {
   const avgMargin = itemsWithMargins.length > 0 ? itemsWithMargins.reduce((s, i) => s + getMarginNum(i.price, i.cost), 0) / itemsWithMargins.length : 0;
   const belowTarget = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).length;
   const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < LOW_MARGIN_THRESHOLD).slice(0, 3);
-  const lowMargin = itemsWithMargins.filter(i => getMarginNum(i.price, i.cost) < 40).slice(0, 3);
   const noData = menuItems.filter(i => !i.price || !i.cost).slice(0, 2);
   const bucket = (lo, hi) => itemsWithMargins.filter(i => { const m = getMarginNum(i.price, i.cost); return m >= lo && m < hi; }).length;
   const maxBucket = Math.max(bucket(0, 40), bucket(40, 60), bucket(60, 75), bucket(75, 100), 1);
