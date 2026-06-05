@@ -51,9 +51,6 @@ function ReceiptTicket({ rec, index, loading }) {
       <div style={styles.dashed} />
       <div style={styles.sayLabel}>SAY THIS:</div>
       <div style={styles.sayText}>"{rec.talking_point}"</div>
-      <div style={styles.dashed} />
-      <div style={styles.whyLabel}>WHY TONIGHT:</div>
-      <div style={styles.whyText}>{rec.reason_selected}</div>
       <div style={styles.ticketFooter}>opti-menu.com</div>
     </div>
   );

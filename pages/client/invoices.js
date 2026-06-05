@@ -1399,7 +1399,11 @@ export default function ClientInvoices() {
                         {selectedInvoiceOcrText && (
                           <button
                             onClick={() => {
-                              const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${selectedInvoice.supplier || 'Invoice'} · ${selectedInvoice.number || ''}</title><style>body{font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 20px;color:#222;line-height:1.6}table{border-collapse:collapse;width:100%;margin:12px 0}td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5;font-weight:600}</style></head><body>${selectedInvoiceOcrText.replace(/\n/g, '<br>')}</body></html>`;
+                              const escapeHtml = (str) => str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+                              const safeOcr = escapeHtml(selectedInvoiceOcrText).replace(/\n/g, '<br>');
+                              const safeSupplier = escapeHtml(selectedInvoice.supplier || 'Invoice');
+                              const safeNumber = escapeHtml(selectedInvoice.number || '');
+                              const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${safeSupplier} · ${safeNumber}</title><style>body{font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 20px;color:#222;line-height:1.6}table{border-collapse:collapse;width:100%;margin:12px 0}td,th{border:1px solid #ccc;padding:6px 10px;text-align:left}th{background:#f5f5f5;font-weight:600}</style></head><body>${safeOcr}</body></html>`;
                               const blob = new Blob([html], { type: 'text/html' });
                               const url  = URL.createObjectURL(blob);
                               const a    = document.createElement('a');

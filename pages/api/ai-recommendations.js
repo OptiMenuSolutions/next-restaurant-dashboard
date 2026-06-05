@@ -17,6 +17,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const EXCLUDED_CATEGORY_KEYWORDS = [
+  'appetizer', 'starter', 'small plate', 'shareables', 'snack',
+  'dessert', 'sweet', 'cake', 'ice cream',
+  'drink', 'beverage', 'cocktail', 'beer', 'wine', 'soda', 'juice',
+  'side', 'add on', 'add-on', 'extra',
+  'soup', 'salad',
+  'kids', 'children',
+  'menu', 'uncategorized',
+];
+
+function isEntreeCategory(category) {
+  if (!category) return false;
+  const lower = category.toLowerCase();
+  return !EXCLUDED_CATEGORY_KEYWORDS.some(kw => lower.includes(kw));
+}
+
 // ─── Compute expiring ingredients from invoice_items ──────────────────────────
 async function getExpiringIngredients(restaurantId) {
   const sixMonthsAgo = new Date();
@@ -132,7 +148,8 @@ async function loadRestaurantContext(restaurantId) {
     salesLast7[key] = (salesLast7[key] || 0) + parseFloat(s.quantity_sold || 0);
   }
 
-  const enriched = menuItems.map(item => {
+  const entreeItems = menuItems.filter(item => isEntreeCategory(item.category));
+  const enriched = entreeItems.map(item => {
     const price = parseFloat(item.price || 0);
     let cost = parseFloat(item.cost || 0);
     if (item.menu_item_components?.length > 0) {
