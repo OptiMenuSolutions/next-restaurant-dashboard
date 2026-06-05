@@ -1,26 +1,14 @@
 // pages/api/ai-recommendations.js
-// Generates exactly 3 daily menu items for staff to push.
+// On-demand route: called from the dashboard on page load.
+// Returns cached recs if already generated today, otherwise generates fresh.
 //
-// HOW SELECTION WORKS (explainable to any client):
-// Claude selects dishes using three inputs in strict priority order:
-//   1. WASTE PREVENTION — dishes using ingredients expiring within 2 days must appear
-//      unless the same dish has already been pushed 3+ nights in a row, in which case
-//      Claude finds an alternative dish that also uses the expiring ingredient, or notes
-//      that rotation forced a different waste-risk dish in.
-//   2. VARIETY — no two picks can share the same category (e.g. two pastas, two apps).
-//   3. MARGIN + ROTATION — after waste is handled, remaining slots go to dishes
-//      Claude judges as underselling their margin potential, informed by 7-day sales.
-//      High-margin dishes that already appear frequently are deprioritized.
-//
-// Claude must output a plain-English `reason_selected` per dish. This is the
-// client-facing explanation for why that dish is on the ticket tonight.
-//
-// Rotation: the last 5 nights of recommendations are pulled from cache and passed
-// to Claude so it can explicitly avoid repeating dishes unless forced to by waste.
+// The actual generation logic lives in generateForRestaurant() below and is
+// shared with /api/cron/generate-recommendations.js.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
+import { getShelfLife, isProtein } from '../../lib/shelfLife';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -29,36 +17,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// ─── Shelf life knowledge (mirrors dashboard) ─────────────────────────────────
-const SHELF_LIFE = {
-  fish: 2, salmon: 2, tuna: 2, halibut: 2, cod: 2, tilapia: 2, mahi: 2,
-  shrimp: 2, scallop: 2, lobster: 1, crab: 2, oyster: 3, clam: 3,
-  swordfish: 2, bass: 2, snapper: 2, flounder: 2, trout: 2,
-  chicken: 3, beef: 4, pork: 4, lamb: 4, veal: 3, duck: 3, turkey: 3,
-  steak: 4, 'ground beef': 3, 'ground pork': 3, bacon: 7, sausage: 4,
-  'filet mignon': 4, 'new york strip': 4, ribeye: 4, 'short rib': 4,
-  milk: 7, cream: 7, butter: 14, cheese: 14, 'heavy cream': 7,
-  mozzarella: 7, parmesan: 30,
-  lettuce: 7, spinach: 5, arugula: 5, kale: 7, herbs: 5,
-  basil: 5, parsley: 7, cilantro: 5, mushroom: 7,
-  tomato: 7, strawberry: 5, raspberry: 3, blueberry: 7,
-  avocado: 4, asparagus: 5,
-  carrot: 21, onion: 30, garlic: 30, potato: 21,
-  lemon: 21, lime: 14, pepper: 10,
-  sauce: 30, oil: 180, flour: 180, pasta: 365, rice: 365,
-};
-
-function getShelfLife(name) {
-  if (!name) return 14;
-  const lower = name.toLowerCase();
-  if (SHELF_LIFE[lower]) return SHELF_LIFE[lower];
-  for (const [key, days] of Object.entries(SHELF_LIFE)) {
-    if (lower.includes(key)) return days;
-  }
-  return 14;
-}
-
-// ─── Compute expiring ingredients from invoice_items ─────────────────────────
+// ─── Compute expiring ingredients from invoice_items ──────────────────────────
 async function getExpiringIngredients(restaurantId) {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
@@ -70,13 +29,15 @@ async function getExpiringIngredients(restaurantId) {
     .eq('restaurant_id', restaurantId)
     .gte('date', fromDate);
 
+  if (!invoices?.length) return [];
+
   const { data: invoiceItems } = await supabase
     .from('invoice_items')
     .select('invoice_id, item_name, ingredient_name_normalized, quantity, unit, unit_cost')
-    .in('invoice_id', (invoices || []).map(i => i.id));
+    .in('invoice_id', invoices.map(i => i.id));
 
   const invoiceDateMap = {};
-  (invoices || []).forEach(inv => { invoiceDateMap[inv.id] = inv.date; });
+  invoices.forEach(inv => { invoiceDateMap[inv.id] = inv.date; });
 
   const latestByIngredient = {};
   (invoiceItems || []).forEach(item => {
@@ -86,7 +47,12 @@ async function getExpiringIngredients(restaurantId) {
     if (!dateStr) return;
     const date = new Date(dateStr);
     if (!latestByIngredient[name] || date > latestByIngredient[name].date) {
-      latestByIngredient[name] = { date, dateStr, quantity: parseFloat(item.quantity || 0), unit: item.unit, unitCost: parseFloat(item.unit_cost || 0) };
+      latestByIngredient[name] = {
+        date, dateStr,
+        quantity: parseFloat(item.quantity || 0),
+        unit: item.unit,
+        unitCost: parseFloat(item.unit_cost || 0),
+      };
     }
   });
 
@@ -101,7 +67,14 @@ async function getExpiringIngredients(restaurantId) {
     const daysSince = Math.floor((today - delivery) / 86400000);
     const daysLeft = shelfLife - daysSince;
     if (daysLeft <= 5 && daysLeft >= -2) {
-      expiring.push({ name, daysLeft, unit: info.unit, quantity: info.quantity, totalValue: info.quantity * info.unitCost });
+      expiring.push({
+        name,
+        daysLeft,
+        unit: info.unit,
+        quantity: info.quantity,
+        totalValue: info.quantity * info.unitCost,
+        isProtein: isProtein(name),
+      });
     }
   });
 
@@ -134,14 +107,16 @@ async function loadRestaurantContext(restaurantId) {
         )
       `)
       .eq('restaurant_id', restaurantId)
-      .not('price', 'is', null),
+      .not('price', 'is', null)
+      .limit(200),
 
     supabase
       .from('pos_sales')
       .select('item_name, quantity_sold, sale_date')
       .eq('restaurant_id', restaurantId)
       .gte('sale_date', fourteenDaysAgoStr)
-      .order('sale_date', { ascending: false }),
+      .order('sale_date', { ascending: false })
+      .limit(5000),
 
     getExpiringIngredients(restaurantId),
   ]);
@@ -149,7 +124,7 @@ async function loadRestaurantContext(restaurantId) {
   const menuItems = menuResult.data || [];
   const sales = salesResult.data || [];
 
-  // Build 7-day sales totals per item name
+  // Build 7-day sales totals per item — normalize names for matching
   const salesLast7 = {};
   for (const s of sales) {
     if (s.sale_date < sevenDaysAgoStr) continue;
@@ -165,7 +140,9 @@ async function loadRestaurantContext(restaurantId) {
       if (compCost > 0) cost = compCost;
     }
     if (price === 0 || cost === 0) return null;
+
     const margin = ((price - cost) / price) * 100;
+    const marginDollars = price - cost;
 
     // Find expiring ingredients in this dish
     const expiringInThisDish = [];
@@ -173,26 +150,34 @@ async function loadRestaurantContext(restaurantId) {
       (comp.component_ingredients || []).forEach(ci => {
         const ingName = (ci.ingredients?.name || '').toLowerCase().trim();
         if (!ingName) return;
-        const match = expiringIngredients.find(e =>
-          e.name.toLowerCase().trim() === ingName ||
-          ingName.includes(e.name.toLowerCase().trim()) ||
-          e.name.toLowerCase().trim().includes(ingName)
-        );
-        if (match) expiringInThisDish.push({ name: match.name, daysLeft: match.daysLeft });
+        const ingWords = ingName.split(' ');
+        const match = expiringIngredients.find(e => {
+          const eName = e.name.toLowerCase().trim();
+          const eWords = eName.split(' ');
+          // Require at least 2 words to match, or full name match
+          if (eName === ingName) return true;
+          if (ingWords.length >= 2 && eWords.some(w => w.length > 3 && ingName.includes(w))) return true;
+          if (eWords.length >= 2 && ingWords.some(w => w.length > 3 && eName.includes(w))) return true;
+          return false;
+        });
+        if (match) expiringInThisDish.push({ name: match.name, daysLeft: match.daysLeft, isProtein: match.isProtein });
       });
     });
 
-    // Match POS sales by fuzzy name
-    const itemLower = item.name.toLowerCase().trim();
-    const posKey = Object.keys(salesLast7).find(k =>
-      k.includes(itemLower.split(' ')[0]) || itemLower.includes(k.split(' ')[0])
-    );
+    // Tighter POS name matching — require meaningful word overlap, not just first word
+    const itemWords = item.name.toLowerCase().trim().split(' ').filter(w => w.length > 3);
+    const posKey = Object.keys(salesLast7).find(k => {
+      const kWords = k.split(' ').filter(w => w.length > 3);
+      const overlap = itemWords.filter(w => kWords.includes(w));
+      return overlap.length >= Math.min(2, Math.ceil(itemWords.length * 0.5));
+    });
     const qty7d = posKey ? salesLast7[posKey] : null;
 
     return {
       name: item.name,
       price,
       margin: Math.round(margin * 10) / 10,
+      marginDollars: Math.round(marginDollars * 100) / 100,
       category: item.category || 'Other',
       qty7d,
       expiringIngredients: expiringInThisDish,
@@ -202,7 +187,7 @@ async function loadRestaurantContext(restaurantId) {
   return { enriched, expiringIngredients };
 }
 
-// ─── Fetch recent recommendation history for rotation awareness ───────────────
+// ─── Fetch recent recommendation history ──────────────────────────────────────
 async function getRecentHistory(restaurantId, currentDate) {
   const fiveDaysAgo = new Date();
   fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
@@ -216,7 +201,7 @@ async function getRecentHistory(restaurantId, currentDate) {
     .neq('generated_date', currentDate)
     .order('generated_date', { ascending: false });
 
-  if (!data || data.length === 0) return [];
+  if (!data?.length) return [];
 
   const history = [];
   for (const row of data) {
@@ -236,13 +221,17 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
       `${item.name} (${item.category})`,
       `$${item.price}`,
       `${item.margin}% margin`,
+      `$${item.marginDollars} margin/cover`,
     ];
     if (item.qty7d !== null) parts.push(`sold ${item.qty7d} last 7d`);
     else parts.push('no POS data');
 
     if (item.expiringIngredients.length > 0) {
       const ingList = item.expiringIngredients
-        .map(e => e.daysLeft <= 0 ? `${e.name} [EXPIRED]` : `${e.name} [${e.daysLeft}d left]`)
+        .map(e => {
+          const urgency = e.daysLeft <= 0 ? 'EXPIRED' : e.daysLeft === 1 ? 'use TODAY' : `${e.daysLeft}d left`;
+          return `${e.name}${e.isProtein ? ' [PROTEIN]' : ''} [${urgency}]`;
+        })
         .join(', ');
       parts.push(`⚠ EXPIRING: ${ingList}`);
     }
@@ -252,7 +241,7 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
   const expiringLines = expiringIngredients.length > 0
     ? expiringIngredients.slice(0, 15).map(e => {
         const urgency = e.daysLeft <= 0 ? 'EXPIRED' : e.daysLeft === 1 ? 'use TODAY' : `${e.daysLeft} days left`;
-        return `  - ${e.name}: ${urgency}${e.quantity > 0 ? `, ${e.quantity} ${e.unit || 'units'} on hand` : ''}`;
+        return `  - ${e.name}${e.isProtein ? ' [PROTEIN]' : ''}: ${urgency}${e.quantity > 0 ? `, ${e.quantity} ${e.unit || 'units'} on hand` : ''}${e.totalValue > 0 ? `, $${e.totalValue.toFixed(0)} at risk` : ''}`;
       }).join('\n')
     : '  None identified';
 
@@ -260,7 +249,6 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
     ? history.map(h => `  - ${h.date}: ${h.title}`).join('\n')
     : '  No recent history';
 
-  // Flag any dish recommended 2+ nights in a row
   const consecutiveCounts = {};
   for (const h of history) {
     consecutiveCounts[h.title] = (consecutiveCounts[h.title] || 0) + 1;
@@ -274,17 +262,23 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
 
 ━━━ SELECTION RULES (follow in strict order) ━━━
 
-RULE 1 — WASTE PREVENTION
-Any dish containing an ingredient expiring within 2 days MUST be selected, with one exception: if that same dish has appeared on the recommendation list for 3 or more consecutive nights, you must instead find another dish on the menu that also uses the expiring ingredient. If no alternative exists, repeat the dish and explain why in reason_selected. Pushing the same dish every night to cover one expiring ingredient will eventually create waste in other ingredients that stop moving.
+RULE 1 — WASTE PREVENTION (highest priority)
+Any dish containing an ingredient marked ⚠ EXPIRING with 2 or fewer days left MUST be selected.
+Proteins expiring are the most urgent — a spoiled protein represents both food cost loss and a safety risk.
+Exception: if that dish has appeared 3+ consecutive nights, find another dish using the same expiring ingredient.
+If no alternative exists, repeat and explain in reason_selected.
+Include the dollar value at risk in your reason_selected when available.
 
 RULE 2 — VARIETY
-No two selected dishes may share the same category. Spread the picks across the menu.
+No two selected dishes may share the same category.
 
-RULE 3 — UNDERSELLING MARGIN (not just high margin)
-After waste slots are filled, remaining picks go to dishes that are leaving money on the table — good margin but low recent sales relative to what they should be doing. Do not simply pick the highest-margin dish every night. If a strong-margin dish has appeared recently, give a different one a turn. The operator already knows their top margin dish. Surface something they might be overlooking.
+RULE 3 — MARGIN VALUE (not just margin %)
+After waste slots are filled, remaining picks go to dishes that are underperforming relative to their margin potential.
+Use BOTH margin % AND margin per cover ($) when ranking. A dish at $8 margin/cover and 65% margin outranks a dish at $2 margin/cover and 72% margin. Weight dollar margin and % margin equally.
+Deprioritize dishes with strong recent sales — they are already moving. Surface dishes with good margin that are being overlooked.
 
 RULE 4 — ROTATION
-Treat any dish appearing in the last 3 nights as ineligible, unless forced by Rule 1. If you must repeat, say so in reason_selected.
+Any dish appearing in the last 3 nights is ineligible unless forced by Rule 1. If forced, explain in reason_selected.
 
 ━━━ RECENT RECOMMENDATION HISTORY (last 5 nights) ━━━
 ${historyLines}
@@ -296,16 +290,16 @@ ${expiringLines}
 ━━━ MENU ━━━
 ${menuLines}
 
-${!hasPOS ? 'Note: No POS data available — judge popularity from margin and waste context only.' : ''}
+${!hasPOS ? 'Note: No POS data available — base popularity judgment on margin value and waste context only.' : ''}
 
 ━━━ RESPONSE FORMAT ━━━
-Return ONLY valid JSON, no markdown:
+Return ONLY valid JSON, no markdown, no commentary:
 {
   "recommendations": [
     {
       "title": "Exact dish name as listed above",
-      "reason_selected": "Specific plain-English explanation for the operator — name the expiring ingredient and days left, or explain the margin/rotation logic. This is your audit trail. Be specific.",
-      "description": "One sentence for the staff ticket — same idea as reason_selected, max 90 chars",
+      "reason_selected": "Specific plain-English explanation for the operator — name the expiring ingredient and days left, dollar value at risk, or explain the margin/rotation logic. Be specific.",
+      "description": "One sentence for the staff ticket — what makes this dish worth pushing tonight, max 90 chars",
       "talking_point": "What a server says to a guest — warm and natural, no jargon, no mention of margins or expiry, max 120 chars",
       "type": "inventory | margin | trending",
       "priority": 1
@@ -315,11 +309,69 @@ Return ONLY valid JSON, no markdown:
   ]
 }
 
-type: "inventory" = expiring ingredient drove selection · "margin" = underselling margin · "trending" = strong sales + good margin
-reason_selected example: "Grilled Salmon selected — halibut expires tomorrow (1d left), dish hasn't appeared since Tuesday, moving it tonight prevents a $47 loss."`;
+type: "inventory" = expiring ingredient drove selection · "margin" = underselling margin · "trending" = strong sales momentum`;
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
+// ─── Core generation logic (shared with cron) ─────────────────────────────────
+export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek) {
+  let enriched = [];
+  let expiringIngredients = [];
+  let history = [];
+
+  try {
+    [{ enriched, expiringIngredients }, history] = await Promise.all([
+      loadRestaurantContext(restaurantId),
+      getRecentHistory(restaurantId, currentDate),
+    ]);
+  } catch (ctxErr) {
+    console.error(`[ai-recommendations] Context load error for ${restaurantId}:`, ctxErr.message);
+  }
+
+  const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate);
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  await logAiUsage({
+    feature: 'dish_recs',
+    model: 'claude-sonnet-4-20250514',
+    usage: message.usage,
+    restaurantId,
+  });
+
+  const raw = message.content[0]?.text || '{}';
+  const cleaned = raw.replace(/```json|```/g, '').trim();
+  let aiResponse;
+  try {
+    aiResponse = JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    aiResponse = match ? JSON.parse(match[0]) : { recommendations: [] };
+  }
+
+  const recommendations = (aiResponse.recommendations || []).slice(0, 3);
+
+  // Cache the result
+  try {
+    await supabase
+      .from('ai_recommendations')
+      .upsert({
+        restaurant_id: restaurantId,
+        generated_date: currentDate,
+        recommendations,
+        type: 'general',
+      });
+  } catch (cacheWriteErr) {
+    console.error(`[ai-recommendations] Cache write error for ${restaurantId}:`, cacheWriteErr.message);
+  }
+
+  return recommendations;
+}
+
+// ─── On-demand handler ────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
@@ -332,7 +384,7 @@ export default async function handler(req, res) {
     const currentDate = estDate.toISOString().split('T')[0];
     const dayOfWeek = estDate.toLocaleDateString('en-US', { weekday: 'long' });
 
-    // Check cache
+    // Return cached recs if already generated today
     const { data: cached, error: cacheError } = await supabase
       .from('ai_recommendations')
       .select('recommendations')
@@ -344,67 +396,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ recommendations: cached.recommendations, cached: true, date: currentDate });
     }
 
-    // Load context and history in parallel
-    let enriched = [];
-    let expiringIngredients = [];
-    let history = [];
-    try {
-      [{ enriched, expiringIngredients }, history] = await Promise.all([
-        loadRestaurantContext(restaurantId),
-        getRecentHistory(restaurantId, currentDate),
-      ]);
-    } catch (ctxErr) {
-      console.error('[ai-recommendations] Context load error:', ctxErr.message);
-    }
-
-    const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate);
-
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    await logAiUsage({
-      feature: 'dish_recs',
-      model: 'claude-sonnet-4-20250514',
-      usage: message.usage,
-      restaurantId,
-    });
-
-    const raw = message.content[0]?.text || '{}';
-    const cleaned = raw.replace(/```json|```/g, '').trim();
-    let aiResponse;
-    try {
-      aiResponse = JSON.parse(cleaned);
-    } catch {
-      const match = cleaned.match(/\{[\s\S]*\}/);
-      aiResponse = match ? JSON.parse(match[0]) : { recommendations: [] };
-    }
-
-    const recommendations = (aiResponse.recommendations || []).slice(0, 3);
-
-    // Cache the result
-    try {
-      await supabase
-        .from('ai_recommendations')
-        .upsert({ restaurant_id: restaurantId, generated_date: currentDate, recommendations, type: 'general' });
-    } catch (cacheWriteErr) {
-      console.error('[ai-recommendations] Cache write error:', cacheWriteErr.message);
-    }
-
+    const recommendations = await generateForRestaurant(restaurantId, currentDate, dayOfWeek);
     return res.status(200).json({ recommendations, cached: false, date: currentDate });
 
   } catch (err) {
     console.error('[ai-recommendations] Error:', err);
-    return res.status(200).json({
-      recommendations: [
-        { title: 'Check High Margin Items', description: 'Review your highest margin dishes and ask staff to suggest them today.', talking_point: "This is one of our absolute favorites right now — I think you'd love it.", type: 'margin', priority: 1 },
-        { title: 'Move Perishables', description: 'Identify ingredients ordered this week and promote dishes that use them.', talking_point: "We just got this in — it's incredibly fresh tonight.", type: 'inventory', priority: 2 },
-        { title: 'Upsell Popular Items', description: 'Ask staff to suggest your best sellers as an add-on to every order.', talking_point: "Guests have been loving this lately — it's a great choice tonight.", type: 'trending', priority: 3 },
-      ],
-      cached: false,
-      error: 'Generated fallback recommendations',
-    });
+    // Return empty — dashboard handles the empty state gracefully
+    return res.status(200).json({ recommendations: [], cached: false, error: err.message });
   }
 }
