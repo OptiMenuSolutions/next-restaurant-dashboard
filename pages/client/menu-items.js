@@ -423,7 +423,7 @@ export default function ClientMenuItems() {
       : selectedItemData.ingredients.length > 0
         ? selectedItemData.ingredients.reduce((s, i) => s + (parseFloat(i.ingredients?.last_price || 0) * parseFloat(i.quantity || 0)), 0)
         : parseFloat(selectedItemData.item?.cost || 0)
-    : 0;setUserName(profile.full_name ? profile.full_name.split(' ')[0] : 'User');
+    : 0;
 
   const profitMargin = selectedItemData ? getMarginNum(selectedItemData.item?.price, totalCost) : null;
   function getMultiplier(id) { return multipliers[id] ?? 1.0; }
