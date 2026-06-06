@@ -715,7 +715,8 @@ export default function ClientDashboard() {
   async function fetchAIRecommendations(restId){
     try{
       setAiLoading(true);
-      const res=await fetch('/api/ai-recommendations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurantId:restId})});
+      const { data: { session } } = await supabase.auth.getSession();
+      const res=await fetch('/api/ai-recommendations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session?.access_token}`},body:JSON.stringify({restaurantId:restId})});
       if(!res.ok)throw new Error(`API ${res.status}`);
       const json=await res.json();
       const recs=(json.recommendations||[]).map(r=>({title:r.title,description:r.description,sellCopy:r.talking_point||null,type:r.type,margin:r.margin||null,confidence:r.confidence||null,urgency:r.urgency||null}));

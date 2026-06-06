@@ -396,6 +396,25 @@ export default async function handler(req, res) {
     const { restaurantId } = req.body;
     if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
 
+    // Verify the calling user owns this restaurant
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('restaurant_id')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile || profile.restaurant_id !== restaurantId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const currentDate = estDate.toISOString().split('T')[0];
@@ -418,7 +437,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[ai-recommendations] Error:', err);
-    // Return empty — dashboard handles the empty state gracefully
     return res.status(200).json({ recommendations: [], cached: false, error: err.message });
   }
 }

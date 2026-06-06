@@ -69,6 +69,11 @@ export default async function handler(req, res) {
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
 
+  // Verify the calling user owns this restaurant
+  const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
+    .then(m => m.verifyRestaurantAccess(req, restaurant_id));
+  if (authError) return res.status(authStatus).json({ error: authError });
+
   const activeItems = (line_items || []).filter(i => !i.dismissed);
   const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
   const appendMode  = !!append_to_invoice_id;

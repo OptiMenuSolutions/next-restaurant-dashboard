@@ -18,6 +18,11 @@ export default async function handler(req, res) {
     const { restaurantId } = req.body;
     if (!restaurantId) return res.status(400).json({ message: 'Missing restaurantId' });
 
+    // Verify the calling user owns this restaurant
+    const { verifyRestaurantAccess } = await import('../../lib/withRestaurantAuth');
+    const { error: authError, status: authStatus } = await verifyRestaurantAccess(req, restaurantId);
+    if (authError) return res.status(authStatus).json({ error: authError });
+
     const now = new Date();
     const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     const today = estDate.toISOString().split('T')[0];

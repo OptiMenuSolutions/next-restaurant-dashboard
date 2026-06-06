@@ -482,7 +482,6 @@ export default function ClientMenuItems() {
     if (!selectedItemData) return;
     setEditSaving(true); setEditSaveMsg(null);
     const menuItemId = selectedItemData.item.id;
-    const errors = [];
 
     function calcIngCost(ing) {
       const unitCost = parseFloat(ing.unitCost || 0);
@@ -495,43 +494,86 @@ export default function ClientMenuItems() {
       } catch { return parseFloat(ing.quantity || 0) * unitCost; }
     }
 
+    // ── Step 1: Validate everything before writing anything ──────────────────
+    const validationErrors = [];
+    for (const comp of editComponents) {
+      if (!comp.name?.trim()) validationErrors.push(`A component is missing a name`);
+      for (const ing of comp.ingredients) {
+        if (!ing.ingredientId) validationErrors.push(`"${ing.name || 'Unnamed ingredient'}" has no ingredient selected`);
+      }
+    }
+    if (validationErrors.length > 0) {
+      setEditSaveMsg({ type: 'error', text: validationErrors[0] });
+      setEditSaving(false);
+      return;
+    }
+
     try {
+      // ── Step 2: Write components and ingredients — stop immediately on any failure ──
       for (const comp of editComponents) {
         let componentId = comp.id;
+        const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
+
         if (comp.isNew) {
-          const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
-          const { data: newComp, error } = await supabase.from('menu_item_components').insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).select('id').single();
-          if (error) { errors.push(`Failed to create component "${comp.name}"`); continue; }
+          const { data: newComp, error } = await supabase
+            .from('menu_item_components')
+            .insert({ menu_item_id: menuItemId, name: comp.name, cost: Math.round(compCost * 10000) / 10000 })
+            .select('id')
+            .single();
+          if (error) throw new Error(`Failed to create component "${comp.name}": ${error.message}`);
           componentId = newComp.id;
         } else {
-          const compCost = comp.ingredients.reduce((s, i) => s + calcIngCost(i), 0);
-          await supabase.from('menu_item_components').update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 }).eq('id', componentId);
+          const { error } = await supabase
+            .from('menu_item_components')
+            .update({ name: comp.name, cost: Math.round(compCost * 10000) / 10000 })
+            .eq('id', componentId);
+          if (error) throw new Error(`Failed to update component "${comp.name}": ${error.message}`);
         }
+
         for (const ing of comp.ingredients) {
-          if (!ing.ingredientId) { errors.push(`"${ing.name}" has no ingredient selected`); continue; }
-          if (!ing.isEstimated && ing.unitCost > 0) await supabase.from('ingredients').update({ last_price: ing.unitCost, is_estimated: false }).eq('id', ing.ingredientId);
-          if (ing.isNew) await supabase.from('component_ingredients').insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
-          else await supabase.from('component_ingredients').update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit }).eq('id', ing.ciId);
+          // Update ingredient last_price if real (non-estimated) cost provided
+          if (!ing.isEstimated && ing.unitCost > 0) {
+            const { error } = await supabase
+              .from('ingredients')
+              .update({ last_price: ing.unitCost, is_estimated: false })
+              .eq('id', ing.ingredientId);
+            if (error) throw new Error(`Failed to update price for "${ing.name}": ${error.message}`);
+          }
+
+          if (ing.isNew) {
+            const { error } = await supabase
+              .from('component_ingredients')
+              .insert({ component_id: componentId, ingredient_id: ing.ingredientId, quantity: parseFloat(ing.quantity || 0), unit: ing.unit });
+            if (error) throw new Error(`Failed to add ingredient "${ing.name}": ${error.message}`);
+          } else {
+            const { error } = await supabase
+              .from('component_ingredients')
+              .update({ quantity: parseFloat(ing.quantity || 0), unit: ing.unit })
+              .eq('id', ing.ciId);
+            if (error) throw new Error(`Failed to update ingredient "${ing.name}": ${error.message}`);
+          }
         }
       }
-      const newTotalCost = editComponents.reduce((s, c) => s + c.ingredients.reduce((ss, i) => {
-        const unitCost = parseFloat(i.unitCost || 0);
-        if (unitCost === 0) return ss;
-        try {
-          const calc = typeof calculateStandardizedCost === 'function'
-            ? calculateStandardizedCost(i.quantity, i.unit, unitCost, i.standardUnit || i.unit)
-            : null;
-          return ss + ((calc !== null && calc !== undefined && !isNaN(calc)) ? calc : parseFloat(i.quantity || 0) * unitCost);
-        } catch {
-          return ss + parseFloat(i.quantity || 0) * unitCost;
-        }
-      }, 0), 0);
-      await supabase.from('menu_items').update({ cost: Math.round(newTotalCost * 100) / 100 }).eq('id', menuItemId);
-      if (errors.length > 0) { setEditSaveMsg({ type: 'error', text: `Saved with ${errors.length} issue(s): ${errors[0]}` }); }
-      else { setEditSaveMsg({ type: 'success', text: 'Saved successfully' }); setEditDirty(false); await fetchItemDetail(menuItemId); await fetchMenuItems(); }
+
+      // ── Step 3: Update menu item total cost using calcIngCost consistently ──
+      const newTotalCost = editComponents.reduce((s, c) =>
+        s + c.ingredients.reduce((ss, i) => ss + calcIngCost(i), 0), 0);
+
+      const { error: costError } = await supabase
+        .from('menu_items')
+        .update({ cost: Math.round(newTotalCost * 100) / 100 })
+        .eq('id', menuItemId);
+      if (costError) throw new Error(`Failed to update menu item cost: ${costError.message}`);
+
+      // ── Step 4: Success ──────────────────────────────────────────────────────
+      setEditSaveMsg({ type: 'success', text: 'Saved successfully' });
+      setEditDirty(false);
+      await fetchItemDetail(menuItemId);
+      await fetchMenuItems();
+
     } catch (err) {
       console.error('[saveItemEdits]', err);
-      setEditSaveMsg({ type: 'error', text: 'An unexpected error occurred. Please try again.' });
+      setEditSaveMsg({ type: 'error', text: err.message || 'An unexpected error occurred. Please try again.' });
     } finally {
       setEditSaving(false);
     }

@@ -18,6 +18,11 @@ export default async function handler(req, res) {
   if (!Array.isArray(dishes) || dishes.length === 0) return res.status(400).json({ error: 'dishes array is required' });
   if (!Array.isArray(ingredient_library)) return res.status(400).json({ error: 'ingredient_library is required' });
 
+  // Verify the calling user owns this restaurant
+  const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
+    .then(m => m.verifyRestaurantAccess(req, restaurant_id));
+  if (authError) return res.status(authStatus).json({ error: authError });
+
   const results = {
     menu_items_created: 0,
     ingredients_created: 0,

@@ -352,9 +352,10 @@ function ParseModal({ onClose, restaurantId, onSaved }) {
 
     for (const group of groups) {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch('/api/invoices/confirm-invoice', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({
             restaurant_id:        restaurantId,
             invoice:              group.invoice,
