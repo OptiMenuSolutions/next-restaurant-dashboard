@@ -758,156 +758,129 @@ export default function ClientDashboard2() {
             </div>
           </header>
 
-          {/* Stat cards */}
-          <div className="db2-stats-row">
-            {statCards.map(({ label, value, sub, color, iconBg, iconColor, icon }) => (
-              <div key={label} className="db2-stat">
-                <div>
-                  <div className="db2-stat-label">{label}</div>
-                  <div className="db2-stat-value" style={{color}}>{value}</div>
-                  <div className="db2-stat-sub">{sub}</div>
-                </div>
-                <div className="db2-stat-icon" style={{background:iconBg,color:iconColor}}>
-                  {icon}
-                </div>
+          {/* Thin stat strip */}
+          <div style={{
+            display:'flex',alignItems:'center',gap:0,
+            padding:'0 20px',height:36,
+            borderBottom:'1px solid rgba(255,255,255,0.06)',
+            flexShrink:0,
+          }}>
+            {[
+              { label:'Avg food cost', value:`${(100-data.averageMargin).toFixed(1)}%`, color:getMarginColor(data.averageMargin) },
+              { label:'Items over target', value:data.lowMarginCount, color:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)' },
+              { label:'Avg margin', value:`${data.averageMargin.toFixed(1)}%`, color:getMarginColor(data.averageMargin) },
+              { label:'Waste alerts', value:data.wasteRisk.length, color:data.wasteRisk.length>0?'var(--color-amber)':'var(--color-green)' },
+              { label:'Menu items', value:data.totalMenuItems, color:'#9a9086' },
+              { label:'Ingredients', value:data.totalIngredients, color:'#9a9086' },
+            ].map(({ label, value, color }, i, arr) => (
+              <div key={label} style={{
+                display:'flex',alignItems:'center',gap:6,
+                paddingRight:16,marginRight:16,
+                borderRight: i < arr.length-1 ? '1px solid rgba(255,255,255,0.06)' : 'none',
+                flexShrink:0,
+              }}>
+                <span style={{fontSize:10,color:'#4a453e'}}>{label}</span>
+                <span style={{fontSize:11,fontWeight:600,color}}>{value}</span>
               </div>
             ))}
           </div>
 
-          {/* Body grid */}
+          {/* Body grid — two full-height cards */}
           {loading ? (
             <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
               <div className="db2-spinner" style={{width:22,height:22,borderWidth:2}}/>
               <div style={{fontSize:'clamp(10px,.78vw,13px)',color:'#4a453e'}}>Loading dashboard...</div>
             </div>
           ) : (
-            <div className="db2-body">
+            <div style={{
+              flex:1,minHeight:0,
+              display:'grid',
+              gridTemplateColumns:'1fr 1fr',
+              gap:8,
+              padding:'10px 20px 12px',
+              overflow:'hidden',
+            }}>
 
-              {/* ── LEFT COLUMN ── */}
-              <div className="db2-left">
-
-                {/* Tonight's Dish */}
-                <div className="db2-card" style={{flex:'1 1 0'}}>
-                  <div className="db2-card-hd">
-                    <div>
-                      <div className="db2-card-title">Tonight's Dish</div>
-                      <div className="db2-card-sub">High-impact dishes to spotlight during service.</div>
-                    </div>
-                    <button className="db2-card-action">
-                      View all
-                      <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 17L17 7"/><path d="M7 7h10v10"/></svg>
-                    </button>
+              {/* ── TONIGHT'S DISH ── */}
+              <div className="db2-card">
+                <div className="db2-card-hd">
+                  <div>
+                    <div className="db2-card-title">Tonight's Dish</div>
+                    <div className="db2-card-sub">High-impact dishes to spotlight during service.</div>
                   </div>
-
-                  {aiLoading ? (
-                    <div className="db2-empty">
-                      <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
-                        <div className="db2-spinner"/>
-                        <span style={{fontFamily:'Courier New,monospace',fontSize:10}}>Analyzing menu...</span>
-                      </div>
+                  {aiLoading && (
+                    <div style={{display:'flex',alignItems:'center',gap:6,fontSize:9,color:'#4a453e',fontFamily:'Courier New,monospace'}}>
+                      <div className="db2-spinner" style={{width:10,height:10,borderWidth:1.5}}/>
+                      Analyzing...
                     </div>
-                  ) : (data.aiRecommendations||[]).length > 0 ? (
-                    <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',gap:6}}>
-                      {(data.aiRecommendations||[]).slice(0,3).map((rec, i) => {
-                        const { label: ticketLabel, color: ticketColor } = getTicketMeta(i);
-                        const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[i % SELL_COPY.length];
-                        return (
-                          <div key={i} style={{
-                            flex:'1 1 0',
-                            background:'#faf8f4',
-                            borderRadius:3,
-                            padding:'8px 10px 6px',
-                            fontFamily:"'Courier New',monospace",
-                            color:'#1a1612',
-                            position:'relative',
-                            display:'flex',
-                            flexDirection:'column',
-                            minHeight:0,
-                            overflow:'hidden',
-                            animation:`fadeIn .3s ease ${i * 0.08}s both`,
-                          }}>
-                            {/* Top perforation */}
-                            <div style={{
-                              position:'absolute',top:-1,left:6,right:6,height:1,
-                              backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)',
-                            }}/>
-                            {/* Header row */}
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                              <span style={{fontSize:8,fontWeight:700,color:ticketColor,letterSpacing:'1.2px',textTransform:'uppercase'}}>{ticketLabel}</span>
-                              <span style={{fontSize:8,color:'#9a9086'}}>#{String(i+1).padStart(3,'0')}</span>
-                            </div>
-                            {/* Dashed divider */}
-                            <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 5px'}}/>
-                            {/* Dish name */}
-                            <div style={{fontSize:13,fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{rec.title||'—'}</div>
-                            {/* Dashed divider */}
-                            <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 4px'}}/>
-                            {/* Why tonight */}
-                            {rec.description && (
-                              <div style={{fontSize:9,color:'#5a5449',lineHeight:1.4,marginBottom:4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{rec.description}</div>
-                            )}
-                            {/* Talking point */}
-                            <div style={{fontSize:9,color:'#1a1612',fontStyle:'italic',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',flex:1}}>
-                              <span style={{color:ticketColor,fontStyle:'normal'}}>"</span>{sellCopy}<span style={{color:ticketColor,fontStyle:'normal'}}>"</span>
-                            </div>
-                            {/* Footer */}
-                            <div style={{fontSize:7,color:'#b0a898',textAlign:'center',marginTop:4,letterSpacing:'0.4px'}}>opti-menu.com</div>
-                            {/* Bottom perforation */}
-                            <div style={{
-                              position:'absolute',bottom:-1,left:6,right:6,height:1,
-                              backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)',
-                            }}/>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="db2-empty">No recommendations yet for today</div>
                   )}
                 </div>
 
-                {/* Waste Risk */}
-                <div className="db2-card" style={{flex:'1 1 0'}}>
-                  <div className="db2-card-hd">
-                    <div>
-                      <div className="db2-card-title">Waste Risk</div>
-                      <div className="db2-card-sub">Ingredients requiring attention before service.</div>
+                {aiLoading ? (
+                  <div className="db2-empty">
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}>
+                      <div className="db2-spinner"/>
+                      <span style={{fontFamily:'Courier New,monospace',fontSize:10}}>Analyzing menu...</span>
                     </div>
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                   </div>
-                  <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-                    {wasteItems.length === 0 ? (
-                      <div className="db2-empty">No at-risk ingredients detected</div>
-                    ) : (
-                      wasteItems.map((item, i) => <WasteRow2 key={i} item={item} router={router}/>)
-                    )}
+                ) : (data.aiRecommendations||[]).length > 0 ? (
+                  <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',gap:6}}>
+                    {(data.aiRecommendations||[]).slice(0,3).map((rec, i) => {
+                      const { label: ticketLabel, color: ticketColor } = getTicketMeta(i);
+                      const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[i % SELL_COPY.length];
+                      return (
+                        <div key={i} style={{
+                          flex:'1 1 0',
+                          background:'#faf8f4',
+                          borderRadius:3,
+                          padding:'8px 10px 6px',
+                          fontFamily:"'Courier New',monospace",
+                          color:'#1a1612',
+                          position:'relative',
+                          display:'flex',
+                          flexDirection:'column',
+                          minHeight:0,
+                          overflow:'hidden',
+                          animation:`fadeIn .3s ease ${i * 0.08}s both`,
+                        }}>
+                          <div style={{position:'absolute',top:-1,left:6,right:6,height:1,backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)'}}/>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                            <span style={{fontSize:8,fontWeight:700,color:ticketColor,letterSpacing:'1.2px',textTransform:'uppercase'}}>{ticketLabel}</span>
+                            <span style={{fontSize:8,color:'#9a9086'}}>#{String(i+1).padStart(3,'0')}</span>
+                          </div>
+                          <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 5px'}}/>
+                          <div style={{fontSize:13,fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{rec.title||'—'}</div>
+                          <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 4px'}}/>
+                          {rec.description && (
+                            <div style={{fontSize:9,color:'#5a5449',lineHeight:1.4,marginBottom:4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{rec.description}</div>
+                          )}
+                          <div style={{fontSize:9,color:'#1a1612',fontStyle:'italic',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',flex:1}}>
+                            <span style={{color:ticketColor,fontStyle:'normal'}}>"</span>{sellCopy}<span style={{color:ticketColor,fontStyle:'normal'}}>"</span>
+                          </div>
+                          <div style={{fontSize:7,color:'#b0a898',textAlign:'center',marginTop:4,letterSpacing:'0.4px'}}>opti-menu.com</div>
+                          <div style={{position:'absolute',bottom:-1,left:6,right:6,height:1,backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)'}}/>
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
-
+                ) : (
+                  <div className="db2-empty">No recommendations yet for today</div>
+                )}
               </div>
 
-              {/* ── RIGHT COLUMN ── */}
-              <div className="db2-right">
-
-                {/* Week in Review — full height */}
-                <div className="db2-card" style={{flex:'1 1 0'}}>
-                  <div className="db2-card-hd">
-                    <div>
-                      <div className="db2-card-title">Week in Review</div>
-                      <div className="db2-card-sub">Last seven days of nightly focus dishes.</div>
-                    </div>
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:9,color:'#4a453e'}}>extra sold</span>
-                      <span style={{fontSize:9,fontWeight:700,padding:'3px 8px',borderRadius:20,background:'rgba(76,175,128,0.1)',color:'var(--color-green)'}}>{weekExtraLabel}</span>
-                    </div>
+              {/* ── WEEK IN REVIEW ── */}
+              <div className="db2-card">
+                <div className="db2-card-hd">
+                  <div>
+                    <div className="db2-card-title">Week in Review</div>
+                    <div className="db2-card-sub">Last seven days of nightly focus dishes.</div>
                   </div>
-                  <WeekInReviewNew
-                    restaurantId={restaurantId}
-                    wasteRisk={data.wasteRisk}
-                    menuItems={menuItemsFull}
-                  />
                 </div>
-
+                <WeekInReviewNew
+                  restaurantId={restaurantId}
+                  wasteRisk={data.wasteRisk}
+                  menuItems={menuItemsFull}
+                />
               </div>
 
             </div>
