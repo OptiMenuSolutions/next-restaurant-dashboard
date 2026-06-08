@@ -298,55 +298,64 @@ function WeekInReviewNew({ restaurantId, wasteRisk, menuItems }) {
     </div>
   );
 
-  return (
-    <>
-      {/* Stats row */}
-      <div className="db2-wir-stats">
-        <div style={{borderRight:'1px solid rgba(255,255,255,0.06)',paddingRight:8}}>
-          <div className="db2-wir-stat-label">Revenue</div>
-          <div className="db2-wir-stat-value" style={{color:'var(--color-green)'}}>
-            {weekData.length > 0 ? `${weekData.reduce((s,d)=>s+(d.extraSold||0),0)>=0?'+':''}${weekData.reduce((s,d)=>s+(d.extraSold||0),0)}` : '—'}
-          </div>
-          <div className="db2-wir-stat-sub" style={{color:'var(--color-green)'}}>extra sold vs avg</div>
-        </div>
-        <div style={{borderRight:'1px solid rgba(255,255,255,0.06)',paddingRight:8}}>
-          <div className="db2-wir-stat-label">Waste saved</div>
-          <div className="db2-wir-stat-value" style={{color:'var(--color-green)'}}>${weekWasteSaved}</div>
-          <div className="db2-wir-stat-sub" style={{color:'var(--color-green)'}}>estimated</div>
-        </div>
-        <div>
-          <div className="db2-wir-stat-label">Hit rate</div>
-          <div className="db2-wir-stat-value" style={{color:'var(--accent)'}}>{hitRate}%</div>
-          <div className="db2-wir-stat-sub" style={{color:'var(--accent)'}}>days above avg</div>
-        </div>
-      </div>
+  if (weekData.length === 0) return (
+    <div className="db2-empty">No weekly data yet — recommendations will appear here once Tonight's Dish runs</div>
+  );
 
-      {/* Day rows */}
-      <div className="db2-wir-scroll">
-        {weekData.length === 0 && <div className="db2-empty">No weekly data yet</div>}
-        {weekData.map(day => {
-          const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'#4a453e';
-          return (
-            <div key={day.date} className="db2-wir-day-row">
-              <div className="db2-wir-day-box">
-                <div className="db2-wir-day-label">{day.dayLabel}</div>
-                <div className="db2-wir-day-date">{day.date.slice(5).replace('-','/')}</div>
-              </div>
-              <div className="db2-wir-day-pills">
-                {day.dishes.length > 0 ? day.dishes.map((d,i) => (
-                  <span key={i} className="db2-wir-day-pill" style={{background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor}}>
-                    {d.name.split(' ').slice(0,2).join(' ')}
-                  </span>
-                )) : <span style={{fontSize:9,color:'#3a3630'}}>No recs</span>}
-              </div>
-              <div className="db2-wir-day-result" style={{color:extraColor}}>
-                {day.extraSold > 0 ? '+' : ''}{day.extraSold}
-              </div>
+  return (
+    <div className="db2-wir-scroll">
+      {weekData.map(day => {
+        const extraColor = day.extraSold > 0 ? 'var(--color-green)' : day.extraSold < 0 ? 'var(--color-red)' : '#4a453e';
+        const hasResult = day.extraSold !== 0;
+        return (
+          <div key={day.date} style={{
+            display:'grid',
+            gridTemplateColumns:'44px 1fr auto',
+            gap:10,
+            alignItems:'center',
+            padding:'7px 0',
+            borderBottom:'1px solid rgba(255,255,255,0.04)',
+          }}>
+            {/* Day box */}
+            <div style={{
+              background:'#13120f',
+              border:'1px solid rgba(255,255,255,0.06)',
+              borderRadius:8,
+              padding:'5px 0',
+              textAlign:'center',
+            }}>
+              <div style={{fontSize:9,fontWeight:600,color:'#c8c0b4',lineHeight:1}}>{day.dayLabel}</div>
+              <div style={{fontSize:7,color:'#4a453e',marginTop:2}}>{day.date.slice(5).replace('-','/')}</div>
             </div>
-          );
-        })}
-      </div>
-    </>
+
+            {/* Dish pills */}
+            <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'nowrap',overflow:'hidden'}}>
+              {day.dishes.length > 0 ? day.dishes.map((d,i) => (
+                <span key={i} style={{
+                  fontSize:9,fontWeight:600,
+                  padding:'2px 6px',borderRadius:10,
+                  background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,
+                  color:d.ticketColor,
+                  whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
+                  maxWidth:100,flexShrink:0,
+                }}>
+                  {d.name.split(' ').slice(0,2).join(' ')}
+                </span>
+              )) : <span style={{fontSize:9,color:'#3a3630',fontStyle:'italic'}}>No recs</span>}
+            </div>
+
+            {/* Result */}
+            <div style={{
+              fontSize:11,fontWeight:600,
+              color: hasResult ? extraColor : '#3a3630',
+              minWidth:28,textAlign:'right',flexShrink:0,
+            }}>
+              {hasResult ? `${day.extraSold > 0 ? '+' : ''}${day.extraSold}` : '—'}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -569,6 +578,7 @@ export default function ClientDashboard2() {
   );
 
   const wasteItems = [...data.wasteRisk.filter(w=>w.protein), ...data.wasteRisk.filter(w=>!w.protein)].slice(0,5);
+  const weekExtraLabel = '—'; // populated by WeekInReviewNew internally
 
   return (
     <>
@@ -690,21 +700,56 @@ export default function ClientDashboard2() {
                       </div>
                     </div>
                   ) : (data.aiRecommendations||[]).length > 0 ? (
-                    <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+                    <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',gap:6}}>
                       {(data.aiRecommendations||[]).slice(0,3).map((rec, i) => {
                         const { label: ticketLabel, color: ticketColor } = getTicketMeta(i);
-                        const badgeStyle = {
-                          background: `color-mix(in srgb, ${ticketColor} 12%, transparent)`,
-                          color: ticketColor,
-                        };
+                        const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[i % SELL_COPY.length];
                         return (
-                          <div key={i} className="db2-dish-row">
-                            <div className="db2-dish-icon">{dishIcons[i]}</div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div className="db2-dish-name">{rec.title||'—'}</div>
-                              <div className="db2-dish-reason">{rec.description||''}</div>
+                          <div key={i} style={{
+                            flex:'1 1 0',
+                            background:'#faf8f4',
+                            borderRadius:3,
+                            padding:'8px 10px 6px',
+                            fontFamily:"'Courier New',monospace",
+                            color:'#1a1612',
+                            position:'relative',
+                            display:'flex',
+                            flexDirection:'column',
+                            minHeight:0,
+                            overflow:'hidden',
+                            animation:`fadeIn .3s ease ${i * 0.08}s both`,
+                          }}>
+                            {/* Top perforation */}
+                            <div style={{
+                              position:'absolute',top:-1,left:6,right:6,height:1,
+                              backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)',
+                            }}/>
+                            {/* Header row */}
+                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                              <span style={{fontSize:8,fontWeight:700,color:ticketColor,letterSpacing:'1.2px',textTransform:'uppercase'}}>{ticketLabel}</span>
+                              <span style={{fontSize:8,color:'#9a9086'}}>#{String(i+1).padStart(3,'0')}</span>
                             </div>
-                            <span className="db2-priority-badge" style={badgeStyle}>{ticketLabel}</span>
+                            {/* Dashed divider */}
+                            <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 5px'}}/>
+                            {/* Dish name */}
+                            <div style={{fontSize:13,fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{rec.title||'—'}</div>
+                            {/* Dashed divider */}
+                            <div style={{borderTop:'1px dashed #c8c0b8',margin:'0 0 4px'}}/>
+                            {/* Why tonight */}
+                            {rec.description && (
+                              <div style={{fontSize:9,color:'#5a5449',lineHeight:1.4,marginBottom:4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{rec.description}</div>
+                            )}
+                            {/* Talking point */}
+                            <div style={{fontSize:9,color:'#1a1612',fontStyle:'italic',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',flex:1}}>
+                              <span style={{color:ticketColor,fontStyle:'normal'}}>"</span>{sellCopy}<span style={{color:ticketColor,fontStyle:'normal'}}>"</span>
+                            </div>
+                            {/* Footer */}
+                            <div style={{fontSize:7,color:'#b0a898',textAlign:'center',marginTop:4,letterSpacing:'0.4px'}}>opti-menu.com</div>
+                            {/* Bottom perforation */}
+                            <div style={{
+                              position:'absolute',bottom:-1,left:6,right:6,height:1,
+                              backgroundImage:'repeating-linear-gradient(to right, transparent, transparent 3px, #e0dbd4 3px, #e0dbd4 6px)',
+                            }}/>
                           </div>
                         );
                       })}
@@ -737,32 +782,23 @@ export default function ClientDashboard2() {
               {/* ── RIGHT COLUMN ── */}
               <div className="db2-right">
 
-                {/* Week in Review */}
-                <div className="db2-card" style={{flex:'1.4 1 0'}}>
+                {/* Week in Review — full height */}
+                <div className="db2-card" style={{flex:'1 1 0'}}>
                   <div className="db2-card-hd">
                     <div>
                       <div className="db2-card-title">Week in Review</div>
                       <div className="db2-card-sub">Last seven days of nightly focus dishes.</div>
                     </div>
-                    <span style={{fontSize:9,fontWeight:700,padding:'3px 8px',borderRadius:20,background:'rgba(76,175,128,0.1)',color:'var(--color-green)'}}>+6.4%</span>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:9,color:'#4a453e'}}>extra sold</span>
+                      <span style={{fontSize:9,fontWeight:700,padding:'3px 8px',borderRadius:20,background:'rgba(76,175,128,0.1)',color:'var(--color-green)'}}>{weekExtraLabel}</span>
+                    </div>
                   </div>
                   <WeekInReviewNew
                     restaurantId={restaurantId}
                     wasteRisk={data.wasteRisk}
                     menuItems={menuItemsFull}
                   />
-                </div>
-
-                {/* Price Movement */}
-                <div className="db2-card" style={{flex:'0.8 1 0'}}>
-                  <div className="db2-card-hd">
-                    <div>
-                      <div className="db2-card-title">Price Movement</div>
-                      <div className="db2-card-sub">Recent supplier price changes.</div>
-                    </div>
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                  </div>
-                  <PriceMovementSimple priceByCategory={data.priceByCategory}/>
                 </div>
 
               </div>
