@@ -203,7 +203,7 @@ const GLOBAL_CSS = `
   .db2-wir-day-pills{display:flex;align-items:center;gap:4px;flex:1;overflow:hidden;}
   .db2-wir-day-pill{font-size:7px;font-weight:700;padding:2px 5px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90px;}
   .db2-wir-day-result{font-size:clamp(10px,.78vw,12px);font-weight:600;flex-shrink:0;}
-  .db2-wir-scroll{flex:1;overflow-y:auto;min-height:0;}
+  .db2-wir-scroll{flex:1;min-height:0;position:relative;overflow:hidden;}
   .db2-wir-scroll::-webkit-scrollbar{width:2px;}
 
   /* ── PRICE MOVEMENT ── */
@@ -288,6 +288,8 @@ function PriceMovementSimple({ priceByCategory }) {
 // ── WEEK IN REVIEW (new style) ───────────────────────────────────────────────
 function WeekInReviewNew({ restaurantId, wasteRisk, menuItems }) {
   const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
+  const [openDay, setOpenDay] = useState(null);
+  const openDayData = weekData.find(d => d.date === openDay);
 
   if (loading) return (
     <div className="db2-empty">
@@ -303,58 +305,163 @@ function WeekInReviewNew({ restaurantId, wasteRisk, menuItems }) {
   );
 
   return (
-    <div className="db2-wir-scroll">
-      {weekData.map(day => {
-        const extraColor = day.extraSold > 0 ? 'var(--color-green)' : day.extraSold < 0 ? 'var(--color-red)' : '#4a453e';
-        const hasResult = day.extraSold !== 0;
-        return (
-          <div key={day.date} style={{
-            display:'grid',
-            gridTemplateColumns:'44px 1fr auto',
-            gap:10,
-            alignItems:'center',
-            padding:'7px 0',
-            borderBottom:'1px solid rgba(255,255,255,0.04)',
-          }}>
-            {/* Day box */}
-            <div style={{
-              background:'#13120f',
-              border:'1px solid rgba(255,255,255,0.06)',
-              borderRadius:8,
-              padding:'5px 0',
-              textAlign:'center',
-            }}>
-              <div style={{fontSize:9,fontWeight:600,color:'#c8c0b4',lineHeight:1}}>{day.dayLabel}</div>
-              <div style={{fontSize:7,color:'#4a453e',marginTop:2}}>{day.date.slice(5).replace('-','/')}</div>
+    <div className="db2-wir-scroll" style={{position:'relative'}}>
+
+      {/* ── LIST VIEW ── */}
+      <div style={{
+        position:'absolute', inset:0,
+        display:'flex', flexDirection:'column',
+        transition:'opacity .25s ease, transform .25s ease',
+        opacity: openDay ? 0 : 1,
+        transform: openDay ? 'translateX(-12px)' : 'translateX(0)',
+        pointerEvents: openDay ? 'none' : 'auto',
+        overflowY:'auto',
+      }}>
+        {weekData.map((day, idx) => {
+          const extraColor = day.extraSold > 0 ? 'var(--color-green)' : day.extraSold < 0 ? 'var(--color-red)' : '#4a453e';
+          const hasResult = day.extraSold !== 0;
+          const isLast = idx === weekData.length - 1;
+          return (
+            <div
+              key={day.date}
+              onClick={() => setOpenDay(day.date)}
+              style={{
+                display:'grid',
+                gridTemplateColumns:'44px 1fr auto 14px',
+                gap:8,
+                alignItems:'center',
+                padding:'6px 0',
+                borderBottom: isLast ? 'none' : '1px solid rgba(255,255,255,0.04)',
+                cursor:'pointer',
+                flexShrink:0,
+                transition:'background .1s',
+                borderRadius:4,
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              {/* Day box */}
+              <div style={{
+                background:'#13120f',
+                border:'1px solid rgba(255,255,255,0.06)',
+                borderRadius:6,
+                padding:'4px 0',
+                textAlign:'center',
+                flexShrink:0,
+              }}>
+                <div style={{fontSize:9,fontWeight:600,color:'#c8c0b4',lineHeight:1}}>{day.dayLabel}</div>
+                <div style={{fontSize:7,color:'#4a453e',marginTop:1}}>{day.date.slice(5).replace('-','/')}</div>
+              </div>
+
+              {/* Dish pills */}
+              <div style={{display:'flex',alignItems:'center',gap:3,overflow:'hidden'}}>
+                {day.dishes.length > 0 ? day.dishes.map((d,i) => (
+                  <span key={i} style={{
+                    fontSize:8,fontWeight:600,
+                    padding:'2px 5px',borderRadius:8,
+                    background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,
+                    color:d.ticketColor,
+                    whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
+                    maxWidth:88,flexShrink:0,
+                  }}>
+                    {d.name.split(' ').slice(0,2).join(' ')}
+                  </span>
+                )) : <span style={{fontSize:8,color:'#3a3630',fontStyle:'italic'}}>No recs</span>}
+              </div>
+
+              {/* Result */}
+              <div style={{
+                fontSize:10,fontWeight:600,
+                color: hasResult ? extraColor : '#3a3630',
+                textAlign:'right',flexShrink:0,
+              }}>
+                {hasResult ? `${day.extraSold > 0 ? '+' : ''}${day.extraSold}` : '—'}
+              </div>
+
+              {/* Chevron */}
+              <div style={{fontSize:9,color:'#3a3630',flexShrink:0}}>›</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── DETAIL VIEW ── */}
+      <div style={{
+        position:'absolute', inset:0,
+        display:'flex', flexDirection:'column',
+        transition:'opacity .25s ease, transform .25s ease',
+        opacity: openDay ? 1 : 0,
+        transform: openDay ? 'translateX(0)' : 'translateX(12px)',
+        pointerEvents: openDay ? 'auto' : 'none',
+        overflowY:'auto',
+      }}>
+        {openDayData && (
+          <>
+            {/* Back + day header */}
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10,flexShrink:0}}>
+              <button
+                onClick={() => setOpenDay(null)}
+                style={{background:'none',border:'none',cursor:'pointer',fontSize:10,color:'var(--accent)',fontFamily:'Inter,sans-serif',padding:0,display:'flex',alignItems:'center',gap:3}}
+              >
+                ← Back
+              </button>
+              <div style={{fontSize:11,fontWeight:600,color:'#c8c0b4'}}>{openDayData.dayLabel} · {openDayData.date.slice(5).replace('-','/')}</div>
+              <div style={{marginLeft:'auto',fontSize:10,color:'#4a453e'}}>
+                Est. waste saved: <span style={{color:'var(--color-green)',fontWeight:600}}>${openDayData.wasteSaved}</span>
+              </div>
             </div>
 
-            {/* Dish pills */}
-            <div style={{display:'flex',alignItems:'center',gap:4,flexWrap:'nowrap',overflow:'hidden'}}>
-              {day.dishes.length > 0 ? day.dishes.map((d,i) => (
-                <span key={i} style={{
-                  fontSize:9,fontWeight:600,
-                  padding:'2px 6px',borderRadius:10,
-                  background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,
-                  color:d.ticketColor,
-                  whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',
-                  maxWidth:100,flexShrink:0,
-                }}>
-                  {d.name.split(' ').slice(0,2).join(' ')}
-                </span>
-              )) : <span style={{fontSize:9,color:'#3a3630',fontStyle:'italic'}}>No recs</span>}
-            </div>
+            {/* Dish rows */}
+            {openDayData.dishes.length === 0 ? (
+              <div style={{fontSize:11,color:'#4a453e',textAlign:'center',padding:'16px 0'}}>No recommendations recorded for this day.</div>
+            ) : (
+              openDayData.dishes.map((dish, i) => {
+                const diff = dish.diff;
+                const diffColor = diff !== null ? (diff > 0 ? 'var(--color-green)' : diff < 0 ? 'var(--color-red)' : '#4a453e') : '#4a453e';
+                const maxBar = Math.max(dish.sold, dish.avg || 0, 1);
+                const typeLabel = i === 0 ? 'Push' : i === 1 ? 'Rec' : 'Mention';
+                return (
+                  <div key={i} style={{marginBottom:12,flexShrink:0}}>
+                    {/* Dish name + delta */}
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{fontSize:8,fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:.5}}>{typeLabel}</span>
+                        <span style={{fontSize:11,fontWeight:600,color:'#c8c0b4'}}>{dish.name}</span>
+                      </div>
+                      <span style={{fontSize:10,fontWeight:700,color:diffColor}}>
+                        {diff !== null ? `${diff > 0 ? '+' : ''}${diff.toFixed(1)} (${dish.pct > 0 ? '+' : ''}${dish.pct ?? '—'}%)` : '—'}
+                      </span>
+                    </div>
+                    {/* Bars */}
+                    <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                      <div style={{display:'flex',alignItems:'center',gap:8}}>
+                        <span style={{fontSize:8,color:'#4a453e',width:22,flexShrink:0}}>Sold</span>
+                        <div style={{flex:1,height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
+                          <div style={{width:`${(dish.sold/maxBar)*100}%`,height:'100%',background:'var(--accent)',borderRadius:2,transition:'width .4s ease'}}/>
+                        </div>
+                        <span style={{fontSize:9,fontWeight:600,color:'var(--accent)',width:20,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
+                      </div>
+                      {dish.avg !== null && (
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          <span style={{fontSize:8,color:'#4a453e',width:22,flexShrink:0}}>Avg</span>
+                          <div style={{flex:1,height:4,background:'rgba(255,255,255,0.06)',borderRadius:2,overflow:'hidden'}}>
+                            <div style={{width:`${(dish.avg/maxBar)*100}%`,height:'100%',background:'rgba(255,255,255,0.12)',borderRadius:2,transition:'width .4s ease'}}/>
+                          </div>
+                          <span style={{fontSize:9,fontWeight:600,color:'#4a453e',width:20,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+                    {i < openDayData.dishes.length - 1 && (
+                      <div style={{borderBottom:'1px solid rgba(255,255,255,0.04)',marginTop:10}}/>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </>
+        )}
+      </div>
 
-            {/* Result */}
-            <div style={{
-              fontSize:11,fontWeight:600,
-              color: hasResult ? extraColor : '#3a3630',
-              minWidth:28,textAlign:'right',flexShrink:0,
-            }}>
-              {hasResult ? `${day.extraSold > 0 ? '+' : ''}${day.extraSold}` : '—'}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
