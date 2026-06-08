@@ -795,7 +795,7 @@ export default function ClientDashboard2() {
             <div style={{
               flex:1,minHeight:0,
               display:'grid',
-              gridTemplateColumns:'1fr 1fr',
+              gridTemplateColumns:'2fr 3fr',
               gap:8,
               padding:'10px 20px 12px',
               overflow:'hidden',
