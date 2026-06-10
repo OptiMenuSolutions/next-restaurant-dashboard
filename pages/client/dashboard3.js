@@ -240,30 +240,29 @@ const GLOBAL_CSS = `
   .p3-legend{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);display:flex;align-items:center;gap:10px;padding-top:clamp(5px,.5vh,7px);border-top:1px solid var(--border-subtle);margin-top:clamp(4px,.4vh,6px);flex-shrink:0;}
   .p3-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;}
 
-  /* week in review — horizontal day strip + detail area */
-  .p3-wk-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:clamp(4px,.45vw,8px);flex-shrink:0;margin-bottom:clamp(7px,.7vh,10px);}
-  .p3-wk-day{
-    background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:8px;
-    padding:clamp(5px,.55vh,9px) clamp(4px,.4vw,8px);
-    display:flex;flex-direction:column;align-items:center;gap:clamp(2px,.22vh,4px);
-    cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,background .15s,transform .15s;
-    min-width:0;
-  }
-  .p3-wk-day:hover{border-color:var(--text-faint);}
-  .p3-wk-day.active{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));transform:translateY(-1px);}
-  .p3-wk-day-l{font-size:clamp(8px,.6vw,10px);font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;line-height:1;}
-  .p3-wk-day-d{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);line-height:1;}
-  .p3-wk-day-v{font-family:'Courier New',monospace;font-size:clamp(13px,1.15vw,18px);font-weight:700;line-height:1;}
-  .p3-wk-day-s{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);line-height:1;white-space:nowrap;}
-  .p3-wk-day-dots{display:flex;gap:3px;}
-  .p3-wk-dot{width:4px;height:4px;border-radius:50%;}
-  .p3-wk-detail{flex:1;min-height:0;overflow-y:auto;border-top:1px solid var(--border-subtle);padding-top:clamp(6px,.6vh,10px);}
-  .p3-wk-summary{flex:1;min-height:0;display:flex;flex-direction:column;border-top:1px solid var(--border-subtle);padding-top:clamp(6px,.6vh,10px);}
-  .p3-wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:7px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);flex:1;min-width:0;}
+  /* week in review — totals + month calendar */
+  .p3-wk-grid{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1.2fr;gap:clamp(10px,1.1vw,18px);}
+  .p3-wk-left{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);min-height:0;overflow-y:auto;}
+  .p3-wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:7px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);flex-shrink:0;}
   .p3-wir-stat-l{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
   .p3-wir-stat-v{font-family:'Courier New',monospace;font-size:clamp(14px,1.25vw,19px);font-weight:700;line-height:1;}
   .p3-wir-stat-s{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);margin-top:2px;}
-  .p3-wk-dishes{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(8px,.9vw,14px);align-items:start;}
+  .p3-cal{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border-subtle);padding-left:clamp(10px,1.1vw,18px);}
+  .p3-cal-hd{display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:clamp(10px,.78vw,13px);font-weight:700;color:var(--text-secondary);letter-spacing:.08em;margin-bottom:clamp(4px,.4vh,7px);flex-shrink:0;}
+  .p3-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;flex-shrink:0;margin-bottom:2px;}
+  .p3-cal-dow span{font-size:clamp(7px,.55vw,9px);font-weight:600;color:var(--text-faint);text-align:center;text-transform:uppercase;letter-spacing:.06em;}
+  .p3-cal-days{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:2px;}
+  .p3-cal-day{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:1px solid transparent;border-radius:6px;background:none;cursor:default;font-family:'Inter',sans-serif;min-width:0;min-height:0;padding:1px;}
+  .p3-cal-num{font-size:clamp(9px,.7vw,12px);color:var(--text-faint);line-height:1;}
+  .p3-cal-sub{font-family:'Courier New',monospace;font-size:clamp(7px,.55vw,9px);font-weight:700;line-height:1;}
+  .p3-cal-day.has-data{cursor:pointer;background:var(--bg-elevated);border-color:var(--border-subtle);transition:border-color .15s,background .15s;}
+  .p3-cal-day.has-data .p3-cal-num{color:var(--text-primary);font-weight:600;}
+  .p3-cal-day.has-data:hover{border-color:var(--text-faint);}
+  .p3-cal-day.active{background:var(--accent);border-color:var(--accent);}
+  .p3-cal-day.active .p3-cal-num,.p3-cal-day.active .p3-cal-sub{color:#0a0908;}
+  .p3-cal-day.today::after{content:'';position:absolute;bottom:2px;width:3px;height:3px;border-radius:50%;background:var(--accent);}
+  .p3-cal-day.today.active::after{background:#0a0908;}
+  .p3-cal-legend{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);text-align:center;padding-top:clamp(4px,.4vh,6px);flex-shrink:0;}
 `;
 
 // ── TICKET ───────────────────────────────────────────────────────────────────
@@ -334,48 +333,36 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
   const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
   const [openDay, setOpenDay] = useState(null);
   const openDayData = weekData.find(d => d.date === openDay);
+  const dataByDate = useMemo(() => Object.fromEntries(weekData.map(d => [d.date, d])), [weekData]);
+
+  // month shown = month of the most recent night with data (falls back to today)
+  const anchor = weekData.length ? new Date(`${weekData[weekData.length-1].date}T12:00:00`) : new Date();
+  const year = anchor.getFullYear(), month = anchor.getMonth();
+  const monthLabel = anchor.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first, like a service week
+  const todayKey = new Date().toISOString().split('T')[0];
+  const cells = [];
+  for (let i=0;i<firstDow;i++) cells.push(null);
+  for (let d=1;d<=daysInMonth;d++) {
+    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    cells.push({ d, key, data: dataByDate[key] });
+  }
 
   if (loading) return <div className="p3-empty"><div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}><div className="p3-spinner"/><span>Loading...</span></div></div>;
   if (weekData.length === 0) return <div className="p3-empty">No weekly data yet — results appear here once Tonight's Dish runs</div>;
 
   return (
-    <>
-      {/* horizontal strip: one mini-card per night */}
-      <div className="p3-wk-strip">
-        {weekData.map(day => {
-          const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
-          const isActive = openDay === day.date;
-          return (
-            <button
-              key={day.date}
-              type="button"
-              className={`p3-wk-day${isActive?' active':''}`}
-              onClick={() => setOpenDay(prev => prev === day.date ? null : day.date)}
-              aria-expanded={isActive}
-            >
-              <span className="p3-wk-day-l">{day.dayLabel}</span>
-              <span className="p3-wk-day-d">{day.date.slice(5).replace('-','/')}</span>
-              <span className="p3-wk-day-v" style={{color:day.extraSold!==0?extraColor:'var(--text-faint)'}}>
-                {day.extraSold!==0?`${day.extraSold>0?'+':''}${day.extraSold}`:'—'}
-              </span>
-              <span className="p3-wk-day-s">{day.wasteSaved>0?`$${day.wasteSaved} saved`:'\u00A0'}</span>
-              <span className="p3-wk-day-dots">
-                {day.dishes.slice(0,3).map((d,i)=><span key={i} className="p3-wk-dot" style={{background:d.ticketColor}}/>)}
-                {day.dishes.length===0&&<span className="p3-wk-dot" style={{background:'var(--border)'}}/>}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+    <div className="p3-wk-grid">
 
-      {/* below the strip: week summary by default, dish detail when a night is selected */}
-      {!openDayData ? (
-        <div className="p3-wk-summary">
-          <div style={{display:'flex',gap:'clamp(5px,.5vw,8px)',flexShrink:0}}>
+      {/* LEFT: week totals by default, the selected night's dishes when a date is picked */}
+      <div className="p3-wk-left">
+        {!openDayData ? (
+          <>
             <div className="p3-wir-stat">
               <div className="p3-wir-stat-l">Extra sold</div>
               <div className="p3-wir-stat-v" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)'}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
-              <div className="p3-wir-stat-s">vs. avg, all week</div>
+              <div className="p3-wir-stat-s">vs. avg, last 7 nights</div>
             </div>
             <div className="p3-wir-stat">
               <div className="p3-wir-stat-l">Waste saved</div>
@@ -387,55 +374,78 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
               <div className="p3-wir-stat-v" style={{color:'var(--accent)'}}>{hitRate}%</div>
               <div className="p3-wir-stat-s">days above avg</div>
             </div>
-          </div>
-          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'clamp(8px,.62vw,10px)',color:'var(--text-faint)'}}>
-            Select a night above to see dish performance
-          </div>
-        </div>
-      ) : (
-        <div className="p3-wk-detail">
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:'clamp(6px,.6vh,10px)'}}>
-            <div style={{fontSize:'clamp(10px,.74vw,12px)',fontWeight:600,color:'var(--text-secondary)'}}>{openDayData.dayLabel} · {openDayData.date.slice(5).replace('-','/')}</div>
-            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>Waste prevented: <span style={{color:'var(--color-green)',fontWeight:600}}>${openDayData.wasteSaved}</span></div>
-            <button className="p3-link-btn" style={{marginLeft:'auto'}} onClick={() => setOpenDay(null)}>← Week summary</button>
-          </div>
-          {openDayData.dishes.length===0 ? (
-            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',textAlign:'center',padding:'14px 0'}}>No recommendations recorded for this night.</div>
-          ) : (
-            <div className="p3-wk-dishes">
-              {openDayData.dishes.map((dish,i) => {
-                const diff = dish.diff;
-                const diffColor = diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
-                const maxBar = Math.max(dish.sold, dish.avg||0, 1);
-                return (
-                  <div key={i} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'clamp(7px,.7vh,11px) clamp(8px,.8vw,12px)',minWidth:0}}>
-                    <div style={{fontSize:'clamp(7px,.55vw,9px)',fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:3}}>{i===0?'Push':i===1?'Recommend':'Mention'}</div>
-                    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8,marginBottom:'clamp(5px,.5vh,8px)'}}>
-                      <div style={{fontSize:'clamp(10px,.76vw,12px)',fontWeight:600,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dish.name}</div>
-                      <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:diffColor,whiteSpace:'nowrap'}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)} (${dish.pct>0?'+':''}${dish.pct??'—'}%)`:'—'}</span>
-                    </div>
-                    <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                      <div style={{display:'flex',alignItems:'center',gap:7}}>
-                        <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
-                        <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
-                        <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
-                      </div>
-                      {dish.avg!==null && (
-                        <div style={{display:'flex',alignItems:'center',gap:7}}>
-                          <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
-                          <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
-                          <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+          </>
+        ) : (
+          <>
+            <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+              <div style={{fontSize:'clamp(10px,.74vw,12px)',fontWeight:600,color:'var(--text-secondary)'}}>{openDayData.dayLabel} · {openDayData.date.slice(5).replace('-','/')}</div>
+              <div style={{marginLeft:'auto',fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>Saved <span style={{color:'var(--color-green)',fontWeight:600}}>${openDayData.wasteSaved}</span></div>
             </div>
-          )}
+            {openDayData.dishes.length===0 && (
+              <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',textAlign:'center',padding:'14px 0'}}>No recommendations recorded for this night.</div>
+            )}
+            {openDayData.dishes.map((dish,i) => {
+              const diff = dish.diff;
+              const diffColor = diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
+              const maxBar = Math.max(dish.sold, dish.avg||0, 1);
+              return (
+                <div key={i} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'clamp(6px,.6vh,9px) clamp(8px,.8vw,12px)',minWidth:0,flexShrink:0}}>
+                  <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8,marginBottom:'clamp(4px,.4vh,6px)'}}>
+                    <div style={{minWidth:0,display:'flex',alignItems:'baseline',gap:6}}>
+                      <span style={{fontSize:'clamp(7px,.55vw,9px)',fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:'.08em',flexShrink:0}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
+                      <span style={{fontSize:'clamp(10px,.76vw,12px)',fontWeight:600,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dish.name}</span>
+                    </div>
+                    <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:diffColor,whiteSpace:'nowrap'}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)}`:'—'}</span>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                    <div style={{display:'flex',alignItems:'center',gap:7}}>
+                      <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
+                      <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
+                      <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
+                    </div>
+                    {dish.avg!==null && (
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
+                        <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
+                        <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <button className="p3-link-btn" style={{flexShrink:0,textAlign:'left'}} onClick={() => setOpenDay(null)}>← Back to week totals</button>
+          </>
+        )}
+      </div>
+
+      {/* RIGHT: month calendar — nights with data light up */}
+      <div className="p3-cal">
+        <div className="p3-cal-hd">{monthLabel}</div>
+        <div className="p3-cal-dow">{['Mo','Tu','We','Th','Fr','Sa','Su'].map(d=><span key={d}>{d}</span>)}</div>
+        <div className="p3-cal-days">
+          {cells.map((c,i) => c===null ? <span key={`b${i}`}/> : (
+            <button
+              key={c.key}
+              type="button"
+              disabled={!c.data}
+              className={`p3-cal-day${c.data?' has-data':''}${openDay===c.key?' active':''}${c.key===todayKey?' today':''}`}
+              onClick={() => c.data && setOpenDay(prev => prev === c.key ? null : c.key)}
+              aria-pressed={openDay===c.key}
+            >
+              <span className="p3-cal-num">{c.d}</span>
+              {c.data && (
+                <span className="p3-cal-sub" style={openDay===c.key?undefined:{color:c.data.extraSold>0?'var(--color-green)':c.data.extraSold<0?'var(--color-red)':'var(--text-faint)'}}>
+                  {c.data.extraSold>0?'+':''}{c.data.extraSold}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
-      )}
-    </>
+        <div className="p3-cal-legend">Highlighted nights have Tonight's Dish data — tap one to drill in</div>
+      </div>
+
+    </div>
   );
 }
 
@@ -1141,7 +1151,7 @@ export default function ClientDashboard3() {
               <div className="p3-card">
                 <div className="p3-card-hd">
                   <div className="p3-card-title">Week in Review</div>
-                  <span className="p3-card-sub">Tap a night for dish-level detail</span>
+                  <span className="p3-card-sub">Tap a highlighted date to drill in</span>
                 </div>
                 <WeekInReviewCard restaurantId={restaurantId} wasteRisk={data.wasteRisk} menuItems={menuItemsFull}/>
               </div>
