@@ -248,7 +248,10 @@ const GLOBAL_CSS = `
   .p3-wir-stat-v{font-family:'Courier New',monospace;font-size:clamp(14px,1.25vw,19px);font-weight:700;line-height:1;}
   .p3-wir-stat-s{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);margin-top:2px;}
   .p3-cal{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border-subtle);padding-left:clamp(10px,1.1vw,18px);}
-  .p3-cal-hd{display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-size:clamp(10px,.78vw,13px);font-weight:700;color:var(--text-secondary);letter-spacing:.08em;margin-bottom:clamp(4px,.4vh,7px);flex-shrink:0;}
+  .p3-cal-hd{display:flex;align-items:center;justify-content:space-between;gap:6px;font-family:'Courier New',monospace;font-size:clamp(10px,.78vw,13px);font-weight:700;color:var(--text-secondary);letter-spacing:.08em;margin-bottom:clamp(4px,.4vh,7px);flex-shrink:0;}
+  .p3-cal-nav{width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:5px;color:var(--text-muted);font-size:13px;line-height:1;cursor:pointer;transition:color .15s,border-color .15s;flex-shrink:0;padding:0;}
+  .p3-cal-nav:hover:not(:disabled){color:var(--accent);border-color:var(--text-faint);}
+  .p3-cal-nav:disabled{opacity:.3;cursor:default;}
   .p3-cal-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;flex-shrink:0;margin-bottom:2px;}
   .p3-cal-dow span{font-size:clamp(7px,.55vw,9px);font-weight:600;color:var(--text-faint);text-align:center;text-transform:uppercase;letter-spacing:.06em;}
   .p3-cal-days{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:2px;}
@@ -258,6 +261,9 @@ const GLOBAL_CSS = `
   .p3-cal-day.has-data{cursor:pointer;background:var(--bg-elevated);border-color:var(--border-subtle);transition:border-color .15s,background .15s;}
   .p3-cal-day.has-data .p3-cal-num{color:var(--text-primary);font-weight:600;}
   .p3-cal-day.has-data:hover{border-color:var(--text-faint);}
+  .p3-cal-day.past{cursor:pointer;}
+  .p3-cal-day.past .p3-cal-num{color:var(--text-muted);}
+  .p3-cal-day.past:hover{background:var(--bg-elevated);border-color:var(--border-subtle);}
   .p3-cal-day.active{background:var(--accent);border-color:var(--accent);}
   .p3-cal-day.active .p3-cal-num,.p3-cal-day.active .p3-cal-sub{color:#0a0908;}
   .p3-cal-day.today::after{content:'';position:absolute;bottom:2px;width:3px;height:3px;border-radius:50%;background:var(--accent);}
@@ -332,13 +338,17 @@ function WasteRow({ item, router }) {
 function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
   const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
   const [openDay, setOpenDay] = useState(null);
+  const [monthOffset, setMonthOffset] = useState(0);
   const openDayData = weekData.find(d => d.date === openDay);
   const dataByDate = useMemo(() => Object.fromEntries(weekData.map(d => [d.date, d])), [weekData]);
 
-  // month shown = month of the most recent night with data (falls back to today)
+  // month shown = anchor month ± navigation; forward navigation stops at the current month
   const anchor = weekData.length ? new Date(`${weekData[weekData.length-1].date}T12:00:00`) : new Date();
-  const year = anchor.getFullYear(), month = anchor.getMonth();
-  const monthLabel = anchor.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const shown = new Date(anchor.getFullYear(), anchor.getMonth() + monthOffset, 1);
+  const year = shown.getFullYear(), month = shown.getMonth();
+  const monthLabel = shown.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const now = new Date();
+  const atCurrentMonth = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth());
   const daysInMonth = new Date(year, month+1, 0).getDate();
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first, like a service week
   const todayKey = new Date().toISOString().split('T')[0];
@@ -346,7 +356,7 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
   for (let i=0;i<firstDow;i++) cells.push(null);
   for (let d=1;d<=daysInMonth;d++) {
     const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    cells.push({ d, key, data: dataByDate[key] });
+    cells.push({ d, key, data: dataByDate[key], clickable: key <= todayKey });
   }
 
   if (loading) return <div className="p3-empty"><div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}><div className="p3-spinner"/><span>Loading...</span></div></div>;
@@ -357,7 +367,7 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
 
       {/* LEFT: week totals by default, the selected night's dishes when a date is picked */}
       <div className="p3-wk-left">
-        {!openDayData ? (
+        {!openDay ? (
           <>
             <div className="p3-wir-stat">
               <div className="p3-wir-stat-l">Extra sold</div>
@@ -374,6 +384,16 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
               <div className="p3-wir-stat-v" style={{color:'var(--accent)'}}>{hitRate}%</div>
               <div className="p3-wir-stat-s">days above avg</div>
             </div>
+          </>
+        ) : !openDayData ? (
+          <>
+            <div style={{fontSize:'clamp(10px,.74vw,12px)',fontWeight:600,color:'var(--text-secondary)',flexShrink:0}}>
+              {new Date(`${openDay}T12:00:00`).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
+            </div>
+            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',lineHeight:1.5,padding:'8px 0'}}>
+              No Tonight's Dish data recorded for this night — day-level history currently covers the last 7 nights.
+            </div>
+            <button className="p3-link-btn" style={{flexShrink:0,textAlign:'left'}} onClick={() => setOpenDay(null)}>← Back to week totals</button>
           </>
         ) : (
           <>
@@ -421,16 +441,20 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
 
       {/* RIGHT: month calendar — nights with data light up */}
       <div className="p3-cal">
-        <div className="p3-cal-hd">{monthLabel}</div>
+        <div className="p3-cal-hd">
+          <button type="button" className="p3-cal-nav" onClick={() => setMonthOffset(o => o - 1)} aria-label="Previous month">‹</button>
+          <span>{monthLabel}</span>
+          <button type="button" className="p3-cal-nav" disabled={atCurrentMonth} onClick={() => setMonthOffset(o => o + 1)} aria-label="Next month">›</button>
+        </div>
         <div className="p3-cal-dow">{['Mo','Tu','We','Th','Fr','Sa','Su'].map(d=><span key={d}>{d}</span>)}</div>
         <div className="p3-cal-days">
           {cells.map((c,i) => c===null ? <span key={`b${i}`}/> : (
             <button
               key={c.key}
               type="button"
-              disabled={!c.data}
-              className={`p3-cal-day${c.data?' has-data':''}${openDay===c.key?' active':''}${c.key===todayKey?' today':''}`}
-              onClick={() => c.data && setOpenDay(prev => prev === c.key ? null : c.key)}
+              disabled={!c.clickable}
+              className={`p3-cal-day${c.data?' has-data':c.clickable?' past':''}${openDay===c.key?' active':''}${c.key===todayKey?' today':''}`}
+              onClick={() => c.clickable && setOpenDay(prev => prev === c.key ? null : c.key)}
               aria-pressed={openDay===c.key}
             >
               <span className="p3-cal-num">{c.d}</span>
