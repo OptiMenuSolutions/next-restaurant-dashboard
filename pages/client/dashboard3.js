@@ -206,17 +206,39 @@ const GLOBAL_CSS = `
     box-shadow:0 10px 24px -10px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.35);
     cursor:pointer;border:none;text-align:left;
   }
-  /* back face: the recipe */
+  /* back face: the same receipt, flipped over — recipe printed as line items */
   .p3-ticket-back{
     position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;
     backface-visibility:hidden;-webkit-backface-visibility:hidden;
     transform:rotateY(180deg);
-    background:var(--bg-surface);border:1px solid var(--accent);border-radius:6px;
-    box-shadow:0 10px 24px -10px rgba(0,0,0,.65);
+    background:var(--paper);color:var(--ink);
+    font-family:'Courier New',monospace;
+    border-radius:2px 2px 0 0;
+    padding:clamp(9px,1vh,14px) clamp(10px,1.1vw,16px) clamp(12px,1.3vh,18px);
+    box-shadow:0 10px 24px -10px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.35);
   }
-  .p3-back-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);border-bottom:1px solid var(--border-subtle);flex-shrink:0;}
-  .p3-back-title{font-size:clamp(9px,.68vw,11px);font-weight:600;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .p3-back-body{flex:1;min-height:0;overflow-y:auto;}
+  .p3-ticket-back::after{ /* perforated bottom edge, same as the front */
+    content:'';position:absolute;left:0;right:0;bottom:0;height:7px;
+    background-image:linear-gradient(45deg,var(--bg-root) 25%,transparent 25%),linear-gradient(-45deg,var(--bg-root) 25%,transparent 25%);
+    background-size:11px 14px;background-position:bottom;background-repeat:repeat-x;
+  }
+  .p3-rb-flip{background:none;border:none;cursor:pointer;font-family:'Courier New',monospace;font-size:clamp(8px,.58vw,10px);font-weight:700;letter-spacing:.08em;color:var(--ink-soft);padding:0;}
+  .p3-rb-flip:hover{color:var(--ink);}
+  .p3-rb-title{font-size:clamp(12px,1.05vw,16px);font-weight:700;line-height:1.2;color:var(--ink);flex-shrink:0;}
+  .p3-rb-body{flex:1;min-height:0;overflow-y:auto;padding-right:4px;}
+  .p3-rb-body::-webkit-scrollbar{width:3px;}
+  .p3-rb-body::-webkit-scrollbar-thumb{background:var(--ink-faint);border-radius:2px;}
+  .p3-rb-section{font-size:clamp(8px,.6vw,10px);font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:clamp(5px,.5vh,8px) 0 clamp(2px,.25vh,4px);}
+  .p3-rb-section:first-child{margin-top:0;}
+  .p3-rb-line{display:flex;align-items:baseline;gap:6px;font-size:clamp(9px,.72vw,12px);line-height:1.7;}
+  .p3-rb-name{color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .p3-rb-leader{flex:1;min-width:10px;border-bottom:1px dotted var(--ink-faint);transform:translateY(-3px);}
+  .p3-rb-qty{color:var(--ink-soft);white-space:nowrap;}
+  .p3-rb-line.risk .p3-rb-name,.p3-rb-line.risk .p3-rb-qty{color:var(--color-red);font-weight:700;}
+  .p3-rb-risknote{font-size:clamp(7px,.55vw,9px);font-weight:700;letter-spacing:.06em;color:var(--color-red);flex-shrink:0;}
+  .p3-rb-empty{font-size:clamp(9px,.7vw,11px);color:var(--ink-soft);line-height:1.5;padding:clamp(8px,.8vh,12px) 0;}
+  .p3-rb-footbtn{margin-top:auto;padding:clamp(5px,.5vh,8px) 0 0;font-size:clamp(7px,.52vw,9px);color:var(--ink-faint);text-align:center;letter-spacing:.06em;flex-shrink:0;background:none;border:none;cursor:pointer;font-family:'Courier New',monospace;width:100%;}
+  .p3-rb-footbtn:hover{color:var(--ink-soft);}
   .p3-ticket::after{ /* perforated bottom edge */
     content:'';position:absolute;left:0;right:0;bottom:0;height:7px;
     background-image:linear-gradient(45deg,var(--bg-root) 25%,transparent 25%),linear-gradient(-45deg,var(--bg-root) 25%,transparent 25%);
@@ -294,6 +316,26 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
   const { label, color } = getTicketMeta(index);
   const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin !== null && rec.margin !== undefined && !isNaN(parseFloat(rec.margin)) ? parseFloat(rec.margin) : null;
+
+  // recipe = the matching menu item's components + ingredients, receipt-ready
+  const recipe = useMemo(() => {
+    const key = (rec.title || '').toLowerCase().trim();
+    if (!key) return null;
+    const item = (menuItems || []).find(m => (m.name || '').toLowerCase().trim() === key)
+              || (menuItems || []).find(m => (m.name || '').toLowerCase().includes(key));
+    if (!item || !(item.menu_item_components || []).length) return null;
+    return item.menu_item_components.map(c => ({
+      name: c.name,
+      ings: (c.component_ingredients || []).map(ci => ({
+        name: (ci.ingredients?.name || '').trim(),
+        qty: [ci.quantity, ci.unit].filter(Boolean).join(' '),
+      })).filter(i => i.name),
+    }));
+  }, [rec.title, menuItems]);
+
+  const riskSet = useMemo(() => new Set((wasteRisk || []).map(w => (w.name || '').toLowerCase().trim())), [wasteRisk]);
+  const hasRisk = !!recipe && recipe.some(c => c.ings.some(i => riskSet.has(i.name.toLowerCase())));
+
   return (
     <div className="p3-ticket-slot">
       <div className="p3-clip"/>
@@ -330,15 +372,41 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
             <div className="p3-t-foot">· · ·  FLIP FOR RECIPE  · · ·</div>
           </button>
 
-          {/* BACK: the recipe */}
+          {/* BACK: the same receipt flipped over — recipe as printed line items */}
           <div className="p3-ticket-back" aria-hidden={!isSelected}>
-            <div className="p3-back-hd">
-              <span className="p3-back-title" style={{color}}>{rec.title || '—'} · Recipe</span>
-              <button className="p3-link-btn" tabIndex={isSelected ? 0 : -1} onClick={onClick}>↻ Flip back</button>
+            <div className="p3-t-hd">
+              <span className="p3-t-label" style={{color}}>RECIPE · #{String(index+1).padStart(3,'0')}</span>
+              <button type="button" className="p3-rb-flip" tabIndex={isSelected ? 0 : -1} onClick={onClick}>↻ FLIP BACK</button>
             </div>
-            <div className="p3-back-body">
-              {isSelected && <RecipePanel rec={rec} menuItems={menuItems} wasteRisk={wasteRisk}/>}
+            <hr className="p3-t-rule"/>
+            <div className="p3-rb-title">{rec.title || '—'}</div>
+            <hr className="p3-t-rule"/>
+            <div className="p3-rb-body">
+              {!recipe ? (
+                <div className="p3-rb-empty">No recipe on file for this dish yet — add its components in Menu Items and it will print here.</div>
+              ) : recipe.map((comp, ci) => (
+                <div key={ci}>
+                  {comp.name && <div className="p3-rb-section">{comp.name}</div>}
+                  {comp.ings.map((ing, ii) => {
+                    const risk = riskSet.has(ing.name.toLowerCase());
+                    return (
+                      <div key={ii} className={`p3-rb-line${risk ? ' risk' : ''}`}>
+                        <span className="p3-rb-name">{risk ? '▲ ' : ''}{ing.name}</span>
+                        <span className="p3-rb-leader"/>
+                        {ing.qty && <span className="p3-rb-qty">{ing.qty}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
+            {hasRisk && (
+              <>
+                <hr className="p3-t-rule"/>
+                <div className="p3-rb-risknote">▲ AT RISK TONIGHT — SELLING THIS CLEARS THEM</div>
+              </>
+            )}
+            <button type="button" className="p3-rb-footbtn" tabIndex={isSelected ? 0 : -1} onClick={onClick}>· · ·  TAP TO FLIP BACK  · · ·</button>
           </div>
 
         </div>
