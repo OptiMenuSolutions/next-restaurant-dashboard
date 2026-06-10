@@ -128,31 +128,54 @@ const GLOBAL_CSS = `
   .p3-tab.active{color:var(--text-primary);background:var(--bg-inset);}
   .p3-tab:focus-visible,.p3-ticket:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
-  /* ── SERVICE STRIP ── */
-  .p3-service{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:clamp(12px,2vw,32px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(8px,1vh,12px);}
-  .p3-eyebrow{font-size:clamp(8px,.6vw,10px);font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--text-faint);margin-bottom:3px;}
-  .p3-greeting{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(17px,1.6vw,26px);letter-spacing:-.3px;color:var(--text-primary);line-height:1.1;}
+  /* ── TOP REGION: glance card + the pass ── */
+  .p3-top{flex:5 1 0;min-height:0;display:grid;grid-template-columns:clamp(190px,16vw,250px) 1fr;gap:clamp(12px,1.4vw,22px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) 0;overflow:hidden;}
+  .p3-glance{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(10px,1vw,16px);display:flex;flex-direction:column;gap:clamp(6px,.6vh,9px);overflow:hidden;min-height:0;}
+  .p3-eyebrow{font-size:clamp(8px,.6vw,10px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-bottom:3px;}
+  .p3-greeting{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(14px,1.15vw,19px);letter-spacing:-.3px;color:var(--text-primary);line-height:1.2;}
   .p3-greeting em{font-style:italic;color:var(--accent);}
-  .p3-statstrip{display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;}
-  .p3-stat{display:flex;flex-direction:column;gap:2px;padding:0 clamp(12px,1.3vw,22px);border-left:1px solid var(--border-subtle);flex-shrink:0;}
-  .p3-stat:first-child{border-left:none;padding-left:0;}
-  .p3-stat-v{font-family:'Courier New',monospace;font-size:clamp(13px,1.15vw,18px);font-weight:700;line-height:1;}
-  .p3-stat-l{font-size:clamp(8px,.58vw,10px);color:var(--text-muted);white-space:nowrap;}
-  .p3-score{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .p3-glance-rule{border:none;border-top:1px solid var(--border-subtle);margin:clamp(2px,.2vh,4px) 0;flex-shrink:0;}
+  .p3-glance-stats{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:2px;overflow:hidden;}
+  .p3-stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
+  .p3-stat-v{font-family:'Courier New',monospace;font-size:clamp(12px,1vw,16px);font-weight:700;line-height:1;flex-shrink:0;}
+  .p3-stat-l{font-size:clamp(8px,.6vw,10px);color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .p3-score{display:flex;align-items:center;gap:9px;flex-shrink:0;padding-top:clamp(4px,.4vh,7px);border-top:1px solid var(--border-subtle);}
   .p3-score-ring{position:relative;width:clamp(34px,3vw,44px);height:clamp(34px,3vw,44px);}
   .p3-score-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
   .p3-score-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Courier New',monospace;font-weight:700;font-size:clamp(10px,.85vw,13px);color:var(--text-primary);}
 
   /* ── THE PASS (hero) ── */
-  .p3-pass{flex:5 1 0;display:flex;flex-direction:column;min-height:0;padding:0 clamp(16px,2vw,32px);}
+  .p3-pass{display:flex;flex-direction:column;min-height:0;overflow:hidden;}
   .p3-rail-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:clamp(6px,.7vh,10px);}
   .p3-rail-title{font-size:clamp(9px,.66vw,11px);font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:8px;}
   .p3-rail-title::after{content:'';display:block;width:clamp(30px,4vw,60px);height:1px;background:var(--border);}
   .p3-rail-sub{font-size:clamp(8px,.6vw,10px);color:var(--text-faint);}
-  .p3-rail{position:relative;height:3px;border-radius:2px;background:linear-gradient(to right,var(--border),var(--border-subtle));flex-shrink:0;}
+  /* the rail: a brushed-metal bar with end screws */
+  .p3-rail{
+    position:relative;height:10px;border-radius:5px;flex-shrink:0;z-index:1;
+    background:linear-gradient(to bottom,#8a8378 0%,#b5ada0 18%,#6e675d 55%,#4a443c 100%);
+    box-shadow:0 2px 5px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.35),inset 0 -1px 1px rgba(0,0,0,.4);
+  }
+  .p3-rail::before,.p3-rail::after{ /* mounting screws */
+    content:'';position:absolute;top:50%;transform:translateY(-50%);width:6px;height:6px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#d8d2c6,#5a544a 70%);
+    box-shadow:inset 0 -1px 1px rgba(0,0,0,.6);
+  }
+  .p3-rail::before{left:7px;}
+  .p3-rail::after{right:7px;}
   .p3-tickets{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(12px,1.6vw,28px);align-items:stretch;min-height:0;flex:1;}
-  .p3-ticket-slot{position:relative;display:flex;flex-direction:column;min-height:0;padding-top:14px;}
-  .p3-clip{position:absolute;top:-2px;left:50%;transform:translateX(-50%);width:clamp(34px,3vw,46px);height:9px;border-radius:2px;background:linear-gradient(to bottom,var(--text-faint),var(--border));box-shadow:0 1px 2px rgba(0,0,0,.5);z-index:2;}
+  .p3-ticket-slot{position:relative;display:flex;flex-direction:column;min-height:0;padding-top:7px;}
+  .p3-clip{ /* bulldog clip gripping the rail and the ticket */
+    position:absolute;top:-8px;left:50%;transform:translateX(-50%);
+    width:clamp(40px,3.4vw,52px);height:17px;border-radius:3px 3px 2px 2px;
+    background:linear-gradient(to bottom,#c9c2b4 0%,#9a9285 35%,#6e675d 75%,#565047 100%);
+    box-shadow:0 2px 4px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.4);
+    z-index:2;
+  }
+  .p3-clip::after{ /* clip seam */
+    content:'';position:absolute;left:5px;right:5px;bottom:4px;height:2px;border-radius:1px;
+    background:rgba(0,0,0,.35);box-shadow:0 1px 0 rgba(255,255,255,.18);
+  }
   .p3-ticket{
     --tilt:0deg;
     position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;
@@ -193,7 +216,7 @@ const GLOBAL_CSS = `
   .p3-drawer-inner{background:var(--bg-surface);border:1px solid var(--accent);border-radius:8px;overflow-y:auto;max-height:clamp(160px,22vh,300px);}
 
   /* ── SUPPORTING BAND ── */
-  .p3-band{flex:4 1 0;min-height:0;display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:clamp(10px,1.2vw,18px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(10px,1.2vh,16px);overflow:hidden;}
+  .p3-band{flex:4 1 0;min-height:0;display:grid;grid-template-columns:1fr 2.2fr;gap:clamp(10px,1.2vw,18px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(10px,1.2vh,16px);overflow:hidden;}
   .p3-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(10px,1vw,16px);display:flex;flex-direction:column;overflow:hidden;min-height:0;}
   .p3-card-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:clamp(6px,.7vh,10px);flex-shrink:0;}
   .p3-card-title{font-size:clamp(10px,.78vw,13px);font-weight:600;color:var(--text-primary);}
@@ -217,24 +240,30 @@ const GLOBAL_CSS = `
   .p3-legend{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);display:flex;align-items:center;gap:10px;padding-top:clamp(5px,.5vh,7px);border-top:1px solid var(--border-subtle);margin-top:clamp(4px,.4vh,6px);flex-shrink:0;}
   .p3-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;}
 
-  /* week in review */
-  .p3-wir-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(5px,.5vw,8px);margin-bottom:clamp(7px,.7vh,10px);flex-shrink:0;}
-  .p3-wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:7px;padding:clamp(6px,.6vh,9px) clamp(7px,.7vw,11px);}
+  /* week in review — horizontal day strip + detail area */
+  .p3-wk-strip{display:grid;grid-template-columns:repeat(7,1fr);gap:clamp(4px,.45vw,8px);flex-shrink:0;margin-bottom:clamp(7px,.7vh,10px);}
+  .p3-wk-day{
+    background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:8px;
+    padding:clamp(5px,.55vh,9px) clamp(4px,.4vw,8px);
+    display:flex;flex-direction:column;align-items:center;gap:clamp(2px,.22vh,4px);
+    cursor:pointer;font-family:'Inter',sans-serif;transition:border-color .15s,background .15s,transform .15s;
+    min-width:0;
+  }
+  .p3-wk-day:hover{border-color:var(--text-faint);}
+  .p3-wk-day.active{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 7%, var(--bg-elevated));transform:translateY(-1px);}
+  .p3-wk-day-l{font-size:clamp(8px,.6vw,10px);font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.08em;line-height:1;}
+  .p3-wk-day-d{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);line-height:1;}
+  .p3-wk-day-v{font-family:'Courier New',monospace;font-size:clamp(13px,1.15vw,18px);font-weight:700;line-height:1;}
+  .p3-wk-day-s{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);line-height:1;white-space:nowrap;}
+  .p3-wk-day-dots{display:flex;gap:3px;}
+  .p3-wk-dot{width:4px;height:4px;border-radius:50%;}
+  .p3-wk-detail{flex:1;min-height:0;overflow-y:auto;border-top:1px solid var(--border-subtle);padding-top:clamp(6px,.6vh,10px);}
+  .p3-wk-summary{flex:1;min-height:0;display:flex;flex-direction:column;border-top:1px solid var(--border-subtle);padding-top:clamp(6px,.6vh,10px);}
+  .p3-wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:7px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);flex:1;min-width:0;}
   .p3-wir-stat-l{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
-  .p3-wir-stat-v{font-family:'Courier New',monospace;font-size:clamp(13px,1.1vw,17px);font-weight:700;line-height:1;}
+  .p3-wir-stat-v{font-family:'Courier New',monospace;font-size:clamp(14px,1.25vw,19px);font-weight:700;line-height:1;}
   .p3-wir-stat-s{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);margin-top:2px;}
-  .p3-wir-scroll{flex:1;min-height:0;position:relative;overflow:hidden;}
-  .p3-wir-pane{position:absolute;inset:0;display:flex;flex-direction:column;overflow-y:auto;transition:opacity .25s ease,transform .25s ease;}
-
-  /* price movement */
-  .p3-pm-scroll{flex:1;overflow-y:auto;min-height:0;}
-  .p3-pm-row{display:flex;align-items:center;gap:8px;padding:clamp(6px,.6vh,9px) 0;border-bottom:1px solid var(--border-subtle);cursor:pointer;}
-  .p3-pm-row:last-child{border-bottom:none;}
-  .p3-pm-row:hover .p3-pm-name{color:var(--text-primary);}
-  .p3-pm-name{flex:1;font-size:clamp(10px,.74vw,12px);color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:color .15s;}
-  .p3-pm-delta{font-family:'Courier New',monospace;font-size:clamp(10px,.74vw,12px);font-weight:700;white-space:nowrap;}
-  .p3-pm-count{font-size:clamp(8px,.56vw,10px);color:var(--text-faint);white-space:nowrap;}
-  .p3-pm-prices{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);}
+  .p3-wk-dishes{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(8px,.9vw,14px);align-items:start;}
 `;
 
 // ── TICKET ───────────────────────────────────────────────────────────────────
@@ -311,158 +340,102 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
 
   return (
     <>
-      <div className="p3-wir-stats">
-        <div className="p3-wir-stat">
-          <div className="p3-wir-stat-l">Extra sold</div>
-          <div className="p3-wir-stat-v" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)'}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
-          <div className="p3-wir-stat-s">vs. avg</div>
-        </div>
-        <div className="p3-wir-stat">
-          <div className="p3-wir-stat-l">Waste saved</div>
-          <div className="p3-wir-stat-v" style={{color:'var(--color-green)'}}>${weekWasteSaved}</div>
-          <div className="p3-wir-stat-s">est.</div>
-        </div>
-        <div className="p3-wir-stat">
-          <div className="p3-wir-stat-l">Hit rate</div>
-          <div className="p3-wir-stat-v" style={{color:'var(--accent)'}}>{hitRate}%</div>
-          <div className="p3-wir-stat-s">days above avg</div>
-        </div>
+      {/* horizontal strip: one mini-card per night */}
+      <div className="p3-wk-strip">
+        {weekData.map(day => {
+          const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
+          const isActive = openDay === day.date;
+          return (
+            <button
+              key={day.date}
+              type="button"
+              className={`p3-wk-day${isActive?' active':''}`}
+              onClick={() => setOpenDay(prev => prev === day.date ? null : day.date)}
+              aria-expanded={isActive}
+            >
+              <span className="p3-wk-day-l">{day.dayLabel}</span>
+              <span className="p3-wk-day-d">{day.date.slice(5).replace('-','/')}</span>
+              <span className="p3-wk-day-v" style={{color:day.extraSold!==0?extraColor:'var(--text-faint)'}}>
+                {day.extraSold!==0?`${day.extraSold>0?'+':''}${day.extraSold}`:'—'}
+              </span>
+              <span className="p3-wk-day-s">{day.wasteSaved>0?`$${day.wasteSaved} saved`:'\u00A0'}</span>
+              <span className="p3-wk-day-dots">
+                {day.dishes.slice(0,3).map((d,i)=><span key={i} className="p3-wk-dot" style={{background:d.ticketColor}}/>)}
+                {day.dishes.length===0&&<span className="p3-wk-dot" style={{background:'var(--border)'}}/>}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      <div className="p3-wir-scroll">
-        {/* list pane */}
-        <div className="p3-wir-pane" style={{opacity:openDay?0:1,transform:openDay?'translateX(-12px)':'translateX(0)',pointerEvents:openDay?'none':'auto'}}>
-          {weekData.map((day, idx) => {
-            const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
-            return (
-              <div key={day.date} onClick={() => setOpenDay(day.date)}
-                style={{display:'grid',gridTemplateColumns:'46px 1fr auto 12px',gap:8,alignItems:'center',padding:'7px 2px',borderBottom:idx<weekData.length-1?'1px solid var(--border-subtle)':'none',cursor:'pointer'}}>
-                <div style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:6,padding:'4px 0',textAlign:'center'}}>
-                  <div style={{fontSize:9,fontWeight:600,color:'var(--text-secondary)',lineHeight:1}}>{day.dayLabel}</div>
-                  <div style={{fontSize:7,color:'var(--text-faint)',marginTop:2}}>{day.date.slice(5).replace('-','/')}</div>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:3,overflow:'hidden'}}>
-                  {day.dishes.length>0 ? day.dishes.map((d,i)=>(
-                    <span key={i} style={{fontSize:8,fontWeight:600,padding:'2px 6px',borderRadius:8,background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:90,flexShrink:0}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
-                  )) : <span style={{fontSize:8,color:'var(--text-faint)',fontStyle:'italic'}}>No recs</span>}
-                </div>
-                <div style={{fontFamily:'Courier New,monospace',fontSize:11,fontWeight:700,color:day.extraSold!==0?extraColor:'var(--text-faint)',textAlign:'right'}}>{day.extraSold!==0?`${day.extraSold>0?'+':''}${day.extraSold}`:'—'}</div>
-                <div style={{fontSize:9,color:'var(--text-faint)'}}>›</div>
-              </div>
-            );
-          })}
+
+      {/* below the strip: week summary by default, dish detail when a night is selected */}
+      {!openDayData ? (
+        <div className="p3-wk-summary">
+          <div style={{display:'flex',gap:'clamp(5px,.5vw,8px)',flexShrink:0}}>
+            <div className="p3-wir-stat">
+              <div className="p3-wir-stat-l">Extra sold</div>
+              <div className="p3-wir-stat-v" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)'}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
+              <div className="p3-wir-stat-s">vs. avg, all week</div>
+            </div>
+            <div className="p3-wir-stat">
+              <div className="p3-wir-stat-l">Waste saved</div>
+              <div className="p3-wir-stat-v" style={{color:'var(--color-green)'}}>${weekWasteSaved}</div>
+              <div className="p3-wir-stat-s">estimated</div>
+            </div>
+            <div className="p3-wir-stat">
+              <div className="p3-wir-stat-l">Hit rate</div>
+              <div className="p3-wir-stat-v" style={{color:'var(--accent)'}}>{hitRate}%</div>
+              <div className="p3-wir-stat-s">days above avg</div>
+            </div>
+          </div>
+          <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'clamp(8px,.62vw,10px)',color:'var(--text-faint)'}}>
+            Select a night above to see dish performance
+          </div>
         </div>
-        {/* detail pane */}
-        <div className="p3-wir-pane" style={{opacity:openDay?1:0,transform:openDay?'translateX(0)':'translateX(12px)',pointerEvents:openDay?'auto':'none'}}>
-          {openDayData && (
-            <>
-              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10,flexShrink:0}}>
-                <button className="p3-link-btn" onClick={() => setOpenDay(null)}>← Back</button>
-                <div style={{fontSize:11,fontWeight:600,color:'var(--text-secondary)'}}>{openDayData.dayLabel} · {openDayData.date.slice(5).replace('-','/')}</div>
-                <div style={{marginLeft:'auto',fontSize:10,color:'var(--text-faint)'}}>Waste saved: <span style={{color:'var(--color-green)',fontWeight:600}}>${openDayData.wasteSaved}</span></div>
-              </div>
-              {openDayData.dishes.length===0 ? (
-                <div style={{fontSize:11,color:'var(--text-muted)',textAlign:'center',padding:'14px 0'}}>No recommendations recorded for this day.</div>
-              ) : (
-                openDayData.dishes.map((dish,i) => {
-                  const diff = dish.diff;
-                  const diffColor = diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
-                  const maxBar = Math.max(dish.sold, dish.avg||0, 1);
-                  return (
-                    <div key={i} style={{marginBottom:12,flexShrink:0}}>
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:5}}>
-                        <div style={{display:'flex',alignItems:'center',gap:6}}>
-                          <span style={{fontSize:8,fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:.5}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
-                          <span style={{fontSize:11,fontWeight:600,color:'var(--text-secondary)'}}>{dish.name}</span>
-                        </div>
-                        <span style={{fontFamily:'Courier New,monospace',fontSize:10,fontWeight:700,color:diffColor}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)} (${dish.pct>0?'+':''}${dish.pct??'—'}%)`:'—'}</span>
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                        <div style={{display:'flex',alignItems:'center',gap:8}}>
-                          <span style={{fontSize:8,color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
-                          <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
-                          <span style={{fontFamily:'Courier New,monospace',fontSize:9,fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
-                        </div>
-                        {dish.avg!==null && (
-                          <div style={{display:'flex',alignItems:'center',gap:8}}>
-                            <span style={{fontSize:8,color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
-                            <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
-                            <span style={{fontFamily:'Courier New,monospace',fontSize:9,fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
-                          </div>
-                        )}
-                      </div>
+      ) : (
+        <div className="p3-wk-detail">
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:'clamp(6px,.6vh,10px)'}}>
+            <div style={{fontSize:'clamp(10px,.74vw,12px)',fontWeight:600,color:'var(--text-secondary)'}}>{openDayData.dayLabel} · {openDayData.date.slice(5).replace('-','/')}</div>
+            <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>Waste prevented: <span style={{color:'var(--color-green)',fontWeight:600}}>${openDayData.wasteSaved}</span></div>
+            <button className="p3-link-btn" style={{marginLeft:'auto'}} onClick={() => setOpenDay(null)}>← Week summary</button>
+          </div>
+          {openDayData.dishes.length===0 ? (
+            <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',textAlign:'center',padding:'14px 0'}}>No recommendations recorded for this night.</div>
+          ) : (
+            <div className="p3-wk-dishes">
+              {openDayData.dishes.map((dish,i) => {
+                const diff = dish.diff;
+                const diffColor = diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
+                const maxBar = Math.max(dish.sold, dish.avg||0, 1);
+                return (
+                  <div key={i} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'clamp(7px,.7vh,11px) clamp(8px,.8vw,12px)',minWidth:0}}>
+                    <div style={{fontSize:'clamp(7px,.55vw,9px)',fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:'.08em',marginBottom:3}}>{i===0?'Push':i===1?'Recommend':'Mention'}</div>
+                    <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8,marginBottom:'clamp(5px,.5vh,8px)'}}>
+                      <div style={{fontSize:'clamp(10px,.76vw,12px)',fontWeight:600,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dish.name}</div>
+                      <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:diffColor,whiteSpace:'nowrap'}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)} (${dish.pct>0?'+':''}${dish.pct??'—'}%)`:'—'}</span>
                     </div>
-                  );
-                })
-              )}
-            </>
+                    <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
+                        <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
+                        <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
+                      </div>
+                      {dish.avg!==null && (
+                        <div style={{display:'flex',alignItems:'center',gap:7}}>
+                          <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
+                          <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
+                          <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-      </div>
+      )}
     </>
-  );
-}
-
-// ── PRICE MOVEMENT ───────────────────────────────────────────────────────────
-function PriceMovementCard({ priceByCategory }) {
-  const [selectedCat, setSelectedCat] = useState(null);
-  const categories = useMemo(() => Object.keys(priceByCategory).sort(), [priceByCategory]);
-  const categoryAvgHistories = useMemo(() => {
-    const result = {};
-    categories.forEach(cat => {
-      const d = priceByCategory[cat];
-      const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
-      result[cat] = Array.from({ length: maxLen }, (_, idx) => {
-        const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
-        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      });
-    });
-    return result;
-  }, [priceByCategory, categories]);
-  const [globalMin, globalMax] = useMemo(() => {
-    let min=Infinity, max=-Infinity;
-    Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
-    return min===Infinity ? [0,1] : [min,max];
-  }, [priceByCategory]);
-  const catData = selectedCat ? priceByCategory[selectedCat] : null;
-  return (
-    <div className="p3-card">
-      <div className="p3-card-hd">
-        <div className="p3-card-title">Price Movement</div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          {selectedCat && <button className="p3-link-btn" onClick={() => setSelectedCat(null)}>← Back</button>}
-          <span className="p3-card-sub">{selectedCat || '6-month trend'}</span>
-        </div>
-      </div>
-      <div className="p3-pm-scroll">
-        {categories.length===0 && <div className="p3-empty">No price history yet — prices appear as invoices are parsed</div>}
-        {!selectedCat && categories.map(cat => {
-          const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-          const avgHistory = categoryAvgHistories[cat];
-          return (
-            <div key={cat} className="p3-pm-row" onClick={() => setSelectedCat(cat)}>
-              <div className="p3-pm-name">{cat||'Uncategorized'}</div>
-              {avgHistory.length>=2 && <Sparkline points={avgHistory} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={56} height={18}/>}
-              <div className="p3-pm-delta" style={{color:deltaColor}}>{isUp?'↑':'↓'}{Math.abs(d.avgDelta).toFixed(1)}%</div>
-              <div className="p3-pm-count">{d.ingredients.length}</div>
-              <span style={{fontSize:10,color:'var(--text-faint)'}}>›</span>
-            </div>
-          );
-        })}
-        {selectedCat && catData && catData.ingredients.map((ing,i) => {
-          const isUp=ing.deltaPct>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-          return (
-            <div key={i} className="p3-pm-row" style={{cursor:'default',flexDirection:'column',alignItems:'stretch',gap:4,animation:'fadeIn .2s ease both',animationDelay:`${i*.04}s`}}>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
-                <div className="p3-pm-name" style={{textTransform:'capitalize'}}>{ing.name}</div>
-                {ing.history.length>=2 && <Sparkline points={ing.history} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={56} height={18}/>}
-                <div className="p3-pm-delta" style={{color:deltaColor}}>{isUp?'↑':'↓'}{Math.abs(ing.deltaPct).toFixed(1)}%</div>
-              </div>
-              <div className="p3-pm-prices">{fmtD(ing.firstPrice)} → {fmtD(ing.lastPrice)}</div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -1067,18 +1040,20 @@ export default function ClientDashboard3() {
           </div>
         ) : (
           <>
-            {/* ── SERVICE STRIP ── */}
-            <div className="p3-service">
-              <div style={{flexShrink:0}}>
-                <div className="p3-eyebrow">{dateLabel} · {restaurantName}</div>
-                <div className="p3-greeting">{greeting}, {userName} — <em>here's tonight's pass.</em></div>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:'clamp(14px,1.8vw,30px)',minWidth:0}}>
-                <div className="p3-statstrip">
+            {/* ── TOP: glance card + the pass ── */}
+            <div className="p3-top">
+              <div className="p3-glance">
+                <div>
+                  <div className="p3-eyebrow">{dateLabel}</div>
+                  <div className="p3-greeting">{greeting}, {userName} — <em>tonight's pass is set.</em></div>
+                  <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)',marginTop:3}}>{restaurantName}</div>
+                </div>
+                <hr className="p3-glance-rule"/>
+                <div className="p3-glance-stats">
                   {statItems.map(({l,v,c})=>(
                     <div key={l} className="p3-stat">
-                      <span className="p3-stat-v" style={{color:c}}>{v}</span>
                       <span className="p3-stat-l">{l}</span>
+                      <span className="p3-stat-v" style={{color:c}}>{v}</span>
                     </div>
                   ))}
                 </div>
@@ -1096,10 +1071,9 @@ export default function ClientDashboard3() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* ── THE PASS ── */}
-            <div className="p3-pass">
+              {/* ── THE PASS ── */}
+              <div className="p3-pass">
               <div className="p3-rail-hd">
                 <div className="p3-rail-title">Tonight's Service</div>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
@@ -1136,6 +1110,7 @@ export default function ClientDashboard3() {
                   )}
                 </div>
               </div>
+              </div>
             </div>
 
             {/* ── SUPPORTING BAND ── */}
@@ -1166,12 +1141,10 @@ export default function ClientDashboard3() {
               <div className="p3-card">
                 <div className="p3-card-hd">
                   <div className="p3-card-title">Week in Review</div>
-                  <span className="p3-card-sub">Last 7 nights of pushed dishes</span>
+                  <span className="p3-card-sub">Tap a night for dish-level detail</span>
                 </div>
                 <WeekInReviewCard restaurantId={restaurantId} wasteRisk={data.wasteRisk} menuItems={menuItemsFull}/>
               </div>
-
-              <PriceMovementCard priceByCategory={data.priceByCategory}/>
             </div>
           </>
         )}
