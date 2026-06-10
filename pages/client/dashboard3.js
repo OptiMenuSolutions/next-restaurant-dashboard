@@ -176,24 +176,47 @@ const GLOBAL_CSS = `
     content:'';position:absolute;left:5px;right:5px;bottom:4px;height:2px;border-radius:1px;
     background:rgba(0,0,0,.35);box-shadow:0 1px 0 rgba(255,255,255,.18);
   }
-  .p3-ticket{
+  /* flip container: holds the perspective, the tilt, and the print-in animation */
+  .p3-flip{
     --tilt:0deg;
-    position:relative;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;
+    position:relative;flex:1;min-height:0;
+    perspective:1200px;
+    transform:rotate(var(--tilt));transform-origin:top center;
+    animation:printIn .45s cubic-bezier(.25,.8,.35,1) both;
+    transition:transform .2s;
+  }
+  .p3-ticket-slot:nth-child(1) .p3-flip{--tilt:-.5deg;animation-delay:.05s;}
+  .p3-ticket-slot:nth-child(2) .p3-flip{--tilt:.35deg;animation-delay:.17s;}
+  .p3-ticket-slot:nth-child(3) .p3-flip{--tilt:-.25deg;animation-delay:.29s;}
+  .p3-flip:hover{transform:rotate(0deg) translateY(2px);}
+  .p3-flip-inner{
+    position:absolute;inset:0;
+    transform-style:preserve-3d;
+    transition:transform .55s cubic-bezier(.35,.1,.25,1);
+  }
+  .p3-flip.flipped .p3-flip-inner{transform:rotateY(180deg);}
+  /* front face: the paper receipt */
+  .p3-ticket{
+    position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;
+    backface-visibility:hidden;-webkit-backface-visibility:hidden;
     background:var(--paper);color:var(--ink);
     font-family:'Courier New',monospace;
     border-radius:2px 2px 0 0;
     padding:clamp(9px,1vh,14px) clamp(10px,1.1vw,16px) clamp(12px,1.3vh,18px);
     box-shadow:0 10px 24px -10px rgba(0,0,0,.65),0 2px 4px rgba(0,0,0,.35);
-    transform:rotate(var(--tilt));transform-origin:top center;
-    animation:printIn .45s cubic-bezier(.25,.8,.35,1) both;
-    cursor:pointer;border:none;text-align:left;transition:transform .2s,box-shadow .2s;
+    cursor:pointer;border:none;text-align:left;
   }
-  .p3-ticket-slot:nth-child(1) .p3-ticket{--tilt:-.5deg;animation-delay:.05s;}
-  .p3-ticket-slot:nth-child(2) .p3-ticket{--tilt:.35deg;animation-delay:.17s;}
-  .p3-ticket-slot:nth-child(3) .p3-ticket{--tilt:-.25deg;animation-delay:.29s;}
-  .p3-ticket:hover{transform:rotate(0deg) translateY(2px);}
-  .p3-ticket.active{box-shadow:0 0 0 2px var(--accent),0 10px 24px -10px rgba(0,0,0,.65);transform:rotate(0deg);}
-  .p3-ticket.dim{opacity:.45;}
+  /* back face: the recipe */
+  .p3-ticket-back{
+    position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;
+    backface-visibility:hidden;-webkit-backface-visibility:hidden;
+    transform:rotateY(180deg);
+    background:var(--bg-surface);border:1px solid var(--accent);border-radius:6px;
+    box-shadow:0 10px 24px -10px rgba(0,0,0,.65);
+  }
+  .p3-back-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);border-bottom:1px solid var(--border-subtle);flex-shrink:0;}
+  .p3-back-title{font-size:clamp(9px,.68vw,11px);font-weight:600;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .p3-back-body{flex:1;min-height:0;overflow-y:auto;}
   .p3-ticket::after{ /* perforated bottom edge */
     content:'';position:absolute;left:0;right:0;bottom:0;height:7px;
     background-image:linear-gradient(45deg,var(--bg-root) 25%,transparent 25%),linear-gradient(-45deg,var(--bg-root) 25%,transparent 25%);
@@ -209,11 +232,6 @@ const GLOBAL_CSS = `
   .p3-t-chips{display:flex;gap:6px;flex-wrap:wrap;flex-shrink:0;}
   .p3-t-chip{font-size:clamp(7px,.55vw,9px);font-weight:700;letter-spacing:.08em;padding:2px 6px;border:1px solid var(--ink-faint);border-radius:2px;color:var(--ink-soft);}
   .p3-t-foot{margin-top:auto;padding-top:clamp(5px,.5vh,8px);font-size:clamp(7px,.52vw,9px);color:var(--ink-faint);text-align:center;letter-spacing:.06em;flex-shrink:0;}
-
-  /* recipe drawer below the rail */
-  .p3-drawer{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease,margin .3s;max-height:0;opacity:0;flex-shrink:0;margin-top:0;}
-  .p3-drawer.open{max-height:clamp(160px,22vh,300px);opacity:1;margin-top:clamp(8px,.9vh,12px);}
-  .p3-drawer-inner{background:var(--bg-surface);border:1px solid var(--accent);border-radius:8px;overflow-y:auto;max-height:clamp(160px,22vh,300px);}
 
   /* ── SUPPORTING BAND ── */
   .p3-band{flex:4 1 0;min-height:0;display:grid;grid-template-columns:1fr 2.2fr;gap:clamp(10px,1.2vw,18px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(10px,1.2vh,16px);overflow:hidden;}
@@ -272,40 +290,59 @@ const GLOBAL_CSS = `
 `;
 
 // ── TICKET ───────────────────────────────────────────────────────────────────
-function PassTicket({ rec, index, isSelected, anySelected, onClick }) {
+function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
   const { label, color } = getTicketMeta(index);
   const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin !== null && rec.margin !== undefined && !isNaN(parseFloat(rec.margin)) ? parseFloat(rec.margin) : null;
   return (
     <div className="p3-ticket-slot">
       <div className="p3-clip"/>
-      <button
-        type="button"
-        className={`p3-ticket${isSelected ? ' active' : ''}${anySelected && !isSelected ? ' dim' : ''}`}
-        onClick={onClick}
-        aria-expanded={isSelected}
-      >
-        <div className="p3-t-hd">
-          <span className="p3-t-label" style={{color}}>{label}</span>
-          <span className="p3-t-num">#{String(index+1).padStart(3,'0')}</span>
-        </div>
-        <hr className="p3-t-rule"/>
-        <div className="p3-t-title">{rec.title || '—'}</div>
-        <hr className="p3-t-rule"/>
-        {rec.description && <div className="p3-t-desc">{rec.description}</div>}
-        <hr className="p3-t-rule"/>
-        <div className="p3-t-quote" style={{borderLeftColor:color}}>{sellCopy}</div>
-        {(marginVal !== null || rec.urgency) && (
-          <>
-            <hr className="p3-t-rule"/>
-            <div className="p3-t-chips">
-              {marginVal !== null && <span className="p3-t-chip">MARGIN {marginVal.toFixed(0)}%</span>}
-              {rec.urgency && <span className="p3-t-chip" style={{color,borderColor:color}}>{String(rec.urgency).toUpperCase()}</span>}
+      <div className={`p3-flip${isSelected ? ' flipped' : ''}`}>
+        <div className="p3-flip-inner">
+
+          {/* FRONT: the receipt */}
+          <button
+            type="button"
+            className="p3-ticket"
+            onClick={onClick}
+            aria-expanded={isSelected}
+            tabIndex={isSelected ? -1 : 0}
+          >
+            <div className="p3-t-hd">
+              <span className="p3-t-label" style={{color}}>{label}</span>
+              <span className="p3-t-num">#{String(index+1).padStart(3,'0')}</span>
             </div>
-          </>
-        )}
-        <div className="p3-t-foot">· · ·  {isSelected ? 'TAP TO CLOSE RECIPE' : 'TAP FOR RECIPE'}  · · ·</div>
-      </button>
+            <hr className="p3-t-rule"/>
+            <div className="p3-t-title">{rec.title || '—'}</div>
+            <hr className="p3-t-rule"/>
+            {rec.description && <div className="p3-t-desc">{rec.description}</div>}
+            <hr className="p3-t-rule"/>
+            <div className="p3-t-quote" style={{borderLeftColor:color}}>{sellCopy}</div>
+            {(marginVal !== null || rec.urgency) && (
+              <>
+                <hr className="p3-t-rule"/>
+                <div className="p3-t-chips">
+                  {marginVal !== null && <span className="p3-t-chip">MARGIN {marginVal.toFixed(0)}%</span>}
+                  {rec.urgency && <span className="p3-t-chip" style={{color,borderColor:color}}>{String(rec.urgency).toUpperCase()}</span>}
+                </div>
+              </>
+            )}
+            <div className="p3-t-foot">· · ·  FLIP FOR RECIPE  · · ·</div>
+          </button>
+
+          {/* BACK: the recipe */}
+          <div className="p3-ticket-back" aria-hidden={!isSelected}>
+            <div className="p3-back-hd">
+              <span className="p3-back-title" style={{color}}>{rec.title || '—'} · Recipe</span>
+              <button className="p3-link-btn" tabIndex={isSelected ? 0 : -1} onClick={onClick}>↻ Flip back</button>
+            </div>
+            <div className="p3-back-body">
+              {isSelected && <RecipePanel rec={rec} menuItems={menuItems} wasteRisk={wasteRisk}/>}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
@@ -336,31 +373,37 @@ function WasteRow({ item, router }) {
 
 // ── WEEK IN REVIEW ───────────────────────────────────────────────────────────
 function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
-  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
   const [openDay, setOpenDay] = useState(null);
   const [monthOffset, setMonthOffset] = useState(0);
+
+  // visible month, anchored to the real current month; forward navigation stops there
+  const now = new Date();
+  const shown = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+  const year = shown.getFullYear(), month = shown.getMonth();
+  const mm = String(month+1).padStart(2,'0');
+  const monthLabel = shown.toLocaleDateString('en-US',{month:'long',year:'numeric'});
+  const atCurrentMonth = monthOffset >= 0;
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const monthStart = `${year}-${mm}-01`;
+  const monthEnd   = `${year}-${mm}-${String(daysInMonth).padStart(2,'0')}`;
+
+  // the hook fetches the visible month + the trailing 7 days (for the summary tiles),
+  // and refetches whenever the month changes
+  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems, monthStart, monthEnd);
   const openDayData = weekData.find(d => d.date === openDay);
   const dataByDate = useMemo(() => Object.fromEntries(weekData.map(d => [d.date, d])), [weekData]);
 
-  // month shown = anchor month ± navigation; forward navigation stops at the current month
-  const anchor = weekData.length ? new Date(`${weekData[weekData.length-1].date}T12:00:00`) : new Date();
-  const shown = new Date(anchor.getFullYear(), anchor.getMonth() + monthOffset, 1);
-  const year = shown.getFullYear(), month = shown.getMonth();
-  const monthLabel = shown.toLocaleDateString('en-US',{month:'long',year:'numeric'});
-  const now = new Date();
-  const atCurrentMonth = year > now.getFullYear() || (year === now.getFullYear() && month >= now.getMonth());
-  const daysInMonth = new Date(year, month+1, 0).getDate();
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first, like a service week
   const todayKey = new Date().toISOString().split('T')[0];
   const cells = [];
   for (let i=0;i<firstDow;i++) cells.push(null);
   for (let d=1;d<=daysInMonth;d++) {
-    const key = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const key = `${year}-${mm}-${String(d).padStart(2,'0')}`;
     cells.push({ d, key, data: dataByDate[key], clickable: key <= todayKey });
   }
 
-  if (loading) return <div className="p3-empty"><div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}><div className="p3-spinner"/><span>Loading...</span></div></div>;
-  if (weekData.length === 0) return <div className="p3-empty">No weekly data yet — results appear here once Tonight's Dish runs</div>;
+  if (loading && weekData.length === 0) return <div className="p3-empty"><div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:8}}><div className="p3-spinner"/><span>Loading...</span></div></div>;
+  if (!loading && weekData.length === 0) return <div className="p3-empty">No weekly data yet — results appear here once Tonight's Dish runs</div>;
 
   return (
     <div className="p3-wk-grid">
@@ -391,7 +434,7 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
               {new Date(`${openDay}T12:00:00`).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}
             </div>
             <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)',lineHeight:1.5,padding:'8px 0'}}>
-              No Tonight's Dish data recorded for this night — day-level history currently covers the last 7 nights.
+              No Tonight's Dish data recorded for this night.
             </div>
             <button className="p3-link-btn" style={{flexShrink:0,textAlign:'left'}} onClick={() => setOpenDay(null)}>← Back to week totals</button>
           </>
@@ -443,7 +486,7 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
       <div className="p3-cal">
         <div className="p3-cal-hd">
           <button type="button" className="p3-cal-nav" onClick={() => setMonthOffset(o => o - 1)} aria-label="Previous month">‹</button>
-          <span>{monthLabel}</span>
+          <span style={{display:'flex',alignItems:'center',gap:6}}>{monthLabel}{loading && <span className="p3-spinner" style={{display:'inline-block',width:9,height:9,borderWidth:1.5}}/>}</span>
           <button type="button" className="p3-cal-nav" disabled={atCurrentMonth} onClick={() => setMonthOffset(o => o + 1)} aria-label="Next month">›</button>
         </div>
         <div className="p3-cal-dow">{['Mo','Tu','We','Th','Fr','Sa','Su'].map(d=><span key={d}>{d}</span>)}</div>
@@ -1111,7 +1154,6 @@ export default function ClientDashboard3() {
               <div className="p3-rail-hd">
                 <div className="p3-rail-title">Tonight's Service</div>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
-                  {selectedRec!==null && <button className="p3-link-btn" onClick={()=>setSelectedRec(null)}>← Close recipe</button>}
                   <span className="p3-rail-sub">{aiLoading?'Analyzing menu, sales & inventory...':recs.length>0?`${recs.length} dish${recs.length!==1?'es':''} on the rail`:'Waiting on data'}</span>
                 </div>
               </div>
@@ -1121,28 +1163,25 @@ export default function ClientDashboard3() {
                   [0,1,2].map(i=>(
                     <div key={i} className="p3-ticket-slot">
                       <div className="p3-clip"/>
-                      <div className="p3-ticket" style={{alignItems:'center',justifyContent:'center',cursor:'default',gap:8,minHeight:'clamp(90px,14vh,160px)'}}>
-                        <div className="p3-spinner" style={{borderColor:'var(--paper-shade)',borderTopColor:'var(--ink-soft)'}}/>
-                        <div style={{fontSize:'clamp(8px,.62vw,11px)',color:'var(--ink-faint)',letterSpacing:'.1em'}}>PRINTING...</div>
+                      <div className="p3-flip" style={{minHeight:'clamp(90px,14vh,160px)'}}>
+                        <div className="p3-flip-inner">
+                          <div className="p3-ticket" style={{alignItems:'center',justifyContent:'center',cursor:'default',gap:8}}>
+                            <div className="p3-spinner" style={{borderColor:'var(--paper-shade)',borderTopColor:'var(--ink-soft)'}}/>
+                            <div style={{fontSize:'clamp(8px,.62vw,11px)',color:'var(--ink-faint)',letterSpacing:'.1em'}}>PRINTING...</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ))
                 ) : recs.length > 0 ? (
                   recs.map((rec,i) => (
-                    <PassTicket key={i} rec={rec} index={i} isSelected={selectedRec===i} anySelected={selectedRec!==null} onClick={()=>handleRecClick(i)}/>
+                    <PassTicket key={i} rec={rec} index={i} isSelected={selectedRec===i} onClick={()=>handleRecClick(i)} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
                   ))
                 ) : (
                   <div style={{gridColumn:'1 / -1',display:'flex',alignItems:'center',justifyContent:'center',padding:'clamp(20px,4vh,40px)',color:'var(--text-muted)',fontSize:'clamp(10px,.78vw,13px)',textAlign:'center'}}>
                     No recommendations yet — upload an invoice or sync POS sales and tonight's tickets will print here.
                   </div>
                 )}
-              </div>
-              <div className={`p3-drawer${selectedRec!==null?' open':''}`}>
-                <div className="p3-drawer-inner">
-                  {selectedRec!==null && recs[selectedRec] && (
-                    <RecipePanel rec={recs[selectedRec]} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
-                  )}
-                </div>
               </div>
               </div>
             </div>
