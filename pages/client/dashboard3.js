@@ -917,12 +917,10 @@ export default function ClientDashboard3() {
   const wasteVisible = wasteShowAll ? allWaste : allWaste.slice(0, WASTE_PREVIEW);
 
   const statItems = [
-    { l:'Avg margin',  v:`${data.averageMargin.toFixed(1)}%`,        c:getMarginColor(data.averageMargin) },
-    { l:'Food cost',   v:`${(100-data.averageMargin).toFixed(1)}%`,  c:'var(--text-primary)' },
-    { l:'Low margin',  v:data.lowMarginCount,                        c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)' },
-    { l:'Expiring',    v:data.wasteRisk.length,                      c:data.wasteRisk.length>0?'var(--color-amber)':'var(--color-green)' },
-    { l:'YTD spend',   v:fmt(data.totalSpending),                    c:'var(--text-primary)' },
-    { l:'Ingredients', v:data.totalIngredients,                      c:'var(--text-primary)' },
+    { l:'Avg margin', v:`${data.averageMargin.toFixed(1)}%`,  c:getMarginColor(data.averageMargin) },
+    { l:'Low margin', v:data.lowMarginCount,                  c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)' },
+    { l:'Expiring',   v:data.wasteRisk.length,                c:data.wasteRisk.length>0?'var(--color-amber)':'var(--color-green)' },
+    { l:'YTD spend',  v:fmt(data.totalSpending),              c:'var(--text-primary)' },
   ];
 
   function handleRecClick(i) { setSelectedRec(prev => prev === i ? null : i); }
@@ -1188,13 +1186,16 @@ export default function ClientDashboard3() {
             {/* ── TOP: glance card + the pass ── */}
             <div className="p3-top">
               <div className="p3-glance">
-                <div>
-                  <div className="p3-eyebrow">{dateLabel}</div>
-                  <div className="p3-greeting">{greeting}, {userName} — <em>tonight's pass is set.</em></div>
-                  <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)',marginTop:3}}>{restaurantName}</div>
+                <div style={{flexShrink:0}}>
+                  <div className="p3-eyebrow">{restaurantName}</div>
+                  <div style={{fontFamily:"'Courier New',monospace",fontSize:'clamp(11px,.88vw,14px)',fontWeight:700,color:'var(--text-secondary)',letterSpacing:'.03em',marginTop:3,lineHeight:1.2}}>{dateLabel}</div>
                 </div>
                 <hr className="p3-glance-rule"/>
                 <div className="p3-glance-stats">
+                  <div className="p3-stat">
+                    <span className="p3-stat-l">OptiScore</span>
+                    <span className="p3-stat-v" style={{color:scoreColor}}>{data.aiProfitScore.score} <span style={{fontSize:'clamp(7px,.52vw,9px)',fontWeight:400,opacity:.75}}>{scoreLabel}</span></span>
+                  </div>
                   {statItems.map(({l,v,c})=>(
                     <div key={l} className="p3-stat">
                       <span className="p3-stat-l">{l}</span>
@@ -1202,23 +1203,11 @@ export default function ClientDashboard3() {
                     </div>
                   ))}
                 </div>
-                <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
-                  <div className="p3-score-ring">
-                    <svg viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="11" fill="none"/>
-                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="11" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
-                    </svg>
-                    <div className="p3-score-num">{data.aiProfitScore.score}</div>
-                  </div>
-                  <div>
-                    <div style={{fontSize:'clamp(8px,.56vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.1em'}}>OptiScore</div>
-                    <div style={{fontSize:'clamp(10px,.72vw,12px)',fontWeight:600,color:scoreColor}}>{scoreLabel}</div>
-                  </div>
-                </div>
               </div>
 
               {/* ── THE PASS ── */}
               <div className="p3-pass">
+              <div style={{fontFamily:"'Playfair Display',serif",fontWeight:500,fontSize:'clamp(13px,1.05vw,17px)',letterSpacing:'-.3px',color:'var(--text-primary)',lineHeight:1.25,marginBottom:'clamp(6px,.7vh,10px)',flexShrink:0}}>{greeting}, {userName}. <em style={{fontStyle:'italic',color:'var(--accent)'}}>Tonight's pass is set.</em></div>
               <div className="p3-rail-hd">
                 <div className="p3-rail-title">Tonight's Service</div>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
