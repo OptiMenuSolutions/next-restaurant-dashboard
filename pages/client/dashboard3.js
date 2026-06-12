@@ -362,13 +362,9 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, day
               <span style={{fontSize:'clamp(8px,.62vw,10px)',color:'var(--ink-soft)'}}>{timeStr}</span>
             </div>
             <hr className="p3-t-rule"/>
-            <div style={{fontSize:'clamp(9px,.7vw,11px)',color:'var(--ink)',flexShrink:0}}>
-              <span style={{color:'var(--ink-soft)'}}>Server: </span>{label}
-            </div>
+            <div style={{fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,letterSpacing:'.1em',color,flexShrink:0}}>{label}</div>
             <hr className="p3-t-rule"/>
-            <div style={{fontSize:'clamp(9px,.7vw,11px)',color:'var(--ink)',flexShrink:0}}>
-              <span style={{color:'var(--ink-soft)'}}>Tab: </span><span style={{fontWeight:700}}>{rec.title||'—'}</span>
-            </div>
+            <div style={{fontSize:'clamp(12px,.95vw,16px)',fontWeight:700,color:'var(--ink)',flexShrink:0,lineHeight:1.2}}>{rec.title||'—'}</div>
             <hr className="p3-t-rule"/>
             <div style={{textAlign:'center',fontSize:'clamp(8px,.6vw,10px)',color:'var(--ink-soft)',flexShrink:0,marginBottom:'clamp(3px,.3vh,4px)'}}>--- Tonight's Pitch ---</div>
             <div style={{flex:1,overflow:'hidden'}}>
@@ -400,15 +396,23 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, day
               {!recipe ? (
                 <div className="p3-rb-empty">No recipe on file for this dish yet — add its components in Menu Items and it will print here.</div>
               ) : recipe.map((comp, ci) => (
-                <div key={ci}>
-                  {comp.name && <div className="p3-rb-section">{comp.name}</div>}
+                <div key={ci} style={{marginBottom:'clamp(6px,.6vh,10px)'}}>
+                  {comp.name && (
+                    <div style={{fontSize:'clamp(10px,.8vw,13px)',fontWeight:700,color:'var(--ink)',letterSpacing:'.01em',lineHeight:1.2,marginBottom:'clamp(2px,.25vh,4px)'}}>{comp.name}</div>
+                  )}
                   {comp.ings.map((ing, ii) => {
                     const risk = riskSet.has(ing.name.toLowerCase());
+                    const ingColor = risk ? 'var(--color-red)' : color;
                     return (
-                      <div key={ii} className={`p3-rb-line${risk ? ' risk' : ''}`}>
-                        <span className="p3-rb-name">{risk ? '▲ ' : ''}{ing.name}</span>
-                        <span className="p3-rb-leader"/>
-                        {ing.qty && <span className="p3-rb-qty">{ing.qty}</span>}
+                      <div key={ii} style={{paddingLeft:'clamp(10px,1vw,14px)',marginBottom:'clamp(2px,.2vh,3px)'}}>
+                        <div style={{fontSize:'clamp(9px,.72vw,11px)',color:ingColor,fontWeight:risk?700:400,lineHeight:1.3}}>
+                          {risk?'▲ ':''}{ing.name}
+                        </div>
+                        {ing.qty&&(
+                          <div style={{paddingLeft:'clamp(8px,.8vw,10px)',fontSize:'clamp(8px,.62vw,10px)',color:ingColor,lineHeight:1.2,fontStyle:'italic'}}>
+                            {ing.qty}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1201,20 +1205,7 @@ export default function ClientDashboard3() {
             {/* ── TOP: glance card + the pass ── */}
             <div className="p3-top">
               <div className="p3-glance">
-                <div style={{flexShrink:0}}>
-                  <div className="p3-eyebrow">{restaurantName}</div>
-                  <div style={{fontFamily:"'Courier New',monospace",fontSize:'clamp(11px,.88vw,14px)',fontWeight:700,color:'var(--text-secondary)',letterSpacing:'.03em',marginTop:3,lineHeight:1.2}}>{dateLabel}</div>
-                </div>
-                <hr className="p3-glance-rule"/>
-                <div className="p3-glance-stats">
-                  {statItems.map(({l,v,c})=>(
-                    <div key={l} className="p3-stat">
-                      <span className="p3-stat-l">{l}</span>
-                      <span className="p3-stat-v" style={{color:c}}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-                <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
+                <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`} style={{paddingTop:0,borderTop:'none',flexShrink:0}}>
                   <div className="p3-score-ring">
                     <svg viewBox="0 0 100 100">
                       <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="11" fill="none"/>
@@ -1223,9 +1214,23 @@ export default function ClientDashboard3() {
                     <div className="p3-score-num">{data.aiProfitScore.score}</div>
                   </div>
                   <div>
-                    <div style={{fontSize:'clamp(8px,.56vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.1em'}}>OptiScore</div>
+                    <div style={{fontSize:'clamp(8px,.56vw,10px)',color:'var(--text-secondary)',textTransform:'uppercase',letterSpacing:'.1em'}}>OptiScore</div>
                     <div style={{fontSize:'clamp(10px,.72vw,12px)',fontWeight:600,color:scoreColor}}>{scoreLabel}</div>
                   </div>
+                </div>
+                <hr className="p3-glance-rule"/>
+                <div style={{flexShrink:0}}>
+                  <div style={{fontSize:'clamp(8px,.6vw,10px)',fontWeight:600,letterSpacing:'.14em',textTransform:'uppercase',color:'var(--text-secondary)',marginBottom:3}}>{restaurantName}</div>
+                  <div style={{fontFamily:"'Courier New',monospace",fontSize:'clamp(11px,.88vw,14px)',fontWeight:700,color:'var(--text-primary)',letterSpacing:'.03em',lineHeight:1.2}}>{dateLabel}</div>
+                </div>
+                <hr className="p3-glance-rule"/>
+                <div className="p3-glance-stats">
+                  {statItems.map(({l,v,c})=>(
+                    <div key={l} className="p3-stat">
+                      <span className="p3-stat-l" style={{color:'var(--text-secondary)'}}>{l}</span>
+                      <span className="p3-stat-v" style={{color:c}}>{v}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
