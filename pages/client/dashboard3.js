@@ -861,14 +861,12 @@ export default function ClientDashboard3() {
     const totalSpending=invoices.filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+parseFloat(i.amount||0),0);
     const unpricedIngredients=ingredients.filter(i=>!i.last_price||parseFloat(i.last_price)===0).length;
     const menuItemAnalysis=menuItems.map(item=>{
-      const price=parseFloat(item.price||0);let cost=0,hasCompleteData=false;
-      if(item.menu_item_components?.length>0){cost=item.menu_item_components.reduce((t,c)=>t+parseFloat(c.cost||0),0);hasCompleteData=item.menu_item_components.every(c=>(c.component_ingredients||[]).length>0&&(c.component_ingredients||[]).every(ci=>ci.ingredients?.last_price&&parseFloat(ci.ingredients.last_price)>0));}
-      else if(item.cost&&parseFloat(item.cost)>0){cost=parseFloat(item.cost);hasCompleteData=price>0;}
+      const price=parseFloat(item.price||0);
+      const cost=parseFloat(item.cost||0);
       const margin=price>0&&cost>0?((price-cost)/price)*100:0;
-      const hasEstimated=item.menu_item_components?.some(c=>(c.component_ingredients||[]).some(ci=>ci.ingredients?.is_estimated===true))||false;
-      return {id:item.id,name:item.name,price,cost,margin,hasCompleteData,hasEstimated};
+      return {id:item.id,name:item.name,price,cost,margin,hasCompleteData:price>0&&cost>0};
     });
-    const itemsWithMargins=menuItemAnalysis.filter(i=>i.hasCompleteData&&i.price>0&&!i.hasEstimated);
+    const itemsWithMargins=menuItemAnalysis.filter(i=>i.price>0&&i.cost>0);
     const averageMargin=itemsWithMargins.length>0?itemsWithMargins.reduce((s,i)=>s+i.margin,0)/itemsWithMargins.length:0;
     const lowMarginCount=itemsWithMargins.filter(i=>i.margin<LOW_MARGIN_THRESHOLD).length;
     const highMarginCount=itemsWithMargins.filter(i=>i.margin>=60).length;
