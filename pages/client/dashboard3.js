@@ -312,10 +312,12 @@ const GLOBAL_CSS = `
 `;
 
 // ── TICKET ───────────────────────────────────────────────────────────────────
-function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
+function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, daysOnOptiMenu, restaurantName }) {
   const { label, color } = getTicketMeta(index);
   const sellCopy = rec.sellCopy || rec.talking_point || SELL_COPY[index % SELL_COPY.length];
   const marginVal = rec.margin !== null && rec.margin !== undefined && !isNaN(parseFloat(rec.margin)) ? parseFloat(rec.margin) : null;
+  const ticketNum = `#${String(daysOnOptiMenu||1).padStart(3,'0')}-0${index+1}`;
+  const timeStr = new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
 
   // recipe = the matching menu item's components + ingredients, receipt-ready
   const recipe = useMemo(() => {
@@ -350,22 +352,35 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
             aria-expanded={isSelected}
             tabIndex={isSelected ? -1 : 0}
           >
-            <div className="p3-t-hd">
-              <span className="p3-t-label" style={{color}}>{label}</span>
-              <span className="p3-t-num">#{String(index+1).padStart(3,'0')}</span>
+            <div style={{textAlign:'center',flexShrink:0,marginBottom:'clamp(4px,.4vh,7px)'}}>
+              <div style={{fontSize:'clamp(9px,.72vw,12px)',fontWeight:700,letterSpacing:'.04em',color:'var(--ink)',lineHeight:1.3}}>{restaurantName}</div>
+              <div style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--ink-soft)',letterSpacing:'.06em',lineHeight:1.4}}>*** Food ***</div>
+              <div style={{fontSize:'clamp(8px,.62vw,10px)',fontWeight:700,letterSpacing:'.12em',color,lineHeight:1.4}}>{label}</div>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',flexShrink:0}}>
+              <span style={{fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:'var(--ink)'}}>{ticketNum}</span>
+              <span style={{fontSize:'clamp(8px,.62vw,10px)',color:'var(--ink-soft)'}}>{timeStr}</span>
             </div>
             <hr className="p3-t-rule"/>
-            <div className="p3-t-title">{rec.title || '—'}</div>
+            <div style={{fontSize:'clamp(9px,.7vw,11px)',color:'var(--ink)',flexShrink:0}}>
+              <span style={{color:'var(--ink-soft)'}}>Server: </span>{label}
+            </div>
             <hr className="p3-t-rule"/>
-            {rec.description && <div className="p3-t-desc">{rec.description}</div>}
+            <div style={{fontSize:'clamp(9px,.7vw,11px)',color:'var(--ink)',flexShrink:0}}>
+              <span style={{color:'var(--ink-soft)'}}>Tab: </span><span style={{fontWeight:700}}>{rec.title||'—'}</span>
+            </div>
             <hr className="p3-t-rule"/>
-            <div className="p3-t-quote" style={{borderLeftColor:color}}>{sellCopy}</div>
-            {(marginVal !== null || rec.urgency) && (
+            <div style={{textAlign:'center',fontSize:'clamp(8px,.6vw,10px)',color:'var(--ink-soft)',flexShrink:0,marginBottom:'clamp(3px,.3vh,4px)'}}>--- Tonight's Pitch ---</div>
+            <div style={{flex:1,overflow:'hidden'}}>
+              <div style={{fontSize:'clamp(9px,.72vw,12px)',lineHeight:1.5,color,fontStyle:'italic'}}>{sellCopy}</div>
+              {rec.description&&<div style={{fontSize:'clamp(8px,.64vw,11px)',lineHeight:1.4,color:'var(--ink-soft)',marginTop:'clamp(3px,.3vh,5px)'}}>{rec.description}</div>}
+            </div>
+            {(marginVal!==null||rec.urgency)&&(
               <>
                 <hr className="p3-t-rule"/>
                 <div className="p3-t-chips">
-                  {marginVal !== null && <span className="p3-t-chip">MARGIN {marginVal.toFixed(0)}%</span>}
-                  {rec.urgency && <span className="p3-t-chip" style={{color,borderColor:color}}>{String(rec.urgency).toUpperCase()}</span>}
+                  {marginVal!==null&&<span className="p3-t-chip">MARGIN {marginVal.toFixed(0)}%</span>}
+                  {rec.urgency&&<span className="p3-t-chip" style={{color,borderColor:color}}>{String(rec.urgency).toUpperCase()}</span>}
                 </div>
               </>
             )}
@@ -375,7 +390,7 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk }) {
           {/* BACK: the same receipt flipped over — recipe as printed line items */}
           <div className="p3-ticket-back" aria-hidden={!isSelected}>
             <div className="p3-t-hd">
-              <span className="p3-t-label" style={{color}}>RECIPE · #{String(index+1).padStart(3,'0')}</span>
+              <span className="p3-t-label" style={{color}}>RECIPE · {ticketNum}</span>
               <button type="button" className="p3-rb-flip" tabIndex={isSelected ? 0 : -1} onClick={onClick}>↻ FLIP BACK</button>
             </div>
             <hr className="p3-t-rule"/>
@@ -745,6 +760,7 @@ export default function ClientDashboard3() {
   const [wasteShowAll, setWasteShowAll] = useState(false);
   const [mobTab, setMobTab]             = useState('tonight');
   const [selectedRec, setSelectedRec]   = useState(null);
+  const [daysOnOptiMenu, setDaysOnOptiMenu] = useState(1);
   const [data, setData] = useState({
     totalInvoices:0,totalIngredients:0,totalMenuItems:0,
     ingredientTrends:[],menuItemAnalysis:[],
@@ -779,8 +795,9 @@ export default function ClientDashboard3() {
       if(profileError||!profile?.restaurant_id){setError("Could not determine restaurant access");setLoading(false);return;}
       setRestaurantId(profile.restaurant_id);
       setUserName(profile.full_name?.split(' ')[0]?.trim()||"User");
-      const {data:rd}=await supabase.from("restaurants").select("name").eq("id",profile.restaurant_id).single();
+      const {data:rd}=await supabase.from("restaurants").select("name,created_at").eq("id",profile.restaurant_id).single();
       setRestaurantName(rd?.name||"Your Restaurant");
+      if(rd?.created_at){const d=Math.max(1,Math.floor((Date.now()-new Date(rd.created_at).getTime())/(1000*60*60*24)));setDaysOnOptiMenu(d);}
       if(router.query.tour!=='true') await fetchDashboardData(profile.restaurant_id);
       else setLoading(false);
     }catch{setError("An unexpected error occurred");setLoading(false);}
@@ -1190,16 +1207,25 @@ export default function ClientDashboard3() {
                 </div>
                 <hr className="p3-glance-rule"/>
                 <div className="p3-glance-stats">
-                  <div className="p3-stat">
-                    <span className="p3-stat-l">OptiScore</span>
-                    <span className="p3-stat-v" style={{color:scoreColor}}>{data.aiProfitScore.score} <span style={{fontSize:'clamp(7px,.52vw,9px)',fontWeight:400,opacity:.75}}>{scoreLabel}</span></span>
-                  </div>
                   {statItems.map(({l,v,c})=>(
                     <div key={l} className="p3-stat">
                       <span className="p3-stat-l">{l}</span>
                       <span className="p3-stat-v" style={{color:c}}>{v}</span>
                     </div>
                   ))}
+                </div>
+                <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
+                  <div className="p3-score-ring">
+                    <svg viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="11" fill="none"/>
+                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="11" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
+                    </svg>
+                    <div className="p3-score-num">{data.aiProfitScore.score}</div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:'clamp(8px,.56vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'.1em'}}>OptiScore</div>
+                    <div style={{fontSize:'clamp(10px,.72vw,12px)',fontWeight:600,color:scoreColor}}>{scoreLabel}</div>
+                  </div>
                 </div>
               </div>
 
@@ -1230,7 +1256,7 @@ export default function ClientDashboard3() {
                   ))
                 ) : recs.length > 0 ? (
                   recs.map((rec,i) => (
-                    <PassTicket key={i} rec={rec} index={i} isSelected={selectedRec===i} onClick={()=>handleRecClick(i)} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
+                    <PassTicket key={i} rec={rec} index={i} isSelected={selectedRec===i} onClick={()=>handleRecClick(i)} menuItems={menuItemsFull} wasteRisk={data.wasteRisk} daysOnOptiMenu={daysOnOptiMenu} restaurantName={restaurantName}/>
                   ))
                 ) : (
                   <div style={{gridColumn:'1 / -1',display:'flex',alignItems:'center',justifyContent:'center',padding:'clamp(20px,4vh,40px)',color:'var(--text-muted)',fontSize:'clamp(10px,.78vw,13px)',textAlign:'center'}}>
