@@ -129,7 +129,7 @@ const GLOBAL_CSS = `
   .p3-tab:focus-visible,.p3-ticket:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
   /* ── TOP REGION: glance card + the pass ── */
-  .p3-top{flex:5 1 0;min-height:0;display:grid;grid-template-columns:clamp(190px,16vw,250px) 1fr;gap:clamp(12px,1.4vw,22px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) 0;overflow:hidden;}
+  .p3-top{flex:5 1 0;min-height:0;display:grid;grid-template-columns:clamp(190px,16vw,250px) 1fr;gap:clamp(12px,1.4vw,22px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) 0;overflow:hidden;max-width:1600px;width:100%;margin-left:auto;margin-right:auto;}
   .p3-glance{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(10px,1vw,16px);display:flex;flex-direction:column;gap:clamp(6px,.6vh,9px);overflow:hidden;min-height:0;}
   .p3-eyebrow{font-size:clamp(8px,.6vw,10px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-bottom:3px;}
   .p3-greeting{font-family:'Playfair Display',serif;font-weight:500;font-size:clamp(14px,1.15vw,19px);letter-spacing:-.3px;color:var(--text-primary);line-height:1.2;}
@@ -163,7 +163,7 @@ const GLOBAL_CSS = `
   }
   .p3-rail::before{left:7px;}
   .p3-rail::after{right:7px;}
-  .p3-tickets{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(12px,1.6vw,28px);align-items:stretch;min-height:0;flex:1;}
+  .p3-tickets{display:grid;grid-template-columns:repeat(3,minmax(180px,430px));gap:clamp(12px,1.6vw,28px);align-items:stretch;min-height:0;flex:1;justify-content:center;}
   .p3-ticket-slot{position:relative;display:flex;flex-direction:column;min-height:0;padding-top:7px;}
   .p3-clip{ /* bulldog clip gripping the rail and the ticket */
     position:absolute;top:-8px;left:50%;transform:translateX(-50%);
@@ -256,7 +256,7 @@ const GLOBAL_CSS = `
   .p3-t-foot{margin-top:auto;padding-top:clamp(5px,.5vh,8px);font-size:clamp(7px,.52vw,9px);color:var(--ink-faint);text-align:center;letter-spacing:.06em;flex-shrink:0;}
 
   /* ── SUPPORTING BAND ── */
-  .p3-band{flex:4 1 0;min-height:0;display:grid;grid-template-columns:1fr 2.2fr;gap:clamp(10px,1.2vw,18px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(10px,1.2vh,16px);overflow:hidden;}
+  .p3-band{flex:4 1 0;min-height:0;display:grid;grid-template-columns:1fr 2.2fr;gap:clamp(10px,1.2vw,18px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) clamp(10px,1.2vh,16px);overflow:hidden;max-width:1600px;width:100%;margin-left:auto;margin-right:auto;}
   .p3-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(10px,1vw,16px);display:flex;flex-direction:column;overflow:hidden;min-height:0;}
   .p3-card-hd{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:clamp(6px,.7vh,10px);flex-shrink:0;}
   .p3-card-title{font-size:clamp(10px,.78vw,13px);font-weight:600;color:var(--text-primary);}
