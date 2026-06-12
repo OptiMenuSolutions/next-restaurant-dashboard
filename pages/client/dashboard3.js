@@ -404,12 +404,12 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, day
                     const risk = riskSet.has(ing.name.toLowerCase());
                     const ingColor = risk ? 'var(--color-red)' : color;
                     return (
-                      <div key={ii} style={{paddingLeft:'clamp(10px,1vw,14px)',marginBottom:'clamp(2px,.2vh,3px)'}}>
+                      <div key={ii} style={{paddingLeft:'clamp(10px,1vw,14px)',marginBottom:'clamp(2px,.2vh,3px)',display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:6}}>
                         <div style={{fontSize:'clamp(9px,.72vw,11px)',color:ingColor,fontWeight:risk?700:400,lineHeight:1.3}}>
                           {risk?'▲ ':''}{ing.name}
                         </div>
                         {ing.qty&&(
-                          <div style={{paddingLeft:'clamp(8px,.8vw,10px)',fontSize:'clamp(8px,.62vw,10px)',color:ingColor,lineHeight:1.2,fontStyle:'italic'}}>
+                          <div style={{fontSize:'clamp(8px,.62vw,10px)',color:ingColor,lineHeight:1.2,fontStyle:'italic',flexShrink:0}}>
                             {ing.qty}
                           </div>
                         )}
