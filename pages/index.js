@@ -131,6 +131,17 @@ export default function Landing() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  useEffect(() => {
+    const els = document.querySelectorAll('.reveal');
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (e.isIntersecting) { e.target.classList.add('in-view'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
+
   return (
     <>
       <Head>
@@ -179,11 +190,12 @@ export default function Landing() {
           border: 1px solid rgba(255,255,255,0.06);
           border-radius: 12px; padding: 28px;
           background: rgba(255,255,255,0.02);
-          transition: border-color 0.3s, background 0.3s;
+          transition: border-color 0.3s, background 0.3s, transform 0.3s;
         }
         .feature-card:hover {
           border-color: rgba(2,164,186,0.2);
           background: rgba(2,164,186,0.03);
+          transform: translateY(-3px);
         }
 
         .lp-btn-primary {
@@ -206,6 +218,10 @@ export default function Landing() {
         .lp-btn-ghost:hover { border-color: rgba(255,255,255,0.2); color: #c8c0b4; }
 
         .check-icon { width: 16px; height: 16px; border-radius: 50%; background: rgba(2,164,186,0.1); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+        .reveal { opacity: 0; transform: translateY(28px); transition: opacity 0.8s cubic-bezier(0.22,1,0.36,1), transform 0.8s cubic-bezier(0.22,1,0.36,1); }
+        .reveal.in-view { opacity: 1; transform: translateY(0); }
+        @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
 
         @media (max-width: 768px) {
           .hero-grid { grid-template-columns: 1fr !important; }
@@ -300,22 +316,11 @@ export default function Landing() {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 32 }}>
               <Link href="/client/signup">
-                <button className="lp-btn-primary">Start free trial</button>
+                <button className="lp-btn-primary">Get started</button>
               </Link>
               <a href="#how-it-works">
                 <button className="lp-btn-ghost">See how it works</button>
               </a>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-              {['No credit card required', 'Cancel anytime', 'Setup in an afternoon'].map(t => (
-                <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#4a453e' }}>
-                  <svg viewBox="0 0 10 10" width="8" height="8" fill="none" stroke="#02a4ba" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="1.5,5 4,7.5 8.5,2.5" />
-                  </svg>
-                  {t}
-                </div>
-              ))}
             </div>
           </div>
 
@@ -337,28 +342,8 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* STATS */}
-      <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', borderBottom: '1px solid rgba(255,255,255,0.06)', padding: '48px 56px' }}>
-        <div className="stats-grid" style={{
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-          gap: 40, maxWidth: 900, margin: '0 auto', textAlign: 'center',
-        }}>
-          {[
-            { num: '3–7%', label: 'Average food cost reduction' },
-            { num: '$800+', label: 'Monthly waste prevented' },
-            { num: '< 1 day', label: 'Time to full setup' },
-            { num: '0', label: 'Onboarding calls required' },
-          ].map(({ num, label }) => (
-            <div key={label}>
-              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 42, fontWeight: 400, color: '#e8e2d8', letterSpacing: '-1px', lineHeight: 1 }}>{num}</div>
-              <div style={{ fontSize: 12, color: '#4a453e', marginTop: 8, letterSpacing: '0.2px', lineHeight: 1.5 }}>{label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* HOW IT WORKS */}
-      <section id="how-it-works" className="lp-section" style={{ padding: '96px 56px' }}>
+      <section id="how-it-works" className="lp-section reveal" style={{ padding: '96px 56px' }}>
         <div style={{ maxWidth: 1000, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <div style={{ fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#02a4ba', fontWeight: 500, marginBottom: 14 }}>How it works</div>
@@ -388,7 +373,7 @@ export default function Landing() {
       </section>
 
       {/* TONIGHT'S DISH CALLOUT */}
-      <section className="callout-section" style={{
+      <section className="callout-section reveal" style={{
         margin: '0 56px 96px', borderRadius: 16,
         background: 'linear-gradient(135deg, rgba(2,164,186,0.08) 0%, rgba(2,164,186,0.03) 100%)',
         border: '1px solid rgba(2,164,186,0.15)',
@@ -408,7 +393,7 @@ export default function Landing() {
             fontWeight: 400, color: '#e8e2d8', lineHeight: 1.2,
             letterSpacing: '-0.3px', marginBottom: 20,
           }}>
-            The briefing your manager forgot to give.
+            The briefing that writes itself.
           </h2>
           <p style={{ fontSize: 14, color: '#6b6358', lineHeight: 1.75, marginBottom: 28, fontWeight: 300 }}>
             Every night at 6am, OptiMenu analyzes your inventory, POS sales, and recipe margins to pick three dishes. Staff tap an NFC tag at the host stand to see what to push — and why. No meeting. No whiteboard. No forgotten talking points.
@@ -433,7 +418,7 @@ export default function Landing() {
       </section>
 
       {/* PRICING */}
-      <section id="pricing" className="lp-section" style={{ padding: '96px 56px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <section id="pricing" className="lp-section reveal" style={{ padding: '96px 56px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ maxWidth: 780, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <div style={{ fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#02a4ba', fontWeight: 500, marginBottom: 14 }}>Pricing</div>
@@ -509,15 +494,14 @@ export default function Landing() {
               </Link>
             </div>
           </div>
-
           <p style={{ textAlign: 'center', fontSize: 12, color: '#3a3630', marginTop: 20 }}>
-            14-day free trial included · No credit card required to start
+            Your founding rate is locked the day you join.
           </p>
         </div>
       </section>
 
       {/* FAQ */}
-      <section id="faq" className="lp-section" style={{ padding: '96px 56px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <section id="faq" className="lp-section reveal" style={{ padding: '96px 56px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ maxWidth: 660, margin: '0 auto' }}>
           <div style={{ textAlign: 'center', marginBottom: 56 }}>
             <div style={{ fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#02a4ba', fontWeight: 500, marginBottom: 14 }}>FAQ</div>
@@ -557,7 +541,7 @@ export default function Landing() {
           Join the founding cohort. First 25 operators lock in $59/month for life.
         </p>
         <Link href="/client/signup">
-          <button className="lp-btn-primary" style={{ fontSize: 14, padding: '14px 32px' }}>Start your free trial</button>
+          <button className="lp-btn-primary" style={{ fontSize: 14, padding: '14px 32px' }}>Claim founding rate</button>
         </Link>
       </section>
 
