@@ -2,6 +2,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
+import DashboardPreview from '../components/DashboardPreview';
 
 const TONIGHT_DISHES = [
   { label: 'PUSH TONIGHT', color: '#02a4ba', name: 'Grilled Branzino', reason: 'Received fresh this morning · 72% margin' },
@@ -339,6 +340,19 @@ export default function Landing() {
               Generated nightly · Delivered via NFC or QR
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* LIVE DASHBOARD PREVIEW */}
+      <section className="lp-section reveal" style={{ padding: '48px 56px 96px' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+          <div style={{ textAlign: 'center', marginBottom: 36 }}>
+            <div style={{ fontSize: 11, letterSpacing: '2px', textTransform: 'uppercase', color: '#02a4ba', fontWeight: 500, marginBottom: 14 }}>The dashboard</div>
+            <h2 className="section-title" style={{ fontFamily: "'Playfair Display', serif", fontSize: 38, fontWeight: 400, color: '#e8e2d8', letterSpacing: '-0.5px', lineHeight: 1.15 }}>
+              Every morning, the pass <em style={{ fontStyle: 'italic', color: '#02a4ba' }}>resets itself.</em>
+            </h2>
+          </div>
+          <DashboardPreview />
         </div>
       </section>
 
