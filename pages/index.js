@@ -566,8 +566,8 @@ export default function Landing() {
             Opti<span style={{ color: '#02a4ba' }}>Menu</span>
           </div>
           <div style={{ display: 'flex', gap: 28 }}>
-            {['Privacy', 'Terms', 'Contact'].map(l => (
-              <a key={l} href="#" style={{ fontSize: 12, color: '#3a3630', textDecoration: 'none' }}>{l}</a>
+            {[['Privacy', '/privacy'], ['Terms', '/terms'], ['Contact', '#']].map(([l, href]) => (
+              <a key={l} href={href} style={{ fontSize: 12, color: '#3a3630', textDecoration: 'none' }}>{l}</a>
             ))}
           </div>
           <div style={{ fontSize: 11, color: '#2a2620' }}>© 2026 OptiMenu LLC</div>
