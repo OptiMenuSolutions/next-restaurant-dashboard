@@ -130,8 +130,10 @@ const GLOBAL_CSS = `
 
   /* ── TOP REGION: glance card + the pass ── */
   .p3-top{flex:5 1 0;min-height:0;display:grid;grid-template-columns:clamp(190px,16vw,250px) 1fr;gap:clamp(12px,1.4vw,22px);padding:clamp(10px,1.2vh,16px) clamp(16px,2vw,32px) 0;overflow:hidden;max-width:1600px;width:100%;margin-left:auto;margin-right:auto;}
-  .p3-glance{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(12px,1.1vw,18px);display:flex;flex-direction:column;gap:clamp(7px,.7vh,11px);overflow:hidden;min-height:0;}
-  .p3-glance-rule{border:none;border-top:1px solid var(--border-subtle);margin:0;flex-shrink:0;}
+  .p3-glance{display:flex;flex-direction:column;gap:clamp(6px,.6vh,9px);min-height:0;overflow:hidden;}
+  .p3-glance-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:clamp(10px,1vw,15px);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;}
+  .p3-glance-card.stats{flex:1;min-height:0;}
+  .p3-glance-rule{border:none;border-top:1px solid var(--border-subtle);margin:clamp(5px,.5vh,8px) 0;flex-shrink:0;}
   .p3-glance-stats{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:2px;overflow:hidden;}
   .p3-stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
   .p3-stat-v{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(12px,.98vw,16px);font-weight:600;letter-spacing:-.01em;line-height:1;flex-shrink:0;}
@@ -1202,33 +1204,45 @@ export default function ClientDashboard3() {
             {/* ── TOP: glance card + the pass ── */}
             <div className="p3-top">
               <div className="p3-glance">
-                <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
-                  <div className="p3-score-ring">
-                    <svg viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="10" fill="none"/>
-                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="10" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
-                    </svg>
-                    <div className="p3-score-num">{data.aiProfitScore.score}</div>
-                  </div>
-                  <div style={{minWidth:0}}>
-                    <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(13px,1.05vw,17px)',fontWeight:500,letterSpacing:'-.2px',color:'var(--text-primary)',lineHeight:1.15}}>OptiScore</div>
-                    <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:scoreColor,marginTop:2}}>{scoreLabel}</div>
-                  </div>
+
+                {/* Card 1 — Identity */}
+                <div className="p3-glance-card">
+                  <div style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-faint)',marginBottom:'clamp(2px,.2vh,3px)'}}>{greeting},</div>
+                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(15px,1.15vw,20px)',fontWeight:600,color:'var(--text-primary)',lineHeight:1.1}}>{userName}</div>
+                  <hr className="p3-glance-rule"/>
+                  <div style={{fontSize:'clamp(10px,.8vw,14px)',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{restaurantName}</div>
+                  <div style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-secondary)',marginTop:3}}>{dateLabel}</div>
                 </div>
-                <hr className="p3-glance-rule"/>
-                <div style={{flexShrink:0,display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:8}}>
-                  <span style={{fontSize:'clamp(9px,.66vw,11px)',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{restaurantName}</span>
-                  <span style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-secondary)',whiteSpace:'nowrap',flexShrink:0}}>{dateLabel}</span>
-                </div>
-                <hr className="p3-glance-rule"/>
-                <div className="p3-glance-stats">
-                  {statItems.map(({l,v,c})=>(
-                    <div key={l} className="p3-stat">
-                      <span className="p3-stat-l">{l}</span>
-                      <span className="p3-stat-v" style={{color:c}}>{v}</span>
+
+                {/* Card 2 — OptiScore */}
+                <div className="p3-glance-card" style={{alignItems:'center',justifyContent:'center'}}>
+                  <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
+                    <div className="p3-score-ring">
+                      <svg viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="10" fill="none"/>
+                        <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="10" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
+                      </svg>
+                      <div className="p3-score-num">{data.aiProfitScore.score}</div>
                     </div>
-                  ))}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(13px,1.05vw,17px)',fontWeight:500,letterSpacing:'-.2px',color:'var(--text-primary)',lineHeight:1.15}}>OptiScore</div>
+                      <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:scoreColor,marginTop:2}}>{scoreLabel}</div>
+                    </div>
+                  </div>
                 </div>
+
+                {/* Card 3 — Stats */}
+                <div className="p3-glance-card stats">
+                  <div className="p3-glance-stats">
+                    {statItems.map(({l,v,c})=>(
+                      <div key={l} className="p3-stat">
+                        <span className="p3-stat-l">{l}</span>
+                        <span className="p3-stat-v" style={{color:c}}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
               </div>
 
               {/* ── THE PASS ── */}
