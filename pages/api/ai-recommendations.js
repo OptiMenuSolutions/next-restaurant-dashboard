@@ -347,14 +347,14 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
   const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate);
 
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 1000,
     messages: [{ role: 'user', content: prompt }],
   });
 
   await logAiUsage({
     feature: 'dish_recs',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     usage: message.usage,
     restaurantId,
   });
