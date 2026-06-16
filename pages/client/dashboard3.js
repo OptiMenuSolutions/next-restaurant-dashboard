@@ -1208,26 +1208,25 @@ export default function ClientDashboard3() {
                 {/* Card 1 — Identity */}
                 <div className="p3-glance-card">
                   <div style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-faint)',marginBottom:'clamp(2px,.2vh,3px)'}}>{greeting},</div>
-                  <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(15px,1.15vw,20px)',fontWeight:600,color:'var(--text-primary)',lineHeight:1.1}}>{userName}</div>
+                  <div style={{fontSize:'clamp(17px,1.35vw,23px)',fontWeight:700,color:'var(--text-primary)',lineHeight:1.1,letterSpacing:'-.03em'}}>{userName}</div>
                   <hr className="p3-glance-rule"/>
                   <div style={{fontSize:'clamp(10px,.8vw,14px)',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{restaurantName}</div>
                   <div style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-secondary)',marginTop:3}}>{dateLabel}</div>
                 </div>
 
                 {/* Card 2 — OptiScore */}
-                <div className="p3-glance-card" style={{alignItems:'center',justifyContent:'center'}}>
-                  <div className="p3-score" title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
-                    <div className="p3-score-ring">
-                      <svg viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="10" fill="none"/>
-                        <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="10" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
-                      </svg>
-                      <div className="p3-score-num">{data.aiProfitScore.score}</div>
-                    </div>
-                    <div style={{minWidth:0}}>
-                      <div style={{fontFamily:"'Playfair Display',serif",fontSize:'clamp(13px,1.05vw,17px)',fontWeight:500,letterSpacing:'-.2px',color:'var(--text-primary)',lineHeight:1.15}}>OptiScore</div>
-                      <div style={{fontSize:'clamp(9px,.68vw,11px)',fontWeight:600,color:scoreColor,marginTop:2}}>{scoreLabel}</div>
-                    </div>
+                <div className="p3-glance-card" style={{alignItems:'center',textAlign:'center'}}>
+                  <div style={{fontSize:'clamp(9px,.64vw,11px)',fontWeight:600,color:'var(--text-faint)',letterSpacing:'.12em',textTransform:'uppercase',marginBottom:'clamp(6px,.6vh,9px)'}}>OptiScore</div>
+                  <div style={{position:'relative',width:'clamp(64px,5.5vw,80px)',height:'clamp(64px,5.5vw,80px)',margin:'0 auto',flexShrink:0}} title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
+                    <svg viewBox="0 0 100 100" width="100%" height="100%" style={{transform:'rotate(-90deg)'}}>
+                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="10" fill="none"/>
+                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="10" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
+                    </svg>
+                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Playfair Display',serif",fontWeight:700,fontSize:'clamp(18px,1.55vw,26px)',color:'var(--text-primary)'}}>{data.aiProfitScore.score}</div>
+                  </div>
+                  <div style={{fontWeight:700,fontSize:'clamp(10px,.78vw,13px)',color:scoreColor,marginTop:'clamp(6px,.6vh,9px)'}}>{scoreLabel}</div>
+                  <div style={{width:'100%',borderTop:'1px solid var(--border-subtle)',marginTop:'clamp(6px,.6vh,9px)',paddingTop:'clamp(5px,.5vh,7px)',fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)',letterSpacing:'.04em'}}>
+                    Updated {new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}
                   </div>
                 </div>
 
