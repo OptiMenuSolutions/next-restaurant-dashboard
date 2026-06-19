@@ -336,6 +336,15 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, day
 
   const riskSet = useMemo(() => new Set((wasteRisk || []).map(w => (w.name || '').toLowerCase().trim())), [wasteRisk]);
   const hasRisk = !!recipe && recipe.some(c => c.ings.some(i => riskSet.has(i.name.toLowerCase())));
+  const coverMargin = useMemo(() => {
+    const key = (rec.title || '').toLowerCase().trim();
+    if (!key) return null;
+    const item = (menuItems || []).find(m => (m.name || '').toLowerCase().trim() === key)
+              || (menuItems || []).find(m => (m.name || '').toLowerCase().includes(key));
+    if (!item) return null;
+    const price = parseFloat(item.price || 0), cost = parseFloat(item.cost || 0);
+    return price > 0 && cost > 0 ? price - cost : null;
+  }, [rec.title, menuItems]);
 
   return (
     <div className="p3-ticket-slot">
@@ -370,11 +379,12 @@ function PassTicket({ rec, index, isSelected, onClick, menuItems, wasteRisk, day
               <div style={{fontSize:'clamp(9px,.72vw,12px)',lineHeight:1.5,color,fontStyle:'italic'}}>{sellCopy}</div>
               {rec.description&&<div style={{fontSize:'clamp(8px,.64vw,11px)',lineHeight:1.4,color:'var(--ink-soft)',marginTop:'clamp(3px,.3vh,5px)'}}>{rec.description}</div>}
             </div>
-            {(marginVal!==null||rec.urgency)&&(
+            {(marginVal!==null||coverMargin!==null||rec.urgency)&&(
               <>
                 <hr className="p3-t-rule"/>
                 <div className="p3-t-chips">
                   {marginVal!==null&&<span className="p3-t-chip">MARGIN {marginVal.toFixed(0)}%</span>}
+                  {coverMargin!==null&&<span className="p3-t-chip">{fmtD(coverMargin)}/COVER</span>}
                   {rec.urgency&&<span className="p3-t-chip" style={{color,borderColor:color}}>{String(rec.urgency).toUpperCase()}</span>}
                 </div>
               </>
@@ -448,7 +458,7 @@ function WasteRow({ item, router }) {
         <div className="p3-waste-name">{item.name}</div>
         <div className="p3-waste-days" style={{color:urgencyColor}}>{label}</div>
       </div>
-      <div className="p3-bar-track"><div className="p3-bar-fill" style={{width:`${consumed}%`,background:urgencyColor,opacity:.7}}/></div>
+      <div className="p3-bar-track"><div className="p3-bar-fill" style={{width:`${consumed}%`,background:'var(--border)'}}/></div>
       <div className="p3-waste-meta">
         <span className="p3-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
         {item.invoiceId && <button className="p3-link-btn" onClick={() => router.push(`/client/invoices?selected=${encodeURIComponent(item.invoiceId)}`)}>Invoice →</button>}
@@ -478,6 +488,15 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
   const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems, monthStart, monthEnd);
   const openDayData = weekData.find(d => d.date === openDay);
   const dataByDate = useMemo(() => Object.fromEntries(weekData.map(d => [d.date, d])), [weekData]);
+  const topPerformer = useMemo(() => {
+    let best = null;
+    weekData.forEach(day => (day.dishes || []).forEach(dish => {
+      if (dish.diff !== null && dish.diff !== undefined && (!best || dish.diff > best.diff)) {
+        best = { name: dish.name, diff: dish.diff, date: day.date, dayLabel: day.dayLabel };
+      }
+    }));
+    return best;
+  }, [weekData]);
 
   const firstDow = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-first, like a service week
   const todayKey = new Date().toISOString().split('T')[0];
@@ -498,21 +517,39 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
       <div className="p3-wk-left">
         {!openDay ? (
           <>
-            <div className="p3-wir-stat">
-              <div className="p3-wir-stat-l">Extra sold</div>
-              <div className="p3-wir-stat-v" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)'}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
-              <div className="p3-wir-stat-s">vs. avg, last 7 nights</div>
+            <div className="p3-wir-stat" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+              <div style={{minWidth:0}}>
+                <div className="p3-wir-stat-l">Extra sold</div>
+                <div className="p3-wir-stat-s" style={{marginTop:1}}>covers vs. avg, last 7 nights</div>
+              </div>
+              <div className="p3-wir-stat-v" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)',flexShrink:0}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
             </div>
-            <div className="p3-wir-stat">
-              <div className="p3-wir-stat-l">Waste saved</div>
-              <div className="p3-wir-stat-v" style={{color:'var(--color-green)'}}>${weekWasteSaved}</div>
-              <div className="p3-wir-stat-s">estimated</div>
+            <div className="p3-wir-stat" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+              <div style={{minWidth:0}}>
+                <div className="p3-wir-stat-l">Waste saved</div>
+                <div className="p3-wir-stat-s" style={{marginTop:1}}>estimated, last 7 nights</div>
+              </div>
+              <div className="p3-wir-stat-v" style={{color:'var(--color-green)',flexShrink:0}}>${weekWasteSaved}</div>
             </div>
-            <div className="p3-wir-stat">
-              <div className="p3-wir-stat-l">Hit rate</div>
-              <div className="p3-wir-stat-v" style={{color:'var(--accent)'}}>{hitRate}%</div>
-              <div className="p3-wir-stat-s">days above avg</div>
+            <div className="p3-wir-stat" style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10}}>
+              <div style={{minWidth:0}}>
+                <div className="p3-wir-stat-l">Hit rate</div>
+                <div className="p3-wir-stat-s" style={{marginTop:1}}>nights above average</div>
+              </div>
+              <div className="p3-wir-stat-v" style={{color:'var(--accent)',flexShrink:0}}>{hitRate}%</div>
             </div>
+            {topPerformer && (
+              <div className="p3-wir-stat" style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'center'}}>
+                <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:10}}>
+                  <div className="p3-wir-stat-l">Top performer</div>
+                  <div style={{fontSize:'clamp(7px,.55vw,9px)',color:'var(--text-faint)'}}>{topPerformer.dayLabel}, {topPerformer.date.slice(5).replace('-','/')}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:10,marginTop:5}}>
+                  <div style={{fontSize:'clamp(11px,.85vw,14px)',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{topPerformer.name}</div>
+                  <div className="p3-wir-stat-v" style={{color:'var(--color-green)',flexShrink:0}}>{topPerformer.diff>0?'+':''}{topPerformer.diff.toFixed(0)}</div>
+                </div>
+              </div>
+            )}
           </>
         ) : !openDayData ? (
           <>
@@ -935,10 +972,10 @@ export default function ClientDashboard3() {
   const wasteVisible = wasteShowAll ? allWaste : allWaste.slice(0, WASTE_PREVIEW);
 
   const statItems = [
-    { l:'Avg margin', v:`${data.averageMargin.toFixed(1)}%`,  c:getMarginColor(data.averageMargin) },
-    { l:'Low margin', v:data.lowMarginCount,                  c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)' },
-    { l:'Expiring',   v:data.wasteRisk.length,                c:data.wasteRisk.length>0?'var(--color-amber)':'var(--color-green)' },
-    { l:'YTD spend',  v:fmt(data.totalSpending),              c:'var(--text-primary)' },
+    { l:'Avg margin',       v:`${data.averageMargin.toFixed(1)}%`, c:'var(--text-primary)' },
+    { l:'Low-margin items', v:data.lowMarginCount,                 c:'var(--text-primary)' },
+    { l:'Expiring soon',    v:data.wasteRisk.length,               c:'var(--text-primary)' },
+    { l:'YTD spend',        v:fmt(data.totalSpending),             c:'var(--text-primary)' },
   ];
 
   function handleRecClick(i) { setSelectedRec(prev => prev === i ? null : i); }
@@ -1207,7 +1244,9 @@ export default function ClientDashboard3() {
 
                 {/* Card 1 — Identity */}
                 <div className="p3-glance-card">
-                  <div style={{fontSize:'clamp(9px,.64vw,11px)',color:'var(--text-faint)',marginBottom:'clamp(2px,.2vh,3px)'}}>{greeting},</div>
+                  <div style={{display:'flex',alignItems:'center',gap:6,fontSize:'clamp(8px,.6vw,10px)',fontWeight:600,letterSpacing:'.14em',color:'var(--accent)',marginBottom:'clamp(6px,.6vh,9px)'}}>
+                    <span style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite',display:'inline-block',flexShrink:0}}/>ON THE PASS · {new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}
+                  </div>
                   <div style={{fontSize:'clamp(17px,1.35vw,23px)',fontWeight:700,color:'var(--text-primary)',lineHeight:1.1,letterSpacing:'-.03em'}}>{userName}</div>
                   <hr className="p3-glance-rule"/>
                   <div style={{fontSize:'clamp(10px,.8vw,14px)',fontWeight:600,color:'var(--text-primary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{restaurantName}</div>
@@ -1215,17 +1254,19 @@ export default function ClientDashboard3() {
                 </div>
 
                 {/* Card 2 — OptiScore */}
-                <div className="p3-glance-card" style={{alignItems:'center',textAlign:'center'}}>
-                  <div style={{fontSize:'clamp(9px,.64vw,11px)',fontWeight:600,color:'var(--text-faint)',letterSpacing:'.12em',textTransform:'uppercase',marginBottom:'clamp(6px,.6vh,9px)'}}>OptiScore</div>
-                  <div style={{position:'relative',width:'clamp(64px,5.5vw,80px)',height:'clamp(64px,5.5vw,80px)',margin:'0 auto',flexShrink:0}} title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
-                    <svg viewBox="0 0 100 100" width="100%" height="100%" style={{transform:'rotate(-90deg)'}}>
-                      <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="10" fill="none"/>
-                      <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="10" fill="none" strokeDasharray={`${ringDash} ${ringCirc}`} strokeLinecap="round"/>
-                    </svg>
-                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Playfair Display',serif",fontWeight:700,fontSize:'clamp(18px,1.55vw,26px)',color:'var(--text-primary)'}}>{data.aiProfitScore.score}</div>
+                <div className="p3-glance-card">
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'clamp(8px,.8vh,12px)'}}>
+                    <div style={{fontSize:'clamp(9px,.64vw,11px)',fontWeight:600,color:'var(--text-faint)',letterSpacing:'.12em',textTransform:'uppercase'}}>OptiScore</div>
+                    <div style={{fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,letterSpacing:'.06em',color:scoreColor,background:`color-mix(in srgb, ${scoreColor} 12%, transparent)`,border:`1px solid color-mix(in srgb, ${scoreColor} 30%, transparent)`,borderRadius:5,padding:'2px 7px',textTransform:'uppercase'}}>{scoreLabel}</div>
                   </div>
-                  <div style={{fontWeight:700,fontSize:'clamp(10px,.78vw,13px)',color:scoreColor,marginTop:'clamp(6px,.6vh,9px)'}}>{scoreLabel}</div>
-                  <div style={{width:'100%',borderTop:'1px solid var(--border-subtle)',marginTop:'clamp(6px,.6vh,9px)',paddingTop:'clamp(5px,.5vh,7px)',fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)',letterSpacing:'.04em'}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:5}} title={`OptiScore: ${data.aiProfitScore.score}/100 — ${scoreLabel}`}>
+                    <span style={{fontWeight:700,fontSize:'clamp(28px,2.8vw,40px)',lineHeight:.9,letterSpacing:'-.03em',color:'var(--text-primary)',fontVariantNumeric:'tabular-nums'}}>{data.aiProfitScore.score}</span>
+                    <span style={{fontSize:'clamp(11px,.9vw,13px)',fontWeight:600,color:'var(--text-faint)'}}>/ 100</span>
+                  </div>
+                  <div style={{width:'100%',height:5,background:'var(--ring-track)',borderRadius:3,overflow:'hidden',marginTop:'clamp(8px,.8vh,12px)'}}>
+                    <div style={{height:'100%',width:`${Math.max(0,Math.min(100,data.aiProfitScore.score))}%`,background:scoreColor,borderRadius:3}}/>
+                  </div>
+                  <div style={{width:'100%',borderTop:'1px solid var(--border-subtle)',marginTop:'clamp(8px,.8vh,12px)',paddingTop:'clamp(5px,.5vh,8px)',fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)',letterSpacing:'.04em'}}>
                     Updated {new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}
                   </div>
                 </div>
@@ -1287,7 +1328,7 @@ export default function ClientDashboard3() {
               <div className="p3-card">
                 <div className="p3-card-hd">
                   <div className="p3-card-title">Waste Risk</div>
-                  <span className="p3-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk · ${wasteProteins.length} protein`:'All clear'}</span>
+                  <span className="p3-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk · ${data.wasteRisk.filter(w=>w.daysLeft<=3).length} within 3 days`:'All clear'}</span>
                 </div>
                 <div className="p3-waste-list">
                   {data.wasteRisk.length===0&&<div className="p3-empty">Nothing expiring soon — the walk-in is in good shape</div>}
