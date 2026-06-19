@@ -120,7 +120,7 @@ const GLOBAL_CSS = `
 
   /* ── TOP BAR ── */
   .p3-topbar{height:clamp(40px,4.4vh,50px);flex-shrink:0;display:flex;align-items:center;justify-content:space-between;padding:0 clamp(16px,2vw,32px);border-bottom:1px solid var(--border);background:var(--bg-elevated);}
-  .p3-logo{font-family:'Playfair Display',serif;font-size:clamp(15px,1.15vw,20px);letter-spacing:-.3px;color:var(--text-primary);}
+  .p3-logo{font-family:'Inter',sans-serif;font-weight:700;font-size:clamp(15px,1.15vw,20px);letter-spacing:-.3px;color:var(--text-primary);}
   .p3-logo span{color:var(--accent);}
   .p3-tabs{display:flex;gap:2px;}
   .p3-tab{padding:5px 12px;border-radius:6px;font-size:clamp(10px,.78vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;transition:color .15s,background .15s;}
@@ -271,7 +271,7 @@ const GLOBAL_CSS = `
   .p3-waste-row:last-child{border-bottom:none;}
   .p3-waste-top{display:flex;align-items:center;gap:7px;}
   .p3-waste-name{flex:1;font-size:clamp(10px,.74vw,12px);color:var(--text-secondary);text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .p3-waste-days{font-family:'Courier New',monospace;font-size:clamp(9px,.64vw,11px);font-weight:700;white-space:nowrap;}
+  .p3-waste-days{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(9px,.64vw,11px);font-weight:700;white-space:nowrap;}
   .p3-bar-track{width:100%;height:3px;background:var(--border-subtle);border-radius:2px;overflow:hidden;}
   .p3-bar-fill{height:100%;border-radius:2px;}
   .p3-waste-meta{display:flex;justify-content:space-between;gap:8px;}
@@ -284,10 +284,10 @@ const GLOBAL_CSS = `
   .p3-wk-left{display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);min-height:0;overflow-y:auto;}
   .p3-wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:7px;padding:clamp(6px,.6vh,9px) clamp(8px,.8vw,12px);flex-shrink:0;}
   .p3-wir-stat-l{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
-  .p3-wir-stat-v{font-family:'Courier New',monospace;font-size:clamp(14px,1.25vw,19px);font-weight:700;line-height:1;}
+  .p3-wir-stat-v{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(14px,1.25vw,19px);font-weight:700;line-height:1;}
   .p3-wir-stat-s{font-size:clamp(7px,.5vw,9px);color:var(--text-faint);margin-top:2px;}
   .p3-cal{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--border-subtle);padding-left:clamp(10px,1.1vw,18px);}
-  .p3-cal-hd{display:flex;align-items:center;justify-content:space-between;gap:6px;font-family:'Courier New',monospace;font-size:clamp(10px,.78vw,13px);font-weight:700;color:var(--text-secondary);letter-spacing:.08em;margin-bottom:clamp(4px,.4vh,7px);flex-shrink:0;}
+  .p3-cal-hd{display:flex;align-items:center;justify-content:space-between;gap:6px;font-family:'Inter',sans-serif;font-size:clamp(10px,.78vw,13px);font-weight:700;color:var(--text-secondary);letter-spacing:.08em;margin-bottom:clamp(4px,.4vh,7px);flex-shrink:0;}
   .p3-cal-nav{width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:5px;color:var(--text-muted);font-size:13px;line-height:1;cursor:pointer;transition:color .15s,border-color .15s;flex-shrink:0;padding:0;}
   .p3-cal-nav:hover:not(:disabled){color:var(--accent);border-color:var(--text-faint);}
   .p3-cal-nav:disabled{opacity:.3;cursor:default;}
@@ -296,7 +296,7 @@ const GLOBAL_CSS = `
   .p3-cal-days{flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:2px;}
   .p3-cal-day{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:1px solid transparent;border-radius:6px;background:none;cursor:default;font-family:'Inter',sans-serif;min-width:0;min-height:0;padding:1px;}
   .p3-cal-num{font-size:clamp(9px,.7vw,12px);color:var(--text-faint);line-height:1;}
-  .p3-cal-sub{font-family:'Courier New',monospace;font-size:clamp(7px,.55vw,9px);font-weight:700;line-height:1;}
+  .p3-cal-sub{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(7px,.55vw,9px);font-weight:700;line-height:1;}
   .p3-cal-day.has-data{cursor:pointer;background:var(--bg-elevated);border-color:var(--border-subtle);transition:border-color .15s,background .15s;}
   .p3-cal-day.has-data .p3-cal-num{color:var(--text-primary);font-weight:600;}
   .p3-cal-day.has-data:hover{border-color:var(--text-faint);}
@@ -581,19 +581,19 @@ function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
                       <span style={{fontSize:'clamp(7px,.55vw,9px)',fontWeight:700,color:dish.ticketColor,textTransform:'uppercase',letterSpacing:'.08em',flexShrink:0}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
                       <span style={{fontSize:'clamp(10px,.76vw,12px)',fontWeight:600,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{dish.name}</span>
                     </div>
-                    <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:diffColor,whiteSpace:'nowrap'}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)}`:'—'}</span>
+                    <span style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:'clamp(9px,.7vw,11px)',fontWeight:700,color:diffColor,whiteSpace:'nowrap'}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)}`:'—'}</span>
                   </div>
                   <div style={{display:'flex',flexDirection:'column',gap:3}}>
                     <div style={{display:'flex',alignItems:'center',gap:7}}>
                       <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
                       <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
-                      <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
+                      <span style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--accent)',width:22,textAlign:'right',flexShrink:0}}>{dish.sold}</span>
                     </div>
                     {dish.avg!==null && (
                       <div style={{display:'flex',alignItems:'center',gap:7}}>
                         <span style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
                         <div className="p3-bar-track" style={{height:4}}><div className="p3-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
-                        <span style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
+                        <span style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:'clamp(8px,.6vw,10px)',fontWeight:700,color:'var(--text-faint)',width:22,textAlign:'right',flexShrink:0}}>{dish.avg.toFixed(1)}</span>
                       </div>
                     )}
                   </div>
@@ -659,7 +659,7 @@ function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
         ].map(({l,v,c,sub})=>(
           <div key={l} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 8px'}}>
             <div style={{fontSize:9,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.6,marginBottom:4}}>{l}</div>
-            <div style={{fontFamily:'Courier New,monospace',fontSize:17,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
+            <div style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:17,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
             <div style={{fontSize:9,color:'var(--text-faint)',marginTop:3}}>{sub}</div>
           </div>
         ))}
@@ -677,7 +677,7 @@ function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
                   <span key={i} style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:80}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
                 )):<span style={{fontSize:9,color:'var(--text-faint)'}}>No recs</span>}
               </div>
-              <span style={{fontFamily:'Courier New,monospace',fontSize:12,fontWeight:700,color:extraColor,flexShrink:0}}>{day.extraSold>0?'+':''}{day.extraSold}</span>
+              <span style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:12,fontWeight:700,color:extraColor,flexShrink:0}}>{day.extraSold>0?'+':''}{day.extraSold}</span>
               <span style={{fontSize:9,color:'var(--text-faint)',flexShrink:0}}>{isOpen?'▴':'▾'}</span>
             </div>
             {isOpen && openDayData && (
@@ -1119,7 +1119,7 @@ export default function ClientDashboard3() {
                           <div style={{fontSize:11,color:'var(--text-muted)'}}>{l}</div>
                           <div style={{fontSize:10,color:'var(--text-faint)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
                         </div>
-                        <div style={{fontFamily:'Courier New,monospace',fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
+                        <div style={{fontFamily:"'Inter',sans-serif",fontVariantNumeric:'tabular-nums',fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
                       </div>
                     ))}
                   </div>
@@ -1287,7 +1287,7 @@ export default function ClientDashboard3() {
 
               {/* ── THE PASS ── */}
               <div className="p3-pass">
-              <div style={{fontFamily:"'Playfair Display',serif",fontWeight:500,fontSize:'clamp(13px,1.05vw,17px)',letterSpacing:'-.3px',color:'var(--text-primary)',lineHeight:1.25,marginBottom:'clamp(6px,.7vh,10px)',flexShrink:0}}>{greeting}, {userName}. <em style={{fontStyle:'italic',color:'var(--accent)'}}>Tonight's pass is set.</em></div>
+              <div style={{fontFamily:"'Inter',sans-serif",fontWeight:600,fontSize:'clamp(18px,1.7vw,26px)',letterSpacing:'-.3px',color:'var(--text-primary)',lineHeight:1.2,marginBottom:'clamp(6px,.7vh,10px)',flexShrink:0}}>{greeting}, {userName}. <em style={{fontStyle:'italic',color:'var(--accent)'}}>Tonight's pass is set.</em></div>
               <div className="p3-rail-hd">
                 <div className="p3-rail-title">Tonight's Service</div>
                 <div style={{display:'flex',alignItems:'center',gap:12}}>
