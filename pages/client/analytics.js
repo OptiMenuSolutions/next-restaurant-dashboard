@@ -125,7 +125,7 @@ const GLOBAL_CSS = `
   .lg-glance .lg-gcard:nth-child(2){animation-delay:.09s;}
   .lg-glance .lg-gcard:nth-child(3){animation-delay:.15s;}
   .lg-glance .lg-gcard:nth-child(4){animation-delay:.21s;}
-  .lg-gcard-l{font-size:clamp(8px,.6vw,10px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-bottom:clamp(3px,.35vh,6px);display:flex;align-items:center;justify-content:space-between;gap:6px;}
+  .lg-gcard-l{font-size:clamp(9px,.7vw,12px);font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--text-muted);margin-bottom:clamp(3px,.35vh,6px);display:flex;align-items:center;justify-content:space-between;gap:6px;}
   .lg-gcard-v{font-family:'Inter',sans-serif;font-weight:700;font-variant-numeric:tabular-nums;font-size:clamp(18px,1.7vw,28px);letter-spacing:-.03em;line-height:1;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lg-gcard-s{font-size:clamp(8px,.6vw,10px);color:var(--text-faint);margin-top:clamp(3px,.3vh,5px);}
   .lg-chip{font-size:clamp(8px,.58vw,10px);font-weight:700;padding:1px 7px;border-radius:9px;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
@@ -137,7 +137,7 @@ const GLOBAL_CSS = `
   .lg-card.hero{animation-delay:.1s;border-color:color-mix(in srgb, var(--accent) 20%, var(--border));
     background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 3.5%, var(--bg-surface)) 0%, var(--bg-surface) 42%);}
   .lg-card-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:clamp(7px,.8vh,12px);flex-shrink:0;flex-wrap:wrap;}
-  .lg-card-title{font-size:clamp(9px,.68vw,11px);font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--text-secondary);display:flex;align-items:center;gap:8px;white-space:nowrap;}
+  .lg-card-title{font-size:clamp(11px,.85vw,14px);font-weight:600;letter-spacing:-.01em;color:var(--text-primary);display:flex;align-items:center;gap:8px;white-space:nowrap;}
   .lg-card-title::after{content:'';display:block;width:clamp(20px,2.5vw,44px);height:1px;background:var(--border);}
   .lg-card-sub{font-size:clamp(8px,.58vw,10px);color:var(--text-faint);font-weight:400;letter-spacing:.02em;text-transform:none;}
   .lg-toggle{display:flex;background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:6px;padding:2px;gap:2px;}
@@ -162,10 +162,6 @@ const GLOBAL_CSS = `
   .lg-bar{height:clamp(7px,.7vh,10px);background:var(--bg-inset);border-radius:5px;overflow:hidden;position:relative;}
   .lg-bar-fill{height:100%;border-radius:5px;transform-origin:left center;animation:growBar .55s cubic-bezier(.25,.8,.35,1) both;}
   .lg-rank-val{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(10px,.78vw,13px);font-weight:700;text-align:right;white-space:nowrap;}
-  .lg-move-row{display:grid;grid-template-columns:minmax(0,1.2fr) clamp(56px,5vw,84px) 1fr clamp(48px,4.2vw,64px);align-items:center;gap:clamp(7px,.65vw,11px);padding:clamp(4px,.45vh,7px) 0;border-bottom:1px dotted var(--border-subtle);}
-  .lg-move-row:last-child{border-bottom:none;}
-  .lg-move-count{font-family:'Courier New',monospace;font-size:clamp(9px,.66vw,11px);color:var(--text-muted);white-space:nowrap;text-align:right;}
-  .lg-delta{font-family:'Inter',sans-serif;font-variant-numeric:tabular-nums;font-size:clamp(10px,.76vw,13px);font-weight:700;text-align:right;white-space:nowrap;}
 
   /* rhythm: tally columns */
   .lg-cols{flex:1;min-height:0;display:flex;align-items:stretch;gap:clamp(6px,.7vw,12px);padding-top:clamp(4px,.5vh,8px);}
@@ -335,8 +331,8 @@ function TrendLine({ data, valueKey = 'rev', avg }) {
 
         {pts.map((d, i) => (
           <circle key={`h${i}`} cx={xOf(i)} cy={yOf(d[valueKey])} r={22} fill="transparent" style={{ cursor:'crosshair' }}
-            onMouseEnter={e => { setActiveIdx(i); setTip({ x:e.clientX, y:e.clientY, d }); }}
-            onMouseMove={e => setTip(prev => prev ? { ...prev, x:e.clientX, y:e.clientY } : null)}
+            onMouseEnter={e => { const r = wrapRef.current.getBoundingClientRect(); setActiveIdx(i); setTip({ x:e.clientX - r.left, y:e.clientY - r.top, d }); }}
+            onMouseMove={e => { const r = wrapRef.current.getBoundingClientRect(); setTip(prev => prev ? { ...prev, x:e.clientX - r.left, y:e.clientY - r.top } : null); }}
             onMouseLeave={() => { setActiveIdx(null); setTip(null); }} />
         ))}
         {activeIdx !== null && (
@@ -354,7 +350,11 @@ function TrendLine({ data, valueKey = 'rev', avg }) {
         ))}
       </svg>
       {tip && (
-        <div style={{ position:'fixed', left:tip.x + 14, top:tip.y - 56, background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 11px', fontSize:11, pointerEvents:'none', whiteSpace:'nowrap', zIndex:999, boxShadow:'0 6px 18px rgba(0,0,0,.5)' }}>
+        <div style={{ position:'absolute',
+          left: tip.x > W - 130 ? undefined : tip.x + 14,
+          right: tip.x > W - 130 ? W - tip.x + 14 : undefined,
+          top: Math.max(0, tip.y - 56),
+          background:'var(--bg-elevated)', border:'1px solid var(--border)', borderRadius:8, padding:'7px 11px', fontSize:11, pointerEvents:'none', whiteSpace:'nowrap', zIndex:999, boxShadow:'0 6px 18px rgba(0,0,0,.5)' }}>
           <div style={{ fontFamily:"'Playfair Display',serif", fontWeight:600, fontSize:14, color:'var(--accent)', marginBottom:2 }}>
             {valueKey === 'rev' ? fmtD(tip.d[valueKey]) : `${Math.round(tip.d[valueKey])} items`}
           </div>
@@ -396,13 +396,16 @@ function MoversList({ tab, metric, topSellers, risers, fallers }) {
   return (
     <div className="lg-scroll">
       {list.map((item, i) => (
-        <div key={item.name} className="lg-move-row">
-          <div className="lg-rank-name">{item.name}</div>
-          <span className="lg-move-count">{Math.round(item.prev)} → {Math.round(item.curr)}</span>
+        <div key={item.name} className="lg-rank-row">
+          <span className="lg-rank-num">{i + 1}</span>
+          <div style={{ minWidth:0 }}>
+            <div className="lg-rank-name">{item.name}</div>
+            <span className="lg-rank-cat">{Math.round(item.prev)} → {Math.round(item.curr)} sold</span>
+          </div>
           <div className="lg-bar">
             <div className="lg-bar-fill" style={{ width:`${Math.min(100, Math.abs(item.change))}%`, background:`linear-gradient(90deg, color-mix(in srgb, ${color} 50%, transparent), ${color})`, animationDelay:`${i * 0.05}s` }} />
           </div>
-          <div className="lg-delta" style={{ color }}>{item.change > 0 ? '▲' : '▼'} {Math.abs(item.change).toFixed(0)}%</div>
+          <div className="lg-rank-val" style={{ color }}>{item.change > 0 ? '▲' : '▼'} {Math.abs(item.change).toFixed(0)}%</div>
         </div>
       ))}
     </div>
