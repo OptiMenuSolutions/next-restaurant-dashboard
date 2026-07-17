@@ -126,7 +126,7 @@ const GLOBAL_CSS = `
   .lg-glance .lg-gcard:nth-child(3){animation-delay:.15s;}
   .lg-glance .lg-gcard:nth-child(4){animation-delay:.21s;}
   .lg-gcard-l{font-size:clamp(8px,.6vw,10px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);margin-bottom:clamp(3px,.35vh,6px);display:flex;align-items:center;justify-content:space-between;gap:6px;}
-  .lg-gcard-v{font-family:'Playfair Display',serif;font-weight:600;font-size:clamp(19px,1.85vw,30px);letter-spacing:-.02em;line-height:1;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .lg-gcard-v{font-family:'Inter',sans-serif;font-weight:700;font-variant-numeric:tabular-nums;font-size:clamp(18px,1.7vw,28px);letter-spacing:-.03em;line-height:1;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .lg-gcard-s{font-size:clamp(8px,.6vw,10px);color:var(--text-faint);margin-top:clamp(3px,.3vh,5px);}
   .lg-chip{font-size:clamp(8px,.58vw,10px);font-weight:700;padding:1px 7px;border-radius:9px;white-space:nowrap;font-variant-numeric:tabular-nums;letter-spacing:.02em;}
   .lg-chip.up{background:color-mix(in srgb, var(--color-green) 12%, transparent);color:var(--color-green);border:1px solid color-mix(in srgb, var(--color-green) 25%, transparent);}
@@ -1039,7 +1039,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="lgm-sub">
             <div>
-              <div style={{ fontFamily:"'Playfair Display',serif", fontSize:16, fontWeight:600 }}>The Ledger</div>
+              <div style={{ fontFamily:"'Inter',sans-serif", fontSize:15, fontWeight:600, letterSpacing:'-.3px' }}>Sales Analytics</div>
               <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:1 }}>
                 {hasSalesData && A ? `${A.stats.totalDays} days · ${fmt(A.stats.totalRevenue)} total` : 'Upload POS data to begin'}
               </div>
@@ -1079,7 +1079,7 @@ export default function AnalyticsPage() {
                         ].map(({ l, v, c, s }) => (
                           <div key={l} className="lgm-card" style={{ padding:'12px 14px' }}>
                             <div style={{ fontSize:9, color:'var(--text-faint)', textTransform:'uppercase', letterSpacing:'.12em', fontWeight:600, marginBottom:6 }}>{l}</div>
-                            <div style={{ fontFamily:"'Playfair Display',serif", fontSize:21, fontWeight:600, color:c, lineHeight:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v}</div>
+                            <div style={{ fontFamily:"'Inter',sans-serif", fontSize:20, fontWeight:700, fontVariantNumeric:'tabular-nums', letterSpacing:'-.02em', color:c, lineHeight:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{v}</div>
                             <div style={{ fontSize:9, color:'var(--text-faint)', marginTop:5 }}>{s}</div>
                           </div>
                         ))}
@@ -1230,8 +1230,8 @@ export default function AnalyticsPage() {
         ) : !hasSalesData ? (
           /* ── EMPTY STATE ── */
           <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:14, padding:24 }}>
-            <div style={{ fontFamily:"'Playfair Display',serif", fontWeight:600, fontSize:'clamp(20px,2vw,32px)', letterSpacing:'-.02em', textAlign:'center' }}>
-              The ledger is empty.
+            <div style={{ fontFamily:"'Inter',sans-serif", fontWeight:600, fontSize:'clamp(18px,1.7vw,26px)', letterSpacing:'-.3px', textAlign:'center' }}>
+              No sales data yet.
             </div>
             <div style={{ fontSize:'clamp(11px,.85vw,14px)', color:'var(--text-muted)', textAlign:'center', maxWidth:440, lineHeight:1.7 }}>
               Export a sales CSV from your POS system and upload it here — revenue trends, menu movers, and service rhythm will fill these pages automatically.
@@ -1244,9 +1244,12 @@ export default function AnalyticsPage() {
             {/* ── PAGE HEADER ── */}
             <div className="lg-ph">
               <div>
-                <div className="lg-ph-title">
-                  Here's how service is running{A && A.trendPct !== 0 && (
-                    <em> — {A.trendPct >= 0 ? 'up' : 'down'} {Math.abs(A.trendPct).toFixed(1)}% {dateRange === 'All' ? 'over the period' : `over the last ${dateRange}`}.</em>
+                <div className="lg-ph-title" style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                  Sales Analytics
+                  {A && A.trendPct !== 0 && (
+                    <span className={`lg-chip ${A.trendPct >= 0 ? 'up' : 'dn'}`} style={{ fontSize:'clamp(10px,.72vw,12px)', padding:'3px 10px' }}>
+                      {A.trendPct >= 0 ? '▲' : '▼'} {Math.abs(A.trendPct).toFixed(1)}% {dateRange === 'All' ? 'over the period' : `over the last ${dateRange}`}
+                    </span>
                   )}
                 </div>
                 <div className="lg-stamp">
@@ -1269,7 +1272,7 @@ export default function AnalyticsPage() {
             <div className="lg-top">
               <div className="lg-glance">
                 <div className="lg-gcard">
-                  <div className="lg-gcard-l">Revenue{A && <span className={`lg-chip ${A.trendPct >= 0 ? 'up' : 'dn'}`}>{A.trendPct >= 0 ? '▲' : '▼'} {Math.abs(A?.trendPct || 0).toFixed(1)}%</span>}</div>
+                  <div className="lg-gcard-l">Revenue</div>
                   <div className="lg-gcard-v">{A ? fmt(A.stats.totalRevenue) : '—'}</div>
                   <div className="lg-gcard-s">{A ? `${A.stats.totalDays} days of sales` : ''}</div>
                 </div>
