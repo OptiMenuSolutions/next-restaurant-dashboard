@@ -774,8 +774,9 @@ export default function AnalyticsPage() {
       itemMap[s.item_name].qty += parseFloat(s.quantity_sold || 0);
       itemMap[s.item_name].rev += parseFloat(s.revenue || 0);
     }
-    const items = Object.values(itemMap).sort((a, b) => b.qty - a.qty);
-    const topSellers = items.slice(0, 8);
+    const items = Object.values(itemMap);
+    const topByQty = [...items].sort((a, b) => b.qty - a.qty).slice(0, 8);
+    const topByRev = [...items].sort((a, b) => b.rev - a.rev).slice(0, 8);
 
     // rising / falling: last 7d vs prior 7d anchored to latest sale date,
     // over ALL sales so the comparison doesn't depend on the range toggle
@@ -834,7 +835,7 @@ export default function AnalyticsPage() {
     const trendPct = first > 0 ? ((last - first) / first) * 100 : 0;
     const bestDay = trendData.reduce((a, b) => (b.rev > a.rev ? b : a));
 
-    return { anchor, stats, trendData, topSellers, risers, fallers, dayOfWeekData, hourlyData, categoryData, trendPct, bestDay };
+    return { anchor, stats, trendData, topByQty, topByRev, risers, fallers, dayOfWeekData, hourlyData, categoryData, trendPct, bestDay };
   }, [allSales, dateRange, trendView]);
 
   // ── Upload flow (logic preserved) ──────────────────────────────────────────
@@ -1123,7 +1124,7 @@ export default function AnalyticsPage() {
                         ) : <span className="lg-card-sub">7d vs prior 7d</span>}
                       </div>
                       <div style={{ display:'flex', flexDirection:'column', minHeight:140 }}>
-                        <MoversList tab={moversTab} metric={moversMetric} topSellers={A.topSellers} risers={A.risers} fallers={A.fallers} />
+                        <MoversList tab={moversTab} metric={moversMetric} topSellers={moversMetric === 'qty' ? A.topByQty : A.topByRev} risers={A.risers} fallers={A.fallers} />
                       </div>
                     </div>
                   )}
@@ -1334,7 +1335,7 @@ export default function AnalyticsPage() {
                     </div>
                   </div>
                 </div>
-                {A ? <MoversList tab={moversTab} metric={moversMetric} topSellers={A.topSellers} risers={A.risers} fallers={A.fallers} />
+                {A ? <MoversList tab={moversTab} metric={moversMetric} topSellers={moversMetric === 'qty' ? A.topByQty : A.topByRev} risers={A.risers} fallers={A.fallers} />
                    : <div className="lg-empty">No data in this range</div>}
               </div>
 
