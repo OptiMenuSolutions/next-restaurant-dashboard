@@ -108,28 +108,31 @@ const S = {
 const Rule = () => <span style={S.rule} aria-hidden="true" />;
 
 // ── MarginSpectrum: every dish is a dot on a 0–100% margin axis ──────────────
-function MarginSpectrum({ items, onSelect, avgMargin }) {
+function MarginSpectrum({ items, onSelect, avgMargin, tall = false }) {
   const dots = items
     .map(i => ({ id: i.id, name: i.name, m: getMarginNum(i.price, i.cost) }))
     .filter(d => d.m !== null)
     .map(d => ({ ...d, x: Math.max(0, Math.min(100, d.m)) }));
   if (!dots.length) return <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 0' }}>No margin data yet — add prices and costs to see the spread.</div>;
   const avgX = Math.max(0, Math.min(100, avgMargin));
+  const lanes = tall ? 7 : 3; // vertical jitter lanes so dots don't stack
+  const spread = tall ? 13 : 9;
   return (
-    <div>
-      <div className="dp-spectrum">
+    <div style={tall ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' } : undefined}>
+      <div className="dp-spectrum" style={tall ? { height: 'clamp(120px,22vh,220px)' } : undefined}>
         <div className="dp-spectrum-axis" />
         <div className="dp-spectrum-target" style={{ left: `${LOW_MARGIN_THRESHOLD}%` }} />
         {/* average marker */}
-        <div style={{ position: 'absolute', left: `${avgX}%`, top: 0, transform: 'translateX(-50%)', fontSize: 8, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>avg ▾</div>
+        <div style={{ position: 'absolute', left: `${avgX}%`, top: 0, transform: 'translateX(-50%)', fontSize: tall ? 10 : 8, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>avg ▾</div>
         {dots.map((d, i) => (
           <button key={d.id} type="button" className="dp-dot" title={`${d.name} — ${d.m.toFixed(1)}%`}
             onClick={() => onSelect(d.id)}
             style={{
               left: `${d.x}%`,
-              top: `calc(50% + ${((i % 3) - 1) * 9}px)`,
+              top: `calc(50% + ${((i % lanes) - Math.floor(lanes / 2)) * spread}px)`,
               background: getMarginColor(d.m),
               opacity: 0.9,
+              ...(tall ? { width: 10, height: 10 } : {}),
             }} />
         ))}
       </div>
@@ -1572,14 +1575,13 @@ export default function ClientMenuItems() {
               </div>
 
               {!selectedItem && (() => {
-                const laggards = [...itemsWithMargins].sort((a, b) => getMarginNum(a.price, a.cost) - getMarginNum(b.price, b.cost)).slice(0, 5);
                 const missing = menuItems.filter(i => !i.price || !i.cost);
                 const avgC = avgMargin >= 70 ? 'var(--color-green)' : avgMargin >= 60 ? 'var(--accent)' : avgMargin >= 40 ? 'var(--color-amber)' : 'var(--color-red)';
                 return (
                   <div className="mi-detail-body">
-                    {/* MENU HEALTH: the whole menu on one axis */}
-                    <div className="dp-hero tinted">
-                      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+                    {/* MENU HEALTH: the whole menu on one axis — this IS the overview */}
+                    <div className="dp-hero tinted" style={{ flex: 1, minHeight: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
                         <div>
                           <div className="dp-lbl">Average margin</div>
                           <div className="dp-big" style={{ color: avgC }}>{avgMargin.toFixed(1)}%</div>
@@ -1591,40 +1593,16 @@ export default function ClientMenuItems() {
                           </div>
                         </div>
                       </div>
-                      <MarginSpectrum items={itemsWithMargins} onSelect={selectItem} avgMargin={avgMargin} />
-                      <div className="dp-sub" style={{ color: 'var(--text-faint)', textAlign: 'center' }}>every dot is a dish — click one to open it</div>
-                    </div>
-
-                    {/* LEADERS / LAGGARDS */}
-                    <div className="mi-ov-row">
-                      <div className="mi-ov-w">
-                        <div className="mi-ov-lbl">Leaders</div>
-                        {topMargin.length > 0 ? topMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
-                      </div>
-                      <div className="mi-ov-w">
-                        <div className="mi-ov-lbl">Laggards</div>
-                        {laggards.length > 0 ? laggards.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>}
-                      </div>
-                    </div>
-
-                    {/* MISSING DATA */}
-                    {missing.length > 0 && (
-                      <div style={S.wf}>
-                        <div style={{ ...S.wlbl, color: 'var(--color-amber)' }}>Missing Data<Rule /></div>
-                        <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--text-muted)', marginBottom: 7 }}>
-                          {missing.length} item{missing.length !== 1 ? 's have' : ' has'} no price or cost — they're invisible to margin analysis.
-                        </div>
-                        {missing.slice(0, 4).map(i => (
-                          <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}>
-                            <span className="mi-ov-name">{i.name}</span>
-                            <span className="mi-chip warn">{!i.price ? 'No price' : 'No cost'}</span>
+                      <MarginSpectrum items={itemsWithMargins} onSelect={selectItem} avgMargin={avgMargin} tall />
+                      <div style={{ flexShrink: 0 }}>
+                        {missing.length > 0 && (
+                          <div className="dp-sub" style={{ color: 'var(--color-amber)', textAlign: 'center', marginBottom: 4 }}>
+                            {missing.length} item{missing.length !== 1 ? 's' : ''} missing price or cost — not shown on the axis
                           </div>
-                        ))}
-                        {missing.length > 4 && <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-faint)', paddingTop: 5 }}>+ {missing.length - 4} more</div>}
+                        )}
+                        <div className="dp-sub" style={{ color: 'var(--text-faint)', textAlign: 'center' }}>every dot is a dish — click one to open its plate economics</div>
                       </div>
-                    )}
-
-                    <div className="mi-hint">Click any menu item to see its plate economics →</div>
+                    </div>
                   </div>
                 );
               })()}
