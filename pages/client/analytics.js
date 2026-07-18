@@ -51,7 +51,8 @@ function isWeekendStr(str) {
 
 const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const DATE_RANGES = ['7d','14d','30d','All'];
-const CAT_COLORS = ['var(--accent)','var(--color-amber)','var(--color-green)','#c96f4a','#9b7ee8','#e85e8a','#4a9ede','#5fb8a5'];
+// single-hue ramp: category rank = accent intensity, no rainbow
+const catShade = (i) => `color-mix(in srgb, var(--accent) ${Math.max(14, 88 - i * 13)}%, var(--bg-inset))`;
 const NAV_TABS = [
   { label:'Dashboard',   path:'/client/dashboard' },
   { label:'Invoices',    path:'/client/invoices' },
@@ -496,13 +497,13 @@ function MixBody({ categoryData }) {
       <div className="lg-mixbar" role="img" aria-label="Revenue share by category">
         {categoryData.map((d, i) => (
           <div key={d.name} title={`${d.name} — ${((d.value / total) * 100).toFixed(0)}%`}
-            style={{ width:`${(d.value / total) * 100}%`, background:CAT_COLORS[i % CAT_COLORS.length], animationDelay:`${i * 0.06}s` }} />
+            style={{ width:`${(d.value / total) * 100}%`, background:catShade(i), animationDelay:`${i * 0.06}s` }} />
         ))}
       </div>
       <div className="lg-scroll">
         {categoryData.map((d, i) => (
           <div key={d.name} className="lg-mix-row">
-            <span className="lg-dot" style={{ background:CAT_COLORS[i % CAT_COLORS.length], margin:0 }} />
+            <span className="lg-dot" style={{ background:catShade(i), margin:0 }} />
             <div className="lg-mix-name">{d.name}</div>
             <div className="lg-mix-val">{fmt(d.value)}</div>
             <div className="lg-mix-pct">{((d.value / total) * 100).toFixed(0)}%</div>
