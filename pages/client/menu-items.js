@@ -107,6 +107,37 @@ const S = {
 };
 const Rule = () => <span style={S.rule} aria-hidden="true" />;
 
+// ── MarginSpectrum: every dish is a dot on a 0–100% margin axis ──────────────
+function MarginSpectrum({ items, onSelect, avgMargin }) {
+  const dots = items
+    .map(i => ({ id: i.id, name: i.name, m: getMarginNum(i.price, i.cost) }))
+    .filter(d => d.m !== null)
+    .map(d => ({ ...d, x: Math.max(0, Math.min(100, d.m)) }));
+  if (!dots.length) return <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 0' }}>No margin data yet — add prices and costs to see the spread.</div>;
+  const avgX = Math.max(0, Math.min(100, avgMargin));
+  return (
+    <div>
+      <div className="dp-spectrum">
+        <div className="dp-spectrum-axis" />
+        <div className="dp-spectrum-target" style={{ left: `${LOW_MARGIN_THRESHOLD}%` }} />
+        {/* average marker */}
+        <div style={{ position: 'absolute', left: `${avgX}%`, top: 0, transform: 'translateX(-50%)', fontSize: 8, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>avg ▾</div>
+        {dots.map((d, i) => (
+          <button key={d.id} type="button" className="dp-dot" title={`${d.name} — ${d.m.toFixed(1)}%`}
+            onClick={() => onSelect(d.id)}
+            style={{
+              left: `${d.x}%`,
+              top: `calc(50% + ${((i % 3) - 1) * 9}px)`,
+              background: getMarginColor(d.m),
+              opacity: 0.9,
+            }} />
+        ))}
+      </div>
+      <div className="dp-axis-cap"><span>0%</span><span>margin</span><span>100%</span></div>
+    </div>
+  );
+}
+
 const CSS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: var(--bg-root); overflow: hidden; }
@@ -286,10 +317,42 @@ const CSS = `
   .mi-ov-val { font-size: clamp(9px,.72vw,12px); font-weight: 700; flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .mi-hint { font-size: clamp(8px,.64vw,10px); color: var(--text-faint); text-align: center; padding: clamp(5px,.5vh,8px); border: 1px dashed var(--border); border-radius: 7px; }
 
+  /* ── DETAIL PANEL v2: heroes, spectrum, plate split, ladder ── */
+  .dp-hero { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 10px; padding: clamp(11px,1.05vw,16px); display: flex; flex-direction: column; gap: clamp(8px,.8vh,12px); }
+  .dp-hero.tinted { border-color: color-mix(in srgb, var(--accent) 18%, var(--border-subtle)); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 3.5%, var(--bg-elevated)) 0%, var(--bg-elevated) 55%); }
+  .dp-lbl { font-size: clamp(8px,.6vw,10px); color: var(--text-faint); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .dp-big { font-size: clamp(22px,2vw,32px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.03em; line-height: 1; }
+  .dp-sub { font-size: clamp(9px,.68vw,11px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .dp-split { display: flex; height: clamp(13px,1.2vh,17px); border-radius: 8px; overflow: hidden; background: var(--bg-inset); }
+  .dp-split div { transform-origin: left center; animation: growBar .55s cubic-bezier(.25,.8,.35,1) both; }
+  .dp-split-legend { display: flex; justify-content: space-between; font-size: clamp(8px,.62vw,10px); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .dp-spectrum { position: relative; height: clamp(44px,5vh,58px); margin-top: clamp(2px,.2vh,4px); }
+  .dp-spectrum-axis { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: var(--bg-inset); border-radius: 1px; }
+  .dp-spectrum-target { position: absolute; top: 6px; bottom: 14px; width: 1px; background: var(--text-faint); opacity: .8; }
+  .dp-spectrum-target::after { content: 'target 60%'; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 8px; color: var(--text-faint); padding-top: 2px; white-space: nowrap; }
+  .dp-dot { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%,-50%); cursor: pointer; border: 1.5px solid var(--bg-elevated); transition: transform .12s; padding: 0; }
+  .dp-dot:hover { transform: translate(-50%,-50%) scale(1.6); z-index: 2; }
+  .dp-axis-cap { display: flex; justify-content: space-between; font-size: clamp(7px,.55vw,9px); color: var(--text-faint); font-variant-numeric: tabular-nums; }
+  .dp-stack { display: flex; height: clamp(9px,.9vh,12px); border-radius: 6px; overflow: hidden; background: var(--bg-inset); margin-bottom: clamp(7px,.7vh,10px); }
+  .dp-stack div { transform-origin: left center; animation: growBar .55s cubic-bezier(.25,.8,.35,1) both; }
+  .dp-ladder-row { display: flex; align-items: baseline; gap: 10px; padding: clamp(6px,.55vh,9px) clamp(8px,.75vw,11px); border-radius: 8px; border: 1px solid transparent; }
+  .dp-ladder-row.current { border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: color-mix(in srgb, var(--accent) 5%, transparent); }
+  .dp-ladder-name { flex: 1; font-size: clamp(9px,.7vw,11px); color: var(--text-muted); }
+  .dp-ladder-row.current .dp-ladder-name { color: var(--accent); font-weight: 600; }
+  .dp-ladder-val { font-size: clamp(11px,.85vw,14px); font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .dp-ladder-delta { font-size: clamp(8px,.6vw,10px); color: var(--text-faint); font-variant-numeric: tabular-nums; width: 64px; text-align: right; }
+  .dp-delta-chip { font-size: clamp(10px,.74vw,12px); font-weight: 700; padding: 3px 10px; border-radius: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dp-delta-chip.up { background: color-mix(in srgb, var(--color-green) 12%, transparent); color: var(--color-green); border: 1px solid color-mix(in srgb, var(--color-green) 25%, transparent); }
+  .dp-delta-chip.dn { background: color-mix(in srgb, var(--color-red) 12%, transparent); color: var(--color-red); border: 1px solid color-mix(in srgb, var(--color-red) 25%, transparent); }
+  .dp-delta-chip.flat { background: var(--bg-inset); color: var(--text-muted); border: 1px solid var(--border-subtle); }
+
   .cs-complete { color: var(--color-green); }
   .cs-incomplete { color: var(--color-red); }
   .cs-partial { color: var(--color-amber); }
 `;
+
+// single-hue ramp for component cost shares — rank = intensity, no rainbow
+const compShade = (i) => `color-mix(in srgb, var(--accent) ${Math.max(18, 85 - i * 16)}%, var(--bg-inset))`;
 
 export default function ClientMenuItems() {
   const router = useRouter();
@@ -614,40 +677,76 @@ export default function ClientMenuItems() {
   function renderDetailsTab() {
     if (!selectedItemData) return null;
     const inc = getIncompleteIngredients(selectedItemData);
+    const price = parseFloat(selectedItemData.item?.price || 0);
+    const profit = price - totalCost;
+    const mc = getMarginColor(profitMargin);
+    const costPct = price > 0 ? Math.max(0, Math.min(100, (totalCost / price) * 100)) : 0;
+    const isEst = hasEstimatedCosts(selectedItemData.item);
+    const ingCount = getIngredientCount(menuItems.find(i => i.id === selectedItem) || {});
+    // pricing ladder: cost-target prices with the current price slotted in place
+    const ladder = totalCost > 0 ? [
+      { label: 'Premium · 20% food cost', value: totalCost / 0.20 },
+      { label: 'Recommended · 25% food cost', value: totalCost / 0.25 },
+      { label: 'Break-even · 30% food cost', value: totalCost / 0.30 },
+      ...(price > 0 ? [{ label: 'Current menu price', value: price, current: true }] : []),
+    ].sort((a, b) => b.value - a.value) : [];
     return (
       <>
-        <div style={S.wf}>
-          <div style={S.wlbl}>Menu Item<Rule /></div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 'clamp(6px,.55vw,9px)' }}>
-            {[
-              { l: 'Menu Price', v: selectedItemData.item?.price ? formatCurrency(selectedItemData.item.price) : '—', c: 'var(--accent)' },
-              { l: 'Total Cost', v: formatCurrency(totalCost), c: 'var(--text-primary)' },
-              { l: 'Profit Margin', v: profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—', c: getMarginColor(profitMargin), est: hasEstimatedCosts(selectedItemData.item) },
-              { l: 'Ingredients', v: getIngredientCount(menuItems.find(i => i.id === selectedItem) || {}), c: 'var(--text-primary)' },
-            ].map(({ l, v, c, est }) => (
-              <div key={l} style={S.pill}>
-                <div style={S.pillLbl}>{l}{est && <span style={{ marginLeft: 4, color: 'var(--color-amber)', textTransform: 'none' }}>~est</span>}</div>
-                <div style={{ ...S.pillVal, color: c }}>{v}</div>
+        {/* THE PLATE: what one sale of this dish is worth */}
+        <div className="dp-hero tinted">
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+            <div>
+              <div className="dp-lbl">Menu price</div>
+              <div className="dp-big" style={{ color: 'var(--text-primary)' }}>{price > 0 ? formatCurrency(price) : '—'}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div className="dp-lbl">Margin{isEst && <span style={{ color: 'var(--color-amber)', textTransform: 'none' }}> ~est</span>}</div>
+              <div className="dp-big" style={{ color: mc }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</div>
+            </div>
+          </div>
+          {price > 0 && totalCost > 0 ? (
+            <>
+              <div className="dp-split" role="img" aria-label="Cost vs profit share of the menu price">
+                <div title={`Cost ${formatCurrency(totalCost)}`} style={{ width: `${costPct}%`, background: 'var(--bg-inset)', borderRight: '1px solid var(--border)' }} />
+                <div title={`Profit ${formatCurrency(profit)}`} style={{ width: `${100 - costPct}%`, background: `linear-gradient(90deg, color-mix(in srgb, ${mc} 55%, transparent), ${mc})` }} />
+              </div>
+              <div className="dp-split-legend">
+                <span>Cost <strong style={{ color: 'var(--text-secondary)' }}>{formatCurrency(totalCost)}</strong></span>
+                <span>Profit <strong style={{ color: mc }}>{formatCurrency(profit)}</strong> / plate</span>
+              </div>
+            </>
+          ) : (
+            <div className="dp-sub">{price === 0 ? 'No menu price on file yet.' : 'No cost data yet — build the recipe to see plate economics.'}</div>
+          )}
+          <div className="dp-sub" style={{ color: 'var(--text-faint)' }}>{ingCount} ingredient{ingCount !== 1 ? 's' : ''} in the recipe</div>
+        </div>
+
+        {/* PRICING LADDER: where the current price sits among the targets */}
+        {ladder.length > 0 && (
+          <div style={S.wf}>
+            <div style={S.wlbl}>Pricing Ladder<Rule /></div>
+            {ladder.map((r) => (
+              <div key={r.label} className={`dp-ladder-row${r.current ? ' current' : ''}`}>
+                <span className="dp-ladder-name">{r.label}</span>
+                <span className="dp-ladder-val">{formatCurrency(r.value)}</span>
+                <span className="dp-ladder-delta">{r.current ? '● here' : price > 0 ? `${r.value >= price ? '+' : '−'}${formatCurrency(Math.abs(r.value - price)).replace('$', '$')}` : ''}</span>
               </div>
             ))}
-          </div>
-        </div>
-        {totalCost > 0 && (
-          <div style={S.wf}>
-            <div style={S.wlbl}>Pricing Recommendations<Rule /></div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 'clamp(5px,.5vw,8px)' }}>
-              {[{ l: 'Break-even\n30% cost', v: formatCurrency(totalCost / 0.30), highlight: false }, { l: 'Recommended\n25% cost', v: formatCurrency(totalCost / 0.25), highlight: true }, { l: 'Premium\n20% cost', v: formatCurrency(totalCost / 0.20), highlight: false }].map(({ l, v, highlight }) => (
-                <div key={l} style={{ ...S.pill, textAlign: 'center', borderColor: highlight ? 'color-mix(in srgb, var(--color-green) 30%, transparent)' : 'var(--border-subtle)' }}>
-                  <div style={{ ...S.pillLbl, whiteSpace: 'pre-line', lineHeight: 1.4, marginBottom: 5 }}>{l}</div>
-                  <div style={{ ...S.pillVal, color: highlight ? 'var(--color-green)' : 'var(--text-primary)', fontSize: 'clamp(12px,1vw,15px)' }}>{v}</div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
         {selectedItemData.components.length > 0 && (
           <div style={S.wf}>
-            <div style={S.wlbl}>Recipe<Rule /></div>
+            <div style={S.wlbl}>Where the Cost Goes<Rule /></div>
+            {totalCost > 0 && (
+              <div className="dp-stack" role="img" aria-label="Component share of total cost">
+                {[...selectedItemData.components]
+                  .sort((a, b) => (b.calculatedCost || b.storedCost || 0) - (a.calculatedCost || a.storedCost || 0))
+                  .map((c, i) => {
+                    const cc = c.calculatedCost || c.storedCost || 0;
+                    return <div key={c.id} title={`${c.name} — ${((cc / totalCost) * 100).toFixed(0)}%`} style={{ width: `${Math.max(1, (cc / totalCost) * 100)}%`, background: compShade(i), animationDelay: `${i * 0.06}s` }} />;
+                  })}
+              </div>
+            )}
             {selectedItemData.components.map(c => (
               <div key={c.id} className="mi-comp">
                 <div className="mi-comp-hd" onClick={() => toggleComp(c.id)}>
@@ -714,23 +813,30 @@ export default function ClientMenuItems() {
 
   function renderOptimizeTab() {
     if (!selectedItemData) return null;
+    const delta = optimizedMargin !== null && profitMargin !== null ? optimizedMargin - profitMargin : null;
+    const deltaCls = delta === null || Math.abs(delta) < 0.05 ? 'flat' : delta > 0 ? 'up' : 'dn';
     return (
       <>
-        <div style={S.wf}>
-          <div style={S.wlbl}>Scenario Comparison<Rule /></div>
-          <div className="mi-opt-compare">
-            <div className="mi-opt-card mi-opt-orig">
-              <div className="mi-opt-card-title">Original</div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(totalCost)}</span></div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Price</span><span className="mi-opt-val">{formatCurrency(selectedItemData.item?.price)}</span></div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(profitMargin) }}>{profitMargin !== null ? `${profitMargin.toFixed(1)}%` : '—'}</span></div>
+        {/* OUTCOME: the scenario's margin, front and center */}
+        <div className="dp-hero tinted">
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+            <div>
+              <div className="dp-lbl">Scenario margin</div>
+              <div className="dp-big" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</div>
             </div>
-            <div className="mi-opt-card mi-opt-new">
-              <div className="mi-opt-card-title" style={{ color: 'var(--color-green)' }}>Optimized</div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Cost</span><span className="mi-opt-val">{formatCurrency(optimizedCost)}</span></div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Price</span><input className="mi-opt-price-input" type="number" step="0.01" min="0" value={optimizedPrice ?? selectedItemData.item?.price ?? ''} onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} /></div>
-              <div className="mi-opt-row"><span className="mi-opt-label">Margin</span><span className="mi-opt-val" style={{ color: getMarginColor(optimizedMargin) }}>{optimizedMargin !== null ? `${optimizedMargin.toFixed(1)}%` : '—'}</span></div>
-            </div>
+            <span className={`dp-delta-chip ${deltaCls}`}>
+              {delta === null ? '—' : `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta).toFixed(1)} pts`}
+            </span>
+          </div>
+          <div className="dp-sub">
+            Cost {formatCurrency(totalCost)} → <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(optimizedCost)}</strong>
+            {'  ·  '}Price {formatCurrency(selectedItemData.item?.price)} → <strong style={{ color: 'var(--text-primary)' }}>{formatCurrency(effectivePrice)}</strong>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 8, borderTop: '1px dotted var(--border-subtle)' }}>
+            <span className="dp-lbl" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 'clamp(9px,.7vw,11px)' }}>Try a new menu price</span>
+            <input className="mi-opt-price-input" type="number" step="0.01" min="0"
+              value={optimizedPrice ?? selectedItemData.item?.price ?? ''}
+              onChange={e => setOptimizedPrice(parseFloat(e.target.value) || null)} />
           </div>
         </div>
         <div style={S.wf}>
@@ -1465,38 +1571,63 @@ export default function ClientMenuItems() {
                 </div>
               </div>
 
-              {!selectedItem && (
-                <div className="mi-detail-body">
-                  <div className="mi-ov-row">
-                    <div className="mi-ov-w">
-                      <div className="mi-ov-lbl">Top Margin Items</div>
-                      {topMargin.length > 0 ? topMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
-                    </div>
-                    <div className="mi-ov-w">
-                      <div className="mi-ov-lbl">Needs Attention</div>
-                      {lowMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-chip bad">{m?.toFixed(1)}%</span></div>; })}
-                      {noData.map(i => <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-chip warn">No cost</span></div>)}
-                      {lowMargin.length === 0 && noData.length === 0 && <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>}
-                    </div>
-                  </div>
-                  <div className="mi-ov-wf">
-                    <div className="mi-ov-lbl">Margin Distribution</div>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 'clamp(56px,8vh,90px)' }}>
-                      {[{lo:0,hi:40,label:'<40%',c:'var(--color-red)'},{lo:40,hi:60,label:'40–60%',c:'var(--color-amber)'},{lo:60,hi:75,label:'60–75%',c:'var(--accent)'},{lo:75,hi:101,label:'>75%',c:'var(--color-green)'}].map(({ lo, hi, label, c }) => {
-                        const count = bucket(lo, hi);
-                        return (
-                          <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
-                            <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}><div style={{ width: '100%', height: `${Math.max(5,(count/maxBucket)*100)}%`, background: c, opacity:.75, borderRadius:'4px 4px 0 0' }} /></div>
-                            <div style={{ fontSize: 'clamp(8px,.6vw,9px)', color: 'var(--text-muted)', textAlign: 'center' }}>{label}</div>
-                            <div style={{ fontSize: 'clamp(9px,.68vw,11px)', color: c, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{count}</div>
+              {!selectedItem && (() => {
+                const laggards = [...itemsWithMargins].sort((a, b) => getMarginNum(a.price, a.cost) - getMarginNum(b.price, b.cost)).slice(0, 5);
+                const missing = menuItems.filter(i => !i.price || !i.cost);
+                const avgC = avgMargin >= 70 ? 'var(--color-green)' : avgMargin >= 60 ? 'var(--accent)' : avgMargin >= 40 ? 'var(--color-amber)' : 'var(--color-red)';
+                return (
+                  <div className="mi-detail-body">
+                    {/* MENU HEALTH: the whole menu on one axis */}
+                    <div className="dp-hero tinted">
+                      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }}>
+                        <div>
+                          <div className="dp-lbl">Average margin</div>
+                          <div className="dp-big" style={{ color: avgC }}>{avgMargin.toFixed(1)}%</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div className="dp-lbl">On target</div>
+                          <div className="dp-big" style={{ color: 'var(--text-primary)', fontSize: 'clamp(18px,1.6vw,26px)' }}>
+                            {itemsWithMargins.length - belowTarget}<span style={{ color: 'var(--text-faint)', fontWeight: 400, fontSize: '.65em' }}> / {itemsWithMargins.length}</span>
                           </div>
-                        );
-                      })}
+                        </div>
+                      </div>
+                      <MarginSpectrum items={itemsWithMargins} onSelect={selectItem} avgMargin={avgMargin} />
+                      <div className="dp-sub" style={{ color: 'var(--text-faint)', textAlign: 'center' }}>every dot is a dish — click one to open it</div>
                     </div>
+
+                    {/* LEADERS / LAGGARDS */}
+                    <div className="mi-ov-row">
+                      <div className="mi-ov-w">
+                        <div className="mi-ov-lbl">Leaders</div>
+                        {topMargin.length > 0 ? topMargin.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--text-muted)' }}>No data yet</div>}
+                      </div>
+                      <div className="mi-ov-w">
+                        <div className="mi-ov-lbl">Laggards</div>
+                        {laggards.length > 0 ? laggards.map(i => { const m = getMarginNum(i.price, i.cost); return <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}><span className="mi-ov-name">{i.name}</span><span className="mi-ov-val" style={{ color: getMarginColor(m) }}>{m?.toFixed(1)}%</span></div>; }) : <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--color-green)' }}>All items on target ✓</div>}
+                      </div>
+                    </div>
+
+                    {/* MISSING DATA */}
+                    {missing.length > 0 && (
+                      <div style={S.wf}>
+                        <div style={{ ...S.wlbl, color: 'var(--color-amber)' }}>Missing Data<Rule /></div>
+                        <div style={{ fontSize: 'clamp(9px,.7vw,11px)', color: 'var(--text-muted)', marginBottom: 7 }}>
+                          {missing.length} item{missing.length !== 1 ? 's have' : ' has'} no price or cost — they're invisible to margin analysis.
+                        </div>
+                        {missing.slice(0, 4).map(i => (
+                          <div key={i.id} className="mi-ov-item" onClick={() => selectItem(i.id)}>
+                            <span className="mi-ov-name">{i.name}</span>
+                            <span className="mi-chip warn">{!i.price ? 'No price' : 'No cost'}</span>
+                          </div>
+                        ))}
+                        {missing.length > 4 && <div style={{ fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-faint)', paddingTop: 5 }}>+ {missing.length - 4} more</div>}
+                      </div>
+                    )}
+
+                    <div className="mi-hint">Click any menu item to see its plate economics →</div>
                   </div>
-                  <div className="mi-hint">Click any menu item to view details and optimize the recipe →</div>
-                </div>
-              )}
+                );
+              })()}
 
               {selectedItem && (
                 <div className="mi-detail-body">
