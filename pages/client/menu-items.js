@@ -107,36 +107,60 @@ const S = {
 };
 const Rule = () => <span style={S.rule} aria-hidden="true" />;
 
-// ── MarginSpectrum: every dish is a dot on a 0–100% margin axis ──────────────
-function MarginSpectrum({ items, onSelect, avgMargin, tall = false }) {
+// ── MarginSpectrum: the whole menu as a scatter — x = margin, y = menu price ─
+function MarginSpectrum({ items, onSelect, avgMargin }) {
   const dots = items
-    .map(i => ({ id: i.id, name: i.name, m: getMarginNum(i.price, i.cost) }))
-    .filter(d => d.m !== null)
-    .map(d => ({ ...d, x: Math.max(0, Math.min(100, d.m)) }));
+    .map(i => ({ id: i.id, name: i.name, m: getMarginNum(i.price, i.cost), p: parseFloat(i.price || 0) }))
+    .filter(d => d.m !== null);
   if (!dots.length) return <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '8px 0' }}>No margin data yet — add prices and costs to see the spread.</div>;
-  const avgX = Math.max(0, Math.min(100, avgMargin));
-  const lanes = tall ? 7 : 3; // vertical jitter lanes so dots don't stack
-  const spread = tall ? 13 : 9;
+
+  // x-axis: fit to the menu's actual margin range, clamped to 0–100
+  const ms = dots.map(d => Math.max(0, Math.min(100, d.m)));
+  let axMin = Math.max(0, Math.floor(Math.min(...ms) / 5) * 5 - 5);
+  let axMax = Math.min(100, Math.ceil(Math.max(...ms) / 5) * 5 + 5);
+  if (axMax - axMin < 20) { axMin = Math.max(0, axMin - 10); axMax = Math.min(100, axMax + 10); }
+  const xOf = (m) => ((Math.max(axMin, Math.min(axMax, m)) - axMin) / (axMax - axMin)) * 100;
+
+  // y-axis: menu price, low at the bottom, high at the top
+  const ps = dots.map(d => d.p);
+  const pMin = Math.min(...ps), pMax = Math.max(...ps);
+  const pRange = pMax - pMin;
+  const yOf = (p) => pRange > 0 ? 8 + (1 - (p - pMin) / pRange) * 84 : 50; // % from top, padded
+
+  const showTarget = LOW_MARGIN_THRESHOLD >= axMin && LOW_MARGIN_THRESHOLD <= axMax;
+  const fmtP = (n) => `$${Math.round(n)}`;
+
   return (
-    <div style={tall ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' } : undefined}>
-      <div className="dp-spectrum" style={tall ? { height: 'clamp(120px,22vh,220px)' } : undefined}>
-        <div className="dp-spectrum-axis" />
-        <div className="dp-spectrum-target" style={{ left: `${LOW_MARGIN_THRESHOLD}%` }} />
-        {/* average marker */}
-        <div style={{ position: 'absolute', left: `${avgX}%`, top: 0, transform: 'translateX(-50%)', fontSize: tall ? 10 : 8, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>avg ▾</div>
-        {dots.map((d, i) => (
-          <button key={d.id} type="button" className="dp-dot" title={`${d.name} — ${d.m.toFixed(1)}%`}
-            onClick={() => onSelect(d.id)}
-            style={{
-              left: `${d.x}%`,
-              top: `calc(50% + ${((i % lanes) - Math.floor(lanes / 2)) * spread}px)`,
-              background: getMarginColor(d.m),
-              opacity: 0.9,
-              ...(tall ? { width: 10, height: 10 } : {}),
-            }} />
-        ))}
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 8 }}>
+        {/* y-axis: price */}
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end', fontSize: 'clamp(8px,.62vw,10px)', color: 'var(--text-faint)', fontVariantNumeric: 'tabular-nums', flexShrink: 0, padding: '4px 0' }}>
+          <span>{fmtP(pMax)}</span>
+          <span style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', letterSpacing: '.08em', textTransform: 'uppercase', fontSize: 'clamp(7px,.55vw,9px)' }}>price</span>
+          <span>{fmtP(pMin)}</span>
+        </div>
+        {/* plot */}
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, borderLeft: '1px solid var(--border-subtle)', borderBottom: '1px solid var(--border-subtle)' }}>
+          {/* faint horizontal midline */}
+          <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 1, background: 'var(--bg-inset)' }} />
+          {/* 60% target line */}
+          {showTarget && <div className="dp-spectrum-target" style={{ left: `${xOf(LOW_MARGIN_THRESHOLD)}%`, top: 4, bottom: 4 }} />}
+          {/* average margin marker */}
+          <div style={{ position: 'absolute', left: `${xOf(avgMargin)}%`, top: -2, transform: 'translateX(-50%)', fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>avg ▾</div>
+          {dots.map(d => (
+            <button key={d.id} type="button" className="dp-dot" title={`${d.name} — ${d.m.toFixed(1)}% margin · ${formatCurrency(d.p)}`}
+              onClick={() => onSelect(d.id)}
+              style={{
+                left: `${xOf(d.m)}%`,
+                top: `${yOf(d.p)}%`,
+                width: 10, height: 10,
+                background: getMarginColor(d.m),
+                opacity: 0.9,
+              }} />
+          ))}
+        </div>
       </div>
-      <div className="dp-axis-cap"><span>0%</span><span>margin</span><span>100%</span></div>
+      <div className="dp-axis-cap" style={{ paddingLeft: 28 }}><span>{axMin}%</span><span>margin</span><span>{axMax}%</span></div>
     </div>
   );
 }
@@ -1593,7 +1617,7 @@ export default function ClientMenuItems() {
                           </div>
                         </div>
                       </div>
-                      <MarginSpectrum items={itemsWithMargins} onSelect={selectItem} avgMargin={avgMargin} tall />
+                      <MarginSpectrum items={itemsWithMargins} onSelect={selectItem} avgMargin={avgMargin} />
                       <div style={{ flexShrink: 0 }}>
                         {missing.length > 0 && (
                           <div className="dp-sub" style={{ color: 'var(--color-amber)', textAlign: 'center', marginBottom: 4 }}>
