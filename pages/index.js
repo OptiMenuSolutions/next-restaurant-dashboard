@@ -47,8 +47,8 @@ const FAQS = [
     a: "Most operators are fully set up within a single afternoon. Upload your menu, add your invoices, and you're live. No onboarding call required.",
   },
   {
-    q: 'What does the founding member rate include?',
-    a: "Full access to every feature — including all future features as they're released — at $59/month, locked for life. The standard rate after the founding cohort closes is $79/month.",
+    q: 'What does the $59/month plan include?',
+    a: "Full access to every feature — including all future features as they're released. No per-location fees, no setup fees.",
   },
   {
     q: 'Does OptiMenu integrate with my POS system?',
@@ -296,7 +296,7 @@ export default function Landing() {
               borderRadius: 20,
             }}>
               <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#02a4ba', animation: 'float 2s ease-in-out infinite' }} />
-              Founding member rate — $59/mo
+              Now onboarding restaurants
             </div>
 
             <h1 className="hero-title" style={{
@@ -460,9 +460,9 @@ export default function Landing() {
                 fontSize: 10, fontWeight: 700, letterSpacing: '1px',
                 textTransform: 'uppercase', padding: '4px 14px', borderRadius: 10,
               }}>
-                Founding member
+                Best value
               </div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#6b6358', marginBottom: 18 }}>Founding rate</div>
+              <div style={{ fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', color: '#6b6358', marginBottom: 18 }}>Monthly</div>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginBottom: 6 }}>
                 <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, color: '#9a9086', marginTop: 10 }}>$</span>
                 <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 52, color: '#e8e2d8', lineHeight: 1, letterSpacing: '-2px' }}>59</span>
@@ -470,7 +470,7 @@ export default function Landing() {
               <div style={{ fontSize: 12, color: '#6b6358', marginBottom: 28 }}>per month · locked for life</div>
               <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', marginBottom: 24 }} />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
-                {["All features included", "Unlimited menu items", "Invoice parsing & OCR", "Tonight's Dish engine", "POS analytics", "Rate locked forever"].map(f => (
+                {["All features included", "Unlimited menu items", "Invoice parsing & OCR", "Tonight's Dish engine", "POS analytics", "Priority support"].map(f => (
                   <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#9a9086' }}>
                     <div className="check-icon">
                       <svg viewBox="0 0 10 10" width="7" height="7" fill="none" stroke="#02a4ba" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1.5,5 4,7.5 8.5,2.5" /></svg>
@@ -480,7 +480,7 @@ export default function Landing() {
                 ))}
               </div>
               <Link href="/client/signup">
-                <button className="lp-btn-primary" style={{ width: '100%', textAlign: 'center' }}>Claim founding rate</button>
+                <button className="lp-btn-primary" style={{ width: '100%', textAlign: 'center' }}>Get started</button>
               </Link>
             </div>
 
@@ -509,7 +509,7 @@ export default function Landing() {
             </div>
           </div>
           <p style={{ textAlign: 'center', fontSize: 12, color: '#3a3630', marginTop: 20 }}>
-            Your founding rate is locked the day you join.
+            Cancel anytime. No long-term contracts.
           </p>
         </div>
       </section>
@@ -552,10 +552,10 @@ export default function Landing() {
           Stop guessing what to sell tonight.
         </h2>
         <p style={{ fontSize: 15, color: '#6b6358', fontWeight: 300, marginBottom: 36, lineHeight: 1.65 }}>
-          Join the founding cohort. First 25 operators lock in $59/month for life.
+          Set up in an afternoon. No onboarding call required.
         </p>
         <Link href="/client/signup">
-          <button className="lp-btn-primary" style={{ fontSize: 14, padding: '14px 32px' }}>Claim founding rate</button>
+          <button className="lp-btn-primary" style={{ fontSize: 14, padding: '14px 32px' }}>Get started</button>
         </Link>
       </section>
 
