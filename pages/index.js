@@ -234,6 +234,7 @@ export default function Landing() {
           name="description"
           content="OptiMenu scores every dish overnight on waste risk, popularity and margin, then puts tonight's picks on your staff's phones with one tap."
         />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
