@@ -289,10 +289,10 @@ export default function Landing() {
         }
       `}</style>
 
-      <div className="om-page" style={{ padding: '26px 26px 0' }}>
+      <div className="om-page" style={{ padding: 0 }}>
         <div style={{
-          maxWidth: 1280, margin: '0 auto', background: '#fff', borderRadius: 14,
-          overflow: 'hidden', boxShadow: '0 22px 60px rgba(17,24,25,0.1)',
+          maxWidth: '100%', margin: '0 auto', background: '#fff', borderRadius: 0,
+          overflow: 'hidden',
         }}>
           {/* NAV */}
           <div style={{
