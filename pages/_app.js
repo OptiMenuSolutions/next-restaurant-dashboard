@@ -6,6 +6,7 @@ import '../styles/tour.css';
 import { ThemeProvider } from '../lib/ThemeContext';
 import { THEMES } from '../lib/theme';
 import Head from 'next/head';
+import { Analytics } from '@vercel/analytics/react';
 
 const ANTI_FLASH_SCRIPT = `
 (function() {
@@ -36,6 +37,7 @@ export default function App({ Component, pageProps }) {
       <ThemeProvider>
         <Component {...pageProps} />
       </ThemeProvider>
+      <Analytics />
     </>
   );
 }
