@@ -5,6 +5,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.60.0",
     "@google-cloud/vision": "^5.3.6",
+    "@stripe/react-stripe-js": "^6.8.2",
+    "@stripe/stripe-js": "^9.15.0",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/supabase-js": "^2.52.1",
     "@tabler/icons-react": "^3.21.0",

@@ -56,7 +56,7 @@ function ReceiptTicket({ rec, index, loading }) {
   );
 }
 
-export default function StaffPage({ restaurant, cachedRecommendations, restaurantId, error }) {
+export default function StaffPage({ restaurant, cachedRecommendations, restaurantId, token, error }) {
   const [recommendations, setRecommendations] = useState(cachedRecommendations || []);
   const [loading, setLoading] = useState(!cachedRecommendations?.length);
 
@@ -68,7 +68,11 @@ export default function StaffPage({ restaurant, cachedRecommendations, restauran
         const res = await fetch(`${baseUrl}/api/ai-recommendations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ restaurantId }),
+          // nfcToken, not restaurantId — this page has no user session at
+          // all, so there's nothing to verify a client-supplied
+          // restaurantId against. The token itself is the authorization;
+          // the endpoint resolves the restaurant from it server-side.
+          body: JSON.stringify({ nfcToken: token }),
         });
         const data = await res.json();
         setRecommendations(data.recommendations ?? []);
@@ -349,30 +353,26 @@ const styles = {
 export async function getServerSideProps({ params }) {
   const { token } = params;
 
-  const { data: restaurant, error: restError } = await supabase
-    .from('restaurants')
-    .select('id, name, nfc_token')
-    .eq('nfc_token', token)
-    .single();
+  // Single RPC covers both the restaurant lookup and today's cached
+  // recommendations — see restaurants-schema-fixes.sql. Still zero-
+  // authentication, still just needs the token from the URL; closes two
+  // previously-exposed anon-read paths (restaurants and ai_recommendations)
+  // in one motion instead of leaving either open.
+  const { data: rows, error: briefingError } = await supabase
+    .rpc('get_staff_briefing', { token });
 
-  if (restError || !restaurant) {
-    return { props: { error: true, restaurant: null, cachedRecommendations: [], restaurantId: null } };
+  const briefing = rows?.[0];
+
+  if (briefingError || !briefing) {
+    return { props: { error: true, restaurant: null, cachedRecommendations: [], restaurantId: null, token: null } };
   }
-
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-  const { data: recRow } = await supabase
-    .from('ai_recommendations')
-    .select('recommendations')
-    .eq('restaurant_id', restaurant.id)
-    .eq('generated_date', today)
-    .single();
 
   return {
     props: {
-      restaurant: { name: restaurant.name },
-      cachedRecommendations: recRow?.recommendations ?? [],
-      restaurantId: restaurant.id,
+      restaurant: { name: briefing.restaurant_name },
+      cachedRecommendations: briefing.recommendations ?? [],
+      restaurantId: briefing.restaurant_id,
+      token,
       error: false,
     },
   };

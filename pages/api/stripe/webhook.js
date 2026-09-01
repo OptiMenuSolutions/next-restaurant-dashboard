@@ -1,121 +1,85 @@
 // pages/api/stripe/webhook.js
-import Stripe from 'stripe';
+// Keeps restaurants.subscription_status in sync with Stripe over time —
+// finalize.js only handles the moment of checkout; this handles everything
+// that happens afterward (renewal succeeds, a card fails, the subscription
+// gets cancelled, etc.), none of which the app would otherwise hear about.
+//
+// SETUP REQUIRED (do this yourself, alongside the API keys):
+//   1. Stripe dashboard -> Developers -> Webhooks -> Add endpoint
+//      URL: https://<your-domain>/api/stripe/webhook
+//      Events to send: customer.subscription.updated,
+//                       customer.subscription.deleted,
+//                       invoice.payment_failed
+//   2. Copy the signing secret ("whsec_...") into STRIPE_WEBHOOK_SECRET
+//      in your env vars (server-side only, same as STRIPE_SECRET_KEY).
+
 import { createClient } from '@supabase/supabase-js';
+import stripe from '../../../lib/stripeServer';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-// Use service role client for webhook — bypasses RLS
-const supabaseAdmin = createClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Disable Next.js body parsing — Stripe needs the raw body to verify signature
-export const config = { api: { bodyParser: false } };
+export const config = {
+  api: { bodyParser: false }, // Stripe needs the raw body to verify the signature
+};
 
-async function getRawBody(req) {
+// Small inline raw-body reader instead of pulling in the `micro` package
+// just for this one helper.
+function readRawBody(readable) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', chunk => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
+    readable.on('data', (chunk) => chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk));
+    readable.on('end', () => resolve(Buffer.concat(chunks)));
+    readable.on('error', reject);
   });
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const rawBody = await getRawBody(req);
   const sig = req.headers['stripe-signature'];
+  const rawBody = await readRawBody(req);
 
   let event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.error('Webhook signature verification failed:', err.message);
-    return res.status(400).json({ error: `Webhook error: ${err.message}` });
+    console.error('[stripe/webhook] Signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
-
-  const { type, data } = event;
 
   try {
-    switch (type) {
-
-      // Payment successful — subscription is now active
-      case 'checkout.session.completed': {
-        const session = data.object;
-        const { restaurant_id } = session.metadata;
-        if (restaurant_id) {
-          await supabaseAdmin
-            .from('restaurants')
-            .update({
-              stripe_subscription_id: session.subscription,
-              subscription_status: 'active',
-            })
-            .eq('id', restaurant_id);
-        }
-        break;
-      }
-
-      // Subscription updated (plan change, renewal, etc.)
-      case 'customer.subscription.updated': {
-        const sub = data.object;
-        const restaurant = await getRestaurantByCustomer(sub.customer);
-        if (restaurant) {
-          await supabaseAdmin
-            .from('restaurants')
-            .update({
-              stripe_subscription_id: sub.id,
-              subscription_status: sub.status, // active, past_due, etc.
-            })
-            .eq('id', restaurant.id);
-        }
-        break;
-      }
-
-      // Subscription cancelled
+    switch (event.type) {
+      case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
-        const sub = data.object;
-        const restaurant = await getRestaurantByCustomer(sub.customer);
-        if (restaurant) {
-          await supabaseAdmin
-            .from('restaurants')
-            .update({ subscription_status: 'canceled' })
-            .eq('id', restaurant.id);
-        }
+        const subscription = event.data.object;
+        const { error } = await supabase
+          .from('restaurants')
+          .update({ subscription_status: subscription.status })
+          .eq('stripe_subscription_id', subscription.id);
+        if (error) console.error('[stripe/webhook] Failed to update subscription_status:', error.message);
         break;
       }
-
-      // Payment failed
       case 'invoice.payment_failed': {
-        const invoice = data.object;
-        const restaurant = await getRestaurantByCustomer(invoice.customer);
-        if (restaurant) {
-          await supabaseAdmin
+        const invoice = event.data.object;
+        if (invoice.subscription) {
+          const { error } = await supabase
             .from('restaurants')
             .update({ subscription_status: 'past_due' })
-            .eq('id', restaurant.id);
+            .eq('stripe_subscription_id', invoice.subscription);
+          if (error) console.error('[stripe/webhook] Failed to mark past_due:', error.message);
         }
         break;
       }
-
       default:
-        // Unhandled event type — ignore
+        // Not one of the events we asked for — ignore.
         break;
     }
-
     return res.status(200).json({ received: true });
   } catch (err) {
-    console.error('Webhook handler error:', err);
-    return res.status(500).json({ error: 'Webhook handler failed' });
+    console.error('[stripe/webhook] Handler error:', err);
+    return res.status(500).json({ error: err.message });
   }
-}
-
-async function getRestaurantByCustomer(customerId) {
-  const { data } = await supabaseAdmin
-    .from('restaurants')
-    .select('id')
-    .eq('stripe_customer_id', customerId)
-    .single();
-  return data;
 }

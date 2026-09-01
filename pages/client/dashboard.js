@@ -1,1254 +1,602 @@
-// pages/client/dashboard.js
-import React, { useState, useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Head from "next/head";
+import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
-import { Analytics } from '@vercel/analytics/react';
-import { SpeedInsights } from '@vercel/speed-insights/next';
-import { useWindowSize } from "../../lib/useWindowSize";
-import ProfileDropdown from '../../components/ProfileDropdown';
-import { useTour } from '../../lib/useTour';
-import TourOverlay from '../../components/TourOverlay';
-import { fetchSampleData } from '../../lib/seedSampleData';
-import TourDataBanner from "../../components/TourDataBanner";
-import UniversalSearch from '../../components/UniversalSearch';
-import Head from "next/head";
-import { getShelfLife, isProtein, PROTEIN_KEYS } from "../../lib/shelfLife";
 import { computeWasteRisk } from "../../lib/computeWasteRisk";
+import { computeWasteResolution } from "../../lib/computeWasteResolution";
 import { useWeekInReview } from "../../lib/useWeekInReview";
-import RecipePanel from "../../components/RecipePanel";
+import PassDashboard from "../../components/dashboard/PassDashboard";
+import WasteConfirmationModal from "../../components/dashboard/WasteConfirmationModal";
+import TourOverlay from "../../components/TourOverlay";
+import { useTour } from "../../lib/useTour";
+import { fetchSampleData, SAMPLE_AI_RECOMMENDATIONS } from "../../lib/seedSampleData";
+import UniversalSearch from "../../components/UniversalSearch";
 
-const fmt  = (n) => !n ? "$0"    : isNaN(parseFloat(n)) ? "$0"    : parseFloat(n).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:0,maximumFractionDigits:0});
-const fmtD = (n) => !n ? "$0.00" : isNaN(parseFloat(n)) ? "$0.00" : parseFloat(n).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2});
-function formatDate(d) { if (!d) return "N/A"; try { return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric'}); } catch { return "N/A"; } }
+/**
+ * pages/client/dashboard.js — "Tonight's Pass" dashboard, v5 shell.
+ *
+ * This file is the data container only: same auth guard and same five queries
+ * as the current dashboard.js / dashboard3.js, then a set of adapters that map
+ * rows onto the presentational component's props. All markup lives in
+ * components/dashboard/PassDashboard.js.
+ */
 
-function getMarginColor(m) {
-  if (m >= 70) return "var(--color-green)";
-  if (m >= 60) return "var(--accent)";
-  return "var(--color-red)";
-}
-
-function getScoreInfo(score) {
-  if (score >= 85) return { color:"var(--color-green)", label:"Excellent", pct:"Top 10%" };
-  if (score >= 70) return { color:"var(--accent)",      label:"Good",      pct:"Top 30%" };
-  if (score >= 55) return { color:"var(--color-amber)", label:"Fair",      pct:"Top 50%" };
-  return { color:"var(--color-red)", label:"Needs Work", pct:"Bottom 50%" };
-}
-function getWasteUrgencyColor(daysLeft) {
-  if (daysLeft <= 1) return "var(--color-red)";
-  if (daysLeft <= 2) return "var(--color-amber)";
-  return "var(--accent)";
-}
-function getTicketMeta(index) {
-  if (index === 0) return { label:'PUSH TONIGHT', color:'var(--accent)' };
-  if (index === 1) return { label:'RECOMMEND',    color:'var(--color-green)' };
-  return              { label:'MENTION',         color:'var(--color-amber)' };
-}
-const TICKET_COLORS = ['var(--accent)','var(--color-green)','var(--color-amber)'];
-
-function Sparkline({ points, color, globalMin, globalMax, width=70, height=24 }) {
-  const validPoints = points ? points.filter(p => p !== null && p !== undefined && isFinite(p)) : [];
-  if (validPoints.length < 2) return null;
-  const minV = globalMin !== undefined ? globalMin : Math.min(...validPoints);
-  const maxV = globalMax !== undefined ? globalMax : Math.max(...validPoints);
-  const range = maxV - minV || 1;
-  const pad = 2;
-  const coords = validPoints.map((p,i) => {
-    const x = pad + (i/(validPoints.length-1))*(width-pad*2);
-    const y = pad + ((maxV-p)/range)*(height-pad*2);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(' ');
-  const lastPt = coords.split(' ').pop().split(',');
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} style={{overflow:'visible',flexShrink:0}}>
-      <polyline points={coords} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.8"/>
-      <circle cx={lastPt[0]} cy={lastPt[1]} r="2.5" fill={color}/>
-    </svg>
-  );
-}
-
-const GLOBAL_CSS = `
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  html,body{height:100%;background:var(--bg-root);overflow:hidden;}
-  #__next{height:100%;}
-  @keyframes spin{to{transform:rotate(360deg);}}
-  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
-  @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
-  @keyframes slideIn{from{opacity:0;transform:translateX(-6px);}to{opacity:1;transform:translateX(0);}}
-  input::placeholder{color:var(--text-faint)!important;}
-  ::-webkit-scrollbar{width:3px;}
-  ::-webkit-scrollbar-track{background:var(--scrollbar-track);}
-  ::-webkit-scrollbar-thumb{background:var(--scrollbar-thumb);border-radius:2px;}
-  .db-root{font-family:'Inter',sans-serif;background:var(--bg-root);color:var(--text-primary);width:100%;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
-  .db-topbar{background:var(--bg-elevated);border-bottom:1px solid var(--border);height:clamp(36px,4vh,48px);padding:0 clamp(10px,1vw,20px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  .db-logo{font-family:'Playfair Display',serif;font-size:clamp(14px,1.1vw,20px);color:var(--text-primary);letter-spacing:-.3px;}
-  .db-logo span{color:var(--accent);}
-  .db-tab{padding:clamp(2px,.3vh,4px) clamp(6px,.6vw,11px);border-radius:clamp(3px,.3vw,6px);font-size:clamp(10px,.75vw,13px);color:var(--text-muted);border:none;background:none;cursor:pointer;font-family:'Inter',sans-serif;line-height:1.5;transition:all .15s;}
-  .db-tab.active{color:var(--text-primary);background:var(--bg-inset);}
-  .db-main{flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;}
-  .db-wbar{background:var(--bg-surface);border-bottom:1px solid var(--border);height:clamp(28px,3.2vh,40px);padding:0 clamp(10px,1vw,16px);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  .db-wname{font-size:clamp(11px,.82vw,15px);font-weight:600;color:var(--text-primary);}
-  .db-wsub{font-size:clamp(9px,.62vw,11px);color:var(--text-muted);margin-left:6px;}
-  .db-wactions{display:flex;align-items:center;gap:clamp(10px,1.2vw,20px);}
-  .db-waction-item{display:flex;align-items:center;gap:4px;font-size:clamp(9px,.62vw,11px);color:var(--text-muted);}
-  .db-waction-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
-  .db-waction-val{font-weight:600;}
-  .db-score-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;align-items:center;gap:clamp(4px,.4vh,7px);flex-shrink:0;}
-  .db-stats-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.7vw,14px);display:flex;flex-direction:column;gap:clamp(5px,.5vh,8px);flex:1;min-height:0;overflow:hidden;}
-  .db-rest-icon{width:clamp(22px,1.8vw,32px);height:clamp(22px,1.8vw,32px);border-radius:50%;background:var(--accent-bg);border:1px solid var(--accent-border);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .db-rest-icon svg{width:55%;height:55%;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .db-rest-name{font-family:'Inter',sans-serif;font-size:clamp(10px,.8vw,14px);font-weight:600;color:var(--text-primary);text-align:center;}
-  .db-rest-sub{font-family:'Inter',sans-serif;font-size:clamp(8px,.58vw,10px);color:var(--text-muted);text-align:center;}
-  .db-score-wrap{display:flex;flex-direction:column;align-items:center;gap:clamp(2px,.25vh,4px);flex-shrink:0;}
-  .db-score-lbl{font-size:clamp(8px,.58vw,10px);color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:500;}
-  .db-ring{position:relative;width:clamp(52px,4.8vw,76px);height:clamp(52px,4.8vw,76px);}
-  .db-ring svg{width:100%;height:100%;transform:rotate(-90deg);}
-  .db-ring-inner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .db-ring-num{font-family:'Playfair Display',serif;font-size:clamp(15px,1.4vw,22px);color:var(--text-primary);line-height:1;}
-  .db-ring-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-muted);}
-  .db-score-tag{font-size:clamp(8px,.6vw,11px);font-weight:600;padding:2px clamp(6px,.5vw,10px);border-radius:10px;}
-  .db-score-pct{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);margin-top:1px;}
-  .db-pill{background:var(--bg-elevated);border-radius:clamp(4px,.3vw,6px);padding:clamp(4px,.42vh,7px) clamp(7px,.6vw,12px);display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border-subtle);flex-shrink:0;gap:6px;}
-  .db-pill-left{flex:1;min-width:0;}
-  .db-pill-l{font-size:clamp(9px,.62vw,11px);color:var(--text-muted);}
-  .db-pill-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .db-pill-v{font-family:'Inter',sans-serif;font-size:clamp(12px,1vw,16px);font-weight:700;flex-shrink:0;}
-  .db-card{background:var(--bg-surface);border:1px solid var(--border);border-radius:clamp(5px,.4vw,8px);padding:clamp(8px,.8vw,14px) clamp(9px,.9vw,16px);display:flex;flex-direction:column;overflow:hidden;min-height:0;}
-  .db-card-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:clamp(5px,.6vh,10px);flex-shrink:0;}
-  .db-card-title{font-size:clamp(10px,.75vw,13px);font-weight:600;color:var(--text-primary);display:flex;align-items:center;gap:clamp(4px,.32vw,6px);}
-  .db-card-title svg{width:clamp(10px,.82vw,14px);height:clamp(10px,.82vw,14px);stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;}
-  .db-card-sub{font-size:clamp(8px,.58vw,10px);color:var(--text-muted);}
-  .db-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:clamp(10px,.75vw,13px);color:var(--text-muted);text-align:center;padding:8px;}
-  .db-spinner{width:clamp(7px,.62vw,10px);height:clamp(7px,.62vw,10px);border:1.5px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;display:inline-block;}
-  .db-ticket{background:var(--ticket-bg);border:1px solid var(--ticket-border);border-radius:clamp(4px,.35vw,7px);display:flex;flex-direction:column;overflow:hidden;font-family:'Courier New',monospace;animation:fadeIn .3s ease both;position:relative;}
-  .db-receipt-divider{border:none;border-top:1px dashed var(--border);margin:clamp(2px,.2vh,3px) 0;flex-shrink:0;}
-  .db-receipt-component{font-size:clamp(9px,.72vw,12px);color:var(--text-primary);margin-top:4px;font-weight:600;flex-shrink:0;}
-  .db-receipt-ingredient{font-size:clamp(8px,.65vw,11px);color:var(--text-secondary);padding-left:10px;line-height:1.7;flex-shrink:0;}
-  .db-receipt-ingredient.at-risk{color:var(--color-red);font-weight:600;}
-  .db-receipt-footer{font-size:clamp(7px,.52vw,9px);color:var(--text-disabled);text-align:center;margin-top:auto;padding-top:clamp(4px,.4vh,6px);flex-shrink:0;}
-  .db-waste-list{flex:1;overflow-y:auto;min-height:0;}
-  .db-waste-list::-webkit-scrollbar{width:2px;}
-  .db-waste-row{display:flex;flex-direction:column;gap:3px;padding:clamp(5px,.55vh,8px) clamp(7px,.65vw,11px);background:var(--bg-elevated);border-radius:clamp(4px,.32vw,6px);border:1px solid var(--border-subtle);margin-bottom:clamp(4px,.4vh,6px);flex-shrink:0;}
-  .db-waste-row:last-child{margin-bottom:0;}
-  .db-waste-top{display:flex;align-items:center;gap:6px;}
-  .db-waste-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-  .db-waste-name{flex:1;font-size:clamp(10px,.72vw,12px);color:var(--text-secondary);text-transform:capitalize;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .db-waste-days{font-size:clamp(9px,.62vw,11px);font-weight:600;white-space:nowrap;flex-shrink:0;}
-  .db-waste-bar-track{width:100%;height:3px;background:var(--border-subtle);border-radius:2px;overflow:hidden;}
-  .db-waste-bar-fill{height:100%;border-radius:2px;}
-  .db-waste-meta{display:flex;justify-content:space-between;}
-  .db-waste-meta-txt{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);}
-  .db-waste-invoice-link{font-size:clamp(7px,.52vw,9px);color:var(--accent);cursor:pointer;background:none;border:none;font-family:'Inter',sans-serif;padding:0;text-decoration:underline;opacity:.8;}
-  .db-waste-invoice-link:hover{opacity:1;}
-  .db-waste-view-all{font-size:clamp(8px,.58vw,10px);color:var(--accent);background:none;border:none;cursor:pointer;font-family:'Inter',sans-serif;padding:clamp(4px,.4vh,6px) 0 0;text-align:center;width:100%;flex-shrink:0;opacity:.8;}
-  .db-waste-view-all:hover{opacity:1;}
-  .db-pm-back{font-size:clamp(8px,.6vw,11px);color:var(--accent);background:none;border:none;cursor:pointer;font-family:'Inter',sans-serif;padding:0;display:flex;align-items:center;gap:3px;}
-  .db-pm-scroll{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;}
-  .db-pm-scroll::-webkit-scrollbar{width:2px;}
-  .db-pm-cat-row{display:flex;align-items:center;gap:clamp(5px,.45vw,8px);padding:0 clamp(7px,.65vw,11px);background:var(--bg-elevated);border-radius:clamp(4px,.32vw,6px);border:1px solid var(--border-subtle);margin-bottom:clamp(4px,.4vh,6px);cursor:pointer;transition:border-color .15s;flex:1;min-height:0;}
-  .db-pm-cat-row:last-child{margin-bottom:0;}
-  .db-pm-cat-row:hover{border-color:var(--text-faint);}
-  .db-pm-cat-name{flex:1;font-size:clamp(10px,.72vw,12px);color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .db-pm-cat-delta{font-size:clamp(10px,.72vw,12px);font-weight:600;white-space:nowrap;flex-shrink:0;}
-  .db-pm-cat-count{font-size:clamp(8px,.58vw,10px);color:var(--text-muted);white-space:nowrap;flex-shrink:0;}
-  .db-pm-cat-chevron{font-size:10px;color:var(--text-faint);flex-shrink:0;}
-  .db-pm-ing-row{display:flex;flex-direction:column;gap:4px;padding:clamp(5px,.55vh,9px) clamp(7px,.65vw,11px);background:var(--bg-elevated);border-radius:clamp(4px,.32vw,6px);border:1px solid var(--border-subtle);margin-bottom:clamp(4px,.4vh,6px);flex-shrink:0;}
-  .db-pm-ing-row:last-child{margin-bottom:0;}
-  .db-pm-ing-top{display:flex;align-items:center;gap:6px;}
-  .db-pm-ing-name{flex:1;font-size:clamp(10px,.72vw,12px);color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-transform:capitalize;}
-  .db-pm-ing-delta{font-size:clamp(10px,.72vw,12px);font-weight:600;white-space:nowrap;flex-shrink:0;}
-  .db-pm-ing-prices{font-size:clamp(7px,.55vw,9px);color:var(--text-muted);padding-left:2px;}
-  .db-legend-strip{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);display:flex;align-items:center;gap:10px;padding-top:clamp(4px,.4vh,6px);flex-shrink:0;border-top:1px solid var(--border-subtle);margin-top:clamp(4px,.4vh,6px);}
-  .db-legend-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:3px;flex-shrink:0;}
-  .wir-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:clamp(4px,.4vw,7px);margin-bottom:clamp(8px,.8vh,12px);flex-shrink:0;}
-  .wir-stat{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.3vw,6px);padding:clamp(6px,.6vh,9px) clamp(8px,.7vw,12px);}
-  .wir-stat-lbl{font-size:clamp(7px,.55vw,9px);color:var(--text-faint);text-transform:uppercase;letter-spacing:.6px;margin-bottom:3px;}
-  .wir-stat-val{font-family:'Playfair Display',serif;font-size:clamp(14px,1.3vw,20px);line-height:1;}
-  .wir-stat-sub{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);margin-top:2px;}
-  .wir-days{flex:1;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:clamp(3px,.3vh,5px);justify-content:flex-start;}
-  .wir-days::-webkit-scrollbar{width:2px;}
-  .wir-day-row{background:var(--bg-elevated);border:1px solid var(--border-subtle);border-radius:clamp(4px,.32vw,6px);cursor:pointer;transition:border-color .15s;flex-shrink:0;overflow:hidden;min-height:clamp(28px,3.5vh,42px);display:flex;flex-direction:column;}
-  .wir-day-row.open{border-color:var(--accent);}
-  .wir-day-row:hover:not(.open){border-color:var(--text-faint);}
-  .wir-day-header{display:flex;align-items:center;gap:clamp(5px,.5vw,8px);padding:clamp(5px,.5vh,8px) clamp(8px,.7vw,12px);}
-  .wir-day-label{font-size:clamp(9px,.68vw,11px);font-weight:600;color:var(--text-primary);width:clamp(24px,2vw,32px);flex-shrink:0;}
-  .wir-day-date{font-size:clamp(8px,.58vw,9px);color:var(--text-faint);width:clamp(28px,2.4vw,36px);flex-shrink:0;}
-  .wir-day-pills{flex:1;display:flex;gap:3px;overflow:hidden;}
-  .wir-day-pill{font-size:clamp(7px,.55vw,9px);font-weight:600;padding:1px 5px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:clamp(60px,7vw,100px);}
-  .wir-day-bar-wrap{width:clamp(30px,3vw,50px);flex-shrink:0;}
-  .wir-day-bar-track{height:3px;background:var(--border-subtle);border-radius:2px;overflow:hidden;}
-  .wir-day-bar-fill{height:100%;border-radius:2px;}
-  .wir-day-extra{font-size:clamp(9px,.68vw,11px);font-weight:700;text-align:right;flex-shrink:0;width:clamp(24px,2vw,32px);}
-  .wir-day-chevron{font-size:9px;color:var(--text-faint);flex-shrink:0;}
-  .wir-detail{padding:clamp(6px,.6vh,10px) clamp(8px,.7vw,12px);border-top:1px solid var(--border-subtle);}
-  .wir-detail-hd{font-size:clamp(8px,.58vw,10px);font-weight:600;color:var(--text-faint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:clamp(6px,.6vh,9px);}
-  .wir-dish-row{margin-bottom:clamp(7px,.7vh,11px);}
-  .wir-dish-row:last-child{margin-bottom:0;}
-  .wir-dish-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;}
-  .wir-dish-name-wrap{display:flex;align-items:center;gap:5px;}
-  .wir-dish-type{font-size:clamp(7px,.55vw,9px);font-weight:600;text-transform:uppercase;letter-spacing:.5px;}
-  .wir-dish-name{font-size:clamp(9px,.72vw,12px);font-weight:600;color:var(--text-primary);}
-  .wir-dish-delta{font-size:clamp(9px,.68vw,11px);font-weight:700;}
-  .wir-dish-bars{display:flex;flex-direction:column;gap:2px;}
-  .wir-dish-bar-row{display:flex;align-items:center;gap:5px;}
-  .wir-dish-bar-lbl{font-size:clamp(7px,.52vw,9px);color:var(--text-faint);width:clamp(22px,2vw,28px);flex-shrink:0;}
-  .wir-dish-bar-track{flex:1;height:4px;background:var(--border-subtle);border-radius:2px;overflow:hidden;}
-  .wir-dish-bar-fill{height:100%;border-radius:2px;}
-  .wir-dish-bar-val{font-size:clamp(7px,.55vw,9px);font-weight:600;width:clamp(18px,1.8vw,24px);text-align:right;flex-shrink:0;}
-  .wir-detail-footer{display:flex;justify-content:space-between;padding-top:clamp(5px,.5vh,8px);border-top:1px solid var(--border-subtle);margin-top:clamp(5px,.5vh,8px);}
-  .wir-detail-footer-lbl{font-size:clamp(8px,.58vw,10px);color:var(--text-faint);}
-  .wir-detail-footer-val{font-size:clamp(8px,.58vw,10px);font-weight:600;color:var(--color-green);}
-`;
-
-function ScoreRing({ score }) {
-  const { color, label, pct } = getScoreInfo(score);
-  const circumference = 2*Math.PI*40;
-  const dash = (Math.max(0,Math.min(100,score))/100)*circumference;
-  return (
-    <div className="db-score-wrap">
-      <div className="db-score-lbl">OptiScore</div>
-      <div className="db-ring">
-        <svg viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="9" fill="none"/>
-          <circle cx="50" cy="50" r="40" stroke={color} strokeWidth="9" fill="none" strokeDasharray={`${dash} ${circumference}`} strokeLinecap="round"/>
-        </svg>
-        <div className="db-ring-inner">
-          <div className="db-ring-num">{score}</div>
-          <div className="db-ring-sub">/ 100</div>
-        </div>
-      </div>
-      <div className="db-score-tag" style={{background:`color-mix(in srgb, ${color} 15%, transparent)`,color}}>{label}</div>
-      <div className="db-score-pct">{pct} of similar restaurants</div>
-    </div>
-  );
-}
-
-const SELL_COPY = [
-  "Just came in fresh — one of the best things on the menu tonight.",
-  "The kitchen is really proud of this one tonight — worth every bite.",
-  "Guests have been loving this lately — a great choice tonight.",
-  "This one is exceptional right now — highly recommend it.",
-  "A personal favorite of the chef tonight — you won't be disappointed.",
-  "Incredibly fresh tonight — this is the one to get.",
+const TICKET_META = [
+  { label: "PUSH TONIGHT", color: "var(--accent-deep)", urgency: "HIGH" },
+  { label: "RECOMMEND", color: "var(--green)", urgency: "MEDIUM" },
+  { label: "MENTION", color: "var(--amber)", urgency: "LOW" },
 ];
 
-function WasteRow({ item, router }) {
-  const daysLeft = item.daysLeft;
-  const isExpired = daysLeft < 0;
-  const urgencyColor = isExpired ? 'var(--color-red)' : getWasteUrgencyColor(daysLeft);
-  const consumed = isExpired ? 100 : Math.min(100,Math.max(0,((item.shelfLife-daysLeft)/item.shelfLife)*100));
-  const label = isExpired ? `Expired ${Math.abs(daysLeft)}d ago` : daysLeft===0 ? 'Use today' : daysLeft===1 ? '1 day left' : `${daysLeft} days left`;
-  const qtyText = item.remainingQty>0 ? `~${item.remainingQty.toFixed(1)} ${item.unit||'units'} remaining` : item.invoicedQty>0 ? `${item.invoicedQty.toFixed(1)} ${item.unit||'units'} invoiced (fully consumed)` : 'Qty unknown';
-  return (
-    <div className="db-waste-row">
-      <div className="db-waste-top">
-        <div className="db-waste-dot" style={{background:urgencyColor}}/>
-        <div className="db-waste-name">{item.name}</div>
-        <div className="db-waste-days" style={{color:urgencyColor}}>{label}</div>
-      </div>
-      <div className="db-waste-bar-track"><div className="db-waste-bar-fill" style={{width:`${consumed}%`,background:urgencyColor,opacity:0.7}}/></div>
-      <div className="db-waste-meta">
-        <span className="db-waste-meta-txt">{qtyText} · Delivered {formatDate(item.deliveryDate)}</span>
-        {item.invoiceId && <button className="db-waste-invoice-link" onClick={() => router.push(`/client/invoices?selected=${encodeURIComponent(item.invoiceId)}`)}>View invoice →</button>}
-      </div>
-    </div>
-  );
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const money = (n) => "$" + Math.round(n || 0).toLocaleString();
+
+/* Monday-first weekday index of the 1st of the given month. */
+function firstWeekdayIndex(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); // 0 = Sun
+  return (d + 6) % 7;
 }
 
-function PriceMovementCard({ priceByCategory }) {
-  const [selectedCat, setSelectedCat] = useState(null);
-  const categories = useMemo(() => Object.keys(priceByCategory).sort(), [priceByCategory]);
+/* Recommendation row -> ticket. Point `recs` at whatever the current page
+   already produces (the AI recommendation call / selectedRec source). */
+/* The real /api/ai-recommendations response only ever returns
+   {title, description, talking_point, type, margin, confidence, urgency} —
+   no recipe/ingredient data. Ported from dashboard3.js's PassTicket: match
+   each rec's title against the real menu item (exact, then substring
+   fallback) to build the recipe view and cover-margin figure. */
+function toTickets(recs, wasteRisk, menuItems) {
+  const atRisk = new Set((wasteRisk || []).map((w) => String(w.name || "").toLowerCase().trim()));
+  return (recs || []).slice(0, 3).map((r, i) => {
+    const key = (r.title || "").toLowerCase().trim();
+    const item = key
+      ? (menuItems || []).find((m) => (m.name || "").toLowerCase().trim() === key) ||
+        (menuItems || []).find((m) => (m.name || "").toLowerCase().includes(key))
+      : null;
 
-  const categoryAvgHistories = useMemo(() => {
-    const result = {};
-    categories.forEach(cat => {
-      const d = priceByCategory[cat];
-      const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
-      result[cat] = Array.from({ length: maxLen }, (_, idx) => {
-        const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
-        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      });
-    });
-    return result;
-  }, [priceByCategory, categories]);
-  const [globalMin, globalMax] = useMemo(() => {
-    let min=Infinity, max=-Infinity;
-    Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
-    return min===Infinity ? [0,1] : [min,max];
-  }, [priceByCategory]);
-  const catData = selectedCat ? priceByCategory[selectedCat] : null;
-  return (
-    <div className="db-card">
-      <div className="db-card-hd">
-        <div className="db-card-title">
-          <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-          Price Movement
-        </div>
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          {selectedCat && <button className="db-pm-back" onClick={() => setSelectedCat(null)}>← Back</button>}
-          <span className="db-card-sub">{selectedCat||'6-month trend'}</span>
-        </div>
-      </div>
-      <div className="db-pm-scroll">
-        {categories.length===0 && <div className="db-empty">No price history yet</div>}
-        {!selectedCat && categories.map(cat => {
-          const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-          const avgHistory = categoryAvgHistories[cat];
-          return (
-            <div key={cat} className="db-pm-cat-row" onClick={() => setSelectedCat(cat)}>
-              <div className="db-pm-cat-name">{cat||'Uncategorized'}</div>
-              {avgHistory.length>=2 && <Sparkline points={avgHistory} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={60} height={20}/>}
-              <div className="db-pm-cat-delta" style={{color:deltaColor}}>{isUp?'↑':'↓'} {Math.abs(d.avgDelta).toFixed(1)}%</div>
-              <div className="db-pm-cat-count">{d.ingredients.length} items</div>
-              <div className="db-pm-cat-chevron">›</div>
-            </div>
-          );
-        })}
-        {selectedCat && catData && catData.ingredients.map((ing,i) => {
-          const isUp=ing.deltaPct>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-          return (
-            <div key={i} className="db-pm-ing-row" style={{animation:'slideIn .2s ease both',animationDelay:`${i*.04}s`}}>
-              <div className="db-pm-ing-top">
-                <div className="db-pm-ing-name">{ing.name}</div>
-                {ing.history.length>=2 && <Sparkline points={ing.history} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={60} height={20}/>}
-                <div className="db-pm-ing-delta" style={{color:deltaColor}}>{isUp?'↑':'↓'} {Math.abs(ing.deltaPct).toFixed(1)}%</div>
-              </div>
-              <div className="db-pm-ing-prices">{fmtD(ing.firstPrice)} → {fmtD(ing.lastPrice)}</div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
+    const recipe = (item?.menu_item_components || []).map((c) => ({
+      name: c.name,
+      ings: (c.component_ingredients || [])
+        .map((ci) => {
+          const name = (ci.ingredients?.name || "").trim();
+          return {
+            name,
+            qty: [ci.quantity, ci.unit].filter(Boolean).join(" "),
+            risk: atRisk.has(name.toLowerCase()),
+          };
+        })
+        .filter((g) => g.name),
+    }));
 
-function WeekInReviewCard({ restaurantId, wasteRisk, menuItems }) {
-  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
-  const [openDay, setOpenDay]   = useState(null);
-  const maxWaste       = Math.max(...weekData.map(d => d.wasteSaved), 1);
-  const openDayData    = weekData.find(d=>d.date===openDay);
-  const handleDayClick = (date) => setOpenDay(prev=>prev===date?null:date);
+    const riskCount = recipe.reduce((n, c) => n + c.ings.filter((g) => g.risk).length, 0);
+    const price = item ? parseFloat(item.price || 0) : 0;
+    const cost = item ? parseFloat(item.cost || 0) : 0;
+    // coverMargin (dollar profit/cover) is computed from the matched menu
+    // item; marginVal (the % chip) uses the AI's own r.margin directly —
+    // same split PassTicket used, not the same number twice.
+    const coverMargin = price > 0 && cost > 0 ? price - cost : null;
+    const marginVal = r.margin != null && !isNaN(parseFloat(r.margin)) ? parseFloat(r.margin) : null;
 
-  return (
-    <div className="db-card">
-      <div className="db-card-hd">
-        <div className="db-card-title">
-          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          Week in Review
-        </div>
-        <span className="db-card-sub">{weekData.length>0?`${weekData[0].date.slice(5).replace('-','/')} – ${weekData[weekData.length-1].date.slice(5).replace('-','/')}`:'7-day summary'}</span>
-      </div>
-      {loading ? <div className="db-empty">Loading...</div> : (
-        <>
-          {!openDay && (
-            <div className="wir-stats">
-              <div className="wir-stat">
-                <div className="wir-stat-lbl">Extra sold</div>
-                <div className="wir-stat-val" style={{color:weekExtraSold>=0?'var(--color-green)':'var(--color-red)'}}>{weekExtraSold>=0?'+':''}{weekExtraSold}</div>
-                <div className="wir-stat-sub">vs. avg</div>
-              </div>
-              <div className="wir-stat">
-                <div className="wir-stat-lbl">Waste saved</div>
-                <div className="wir-stat-val" style={{color:'var(--color-green)'}}>${weekWasteSaved}</div>
-                <div className="wir-stat-sub">est.</div>
-              </div>
-              <div className="wir-stat">
-                <div className="wir-stat-lbl">Hit rate</div>
-                <div className="wir-stat-val" style={{color:'var(--accent)'}}>{hitRate}%</div>
-                <div className="wir-stat-sub">days above avg</div>
-              </div>
-            </div>
-          )}
-          <div className="wir-days">
-            {openDay ? (
-              <>
-                <div style={{display:'flex',gap:'clamp(8px,1vw,16px)',marginBottom:'clamp(5px,.5vh,8px)',flexShrink:0}}>
-                  <span style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}>Week: <span style={{color:'var(--color-green)',fontWeight:600}}>+{weekExtraSold} sold</span></span>
-                  <span style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--text-faint)'}}><span style={{color:'var(--color-green)',fontWeight:600}}>${weekWasteSaved}</span> saved</span>
-                  <button onClick={() => setOpenDay(null)} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',fontSize:'clamp(8px,.6vw,10px)',color:'var(--accent)',fontFamily:'Inter,sans-serif'}}>← All days</button>
-                </div>
-                {openDayData && (
-                  <div className="wir-day-row open">
-                    <div className="wir-day-header" onClick={() => handleDayClick(openDayData.date)}>
-                      <span className="wir-day-label">{openDayData.dayLabel}</span>
-                      <span className="wir-day-date">{openDayData.date.slice(5).replace('-','/')}</span>
-                      <div className="wir-day-pills">
-                        {openDayData.dishes.map((d,i) => (
-                          <span key={i} className="wir-day-pill" style={{background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
-                        ))}
-                      </div>
-                      <div className="wir-day-extra" style={{color:openDayData.extraSold>0?'var(--color-green)':openDayData.extraSold<0?'var(--color-red)':'var(--text-faint)'}}>
-                        {openDayData.extraSold>0?'+':''}{openDayData.extraSold}
-                      </div>
-                      <span className="wir-day-chevron">▴</span>
-                    </div>
-                    <div className="wir-detail">
-                      <div className="wir-detail-hd">{openDayData.date} · Dish Performance</div>
-                      {openDayData.dishes.length===0 && <div style={{fontSize:'clamp(9px,.68vw,11px)',color:'var(--text-muted)'}}>No recommendations found for this day.</div>}
-                      {openDayData.dishes.map((dish,i) => {
-                        const diff=dish.diff;
-                        const diffColor=diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
-                        const maxBar=Math.max(dish.sold,dish.avg||0,1);
-                        return (
-                          <div key={i} className="wir-dish-row">
-                            <div className="wir-dish-top">
-                              <div className="wir-dish-name-wrap">
-                                <span className="wir-dish-type" style={{color:dish.ticketColor}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
-                                <span className="wir-dish-name">{dish.name}</span>
-                              </div>
-                              <span className="wir-dish-delta" style={{color:diffColor}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)} (${dish.pct>0?'+':''}${dish.pct??'—'}%)`:'—'}</span>
-                            </div>
-                            <div className="wir-dish-bars">
-                              <div className="wir-dish-bar-row">
-                                <span className="wir-dish-bar-lbl">Sold</span>
-                                <div className="wir-dish-bar-track"><div className="wir-dish-bar-fill" style={{width:`${(dish.sold/maxBar)*100}%`,background:'var(--accent)'}}/></div>
-                                <span className="wir-dish-bar-val" style={{color:'var(--accent)'}}>{dish.sold}</span>
-                              </div>
-                              {dish.avg!==null && (
-                                <div className="wir-dish-bar-row">
-                                  <span className="wir-dish-bar-lbl">Avg</span>
-                                  <div className="wir-dish-bar-track"><div className="wir-dish-bar-fill" style={{width:`${(dish.avg/maxBar)*100}%`,background:'var(--border)'}}/></div>
-                                  <span className="wir-dish-bar-val" style={{color:'var(--text-faint)'}}>{dish.avg.toFixed(1)}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div className="wir-detail-footer">
-                        <span className="wir-detail-footer-lbl">Estimated waste prevented</span>
-                        <span className="wir-detail-footer-val">${openDayData.wasteSaved}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              weekData.map(day => {
-                const barW=Math.round((day.wasteSaved/maxWaste)*100);
-                const extraColor=day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
-                return (
-                  <div key={day.date} className="wir-day-row" onClick={() => handleDayClick(day.date)}>
-                    <div className="wir-day-header">
-                      <span className="wir-day-label">{day.dayLabel}</span>
-                      <span className="wir-day-date">{day.date.slice(5).replace('-','/')}</span>
-                      <div className="wir-day-pills">
-                        {day.dishes.length>0?day.dishes.map((d,i)=>(
-                          <span key={i} className="wir-day-pill" style={{background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
-                        )):<span style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)'}}>No recs</span>}
-                      </div>
-                      <div className="wir-day-bar-wrap">
-                        <div className="wir-day-bar-track"><div className="wir-day-bar-fill" style={{width:`${barW}%`,background:day.wasteSaved>0?'var(--color-green)':'var(--border)'}}/></div>
-                      </div>
-                      <div className="wir-day-extra" style={{color:extraColor}}>{day.extraSold>0?'+':''}{day.extraSold}</div>
-                      <span className="wir-day-chevron">▾</span>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── MOBILE WEEK IN REVIEW ────────────────────────────────────────────────────
-function MobileWeekInReview({ restaurantId, wasteRisk, menuItems }) {
-  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading } = useWeekInReview(restaurantId, wasteRisk, menuItems);
-  const [openDay, setOpenDay] = useState(null);
-  const openDayData = weekData.find(d => d.date === openDay);
-
-  if (loading) return (
-    <div style={{padding:'20px',textAlign:'center'}}>
-      <div style={{width:18,height:18,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite',margin:'0 auto'}}/>
-    </div>
-  );
-
-  return (
-    <div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:12}}>
-        {[
-          {l:'Extra Sold',v:`${weekExtraSold>=0?'+':''}${weekExtraSold}`,c:weekExtraSold>=0?'var(--color-green)':'var(--color-red)',sub:'vs avg'},
-          {l:'Waste Saved',v:`$${weekWasteSaved}`,c:'var(--color-green)',sub:'est.'},
-          {l:'Hit Rate',v:`${hitRate}%`,c:'var(--accent)',sub:'days above avg'},
-        ].map(({l,v,c,sub})=>(
-          <div key={l} style={{background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 8px'}}>
-            <div style={{fontSize:9,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.6,marginBottom:4}}>{l}</div>
-            <div style={{fontSize:18,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
-            <div style={{fontSize:9,color:'var(--text-faint)',marginTop:3}}>{sub}</div>
-          </div>
-        ))}
-      </div>
-      {weekData.map(day => {
-        const isOpen = openDay === day.date;
-        const extraColor = day.extraSold>0?'var(--color-green)':day.extraSold<0?'var(--color-red)':'var(--text-faint)';
-        return (
-          <div key={day.date} style={{background:'var(--bg-elevated)',border:`1px solid ${isOpen?'var(--accent)':'var(--border-subtle)'}`,borderRadius:8,marginBottom:8,overflow:'hidden',transition:'border-color .15s'}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',cursor:'pointer'}} onClick={()=>setOpenDay(prev=>prev===day.date?null:day.date)}>
-              <span style={{fontSize:11,fontWeight:600,color:'var(--text-primary)',width:28,flexShrink:0}}>{day.dayLabel}</span>
-              <span style={{fontSize:10,color:'var(--text-faint)',width:32,flexShrink:0}}>{day.date.slice(5).replace('-','/')}</span>
-              <div style={{flex:1,display:'flex',gap:4,overflow:'hidden'}}>
-                {day.dishes.length>0?day.dishes.map((d,i)=>(
-                  <span key={i} style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:3,background:`color-mix(in srgb, ${d.ticketColor} 12%, transparent)`,color:d.ticketColor,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',maxWidth:80}}>{d.name.split(' ').slice(0,2).join(' ')}</span>
-                )):<span style={{fontSize:9,color:'var(--text-faint)'}}>No recs</span>}
-              </div>
-              <span style={{fontSize:12,fontWeight:700,color:extraColor,flexShrink:0}}>{day.extraSold>0?'+':''}{day.extraSold}</span>
-              <span style={{fontSize:9,color:'var(--text-faint)',flexShrink:0}}>{isOpen?'▴':'▾'}</span>
-            </div>
-            {isOpen && openDayData && (
-              <div style={{padding:'0 12px 12px',borderTop:'1px solid var(--border-subtle)'}}>
-                <div style={{fontSize:9,fontWeight:600,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.7,margin:'10px 0 8px'}}>Dish Performance</div>
-                {openDayData.dishes.length===0 && <div style={{fontSize:11,color:'var(--text-muted)'}}>No recommendations for this day.</div>}
-                {openDayData.dishes.map((dish,i) => {
-                  const diff=dish.diff;
-                  const diffColor=diff!==null?(diff>0?'var(--color-green)':diff<0?'var(--color-red)':'var(--text-muted)'):'var(--text-muted)';
-                  const maxBar=Math.max(dish.sold,dish.avg||0,1);
-                  return (
-                    <div key={i} style={{marginBottom:12}}>
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
-                        <div style={{display:'flex',alignItems:'center',gap:6}}>
-                          <span style={{fontSize:9,fontWeight:600,color:dish.ticketColor,textTransform:'uppercase'}}>{i===0?'Push':i===1?'Rec':'Mention'}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:'var(--text-primary)'}}>{dish.name}</span>
-                        </div>
-                        <span style={{fontSize:11,fontWeight:700,color:diffColor}}>{diff!==null?`${diff>0?'+':''}${diff.toFixed(1)}`:'—'}</span>
-                      </div>
-                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
-                        <div style={{display:'flex',alignItems:'center',gap:6}}>
-                          <span style={{fontSize:9,color:'var(--text-faint)',width:24,flexShrink:0}}>Sold</span>
-                          <div style={{flex:1,height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${(dish.sold/maxBar)*100}%`,height:'100%',background:'var(--accent)',borderRadius:2}}/></div>
-                          <span style={{fontSize:9,fontWeight:600,color:'var(--accent)',width:20,textAlign:'right'}}>{dish.sold}</span>
-                        </div>
-                        {dish.avg!==null&&(
-                          <div style={{display:'flex',alignItems:'center',gap:6}}>
-                            <span style={{fontSize:9,color:'var(--text-faint)',width:24,flexShrink:0}}>Avg</span>
-                            <div style={{flex:1,height:4,background:'var(--border-subtle)',borderRadius:2,overflow:'hidden'}}><div style={{width:`${(dish.avg/maxBar)*100}%`,height:'100%',background:'var(--border)',borderRadius:2}}/></div>
-                            <span style={{fontSize:9,fontWeight:600,color:'var(--text-faint)',width:20,textAlign:'right'}}>{dish.avg.toFixed(1)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{display:'flex',justifyContent:'space-between',paddingTop:8,borderTop:'1px solid var(--border-subtle)'}}>
-                  <span style={{fontSize:10,color:'var(--text-faint)'}}>Est. waste prevented</span>
-                  <span style={{fontSize:10,fontWeight:600,color:'var(--color-green)'}}>${openDayData.wasteSaved}</span>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── MOBILE PRICE MOVEMENT ────────────────────────────────────────────────────
-function MobilePriceMovement({ priceByCategory }) {
-  const [selectedCat, setSelectedCat] = useState(null);
-  const categories = useMemo(() => Object.keys(priceByCategory).sort(), [priceByCategory]);
-
-  const categoryAvgHistories = useMemo(() => {
-    const result = {};
-    categories.forEach(cat => {
-      const d = priceByCategory[cat];
-      const maxLen = Math.max(...d.ingredients.map(i => i.history.length));
-      result[cat] = Array.from({ length: maxLen }, (_, idx) => {
-        const vals = d.ingredients.map(i => i.history[idx] ?? i.history[i.history.length - 1]).filter(Boolean);
-        return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
-      });
-    });
-    return result;
-  }, [priceByCategory, categories]);
-  const [globalMin, globalMax] = useMemo(() => {
-    let min=Infinity, max=-Infinity;
-    Object.values(priceByCategory).forEach(cat => cat.ingredients.forEach(ing => ing.history.forEach(p => { if(p<min)min=p; if(p>max)max=p; })));
-    return min===Infinity ? [0,1] : [min,max];
-  }, [priceByCategory]);
-  const catData = selectedCat ? priceByCategory[selectedCat] : null;
-  return (
-    <div>
-      {selectedCat && (
-        <button onClick={()=>setSelectedCat(null)} style={{background:'none',border:'none',color:'var(--accent)',fontSize:12,fontFamily:'Inter,sans-serif',cursor:'pointer',padding:'0 0 10px',display:'flex',alignItems:'center',gap:4}}>← Back</button>
-      )}
-      {categories.length===0 && <div style={{fontSize:12,color:'var(--text-muted)',textAlign:'center',padding:16}}>No price history yet</div>}
-      {!selectedCat && categories.map(cat => {
-        const d=priceByCategory[cat], isUp=d.avgDelta>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-        const avgHistory = categoryAvgHistories[cat];
-        return (
-          <div key={cat} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,marginBottom:8,cursor:'pointer'}} onClick={()=>setSelectedCat(cat)}>
-            <div style={{flex:1,fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{cat||'Uncategorized'}</div>
-            {avgHistory.length>=2&&<Sparkline points={avgHistory} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={50} height={18}/>}
-            <div style={{fontSize:12,fontWeight:600,color:deltaColor,whiteSpace:'nowrap'}}>{isUp?'↑':'↓'} {Math.abs(d.avgDelta).toFixed(1)}%</div>
-            <div style={{fontSize:10,color:'var(--text-muted)',whiteSpace:'nowrap'}}>{d.ingredients.length} items</div>
-            <span style={{fontSize:10,color:'var(--text-faint)'}}>›</span>
-          </div>
-        );
-      })}
-      {selectedCat && catData && catData.ingredients.map((ing,i) => {
-        const isUp=ing.deltaPct>0, deltaColor=isUp?'var(--color-red)':'var(--color-green)';
-        return (
-          <div key={i} style={{padding:'10px 12px',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,marginBottom:8}}>
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-              <div style={{flex:1,fontSize:12,color:'var(--text-secondary)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textTransform:'capitalize'}}>{ing.name}</div>
-              {ing.history.length>=2&&<Sparkline points={ing.history} color={deltaColor} globalMin={globalMin} globalMax={globalMax} width={50} height={18}/>}
-              <div style={{fontSize:12,fontWeight:600,color:deltaColor}}>{isUp?'↑':'↓'} {Math.abs(ing.deltaPct).toFixed(1)}%</div>
-            </div>
-            <div style={{fontSize:10,color:'var(--text-muted)'}}>{fmtD(ing.firstPrice)} → {fmtD(ing.lastPrice)}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export default function ClientDashboard() {
-  const router = useRouter();
-  const { isMobile } = useWindowSize();
-  const [loading, setLoading]           = useState(true);
-  const [error, setError]               = useState("");
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [userName, setUserName]         = useState("");
-  const [userEmail, setUserEmail]       = useState("");
-  const [restaurantName, setRestaurantName] = useState("Your Restaurant");
-  const [aiLoading, setAiLoading]       = useState(false);
-  const [menuItemsFull, setMenuItemsFull] = useState([]);
-  const [wasteShowAll, setWasteShowAll] = useState(false);
-  const [mobTab, setMobTab]             = useState('tonight');
-  const [selectedRec, setSelectedRec]   = useState(null);
-  const [data, setData] = useState({
-    totalInvoices:0,totalIngredients:0,totalMenuItems:0,
-    ingredientTrends:[],menuItemAnalysis:[],
-    unpricedIngredients:0,averageMargin:0,
-    totalSpending:0,aiProfitScore:{score:0},aiRecommendations:[],
-    lowMarginCount:0,wasteRisk:[],priceByCategory:{},
+    return {
+      ...TICKET_META[i],
+      num: "#" + String(r.id || i + 1).slice(-3).padStart(3, "0") + "-0" + (i + 1),
+      title: r.title,
+      pitch: r.talkingPoint || r.description || "",
+      reason: r.description || "",
+      margin: marginVal != null ? "MARGIN " + Math.round(marginVal) + "%" : "",
+      cover: coverMargin != null ? "$" + coverMargin.toFixed(2) + "/COVER" : "",
+      recipe,
+      riskNote: riskCount
+        ? "▲ " + riskCount + (riskCount === 1 ? " ingredient" : " ingredients") +
+          " at risk tonight — selling this clears " + (riskCount === 1 ? "it" : "them")
+        : "",
+    };
   });
-  const LOW_MARGIN_THRESHOLD = 60;
-  const WASTE_PREVIEW = 5;
+}
 
-  useEffect(() => { ['dashboard','invoices','ingredients','menu-items','analytics'].forEach(p => router.prefetch(`/client/${p}`)); },[router]);
-  useEffect(() => {
-    if (router.query.tour==='true') return;
-    const handler=()=>{ if(restaurantId) fetchDashboardData(restaurantId); };
-    window.addEventListener('optimenu-tour-seeded',handler);
-    return ()=>window.removeEventListener('optimenu-tour-seeded',handler);
-  },[restaurantId]);
-  useEffect(()=>{
-    if(!router.isReady||router.query.tour!=='true'||!restaurantId)return;
-    fetchSampleData().then(sample=>{if(!sample)return;const processed=processDashboardData(sample.invoices,sample.ingredients,sample.menuItems,[],{});setData(processed);setMenuItemsFull(sample.menuItems||[]);setLoading(false);});
-  },[router.isReady,router.query.tour,restaurantId]);
-  useEffect(()=>{getRestaurantId();},[]);
-  const { tourProps }=useTour('dashboard',restaurantId);
-  const isTour=router.query.tour==='true';
+// Matches SAMPLE_RESTAURANT_ID in lib/seedSampleData.js exactly — used to
+// point Week in Review at the sample restaurant's real history during a
+// tour, instead of the signed-in user's own (likely brand-new, empty) one.
+const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
-  async function getRestaurantId(){
-    try{
-      const {data:{user},error:userError}=await supabase.auth.getUser();
-      if(userError||!user){setError("Authentication required");setLoading(false);return;}
-      setUserEmail(user.email||'');
-      const {data:profile,error:profileError}=await supabase.from("profiles").select("restaurant_id,full_name").eq("id",user.id).single();
-      if(profileError||!profile?.restaurant_id){setError("Could not determine restaurant access");setLoading(false);return;}
-      setRestaurantId(profile.restaurant_id);
-      setUserName(profile.full_name?.split(' ')[0]?.trim()||"User");
-      const {data:rd}=await supabase.from("restaurants").select("name").eq("id",profile.restaurant_id).single();
-      setRestaurantName(rd?.name||"Your Restaurant");
-      if(router.query.tour!=='true') await fetchDashboardData(profile.restaurant_id);
-      else setLoading(false);
-    }catch{setError("An unexpected error occurred");setLoading(false);}
+/* Same detection useTour uses internally — kept independent rather than
+   reading it off the hook, so this file's data-loading isn't coupled to the
+   overlay's own state/timing. */
+function isTourQueryActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("tour") !== "true") return false;
+  try {
+    return localStorage.getItem("optimenu_tour_done") !== "1";
+  } catch {
+    return true;
   }
+}
 
-  async function fetchDashboardData(restId){
-    try{
-      setLoading(true);
-      const sixMonthsAgo=new Date();sixMonthsAgo.setMonth(sixMonthsAgo.getMonth()-6);
-      const fromDate=sixMonthsAgo.toISOString().split('T')[0];
-      const [{data:invoices},{data:ingredients},{data:menuItems},{data:invoiceItems},{data:posSales}]=await Promise.all([
-        supabase.from("invoices").select("*").eq("restaurant_id",restId).order("date",{ascending:false}),
-        supabase.from("ingredients").select("*").eq("restaurant_id",restId).limit(1000),
-        supabase.from("menu_items").select(`id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))`).eq("restaurant_id",restId).limit(500),
-        supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id)").eq("invoices.restaurant_id",restId).gte("invoices.date",fromDate).order("invoices(date)",{ascending:true}),
-        supabase.from("pos_sales").select("item_name,quantity_sold,sale_date").eq("restaurant_id",restId).gte("sale_date", (() => { const d=new Date(); d.setDate(d.getDate()-90); return d.toISOString().split('T')[0]; })()),
-      ]);
-      setMenuItemsFull(menuItems||[]);
-      const wasteRisk = computeWasteRisk(invoiceItems||[], invoices||[], posSales||[], menuItems||[]);
-      const priceByCategory=computePriceByCategory(invoiceItems||[]);
-      const processed=processDashboardData(invoices||[],ingredients||[],menuItems||[],wasteRisk,priceByCategory);
-      setData(processed);setLoading(false);
-      fetchAIRecommendations(restId);
-    }catch(err){setError("Failed to fetch dashboard data: "+err.message);setLoading(false);}
-  }
-  
-  function computePriceByCategory(invoiceItems){
-    const catMap={};
-    (invoiceItems||[]).forEach(item=>{
-      if(!item.unit_cost||!item.invoices?.date)return;
-      const name=(item.ingredient_name_normalized||item.item_name||'').trim();if(!name)return;
-      const cat=(item.category||'Uncategorized').trim();
-      const date=new Date(item.invoices.date);
-      const monthKey=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`;
-      const price=parseFloat(item.unit_cost);
-      if(!catMap[cat])catMap[cat]={};if(!catMap[cat][name])catMap[cat][name]={};if(!catMap[cat][name][monthKey])catMap[cat][name][monthKey]=[];
-      catMap[cat][name][monthKey].push(price);
-    });
-    const buckets=Array.from({length:6},(_,i)=>{const d=new Date();d.setMonth(d.getMonth()-(5-i));return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;});
-    const result={};
-    Object.entries(catMap).forEach(([cat,ingredients])=>{
-      const ingList=[];
-      Object.entries(ingredients).forEach(([ingName,monthData])=>{
-        const history=buckets.map(b=>{const vals=monthData[b];if(!vals||!vals.length)return null;return vals.reduce((a,v)=>a+v,0)/vals.length;});
-        let last=null;
-        const filled=history.map(v=>{if(v!==null){last=v;return v;}return last;});
-        const filled2=filled.slice().reverse().map(v=>{if(v!==null){last=v;return v;}return last;}).reverse();
-        const validPts=filled2.filter(Boolean);if(validPts.length<2)return;
-        const firstPrice=validPts[0],lastPrice=validPts[validPts.length-1];
-        if(!firstPrice)return;
-        const deltaPct=((lastPrice-firstPrice)/firstPrice)*100;if(Math.abs(deltaPct)<2)return;
-        ingList.push({name:ingName,history:filled2,deltaPct,firstPrice,lastPrice});
-      });
-      if(!ingList.length)return;
-      ingList.sort((a,b)=>Math.abs(b.deltaPct)-Math.abs(a.deltaPct));
-      result[cat]={ingredients:ingList,avgDelta:ingList.reduce((s,i)=>s+i.deltaPct,0)/ingList.length};
-    });
-    return result;
-  }
-
-  async function fetchAIRecommendations(restId){
-    try{
-      setAiLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      const res=await fetch('/api/ai-recommendations',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session?.access_token}`},body:JSON.stringify({restaurantId:restId})});
-      if(!res.ok)throw new Error(`API ${res.status}`);
-      const json=await res.json();
-      const recs=(json.recommendations||[]).map(r=>({title:r.title,description:r.description,sellCopy:r.talking_point||null,type:r.type,margin:r.margin||null,confidence:r.confidence||null,urgency:r.urgency||null}));
-      setData(prev=>({...prev,aiRecommendations:recs}));
-    }catch(err){
-      console.error('[fetchAIRecommendations]',err);
-      // Only use stubs on a genuine network/API failure, not a valid empty response.
-      // Stubs are intentionally generic so they are visually distinct from real recs.
-      setData(prev=>({...prev,aiRecommendations:[]}));
-    }finally{setAiLoading(false);}
-  }
-
-  function processDashboardData(invoices,ingredients,menuItems,wasteRisk,priceByCategory){
-    const processedInvoices=invoices.filter(i=>i.number&&i.supplier&&i.amount);
-    const totalSpending=invoices.filter(i=>parseFloat(i.amount||0)>0).reduce((s,i)=>s+parseFloat(i.amount||0),0);
-    const unpricedIngredients=ingredients.filter(i=>!i.last_price||parseFloat(i.last_price)===0).length;
-    const menuItemAnalysis=menuItems.map(item=>{
-      const price=parseFloat(item.price||0);let cost=0,hasCompleteData=false;
-      if(item.menu_item_components?.length>0){cost=item.menu_item_components.reduce((t,c)=>t+parseFloat(c.cost||0),0);hasCompleteData=item.menu_item_components.every(c=>(c.component_ingredients||[]).length>0&&(c.component_ingredients||[]).every(ci=>ci.ingredients?.last_price&&parseFloat(ci.ingredients.last_price)>0));}
-      else if(item.cost&&parseFloat(item.cost)>0){cost=parseFloat(item.cost);hasCompleteData=price>0;}
-      const margin=price>0&&cost>0?((price-cost)/price)*100:0;
-      const hasEstimated=item.menu_item_components?.some(c=>(c.component_ingredients||[]).some(ci=>ci.ingredients?.is_estimated===true))||false;
-      return {id:item.id,name:item.name,price,cost,margin,hasCompleteData,hasEstimated};
-    });
-    const itemsWithMargins=menuItemAnalysis.filter(i=>i.hasCompleteData&&i.price>0&&!i.hasEstimated);
-    const averageMargin=itemsWithMargins.length>0?itemsWithMargins.reduce((s,i)=>s+i.margin,0)/itemsWithMargins.length:0;
-    const lowMarginCount=itemsWithMargins.filter(i=>i.margin<LOW_MARGIN_THRESHOLD).length;
-    const highMarginCount=itemsWithMargins.filter(i=>i.margin>=60).length;
-    const ingredientTrends=ingredients.filter(i=>i.last_price>0).sort((a,b)=>parseFloat(b.last_price)-parseFloat(a.last_price)).slice(0,8).map(i=>({name:i.name,price:parseFloat(i.last_price),unit:i.unit}));
-    const aiProfitScore=calculateAIProfitScore({itemsWithMargins,averageMargin,unpricedIngredients,totalIngredients:ingredients.length,totalMenuItems:menuItems.length,processedInvoices,totalInvoices:invoices.length});
-    return {totalInvoices:invoices.length,totalIngredients:ingredients.length,totalMenuItems:menuItems.length,ingredientTrends,menuItemAnalysis,unpricedIngredients,averageMargin,totalSpending,aiProfitScore,lowMarginCount,highMarginCount,wasteRisk:wasteRisk||[],priceByCategory:priceByCategory||{}};
-  }
-
-  function calculateAIProfitScore({itemsWithMargins,averageMargin,unpricedIngredients,totalIngredients,totalMenuItems,processedInvoices,totalInvoices}){
-    let score=0;
-
-    // Margin quality (35pts): full points at 60%+ average margin
-    score+=Math.min((averageMargin/60)*35,35);
-
-    // Ingredient coverage (15pts): % of ingredients with a known price
-    score+=totalIngredients>0?((totalIngredients-unpricedIngredients)/totalIngredients)*15:0;
-
-    // Menu costing coverage (15pts): % of menu items fully costed
-    score+=totalMenuItems>0?(itemsWithMargins.length/totalMenuItems)*15:0;
-
-    // Invoice completeness (10pts): % of invoices fully parsed
-    score+=totalInvoices>0?(processedInvoices.length/totalInvoices)*10:0;
-
-    // Margin distribution (15pts): rewards high-margin items, penalizes low-margin items
-    // +5 base reflects that having any costed items is better than none
-    if(itemsWithMargins.length>0){
-      const high=itemsWithMargins.filter(i=>i.margin>=50).length;
-      const low=itemsWithMargins.filter(i=>i.margin<25).length;
-      score+=Math.max(0,Math.min(15,((high/itemsWithMargins.length)*15)-((low/itemsWithMargins.length)*8)+5));
+/* fetchSampleData()'s invoices nest invoice_items forward
+   (invoice.invoice_items[]); computeWasteRisk expects invoiceItems with
+   invoices nested backward (item.invoices.date) — flatten one into the
+   other rather than changing computeWasteRisk's contract for one caller. */
+function flattenSampleInvoiceItems(sampleInvoices) {
+  const out = [];
+  for (const inv of sampleInvoices || []) {
+    for (const item of inv.invoice_items || []) {
+      out.push({ ...item, invoice_id: inv.id, invoices: { id: inv.id, date: inv.date, restaurant_id: inv.restaurant_id } });
     }
-
-    // Invoice recency (10pts): rewards consistent uploading — scaled to 2 invoices/month
-    // rather than 5, so monthly uploaders aren't unfairly penalized
-    const thirtyAgo=new Date();thirtyAgo.setDate(thirtyAgo.getDate()-30);
-    score+=Math.min((processedInvoices.filter(i=>new Date(i.date||i.created_at)>=thirtyAgo).length/2)*10,10);
-
-    return {score:Math.max(0,Math.min(100,Math.round(score)))};
   }
+  return out;
+}
 
-  // ── MOBILE ──────────────────────────────────────────────────────────────────
-  if (isMobile) {
-    const { color: scoreColor, label: scoreLabel } = getScoreInfo(data.aiProfitScore.score);
-    const circumference = 2 * Math.PI * 40;
-    const scoreDash = (data.aiProfitScore.score / 100) * circumference;
-    const wasteProteins = data.wasteRisk.filter(w => w.protein);
-    const wasteOther = data.wasteRisk.filter(w => !w.protein);
-    const allWaste = [...wasteProteins, ...wasteOther];
+function toWaste(wasteRisk) {
+  return (wasteRisk || []).map((w) => {
+    const dl = w.daysLeft != null ? w.daysLeft : 7;
+    const qtyLabel = w.remainingQty != null
+      ? Math.round(w.remainingQty * 100) / 100 + (w.unit ? " " + w.unit : "") + " remaining"
+      : "";
+    return {
+      name: w.name,
+      qty: qtyLabel,
+      left: dl <= 0 ? "Use today" : dl === 1 ? "1 day left" : dl + " days left",
+      tone: dl <= 1 ? "today" : dl <= 2 ? "soon" : "ok",
+      pct: w.shelfLife ? Math.min(100, Math.round(((w.shelfLife - dl) / w.shelfLife) * 100)) : 50,
+    };
+  });
+}
 
-    const MOB_TABS = [
-      { id: 'tonight', label: "Tonight's Picks" },
-      { id: 'metrics', label: 'Metrics' },
-      { id: 'waste',   label: 'Waste Risk' },
-      { id: 'week',    label: 'Week Review' },
-      { id: 'prices',  label: 'Prices' },
-    ];
+export default function DashboardPage() {
+  const router = useRouter();
+  const tour = useTour("dashboard");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [restaurantId, setRestaurantId] = useState(null);
+  const [userName, setUserName] = useState("");
+  const [restaurantName, setRestaurantName] = useState("Your Restaurant");
+  const [restaurantCreatedAt, setRestaurantCreatedAt] = useState(null);
+  const [targetFoodCost, setTargetFoodCost] = useState(null);
+  const [wasteResolution, setWasteResolution] = useState(null);
+  const [pendingConfirmations, setPendingConfirmations] = useState([]);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [recommendations, setRecommendations] = useState([]);
+  const [data, setData] = useState({ ingredients: [], menuItems: [], wasteRisk: [], stats: null });
+  const [reloadKey, setReloadKey] = useState(0);
 
-    return (
-      <>
-      <Head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-      </Head>
-        <style>{GLOBAL_CSS}</style>
-        <style>{`
-          @keyframes spin { to { transform: rotate(360deg); } }
-          @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-          .mob2-root { font-family:'Inter',sans-serif; background:var(--bg-root); color:var(--text-primary); width:100%; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
-          .mob2-header { background:var(--bg-elevated); border-bottom:1px solid var(--border); padding:10px 16px; padding-top:max(10px,env(safe-area-inset-top)); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-          .mob2-logo { font-family:'Inter',sans-serif; font-size:18px; font-weight:700; color:var(--text-primary); letter-spacing:-.3px; }
-          .mob2-logo span { color:var(--accent); }
-          .mob2-subbar { background:var(--bg-surface); border-bottom:1px solid var(--border); padding:8px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-          .mob2-tabs { background:var(--bg-elevated); border-bottom:1px solid var(--border); display:flex; overflow-x:auto; flex-shrink:0; -webkit-overflow-scrolling:touch; }
-          .mob2-tabs::-webkit-scrollbar { display:none; }
-          .mob2-tab { flex-shrink:0; padding:10px 14px; font-size:12px; font-weight:500; color:var(--text-muted); border:none; background:none; cursor:pointer; font-family:'Inter',sans-serif; border-bottom:2px solid transparent; white-space:nowrap; -webkit-tap-highlight-color:transparent; }
-          .mob2-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
-          .mob2-scroll { flex:1; overflow-y:auto; padding:12px 16px; display:flex; flex-direction:column; gap:12px; -webkit-overflow-scrolling:touch; }
-          .mob2-scroll::-webkit-scrollbar { display:none; }
-          .mob2-card { background:var(--bg-surface); border:1px solid var(--border); border-radius:10px; padding:14px; flex-shrink:0; }
-          .mob2-card-title { font-size:11px; font-weight:600; color:var(--text-primary); text-transform:uppercase; letter-spacing:.7px; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
-          .mob2-card-title svg { width:12px; height:12px; stroke:var(--accent); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
-          .mob2-bottom-nav { background:var(--bg-elevated); border-top:1px solid var(--border); padding:8px 0 0; padding-bottom:env(safe-area-inset-bottom, 8px); display:flex; flex-shrink:0; position:sticky; bottom:0; z-index:50; }
-          .mob2-nav-item { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; cursor:pointer; padding:4px 0; -webkit-tap-highlight-color:transparent; }
-          .mob2-nav-icon svg { width:20px; height:20px; stroke:var(--text-muted); fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }
-          .mob2-nav-icon.active svg { stroke:var(--accent); }
-          .mob2-nav-label { font-size:10px; color:var(--text-muted); }
-          .mob2-nav-label.active { color:var(--accent); }
-        `}</style>
+  // Computed fresh each render (not stored state) — re-evaluates whenever
+  // this component re-renders, which happens reliably when the tour ends
+  // (useTour's done() calls setTourOn(false) in this same component tree).
+  // Included in effect dependency arrays below so those effects correctly
+  // re-fetch real data once the tour finishes, rather than sample data
+  // silently lingering for the rest of the session.
+  const tourActive = isTourQueryActive();
 
-        <div className="mob2-root">
-          <div className="mob2-header">
-            <div className="mob2-logo">Opti<span>Menu</span></div>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'var(--accent)'}}>
-                <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
-              </div>
-              <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={true}/>
-            </div>
-          </div>
-          <div className="mob2-subbar">
-            <div>
-              <div style={{fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{restaurantName}</div>
-              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:1}}>{new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <div style={{position:'relative',width:36,height:36,flexShrink:0}}>
-                <svg viewBox="0 0 100 100" width={36} height={36} style={{transform:'rotate(-90deg)'}}>
-                  <circle cx="50" cy="50" r="40" stroke="var(--ring-track)" strokeWidth="12" fill="none"/>
-                  <circle cx="50" cy="50" r="40" stroke={scoreColor} strokeWidth="12" fill="none" strokeDasharray={`${scoreDash} ${circumference}`} strokeLinecap="round"/>
-                </svg>
-                <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                  <span style={{fontSize:10,fontWeight:700,color:'var(--text-primary)'}}>{data.aiProfitScore.score}</span>
-                </div>
-              </div>
-              <div>
-                <div style={{fontSize:9,color:'var(--text-muted)',textTransform:'uppercase',letterSpacing:.5}}>OptiScore</div>
-                <div style={{fontSize:11,fontWeight:600,color:scoreColor}}>{scoreLabel}</div>
-              </div>
-            </div>
-          </div>
-          <div className="mob2-tabs">
-            {MOB_TABS.map(t=>(
-              <button key={t.id} className={`mob2-tab${mobTab===t.id?' active':''}`} onClick={()=>setMobTab(t.id)}>
-                {t.label}
-                {t.id==='waste'&&data.wasteRisk.length>0&&<span style={{marginLeft:4,background:'var(--color-red)',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'1px 5px'}}>{data.wasteRisk.length}</span>}
-              </button>
-            ))}
-          </div>
-          {loading ? (
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
-              <div style={{width:22,height:22,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-              <div style={{fontSize:12,color:'var(--text-muted)'}}>Loading...</div>
-            </div>
-          ) : (
-            <div className="mob2-scroll">
-              {mobTab==='tonight' && (
-                <>
-                  {aiLoading ? (
-                    <div style={{textAlign:'center',padding:24}}>
-                      <div style={{width:20,height:20,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite',margin:'0 auto 8px'}}/>
-                      <div style={{fontSize:12,color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing menu...</div>
-                    </div>
-                  ) : (data.aiRecommendations||[]).length > 0 ? (
-                    (data.aiRecommendations||[]).slice(0,3).map((rec,i) => {
-                      const {label:ticketLabel,color:ticketColor}=getTicketMeta(i);
-                      const sellCopy=rec.sellCopy||rec.talking_point||SELL_COPY[i%SELL_COPY.length];
-                      return (
-                        <div key={i} style={{background:'var(--ticket-bg)',border:'1px solid var(--ticket-border)',borderRadius:8,padding:'14px',fontFamily:'Courier New,monospace',animation:'fadeIn .3s ease both',animationDelay:`${i*.08}s`}}>
-                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                            <span style={{fontSize:10,fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</span>
-                            <span style={{fontSize:9,color:'var(--text-faint)'}}>#{String(i+1).padStart(3,'0')}</span>
-                          </div>
-                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
-                          <div style={{fontSize:17,fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:8}}>{rec.title}</div>
-                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
-                          {rec.description&&<div style={{fontSize:12,color:'var(--text-primary)',lineHeight:1.5,marginBottom:8}}>{rec.description}</div>}
-                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
-                          <div style={{fontSize:12,color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.5,marginBottom:8}}>
-                            <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
-                          </div>
-                          <div style={{borderTop:'1px dashed var(--border)',margin:'0 0 8px'}}/>
-                          <div style={{fontSize:10,color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:.8,marginBottom:4}}>Why Tonight</div>
-                          <div style={{fontSize:11,color:'var(--text-muted)',lineHeight:1.5}}>{rec.reason_selected||rec.description}</div>
-                          <div style={{fontSize:9,color:'var(--text-disabled)',textAlign:'center',marginTop:10}}>opti-menu.com</div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div style={{textAlign:'center',padding:24,color:'var(--text-muted)',fontSize:13}}>No recommendations yet for today.</div>
-                  )}
-                </>
-              )}
-              {mobTab==='metrics' && (
-                <div className="mob2-card">
-                  <div className="mob2-card-title">
-                    <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                    Key Metrics
-                  </div>
-                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
-                    {[
-                      {l:'YTD Spend',        v:fmt(data.totalSpending),                         c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
-                      {l:'Avg Margin',        v:`${data.averageMargin.toFixed(1)}%`,             c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                      {l:'High Margin Items', v:data.highMarginCount||0,                         c:'var(--color-green)', sub:'Above 60% margin'},
-                      {l:'Low Margin Items',  v:data.lowMarginCount,                             c:data.lowMarginCount>0?'var(--color-red)':'var(--color-green)', sub:`Below ${LOW_MARGIN_THRESHOLD}% threshold`},
-                      {l:'Menu Items',        v:data.totalMenuItems,                             c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
-                      {l:'Ingredients',       v:data.totalIngredients,                           c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
-                    ].map(({l,v,c,sub})=>(
-                      <div key={l} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-elevated)',border:'1px solid var(--border-subtle)',borderRadius:8,padding:'10px 12px',gap:8}}>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div style={{fontSize:11,color:'var(--text-muted)'}}>{l}</div>
-                          <div style={{fontSize:10,color:'var(--text-faint)',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{sub}</div>
-                        </div>
-                        <div style={{fontSize:16,fontWeight:700,color:c,flexShrink:0}}>{v}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {mobTab==='waste' && (
-                <div className="mob2-card">
-                  <div className="mob2-card-title">
-                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    Waste Risk
-                    <span style={{marginLeft:'auto',fontSize:10,color:'var(--text-muted)',fontWeight:400,textTransform:'none',letterSpacing:0}}>{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
-                  </div>
-                  {allWaste.length===0 ? (
-                    <div style={{textAlign:'center',padding:16,fontSize:13,color:'var(--text-muted)'}}>No expiring items detected</div>
-                  ) : (
-                    allWaste.map((item,i) => <WasteRow key={i} item={item} router={router}/>)
-                  )}
-                  {data.wasteRisk.length>0&&(
-                    <div style={{display:'flex',alignItems:'center',gap:10,fontSize:10,color:'var(--text-faint)',paddingTop:8,borderTop:'1px solid var(--border-subtle)',marginTop:4}}>
-                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--color-red)',marginRight:3}}/>Expired/today</span>
-                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--color-amber)',marginRight:3}}/>2 days</span>
-                      <span><span style={{display:'inline-block',width:6,height:6,borderRadius:'50%',background:'var(--accent)',marginRight:3}}/>3–7 days</span>
-                    </div>
-                  )}
-                </div>
-              )}
-              {mobTab==='week' && (
-                <div className="mob2-card">
-                  <div className="mob2-card-title">
-                    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                    Week in Review
-                  </div>
-                  <MobileWeekInReview restaurantId={restaurantId} wasteRisk={data.wasteRisk} menuItems={menuItemsFull}/>
-                </div>
-              )}
-              {mobTab==='prices' && (
-                <div className="mob2-card">
-                  <div className="mob2-card-title">
-                    <svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                    Price Movement
-                    <span style={{marginLeft:'auto',fontSize:10,color:'var(--text-muted)',fontWeight:400,textTransform:'none',letterSpacing:0}}>6-month trend</span>
-                  </div>
-                  <MobilePriceMovement priceByCategory={data.priceByCategory}/>
-                </div>
-              )}
-              <div style={{height:8}}/>
-            </div>
-          )}
-          <div className="mob2-bottom-nav">
-            {[
-              {label:'Dashboard', path:'/client/dashboard',     icon:<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>},
-              {label:'Invoices',  path:'/client/invoices',      icon:<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>},
-              {label:'Ingredients',path:'/client/ingredients',  icon:<svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/></svg>},
-              {label:'Menu',      path:'/client/menu-items',    icon:<svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>},
-              {label:'Analytics', path:'/client/analytics',     icon:<svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>},
-            ].map(({label,path,icon})=>{
-              const active = path==='/client/dashboard';
-              return (
-                <div key={label} className="mob2-nav-item" onClick={()=>router.push(path)}>
-                  <div className={`mob2-nav-icon${active?' active':''}`}>{icon}</div>
-                  <div className={`mob2-nav-label${active?' active':''}`}>{label}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <Analytics/><SpeedInsights/>
-        {tourProps&&<TourOverlay {...tourProps}/>}
-        <TourDataBanner/>
-      </>
+  /* ── auth ── */
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) { setError("Authentication required"); setLoading(false); return; }
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles").select("restaurant_id,full_name").eq("id", user.id).single();
+        if (profileError || !profile?.restaurant_id) {
+          setError("Could not determine restaurant access"); setLoading(false); return;
+        }
+        setUserName(profile.full_name || "");
+        setRestaurantId(profile.restaurant_id);
+        const { data: rd } = await supabase
+          .from("restaurants")
+          .select("name,created_at,target_food_cost,deactivated_at")
+          .eq("id", profile.restaurant_id)
+          .single();
+
+        // A still-valid session doesn't stop working just because the
+        // account was deactivated elsewhere (another tab, another device,
+        // or a session that predates the deactivation) — deactivation only
+        // ever set a column, it never revoked existing tokens. This is the
+        // actual enforcement point: sign out and send them to login, where
+        // the existing reactivation prompt (see login.js) takes over.
+        if (rd?.deactivated_at) {
+          await supabase.auth.signOut();
+          router.push("/client/login");
+          return;
+        }
+
+        if (rd?.name) setRestaurantName(rd.name);
+        if (rd?.created_at) setRestaurantCreatedAt(rd.created_at);
+        if (rd?.target_food_cost != null) setTargetFoodCost(Number(rd.target_food_cost));
+      } catch {
+        setError("An unexpected error occurred"); setLoading(false);
+      }
+    })();
+  }, [reloadKey]);
+
+  /* ── data ── */
+  useEffect(() => {
+    if (!restaurantId) return;
+    (async () => {
+      try {
+        setLoading(true);
+
+        if (tourActive) {
+          const sample = await fetchSampleData();
+          if (sample) {
+            const sampleInvoiceItems = flattenSampleInvoiceItems(sample.invoices);
+            const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sample.posSales || [], sample.menuItems || []);
+            const priced = (sample.menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
+            const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
+            const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
+            const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+            const ytdSpend = (sample.invoices || [])
+              .filter((iv) => new Date(iv.date).getFullYear() === new Date().getFullYear())
+              .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
+
+            setData({
+              ingredients: sample.ingredients || [],
+              menuItems: sample.menuItems || [],
+              wasteRisk,
+              stats: {
+                avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
+                lowMargin: margins.filter((m) => m < 50).length,
+                expiring: wasteRisk.length,
+                ytdSpend,
+                pctAbove50,
+                pctBelow25,
+              },
+            });
+            setLoading(false);
+            return;
+          }
+          // fetchSampleData() returned null (a fetch error) — fall through
+          // to the real query path below rather than leave the tour blank.
+        }
+
+        const from = new Date(); from.setDate(from.getDate() - 90);
+        const fromDate = from.toISOString().split("T")[0];
+        const [{ data: invoices }, { data: ingredients }, { data: menuItems }, { data: invoiceItems }, { data: posSales }] =
+          await Promise.all([
+            supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
+            supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
+            supabase.from("menu_items")
+              .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))")
+              .eq("restaurant_id", restaurantId).limit(500),
+            supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id)")
+              .eq("invoices.restaurant_id", restaurantId).gte("invoices.date", fromDate)
+              .order("invoices(date)", { ascending: true }),
+            supabase.from("pos_sales").select("item_name,quantity_sold,sale_date")
+              .eq("restaurant_id", restaurantId).gte("sale_date", fromDate),
+          ]);
+
+        const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || []);
+        const priced = (menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
+        const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
+        const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
+        const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+        const ytdSpend = (invoices || [])
+          .filter((iv) => new Date(iv.date).getFullYear() === new Date().getFullYear())
+          .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
+
+        setData({
+          ingredients: ingredients || [],
+          menuItems: menuItems || [],
+          wasteRisk,
+          stats: {
+            avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
+            lowMargin: margins.filter((m) => m < 50).length,
+            expiring: wasteRisk.length,
+            ytdSpend,
+            pctAbove50,
+            pctBelow25,
+          },
+        });
+        setLoading(false);
+      } catch (err) {
+        setError("Failed to fetch dashboard data: " + err.message);
+        setLoading(false);
+      }
+    })();
+  }, [restaurantId, reloadKey, tourActive]);
+
+  // Which month the desktop calendar is currently browsing. Defaults to the
+  // current month; useWeekInReview always fetches the trailing 7 days too
+  // (for the "last 7 nights" summary stats), so browsing history doesn't
+  // lose that regardless of what month is in view.
+  const [viewDate, setViewDate] = useState(() => {
+    const d = new Date();
+    return { year: d.getFullYear(), month: d.getMonth() };
+  });
+  const isCurrentMonth = viewDate.year === new Date().getFullYear() && viewDate.month === new Date().getMonth();
+  const monthRangeFrom = new Date(viewDate.year, viewDate.month, 1).toISOString().split("T")[0];
+  const monthRangeTo = new Date(viewDate.year, viewDate.month + 1, 0).toISOString().split("T")[0];
+
+  const goToPrevMonth = () => {
+    setViewDate((v) => (v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 }));
+  };
+  const goToNextMonth = () => {
+    if (isCurrentMonth) return; // never browse into the future
+    setViewDate((v) => (v.month === 11 ? { year: v.year + 1, month: 0 } : { year: v.year, month: v.month + 1 }));
+  };
+
+  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading: weekLoading } =
+    useWeekInReview(
+      tourActive ? SAMPLE_RESTAURANT_ID : restaurantId,
+      data.wasteRisk,
+      data.menuItems,
+      monthRangeFrom,
+      monthRangeTo
     );
+
+  // Mobile's Week tab has no month-browsing UI — it always means "the last
+  // 7 nights," regardless of what month desktop is currently viewing. Once
+  // a month range is requested, `weekData` contains the union of that month
+  // and the trailing 7 days, so mobile needs its own filtered slice rather
+  // than reading the same array desktop's calendar uses.
+  const last7WeekData = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 6);
+    const start = cutoff.toISOString().split("T")[0];
+    return (weekData || []).filter((d) => d.date >= start);
+  }, [weekData]);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    (async () => {
+      if (tourActive) {
+        // Hardcoded specifically so the tour doesn't wait on (or pay for) a
+        // real Claude API call. Note: these titles are headline-style
+        // ("Push Waffle Fries at Lunch"), not exact dish names — unlike
+        // SAMPLE_DISH_RECS in the same file, which does use real dish
+        // names. That mismatch means toTickets()'s fuzzy match against
+        // menu items won't find a dish for these, so sample tickets show
+        // title+description but no recipe on flip. Pre-existing in the
+        // sample content itself, not something introduced here.
+        setRecommendations(
+          SAMPLE_AI_RECOMMENDATIONS.map((r) => ({
+            title: r.title,
+            description: r.description,
+            talkingPoint: r.talking_point || null,
+            type: r.type || null,
+            margin: r.margin || null,
+            confidence: r.confidence || null,
+            urgency: r.urgency || null,
+          }))
+        );
+        return;
+      }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/ai-recommendations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ restaurantId }),
+        });
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        const json = await res.json();
+        setRecommendations(
+          (json.recommendations || []).map((r) => ({
+            title: r.title,
+            description: r.description,
+            talkingPoint: r.talking_point || null,
+            type: r.type,
+            margin: r.margin || null,
+            confidence: r.confidence || null,
+            urgency: r.urgency || null,
+          }))
+        );
+      } catch (err) {
+        console.error("[fetchAIRecommendations]", err);
+        setRecommendations([]);
+      }
+    })();
+  }, [restaurantId, reloadKey, tourActive]);
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    (async () => {
+      try {
+        const result = await computeWasteResolution(supabase, restaurantId, 30);
+        setWasteResolution(result);
+      } catch (err) {
+        console.error("Failed to compute waste resolution:", err);
+        setWasteResolution({ resolvedViaRecommendation: 0, wasted: 0, resolutionRate: null });
+      }
+    })();
+  }, [restaurantId, reloadKey]);
+
+  useEffect(() => {
+    // Skip entirely during a tour — the sample restaurant has no
+    // waste_confirmations rows (a real cron artifact, not seed data), and
+    // even if it did, a "did you throw this away?" popup interrupting a
+    // guided walkthrough would be a confusing, unrelated distraction.
+    if (!restaurantId || tourActive) return;
+    (async () => {
+      const { data, error: confirmError } = await supabase
+        .from("waste_confirmations")
+        .select("id,ingredient_name,presumed_qty,presumed_value,last_seen_date")
+        .eq("restaurant_id", restaurantId)
+        .eq("status", "pending")
+        .order("presumed_value", { ascending: false });
+      if (confirmError) {
+        console.error("Failed to fetch waste confirmations:", confirmError.message);
+        return;
+      }
+      setPendingConfirmations(
+        (data || []).map((r) => ({
+          id: r.id,
+          ingredientName: r.ingredient_name,
+          presumedQty: r.presumed_qty,
+          presumedValue: r.presumed_value,
+          lastSeenDate: r.last_seen_date,
+        }))
+      );
+    })();
+  }, [restaurantId, reloadKey, tourActive]);
+
+  async function handleWasteConfirmationRespond(id, status) {
+    // The waste_confirmations table only grants authenticated users UPDATE
+    // on the `status` column — confirmed_by/confirmed_at are force-set
+    // server-side by a trigger regardless of what's sent here.
+    const { error } = await supabase.from("waste_confirmations").update({ status }).eq("id", id);
+    if (error) throw error;
   }
 
-  // ── DESKTOP ERROR ──────────────────────────────────────────────────────────
-  if (error) return (
-    <>
-      <style>{GLOBAL_CSS}</style>
-      <div style={{background:'var(--bg-root)',height:'100vh',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12}}>
-        <div style={{fontSize:16,color:'var(--text-primary)'}}>Unable to Load Dashboard</div>
-        <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>{error}</div>
-        <button onClick={()=>window.location.reload()} style={{background:'var(--accent)',border:'none',borderRadius:6,padding:'8px 18px',color:'#0a0908',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:"'Inter',sans-serif"}}>Try Again</button>
-      </div>
-    </>
-  );
+  const now = new Date();
 
-  // ── DESKTOP ────────────────────────────────────────────────────────────────
-  const wasteProteins=data.wasteRisk.filter(w=>w.protein);
-  const wasteOther=data.wasteRisk.filter(w=>!w.protein);
-  const allWaste=[...wasteProteins,...wasteOther];
-  const wasteVisible=wasteShowAll?allWaste:allWaste.slice(0,WASTE_PREVIEW);
-  const tabs=['Dashboard','Invoices','Ingredients','Menu Items','Analytics'];
-  const wasteAlertCount=data.wasteRisk.length;
-  const recCount=(data.aiRecommendations||[]).length;
+  // Calendar cells + "top performer" are scoped to the browsed month
+  // (viewDate), not always "now" — so navigating months actually changes
+  // what's shown instead of just changing a label. Days outside the
+  // browsed month are filtered out even though `weekData` may also contain
+  // the trailing-7-day union (which can spill into an adjacent month).
+  const week = useMemo(() => {
+    const days = {};
+    let top = null;
+    (weekData || []).forEach((d) => {
+      const dDate = new Date(d.date + "T12:00:00");
+      if (dDate.getFullYear() !== viewDate.year || dDate.getMonth() !== viewDate.month) return;
+      const day = dDate.getDate();
+      const extra = d.extraSold != null ? d.extraSold : 0;
+      days[day] = extra;
+      (d.dishes || []).forEach((dish) => {
+        if (dish.diff !== null && dish.diff !== undefined && (!top || dish.diff > top.delta)) {
+          top = { name: dish.name || "—", date: d.dayLabel || "", delta: dish.diff };
+        }
+      });
+    });
+    const viewMonthDate = new Date(viewDate.year, viewDate.month, 1);
+    return {
+      month: MONTHS[viewDate.month] + " " + viewDate.year,
+      viewYear: viewDate.year,
+      viewMonth: viewDate.month,
+      stats: [
+        { label: "Extra sold", sub: "COVERS VS. AVG, LAST 7 NIGHTS", value: (weekExtraSold >= 0 ? "+" : "") + (weekExtraSold || 0), tone: "green" },
+        { label: "Waste saved", sub: "ESTIMATED, LAST 7 NIGHTS", value: money(weekWasteSaved), tone: "green" },
+        { label: "Hit rate", sub: "NIGHTS ABOVE AVERAGE", value: Math.round((hitRate || 0) * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
+      ],
+      top: top ? { name: top.name, date: top.date, delta: (top.delta > 0 ? "+" : "") + top.delta } : { name: "—", date: "", delta: "0" },
+      days,
+      firstWeekdayIndex: firstWeekdayIndex(viewMonthDate),
+      daysInMonth: new Date(viewDate.year, viewDate.month + 1, 0).getDate(),
+      todayDay: isCurrentMonth ? now.getDate() : null,
+    };
+  }, [weekData, weekExtraSold, weekWasteSaved, hitRate, viewDate, isCurrentMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleRecClick(i) {
-    setSelectedRec(prev => prev === i ? null : i);
-  }
+  const s = data.stats;
+  const stats = s
+    ? [
+        { label: "Avg margin", value: s.avgMargin.toFixed(1) + "%" },
+        { label: "Low-margin items", value: String(s.lowMargin) },
+        { label: "Expiring soon", value: String(s.expiring) },
+        { label: "YTD spend", value: money(s.ytdSpend) },
+      ]
+    : [];
+
+  // OptiScore — three outcome-based buckets, no weight on platform data
+  // completeness (see chat). Bucket 3 (waste mitigation) ramps in from 0
+  // weight during a restaurant's first 30 days to its full 25pt weight by
+  // day 43 (+2 percentage points/day), since it needs real accumulated
+  // waste_risk_snapshots/waste_confirmations history to mean anything.
+  // Margin and adoption compress smoothly to fill the remaining weight,
+  // keeping their 3:2 ratio the whole time — no sudden jump when the ramp
+  // finishes.
+  const optiScoreDetail = useMemo(() => {
+    if (!s) return { value: 0, label: "Needs work" };
+
+    // Margin target: restaurant's own target_food_cost when set, else 70%
+    // margin (30% food cost) — matches the app-wide default elsewhere.
+    const marginTarget = targetFoodCost != null ? Math.max(1, 100 - targetFoodCost) : 70;
+
+    const createdAt = restaurantCreatedAt ? new Date(restaurantCreatedAt) : null;
+    const daysSinceSignup = createdAt
+      ? Math.floor((now - createdAt) / (1000 * 60 * 60 * 24))
+      : 0;
+
+    const wasteWeight = Math.min(25, Math.max(0, 2 * (daysSinceSignup - 30)));
+    const remainingWeight = 100 - wasteWeight;
+    const marginWeight = remainingWeight * 0.6;
+    const adoptWeight = remainingWeight * 0.4;
+
+    // Margin bucket — level : distribution kept at the old formula's 7:3 ratio.
+    const marginLevelWeight = marginWeight * 0.7;
+    const marginDistWeight = marginWeight * 0.3;
+    const marginLevelScore = Math.min(1, s.avgMargin / marginTarget) * marginLevelWeight;
+    // Distribution factor: 0.5 baseline, +/- up to 0.5 based on the mix of
+    // high-margin (>=50%) vs. low-margin (<25%) items.
+    const distFactor = Math.max(0, Math.min(1,
+      0.5 + 0.5 * (s.pctAbove50 || 0) - 0.5 * (s.pctBelow25 || 0)
+    ));
+    const marginDistScore = distFactor * marginDistWeight;
+
+    // Adoption bucket — hit rate primary (75%), extra-sold volume a capped
+    // bonus (25%, maxing out at 10 extra covers/week — a guess pending real
+    // calibration data).
+    const volumeFactor = Math.min(1, Math.max(0, (weekExtraSold || 0) / 10));
+    const adoptionScore = adoptWeight * (0.75 * ((hitRate || 0) / 100) + 0.25 * volumeFactor);
+
+    // Waste-mitigation bucket. null resolutionRate (no at-risk activity to
+    // measure yet) scores as full marks for this bucket — no waste problem
+    // is a good outcome, not a scoring gap.
+    const wasteRate = wasteResolution?.resolutionRate;
+    const wasteScore = wasteWeight * (wasteRate != null ? wasteRate : 1);
+
+    const value = Math.max(0, Math.min(100, Math.round(
+      marginLevelScore + marginDistScore + adoptionScore + wasteScore
+    )));
+
+    return { value, label: value >= 85 ? "Strong" : value >= 65 ? "Good" : "Needs work" };
+  }, [s, hitRate, weekExtraSold, wasteResolution, restaurantCreatedAt, targetFoodCost, now]);
+
+  const firstName = (userName || "").split(" ")[0] || "there";
+  const initials = (userName || "")
+    .split(" ").filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "•";
 
   return (
     <>
-      <style>{GLOBAL_CSS}</style>
-      <style>{`
-        .db-rec-slot{display:flex;flex-direction:column;gap:clamp(4px,.4vw,6px);transition:opacity .25s ease,flex .3s cubic-bezier(.4,0,.2,1);overflow:hidden;}
-        .db-rec-slot.collapsed{opacity:0;flex:0 0 0px!important;min-height:0!important;pointer-events:none;margin:0;padding:0;}
-        .db-recipe-panel{overflow:hidden;transition:max-height .35s cubic-bezier(.4,0,.2,1),opacity .25s ease;max-height:0;opacity:0;flex-shrink:0;}
-        .db-recipe-panel.open{max-height:500px;opacity:1;}
-        .db-ticket-click{cursor:pointer;transition:border-color .15s,box-shadow .15s;}
-        .db-ticket-click:hover{border-color:var(--text-faint);}
-        .db-ticket-click.active{border-color:var(--accent)!important;box-shadow:0 0 0 1px var(--accent);}
-      `}</style>
-      <div className="db-root">
-        <div className="db-topbar">
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(8px,1vw,16px)'}}>
-            <div className="db-logo">Opti<span>Menu</span></div>
-            <div style={{display:'flex',gap:2}}>
-              {tabs.map(t=>(
-                <button key={t} className={`db-tab${t==='Dashboard'?' active':''}`} onClick={()=>{if(t!=='Dashboard')router.push(`/client/${t.toLowerCase().replace(' ','-')}`);}}>{t}</button>
-              ))}
-            </div>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:'clamp(6px,.7vw,12px)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:'clamp(9px,.62vw,11px)',color:'var(--accent)'}}>
-              <div style={{width:5,height:5,background:'var(--accent)',borderRadius:'50%',animation:'blink 2s infinite'}}/>Active
-            </div>
-            <div style={{width:'clamp(140px,13vw,240px)',height:'clamp(26px,2.6vh,34px)',overflow:'visible',position:'relative'}}>
-              <UniversalSearch restaurantId={restaurantId} placeholder="Search..."/>
-            </div>
-            <ProfileDropdown userName={userName} userEmail={userEmail} isMobile={false}/>
-          </div>
-        </div>
+      <Head>
+        <title>Dashboard · OptiMenu</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap"
+          rel="stylesheet"
+        />
+      </Head>
 
-        <div className="db-wbar">
-          <div style={{display:'flex',alignItems:'baseline'}}>
-            <span className="db-wname">Welcome back, {userName}</span>
-            <span className="db-wsub">· {new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})} · {restaurantName}</span>
-          </div>
-          <div className="db-wactions">
-            {recCount>0&&(
-              <div className="db-waction-item">
-                <div className="db-waction-dot" style={{background:'var(--accent)'}}/>
-                <span className="db-waction-val" style={{color:'var(--accent)'}}>{recCount}</span>
-                <span>dish{recCount!==1?'es':''} to push</span>
-              </div>
-            )}
-            {wasteAlertCount>0&&(
-              <div className="db-waction-item">
-                <div className="db-waction-dot" style={{background:'var(--color-red)'}}/>
-                <span className="db-waction-val" style={{color:'var(--color-red)'}}>{wasteAlertCount}</span>
-                <span>expiring</span>
-              </div>
-            )}
-            <div className="db-waction-item">
-              <div className="db-waction-dot" style={{background:getMarginColor(data.averageMargin)}}/>
-              <span className="db-waction-val" style={{color:getMarginColor(data.averageMargin)}}>{data.averageMargin.toFixed(1)}%</span>
-              <span>avg margin</span>
-            </div>
-          </div>
-        </div>
+      <PassDashboard
+        loading={loading || weekLoading}
+        error={error || null}
+        onRetry={() => { setError(""); setReloadKey((k) => k + 1); }}
+        activeNav="dashboard"
+        NavLink={({ href, children, style, className }) => (
+          <Link href={href} style={style} className={className}>{children}</Link>
+        )}
+        restaurantName={restaurantName}
+        user={{ firstName, initials }}
+        dateLabel={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+        timeLabel={now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+        optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label }}
+        stats={stats}
+        tickets={toTickets(recommendations, data.wasteRisk, data.menuItems)}
+        waste={toWaste(data.wasteRisk)}
+        week={week}
+        weekData={last7WeekData}
+        monthWeekData={weekData}
+        weekExtraSold={weekExtraSold}
+        weekWasteSaved={weekWasteSaved}
+        hitRate={hitRate}
+        onPrevMonth={goToPrevMonth}
+        onNextMonth={goToNextMonth}
+        canGoNextMonth={!isCurrentMonth}
+        tourActive={tourActive}
+        onSearch={() => setSearchOpen(true)}
+      />
 
-        <div className="db-main">
-          {loading?(
-            <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:10}}>
-              <div style={{width:22,height:22,border:'2px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin .7s linear infinite'}}/>
-              <div style={{fontSize:'clamp(10px,.78vw,13px)',color:'var(--text-muted)'}}>Loading dashboard...</div>
-            </div>
-          ):(
-            <div style={{flex:1,minHeight:0,display:'flex',gap:'clamp(5px,.5vw,9px)',padding:'clamp(6px,.6vw,10px) clamp(24px,3vw,60px)',overflow:'hidden'}}>
+      {pendingConfirmations.length > 0 && (
+        <WasteConfirmationModal
+          items={pendingConfirmations}
+          onRespond={handleWasteConfirmationRespond}
+          onClose={() => setPendingConfirmations([])}
+        />
+      )}
 
-              {/* ── COL 1: Score + Metrics ── */}
-              <div style={{display:'flex',flexDirection:'column',gap:'clamp(5px,.5vw,9px)',width:'clamp(148px,12vw,200px)',flexShrink:0}}>
-                <div className="db-score-card" style={{flex:'0 0 auto'}}>
-                  <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'clamp(2px,.22vh,3px)',width:'100%'}}>
-                    <div className="db-rest-icon">
-                      <svg viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 010 8h-1"/><path d="M3 8h14v9a4 4 0 01-4 4H7a4 4 0 01-4-4V8z"/><line x1="6" y1="2" x2="6" y2="4"/><line x1="10" y1="2" x2="10" y2="4"/><line x1="14" y1="2" x2="14" y2="4"/></svg>
-                    </div>
-                    <div className="db-rest-name">{restaurantName}</div>
-                    <div className="db-rest-sub">Management Dashboard</div>
-                  </div>
-                  <ScoreRing score={data.aiProfitScore.score}/>
-                </div>
-                <div className="db-stats-card" style={{flex:1}}>
-                  <div style={{fontSize:'clamp(8px,.58vw,10px)',color:'var(--text-faint)',textTransform:'uppercase',letterSpacing:'0.8px',fontWeight:600,flexShrink:0}}>Key Metrics</div>
-                  {[
-                    {l:'YTD Spend',   v:fmt(data.totalSpending),             c:'var(--text-primary)', sub:`${data.totalInvoices} invoice${data.totalInvoices!==1?'s':''}`},
-                    {l:'Avg Margin',  v:`${data.averageMargin.toFixed(1)}%`, c:getMarginColor(data.averageMargin), sub:`${(100-data.averageMargin).toFixed(1)}% avg food cost`},
-                    {l:'High Margin', v:data.highMarginCount||0,             c:'var(--text-primary)', sub:'Above 60% margin'},
-                    {l:'Low Margin',  v:data.lowMarginCount,                 c:'var(--text-primary)', sub:data.lowMarginCount>0?`Below ${LOW_MARGIN_THRESHOLD}%`:'All items healthy'},
-                    {l:'Menu Items',  v:data.totalMenuItems,                 c:'var(--text-primary)', sub:`${data.menuItemAnalysis?.filter(m=>m.hasCompleteData).length||0} fully costed`},
-                    {l:'Ingredients', v:data.totalIngredients,               c:'var(--text-primary)', sub:data.unpricedIngredients>0?`${data.unpricedIngredients} unpriced`:'All priced'},
-                    {l:'Waste Alerts',v:data.wasteRisk.length,               c:data.wasteRisk.length>0?'var(--color-red)':'var(--color-green)', sub:data.wasteRisk.length>0?`${wasteProteins.length} protein, ${wasteOther.length} other`:'Nothing expiring soon'},
-                  ].map(({l,v,c,sub})=>(
-                    <div key={l} className="db-pill" style={{flex:1}}>
-                      <div className="db-pill-left"><div className="db-pill-l">{l}</div><div className="db-pill-sub">{sub}</div></div>
-                      <div className="db-pill-v" style={{color:c}}>{v}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+      {tour.active && <TourOverlay tour={tour} />}
 
-              {/* ── COL 2: Tonight's Recommendations (full height, stacked) ── */}
-              <div style={{display:'flex',flexDirection:'column',width:'clamp(200px,19vw,280px)',flexShrink:0,gap:'clamp(4px,.4vw,6px)'}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,paddingBottom:'clamp(4px,.4vh,7px)',borderBottom:'1px solid var(--border-subtle)'}}>
-                  <div style={{fontSize:'clamp(10px,.75vw,13px)',fontWeight:600,color:'var(--text-primary)'}}>Tonight's Recommendations</div>
-                  {selectedRec!==null&&(
-                    <button onClick={()=>setSelectedRec(null)} style={{fontSize:'clamp(8px,.6vw,10px)',color:'var(--accent)',background:'none',border:'none',cursor:'pointer',fontFamily:'Inter,sans-serif'}}>← All</button>
-                  )}
-                </div>
-
-                {aiLoading ? (
-                  [0,1,2].map(i=>(
-                    <div key={i} className="db-ticket" style={{flex:1,alignItems:'center',justifyContent:'center',gap:6,minHeight:'clamp(60px,8vh,90px)'}}>
-                      <div className="db-spinner"/>
-                      <div style={{fontSize:'clamp(8px,.62vw,11px)',color:'var(--text-muted)',fontFamily:'Courier New,monospace'}}>Analyzing...</div>
-                    </div>
-                  ))
-                ) : (data.aiRecommendations||[]).length > 0 ? (
-                  (data.aiRecommendations||[]).slice(0,3).map((rec,i) => {
-                    const {label:ticketLabel,color:ticketColor} = getTicketMeta(i);
-                    const sellCopy = rec.sellCopy||rec.talking_point||SELL_COPY[i%SELL_COPY.length];
-                    const isSelected = selectedRec === i;
-                    const isCollapsed = selectedRec !== null && !isSelected;
-                    return (
-                      <div
-                        key={i}
-                        className={`db-rec-slot${isCollapsed?' collapsed':''}`}
-                        style={{flex:'1 1 0',minHeight:0,overflow:'hidden'}}
-                      >
-                        <div
-                          className={`db-ticket db-ticket-click${isSelected?' active':''}`}
-                          style={{flex:'1 1 0',minHeight:0,overflow:'hidden'}}
-                          onClick={() => handleRecClick(i)}
-                        >
-                          <div style={{padding:'clamp(6px,.6vh,9px) clamp(7px,.7vw,11px)',display:'flex',flexDirection:'column',gap:0,height:'100%',overflow:'hidden'}}>
-                            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'clamp(2px,.2vh,4px)'}}>
-                              <div style={{fontSize:'clamp(7px,.6vw,10px)',fontWeight:700,color:ticketColor,textTransform:'uppercase',letterSpacing:'1px'}}>{ticketLabel}</div>
-                              <div style={{fontSize:'clamp(7px,.52vw,9px)',color:'var(--text-faint)'}}>#{i+1}</div>
-                            </div>
-                            <div className="db-receipt-divider"/>
-                            <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(11px,.95vw,15px)',fontWeight:700,color:ticketColor,lineHeight:1.2,marginBottom:'clamp(2px,.2vh,3px)'}}>{rec.title||'—'}</div>
-                            <div className="db-receipt-divider"/>
-                            {rec.description&&<div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.65vw,11px)',color:'var(--text-primary)',lineHeight:1.4,marginBottom:'clamp(2px,.2vh,3px)'}}>{rec.description}</div>}
-                            <div className="db-receipt-divider"/>
-                            <div style={{fontFamily:'Courier New,monospace',fontSize:'clamp(8px,.65vw,11px)',color:'var(--text-primary)',fontStyle:'italic',lineHeight:1.4}}>
-                              <span style={{color:'var(--accent)'}}>"</span>{sellCopy}<span style={{color:'var(--accent)'}}>"</span>
-                            </div>
-                            <div style={{fontSize:'clamp(7px,.5vw,9px)',color:'var(--text-faint)',textAlign:'center',marginTop:'clamp(3px,.3vh,5px)'}}>
-                              {isSelected?'click to collapse':'click for recipe →'}
-                            </div>
-                          </div>
-                        </div>
-                        {/* Recipe slide panel */}
-                        <div className={`db-recipe-panel${isSelected?' open':''}`}>
-                          <div style={{background:'var(--bg-surface)',border:'1px solid var(--accent)',borderRadius:'clamp(4px,.35vw,7px)',overflow:'hidden',overflowY:'auto',maxHeight:'clamp(200px,28vh,380px)'}}>
-                            <RecipePanel rec={rec} menuItems={menuItemsFull} wasteRisk={data.wasteRisk}/>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  [0,1,2].map(i=>(
-                    <div key={i} className="db-ticket" style={{flex:1,alignItems:'center',justifyContent:'center',minHeight:'clamp(60px,8vh,90px)'}}>
-                      <div className="db-empty">No recommendations yet</div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* ── COL 3: Right panel ── */}
-              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:0,overflow:'hidden'}}>
-                {/* Week in Review — takes ~60% of height */}
-                <div style={{flex:'3 1 0',minHeight:0,overflow:'hidden'}}>
-                  <WeekInReviewCard 
-                    restaurantId={restaurantId} 
-                    wasteRisk={data.wasteRisk} 
-                    menuItems={menuItemsFull}
-                  />
-                </div>
-                {/* Bottom: Waste Risk + Price Movement — takes ~40% */}
-                <div style={{flex:'2 1 0',minHeight:0,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'clamp(5px,.5vw,9px)',marginTop:'clamp(5px,.5vw,9px)',overflow:'hidden'}}>
-                  <div className="db-card">
-                    <div className="db-card-hd">
-                      <div className="db-card-title">
-                        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        Waste Risk
-                      </div>
-                      <span className="db-card-sub">{data.wasteRisk.length>0?`${data.wasteRisk.length} at risk`:'All clear'}</span>
-                    </div>
-                    <div className="db-waste-list">
-                      {data.wasteRisk.length===0&&<div className="db-empty">No expiring items detected</div>}
-                      {wasteVisible.map((item,i)=><WasteRow key={i} item={item} router={router}/>)}
-                    </div>
-                    {data.wasteRisk.length>WASTE_PREVIEW&&(
-                      <button className="db-waste-view-all" onClick={()=>setWasteShowAll(prev=>!prev)}>
-                        {wasteShowAll?'↑ Show fewer':`↓ View all ${data.wasteRisk.length} at risk`}
-                      </button>
-                    )}
-                    {data.wasteRisk.length>0&&(
-                      <div className="db-legend-strip">
-                        <span><span className="db-legend-dot" style={{background:'var(--color-red)'}}/>Expired / today</span>
-                        <span><span className="db-legend-dot" style={{background:'var(--color-amber)'}}/>2 days</span>
-                        <span><span className="db-legend-dot" style={{background:'var(--accent)'}}/>3–7 days</span>
-                      </div>
-                    )}
-                  </div>
-                  <PriceMovementCard priceByCategory={data.priceByCategory}/>
-                </div>
-              </div>
-
-            </div>
-          )}
-        </div>
-      </div>
-      <Analytics/><SpeedInsights/>
-      {tourProps&&<TourOverlay {...tourProps}/>}
-      <TourDataBanner/>
+      <UniversalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

@@ -1,9 +1,19 @@
 // pages/api/ai-recommendations.js
-// On-demand route: called from the dashboard on page load.
+// On-demand route: called from the dashboard on page load, and from the
+// unauthenticated staff briefing page (pages/staff/[token].js).
 // Returns cached recs if already generated today, otherwise generates fresh.
 //
 // The actual generation logic lives in generateForRestaurant() below and is
 // shared with /api/cron/generate-recommendations.js.
+//
+// Two authorization paths:
+//   - Authenticated dashboard user: Bearer token + restaurantId, verified
+//     against that user's own profile.restaurant_id.
+//   - Staff/NFC page: nfcToken instead of a Bearer token — there is no user
+//     session on that page at all by design (staff shouldn't need
+//     accounts). The nfc_token itself is the authorization, resolved
+//     server-side to a restaurant id — a client-supplied restaurantId is
+//     never trusted without either a verified session or a valid token.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
@@ -393,26 +403,41 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
   try {
-    const { restaurantId } = req.body;
-    if (!restaurantId) return res.status(400).json({ error: 'restaurantId is required' });
+    const { restaurantId: bodyRestaurantId, nfcToken } = req.body;
+    let restaurantId = null;
 
-    // Verify the calling user owns this restaurant
-    const authHeader = req.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
+    if (nfcToken) {
+      // Staff/NFC path — no user session exists here at all, by design.
+      // The token itself is the authorization; never trust a client-
+      // supplied restaurantId without either this or a verified session.
+      const { data: restaurant } = await supabase
+        .from('restaurants')
+        .select('id')
+        .eq('nfc_token', nfcToken)
+        .single();
+      if (!restaurant) return res.status(403).json({ error: 'Invalid token' });
+      restaurantId = restaurant.id;
+    } else {
+      // Existing authenticated-dashboard-user path.
+      if (!bodyRestaurantId) return res.status(400).json({ error: 'restaurantId is required' });
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const token = authHeader.replace('Bearer ', '');
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('restaurant_id')
-      .eq('id', user.id)
-      .single();
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('restaurant_id')
+        .eq('id', user.id)
+        .single();
 
-    if (!profile || profile.restaurant_id !== restaurantId) {
-      return res.status(403).json({ error: 'Forbidden' });
+      if (!profile || profile.restaurant_id !== bodyRestaurantId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      restaurantId = bodyRestaurantId;
     }
 
     const now = new Date();
