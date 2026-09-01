@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import BillingScreen from "../../components/client/BillingScreen";
 
@@ -12,8 +13,15 @@ import BillingScreen from "../../components/client/BillingScreen";
  * onDownloadReceipt just opens the invoice PDF Stripe already generated —
  * no custom receipt system needed, which resolves what was previously
  * flagged as blocked on "what does a receipt even look like here."
+ *
+ * user and onSignOut were never wired at all before — BillingScreen (via
+ * AccountChrome) was always showing the hardcoded demo "Marco Rossi" /
+ * marco@lunaosteria.com for every real signed-in user, and the sign-out
+ * button in its account dropdown did nothing.
  */
 export default function BillingPage() {
+  const router = useRouter();
+  const [user, setUser] = useState(null);
   const [card, setCard] = useState(null);
   const [plan, setPlan] = useState(null);
   const [billingHistory, setBillingHistory] = useState(null); // null = still loading, use BillingScreen's own demo fallback
@@ -23,6 +31,13 @@ export default function BillingPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
+
+        const { data: profile } = await supabase
+          .from("profiles").select("full_name, email").eq("id", session.user.id).single();
+        setUser({
+          name: profile?.full_name || session.user.email || "",
+          email: profile?.email || session.user.email || "",
+        });
 
         const [summaryRes, historyRes] = await Promise.all([
           fetch("/api/stripe/subscription-summary", { headers: { Authorization: `Bearer ${session.access_token}` } }),
@@ -63,6 +78,11 @@ export default function BillingPage() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/client/login");
+  };
+
   return (
     <>
       <Head>
@@ -71,10 +91,12 @@ export default function BillingPage() {
       </Head>
       <BillingScreen
         NavLink={Link}
+        {...(user ? { user } : {})}
         {...(card ? { card } : {})}
         {...(plan ? { plan } : {})}
         {...(billingHistory !== null ? { billingHistory } : {})}
         onDownloadReceipt={downloadReceipt}
+        onSignOut={signOut}
       />
     </>
   );

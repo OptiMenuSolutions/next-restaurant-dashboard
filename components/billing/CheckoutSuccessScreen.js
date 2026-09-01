@@ -6,7 +6,7 @@
  * Props: restaurantName, amount, last4, nextBillDate, NavLink
  */
 export default function CheckoutSuccessScreen({
-  restaurantName = "Luna Osteria",
+  restaurantName = "",
   amount = "$59.00",
   last4 = "4242",
   nextBillDate = "Sep 28, 2026",
@@ -33,7 +33,7 @@ export default function CheckoutSuccessScreen({
               <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
             </div>
             <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent-deep)", marginBottom: 10 }}>Payment confirmed</div>
-            <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.15, marginBottom: 10 }}>You're in, {restaurantName}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.15, marginBottom: 10 }}>You're in{restaurantName ? `, ${restaurantName}` : ""}!</div>
             <div style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6, marginBottom: 28 }}>Your founding member subscription is active. Next, let's get your kitchen set up — it takes about ten minutes.</div>
 
             <div style={{ border: "1px solid var(--line-soft)", borderRadius: 10, overflow: "hidden", marginBottom: 28, textAlign: "left" }}>
