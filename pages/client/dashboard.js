@@ -584,6 +584,10 @@ export default function DashboardPage() {
         canGoNextMonth={!isCurrentMonth}
         tourActive={tourActive}
         onSearch={() => setSearchOpen(true)}
+        onSignOut={async () => {
+          await supabase.auth.signOut();
+          router.push("/client/login");
+        }}
       />
 
       {pendingConfirmations.length > 0 && (
