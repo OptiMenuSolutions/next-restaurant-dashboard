@@ -42,7 +42,7 @@ export default function OnboardingPage() {
     if (profile?.restaurant_id) {
       const { error } = await supabase
         .from("restaurants")
-        .update({ name, cuisine_type: cuisine })
+        .update({ name, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
         .eq("id", profile.restaurant_id);
       if (error) throw error;
     } else {
@@ -52,7 +52,7 @@ export default function OnboardingPage() {
       // never fired. Create both explicitly rather than fail here.
       const { data: restaurant, error: restError } = await supabase
         .from("restaurants")
-        .insert({ name, user_id: user.id, cuisine_type: cuisine })
+        .insert({ name, user_id: user.id, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
         .select()
         .single();
       if (restError) throw restError;

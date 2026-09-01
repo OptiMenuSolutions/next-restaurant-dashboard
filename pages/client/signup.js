@@ -1,5 +1,6 @@
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import AuthScreen from "../../components/client/AuthScreen";
 
@@ -11,16 +12,20 @@ import AuthScreen from "../../components/client/AuthScreen";
  * what auto-creates the restaurants row, not the other way around. So this
  * file's job is: create the auth user, then insert the profiles row.
  *
- * Real limitation, not a guess: if email confirmation is required,
- * supabase.auth.signUp() returns no active session, and this insert (which
- * needs `auth.uid() = id` per RLS) will fail silently — there's no session
- * to authenticate it yet. login.js has a matching fallback that creates the
- * profile on first successful sign-in instead, so either path ends up with
- * a profile (and therefore a restaurant, via the trigger) — but if this
- * insert fails here, don't treat that as a bug; it's expected when
- * confirmation is on, and login.js is where it actually lands in that case.
+ * With email confirmation OFF (the intended setup — see chat), signUp()
+ * returns an active session immediately, and this now redirects straight to
+ * checkout, matching the real intended flow: signup -> checkout ->
+ * checkout-success -> onboarding -> dashboard.
+ *
+ * With email confirmation ON, signUp() returns no session, this insert
+ * (which needs `auth.uid() = id` per RLS) fails silently since there's no
+ * session to authenticate it yet, and AuthScreen falls back to its own
+ * "check your email" state — login.js has a matching fallback that creates
+ * the profile on first successful sign-in in that case.
  */
 export default function SignupPage() {
+  const router = useRouter();
+
   const handleSubmit = async ({ fullName, email, password }) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -36,11 +41,13 @@ export default function SignupPage() {
         full_name: fullName,
       });
       if (profileError) {
-        console.error("[signup] profile creation deferred to first login:", profileError.message);
+        console.error("[signup] profile creation failed:", profileError.message);
       }
+      router.push("/client/checkout");
+      return;
     }
-    // AuthScreen shows its own "check your email to confirm" state on
-    // success; no redirect needed here.
+    // No session — email confirmation is still on. AuthScreen shows its own
+    // "check your email to confirm" state on success; no redirect here.
   };
 
   return (
