@@ -244,6 +244,7 @@ export default function PassDashboard({
   canGoNextMonth = false,
   tourActive = false,
   onSearch,
+  onSignOut,
   serviceNumber = "001",
   logoSrc = "/landing/logo.png",
   logoDarkSrc = "/landing/logo-knockout.png",
@@ -255,6 +256,7 @@ export default function PassDashboard({
   const [flipped, setFlipped] = useState(null);
   const [showAllWaste, setShowAllWaste] = useState(false);
   const [openCalendarDay, setOpenCalendarDay] = useState(null);
+  const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
   const toggleTheme = useCallback(() => {
     const next = dark ? "light" : "dark";
@@ -408,55 +410,106 @@ export default function PassDashboard({
             <path d="M20 20l-3.6-3.6" />
           </svg>
         </button>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          title="Toggle light / dark"
-          className="om-hover-accent"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-            background: "none",
-            border: "1px solid var(--line)",
-            borderRadius: "20px",
-            padding: "6px 11px",
-            cursor: "pointer",
-            fontFamily: MONO,
-            fontSize: "11px",
-            letterSpacing: "0.06em",
-            fontWeight: 600,
-            color: "var(--muted)",
-          }}
-        >
-          {dark ? "LIGHT" : "DARK"}
-        </button>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "9px",
-            paddingLeft: "6px",
-            borderLeft: "1px solid var(--line)",
-          }}
-        >
+        <div style={{ position: "relative", paddingLeft: "6px", borderLeft: "1px solid var(--line)" }}>
           <div
+            onClick={() => setProfileDropdownOpen((v) => !v)}
             style={{
-              width: "26px",
-              height: "26px",
-              borderRadius: "50%",
-              background: "var(--accent)",
-              color: "#fff",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              fontSize: "11px",
-              fontWeight: 700,
+              gap: "9px",
+              cursor: "pointer",
+              padding: "3px",
+              borderRadius: "20px",
+              border: `1.5px solid ${profileDropdownOpen ? "var(--accent)" : "transparent"}`,
             }}
           >
-            {user.initials}
+            <div
+              style={{
+                width: "26px",
+                height: "26px",
+                borderRadius: "50%",
+                background: "var(--accent)",
+                color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "11px",
+                fontWeight: 700,
+                flexShrink: 0,
+              }}
+            >
+              {user.initials}
+            </div>
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>{user.firstName}</span>
           </div>
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>{user.firstName}</span>
+          {profileDropdownOpen && (
+            <>
+              <div onClick={() => setProfileDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  background: "var(--shell)",
+                  border: "1px solid var(--line)",
+                  borderRadius: "10px",
+                  width: "230px",
+                  overflow: "hidden",
+                  boxShadow: "var(--shadow-lg)",
+                  zIndex: 200,
+                }}
+              >
+                <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line-soft)" }}>
+                  <div style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text)" }}>{user.firstName}</div>
+                  <div style={{ fontSize: "11.5px", color: "var(--faint)", marginTop: "2px" }}>{restaurantName}</div>
+                </div>
+                <div style={{ padding: "6px" }}>
+                  <Link
+                    href="/client/profile"
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px", color: "var(--text)", fontSize: "13px", fontWeight: 500 }}
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                    Profile &amp; settings
+                  </Link>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px" }}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+                    <span style={{ fontSize: "13px", color: "var(--text)", fontWeight: 500, flex: 1 }}>{dark ? "Light mode" : "Dark mode"}</span>
+                    <button
+                      type="button"
+                      onClick={toggleTheme}
+                      style={{
+                        width: "34px",
+                        height: "19px",
+                        borderRadius: "10px",
+                        border: "1px solid var(--line)",
+                        position: "relative",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                        background: dark ? "var(--accent)" : "var(--line)",
+                      }}
+                    >
+                      <div style={{ position: "absolute", top: "1px", left: dark ? "17px" : "1px", width: "15px", height: "15px", borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+                    </button>
+                  </div>
+                  <Link
+                    href="/client/profile?tab=support"
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px", color: "var(--text)", fontSize: "13px", fontWeight: 500 }}
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    Support &amp; feedback
+                  </Link>
+                  <div style={{ height: "1px", background: "var(--line-soft)", margin: "4px 0" }} />
+                  <div
+                    onClick={onSignOut}
+                    style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 10px", borderRadius: "7px", color: "var(--red)", fontSize: "13px", fontWeight: 500, cursor: "pointer" }}
+                  >
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                    Sign out
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
