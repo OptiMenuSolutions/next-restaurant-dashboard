@@ -50,6 +50,12 @@ const NavLink = ({ href, style, className, children }) => (
 export default function IngredientsPage() {
   const tour = useTour("ingredients");
   const router = useRouter();
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/client/login");
+  };
+
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState(null);
@@ -222,6 +228,7 @@ export default function IngredientsPage() {
         onOpenMenuItem={(m) => m.id && router.push(`/client/menu-items/${m.id}`)}
         onOpenInvoice={(p) => p.invoiceId && router.push(`/client/invoices/${p.invoiceId}`)}
         onSearch={() => setSearchOpen(true)}
+        onSignOut={signOut}
         onUploadInvoice={() => router.push("/client/invoices")}
         restaurantName={restaurantName || "Your restaurant"}
         user={{ initials: initials || "MR", firstName: (userName || "").split(" ")[0] || "Chef" }}

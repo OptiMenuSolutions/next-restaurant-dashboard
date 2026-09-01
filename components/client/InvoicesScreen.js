@@ -110,6 +110,7 @@ export default function InvoicesScreen({
   onFlag,
   onSelect,
   onSearch,
+  onSignOut,
   restaurantName = "Trattoria Lume",
   periodLabel = "August 2026",
   lastUploadLabel = "",
@@ -146,9 +147,11 @@ export default function InvoicesScreen({
       active="invoices"
       NavLink={NavLink}
       user={user}
+      restaurantName={restaurantName}
       theme={theme}
       onToggleTheme={toggleTheme}
       onSearch={onSearch}
+      onSignOut={onSignOut}
       logoSrc={logoSrc}
       logoDarkSrc={logoDarkSrc}
     />

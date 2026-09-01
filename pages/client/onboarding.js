@@ -13,10 +13,10 @@ import OnboardingScreen from "../../components/onboarding/OnboardingScreen";
  * name/cuisine, rather than inserting a second one (which is what the
  * previous version of this file did, before the trigger was known about).
  *
- * `address` and `style` are collected by OnboardingScreen's UI but dropped
- * here — the real restaurants schema has no columns for either, only
- * `cuisine_type` (not `cuisine`, mapped below). If you want those fields
- * persisted, they need actual columns added first.
+ * `address` now has a real column (`shipping_address`) and gets saved —
+ * previously dropped entirely, since restaurants had nowhere for it to go.
+ * `style` is still dropped — no column exists for it either; same situation
+ * as address was, just not asked about yet.
  */
 export default function OnboardingPage() {
   const router = useRouter();
@@ -42,7 +42,7 @@ export default function OnboardingPage() {
     if (profile?.restaurant_id) {
       const { error } = await supabase
         .from("restaurants")
-        .update({ name, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
+        .update({ name, shipping_address: address, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
         .eq("id", profile.restaurant_id);
       if (error) throw error;
     } else {
@@ -52,7 +52,7 @@ export default function OnboardingPage() {
       // never fired. Create both explicitly rather than fail here.
       const { data: restaurant, error: restError } = await supabase
         .from("restaurants")
-        .insert({ name, user_id: user.id, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
+        .insert({ name, user_id: user.id, shipping_address: address, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
         .select()
         .single();
       if (restError) throw restError;

@@ -115,6 +115,7 @@ export default function IngredientsScreen({
   onOpenInvoice,
   onUploadInvoice,
   onSearch,
+  onSignOut,
   summary: summaryProp,
   restaurantName = "Trattoria Lume",
   user,
@@ -146,7 +147,7 @@ export default function IngredientsScreen({
   const clear = () => { setSelectedId(null); setMenuOpen(false); setInvoicesOpen(false); };
 
   const chrome = (
-    <Header active="ingredients" NavLink={NavLink} user={user} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+    <Header active="ingredients" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
 
   if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Pricing your ingredients…" /></Shell>;

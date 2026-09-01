@@ -46,6 +46,11 @@ export default function AnalyticsPage() {
   const router = useRouter();
   const fileInput = useRef(null);
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/client/login");
+  };
+
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState(null);
@@ -232,6 +237,7 @@ export default function AnalyticsPage() {
         onRetry={() => router.reload()}
         onUpload={() => fileInput.current && fileInput.current.click()}
         onSearch={() => setSearchOpen(true)}
+        onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
         user={{ initials: initials || "MR", firstName: (userName || "").split(" ")[0] || "Chef" }}
         NavLink={NavLink}

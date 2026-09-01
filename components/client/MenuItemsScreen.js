@@ -141,6 +141,7 @@ export default function MenuItemsScreen({
   onAddItem,
   onReprice,
   onSearch,
+  onSignOut,
   periodLabel,
   restaurantName = "Trattoria Lume",
   user,
@@ -173,7 +174,7 @@ export default function MenuItemsScreen({
   const selected = shown.find((d) => d.id === selectedId) || null;
 
   const chrome = (
-    <Header active="menu-items" NavLink={NavLink} user={user} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+    <Header active="menu-items" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
 
   if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Costing your plates…" /></Shell>;

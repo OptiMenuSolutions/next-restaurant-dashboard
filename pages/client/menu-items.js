@@ -101,6 +101,12 @@ const NavLink = ({ href, style, className, children }) => (
 export default function MenuItemsPage() {
   const tour = useTour("menu-items");
   const router = useRouter();
+
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/client/login");
+  };
+
   const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState(null);
@@ -219,6 +225,7 @@ export default function MenuItemsPage() {
         onAddItem={() => router.push("/client/menu-items?new=1")}
         onReprice={(d, suggested) => router.push(`/client/menu-items/${d.id}?price=${suggested}`)}
         onSearch={() => setSearchOpen(true)}
+        onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
         user={{ initials: initials || "MR", firstName: (userName || "").split(" ")[0] || "Chef" }}
         NavLink={NavLink}

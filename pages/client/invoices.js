@@ -72,6 +72,11 @@ export default function InvoicesPage() {
   const router = useRouter();
   const fileInput = useRef(null);
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+    router.push("/client/login");
+  };
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [restaurantId, setRestaurantId] = useState(null);
@@ -236,6 +241,7 @@ export default function InvoicesPage() {
         onOpen={(v) => router.push(`/client/invoices/${v.id}`)}
         onFlag={(v) => router.push(`/client/invoices/${v.id}?flag=1`)}
         onSearch={() => setSearchOpen(true)}
+        onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
         periodLabel={monthLabel}
         lastUploadLabel={lastUpload}

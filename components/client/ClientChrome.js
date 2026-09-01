@@ -110,12 +110,17 @@ export function Header({
   active,
   NavLink,
   user = { initials: "MR", firstName: "Marco" },
+  restaurantName = "",
   theme,
   onToggleTheme,
   onSearch,
+  onSignOut,
   logoSrc = "/landing/logo.png",
   logoDarkSrc = "/landing/logo-knockout.png",
 }) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dark = theme === "dark";
+
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: `9px ${PAGE_PAD}`, borderBottom: "1px solid var(--line)", flexWrap: "wrap", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0, flexShrink: 1 }}>
@@ -139,12 +144,51 @@ export function Header({
         <button type="button" title="Search" onClick={onSearch} className="om-hover-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: "50%", background: "none", cursor: "pointer", flexShrink: 0 }}>
           <SearchIcon />
         </button>
-        <button type="button" onClick={onToggleTheme} title="Toggle light / dark" className="om-hover-accent" style={{ display: "flex", alignItems: "center", gap: 7, background: "none", border: "1px solid var(--line)", borderRadius: 20, padding: "6px 11px", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 600, color: "var(--muted)" }}>
-          <span style={{ fontFamily: MONO, fontSize: 12, letterSpacing: "0.06em" }}>{theme === "dark" ? "LIGHT" : "DARK"}</span>
-        </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, paddingLeft: 6, borderLeft: "1px solid var(--line)" }}>
-          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>{user.initials}</div>
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{user.firstName}</span>
+        <div style={{ position: "relative", paddingLeft: 6, borderLeft: "1px solid var(--line)" }}>
+          <div
+            onClick={() => setDropdownOpen((v) => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", padding: 3, borderRadius: 20, border: `1.5px solid ${dropdownOpen ? "var(--accent)" : "transparent"}` }}
+          >
+            <div style={{ width: 26, height: 26, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{user.initials}</div>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>{user.firstName}</span>
+          </div>
+          {dropdownOpen && (
+            <>
+              <div onClick={() => setDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
+              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 10, width: 230, overflow: "hidden", boxShadow: "var(--shadow-lg)", zIndex: 200 }}>
+                <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line-soft)" }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text)" }}>{user.firstName}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 2 }}>{restaurantName}</div>
+                </div>
+                <div style={{ padding: 6 }}>
+                  <A NavLink={NavLink} href="/client/profile" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 500 }}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                    Profile &amp; settings
+                  </A>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7 }}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+                    <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 500, flex: 1 }}>{dark ? "Light mode" : "Dark mode"}</span>
+                    <button
+                      type="button"
+                      onClick={onToggleTheme}
+                      style={{ width: 34, height: 19, borderRadius: 10, border: "1px solid var(--line)", position: "relative", cursor: "pointer", flexShrink: 0, background: dark ? "var(--accent)" : "var(--line)" }}
+                    >
+                      <div style={{ position: "absolute", top: 1, left: dark ? 17 : 1, width: 15, height: 15, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+                    </button>
+                  </div>
+                  <A NavLink={NavLink} href="/client/profile?tab=support" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 500 }}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    Support &amp; feedback
+                  </A>
+                  <div style={{ height: 1, background: "var(--line-soft)", margin: "4px 0" }} />
+                  <div onClick={onSignOut} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, color: "var(--red)", fontSize: 13, fontWeight: 500, cursor: "pointer" }}>
+                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--red)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                    Sign out
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -16,15 +16,9 @@ import { useState } from "react";
  *                                                 /api/pos/oauth-start. Add them back only
  *                                                 once a real provider adapter exists for them.)
  *   onUploadInvoices(files)
- *   addressLookup(query) => Promise<string[]>    optional; falls back to demo suggestions
  *   NavLink, skipHref (defaults to /client/dashboard), doneHref (defaults to /client/dashboard)
  */
 const STEP_LABELS = ["Profile", "Pass tag", "Menu", "Invoices"];
-const DEMO_SUGGESTIONS = [
-  "214 Mulberry St, New York, NY 10012",
-  "214 Mulberry Ave, Brooklyn, NY 11221",
-  "2140 Mulberry Rd, Newark, NJ 07104",
-];
 const POS_LIST = [
   { key: "square", label: "Connect Square POS", mono: "POS" },
   { key: "shift4", label: "Connect Shift4 POS", mono: "POS" },
@@ -40,13 +34,23 @@ export default function OnboardingScreen({
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
   const [address, setAddress] = useState("");
-  const [addressSelected, setAddressSelected] = useState(false);
   const [style, setStyle] = useState("");
   const [cuisine, setCuisine] = useState("");
-  const [menuPhotoCount, setMenuPhotoCount] = useState(1);
+  const [menuFiles, setMenuFiles] = useState([]);
+  const [menuDragOver, setMenuDragOver] = useState(false);
   const [posChoice, setPosChoice] = useState(null);
 
-  const showSuggestions = !addressSelected && address.trim().length > 2;
+  const addMenuFiles = (fileList) => {
+    const newFiles = Array.from(fileList);
+    setMenuFiles((prev) => [...prev, ...newFiles]);
+    // Still calls through to whatever real pipeline exists — today, that's
+    // just a console.warn stub (see pages/client/onboarding.js) since there's
+    // no AI recipe-draft pipeline wired up yet. The files are now genuinely
+    // tracked and shown here regardless; what happens to them after that is
+    // a separate, still-open backend gap, not a UI bug.
+    onUploadMenuPhotos?.(newFiles);
+  };
+  const removeMenuFile = (i) => setMenuFiles((prev) => prev.filter((_, idx) => idx !== i));
 
   const inputCls = { width: "100%", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
   const labelCls = { fontSize: 11.5, fontWeight: 600, color: "var(--muted)", marginBottom: 5, display: "block" };
@@ -126,29 +130,9 @@ export default function OnboardingScreen({
                     {nameError && <div style={{ fontSize: 12, color: "#c4473e", marginTop: 5 }}>Enter a restaurant name to continue.</div>}
                   </div>
 
-                  <div style={{ marginBottom: 16, position: "relative" }}>
+                  <div style={{ marginBottom: 16 }}>
                     <span style={labelCls}>Shipping address</span>
-                    {!addressSelected ? (
-                      <input style={inputCls} value={address} onChange={(e) => { setAddress(e.target.value); setAddressSelected(false); }} autoComplete="off" placeholder="Start typing your address…" />
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", background: "var(--panel)" }}>
-                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--accent-deep)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12" /></svg>
-                        <span style={{ flex: 1, fontSize: 13.5 }}>{address}</span>
-                        <button type="button" onClick={() => { setAddress(""); setAddressSelected(false); }} style={{ fontSize: 12, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", flexShrink: 0 }}>Change</button>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 5 }}>We'll validate this against USPS before your tag ships.</div>
-
-                    {showSuggestions && (
-                      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 8, boxShadow: "var(--shadow-lg)", marginTop: 4, zIndex: 5, overflow: "hidden" }}>
-                        {DEMO_SUGGESTIONS.map((s) => (
-                          <button key={s} type="button" onClick={() => { setAddress(s); setAddressSelected(true); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", padding: "10px 12px", background: "transparent", border: "none", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", fontFamily: "'Manrope',sans-serif" }}>
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--faint)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0118 0z" /><circle cx="12" cy="10" r="3" /></svg>
-                            <span style={{ fontSize: 13 }}>{s}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <input style={inputCls} value={address} onChange={(e) => setAddress(e.target.value)} autoComplete="street-address" placeholder="Where should we ship your NFC tag?" />
                   </div>
 
                   <div style={{ display: "flex", gap: 12 }}>
@@ -212,20 +196,55 @@ export default function OnboardingScreen({
                   <div style={stepTitle}>Add photos of your menu</div>
                   <div style={stepSub}>We'll pull dish names, prices and listed ingredients from these, then have our AI draft a first-pass recipe for each dish. We'll follow up with you to confirm the real recipes.</div>
 
-                  <label style={{ display: "block", border: "1.5px dashed var(--line)", borderRadius: 12, padding: 22, textAlign: "center", background: "var(--panel)", marginBottom: 16, cursor: "pointer" }}>
-                    <input type="file" multiple accept="application/pdf,image/*" style={{ display: "none" }} onChange={(e) => onUploadMenuPhotos?.(e.target.files)} />
+                  <label
+                    onDragOver={(e) => { e.preventDefault(); setMenuDragOver(true); }}
+                    onDragLeave={() => setMenuDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setMenuDragOver(false);
+                      if (e.dataTransfer.files?.length) addMenuFiles(e.dataTransfer.files);
+                    }}
+                    style={{
+                      display: "block",
+                      border: `1.5px dashed ${menuDragOver ? "var(--accent-deep)" : "var(--line)"}`,
+                      borderRadius: 12,
+                      padding: 22,
+                      textAlign: "center",
+                      background: menuDragOver ? "var(--accent-tint)" : "var(--panel)",
+                      marginBottom: 16,
+                      cursor: "pointer",
+                      transition: "border-color .15s, background .15s",
+                    }}
+                  >
+                    <input
+                      type="file"
+                      multiple
+                      accept="application/pdf,image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => { addMenuFiles(e.target.files); e.target.value = ""; }}
+                    />
                     <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 6 }}>Drag files here</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>or snap a photo of each menu page — PDF, JPG or PNG</div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>or click to browse — PDF, JPG or PNG, as many pages as you need</div>
                   </label>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 12 }}>
-                    {Array.from({ length: menuPhotoCount }, (_, i) => (
-                      <div key={i} style={{ height: 90, borderRadius: 8, border: "1px dashed var(--line)", background: "var(--panel)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "var(--faint)", textAlign: "center", padding: 6 }}>
-                        Menu page {i + 1}
-                      </div>
-                    ))}
-                  </div>
-                  <button type="button" onClick={() => setMenuPhotoCount((c) => Math.min(6, c + 1))} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>+ Add another page</button>
+                  {menuFiles.length > 0 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 4 }}>
+                      {menuFiles.map((f, i) => (
+                        <div key={i} style={{ position: "relative", height: 90, borderRadius: 8, border: "1px solid var(--line)", background: "var(--shell)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 6, overflow: "hidden" }}>
+                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /></svg>
+                          <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", wordBreak: "break-word", lineHeight: 1.3 }}>{f.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeMenuFile(i)}
+                            aria-label={`Remove ${f.name}`}
+                            style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

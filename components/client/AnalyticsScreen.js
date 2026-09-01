@@ -108,6 +108,8 @@ export default function AnalyticsScreen({
   onRetry,
   onUpload,
   onSelectDish,
+  onSearch,
+  onSignOut,
   restaurantName = "Trattoria Lume",
   user,
   theme: themeProp,
@@ -132,7 +134,7 @@ export default function AnalyticsScreen({
   const days = useMemo(() => normalise(daysProp || DEMO_DAYS), [daysProp]);
 
   const chrome = (
-    <Header active="analytics" NavLink={NavLink} user={user} theme={theme} onToggleTheme={toggleTheme} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+    <Header active="analytics" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
 
   if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Reading the tickets…" /></Shell>;
