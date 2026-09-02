@@ -6,6 +6,8 @@ import supabase from "../../lib/supabaseClient";
 import OnboardingScreen from "../../components/onboarding/OnboardingScreen";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
+import { parseMenuFiles } from "../../lib/parseMenu";
+import ParseReviewModal from "../../components/ParseReviewModal";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -33,6 +35,36 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [restaurantId, setRestaurantId] = useState(null);
   const [duplicateModal, setDuplicateModal] = useState(null);
+  const [menuParsing, setMenuParsing] = useState(false);
+  const [menuParseError, setMenuParseError] = useState("");
+  const [menuReviewData, setMenuReviewData] = useState(null); // { dishes, ingredientLibrary, resolve } | null
+
+  // Returns a promise that only resolves once the review is actually done
+  // (committed or discarded) — this is what OnboardingScreen's continueStep
+  // awaits before advancing past step 3, so the wizard can't move on mid-parse.
+  function parseMenuAndWaitForReview(files) {
+    return new Promise(async (resolve) => {
+      if (!restaurantId) { resolve(); return; }
+      setMenuParseError("");
+      setMenuParsing(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const result = await parseMenuFiles(files, restaurantId, session?.access_token);
+        setMenuParsing(false);
+        setMenuReviewData({ ...result, resolve });
+      } catch (err) {
+        console.error("[onboarding] Menu parse failed:", err);
+        // Don't trap them on step 3 over a failed parse — they can always
+        // upload a menu later from the real Menu Items page. Show the error,
+        // let them continue.
+        setMenuParseError(err.message);
+        setMenuParsing(false);
+        resolve();
+      }
+    });
+  }
+  const [uploadStatus, setUploadStatus] = useState(null); // { message, detail } | null
+  const [uploadError, setUploadError] = useState("");
 
   function askDuplicateConfirm(fileName, existing) {
     return new Promise((resolve) => {
@@ -120,9 +152,8 @@ export default function OnboardingPage() {
       <OnboardingScreen
         NavLink={Link}
         onFinish={finishOnboarding}
-        onUploadMenuPhotos={(files) => {
-          console.warn("Menu photo upload has no AI recipe-draft pipeline wired — not implemented:", files);
-        }}
+        onParseMenu={parseMenuAndWaitForReview}
+        parsingMenu={menuParsing}
         onSelectPos={async (key) => {
           if (key === "upload") return; // "I'll upload manually" — no OAuth, just continue the wizard
           if (!restaurantId) return;
@@ -145,25 +176,55 @@ export default function OnboardingPage() {
           if (!files || !files.length || !restaurantId) return;
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
+          setUploadError("");
           const { uploadInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
-          // No dedicated progress UI in this wizard step — logs progress and
-          // surfaces only failures, unlike invoices.js's fuller status banner.
+          // Same batching rule as invoices.js — files selected together in
+          // one action are pages of one invoice, regardless of what each
+          // page's own OCR reads for its invoice number.
+          let batchInvoiceId = null;
           for (const file of Array.from(files)) {
             try {
-              const result = await uploadInvoice(file, restaurantId, session.access_token, (message) => {
-                console.log(`[onboarding upload] ${file.name}: ${message}`);
-              });
+              setUploadStatus({ message: `Uploading ${file.name}...`, detail: null });
+              const result = await uploadInvoice(
+                file, restaurantId, session.access_token,
+                (message, detail) => setUploadStatus({ message, detail }),
+                batchInvoiceId
+              );
               if (result.status === "duplicate") {
                 const merge = await askDuplicateConfirm(file.name, result.existing);
-                await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+                const saved = await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+                batchInvoiceId = saved.invoiceId;
+              } else if (result.status === "saved") {
+                batchInvoiceId = result.invoiceId;
               }
             } catch (err) {
               console.error("[onboarding] Invoice upload failed:", err);
-              window.alert(`${file.name}: ${err.message}`);
+              setUploadError(`${file.name}: ${err.message}`);
             }
           }
+          setUploadStatus(null);
         }}
       />
+      {(uploadStatus || uploadError) && (
+        <div
+          style={{
+            position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340,
+            background: uploadError ? "#faeae8" : "#e8f7f9",
+            border: `1px solid ${uploadError ? "#c4473e" : "#02a4ba"}`,
+            borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif",
+            fontSize: 13, color: uploadError ? "#c4473e" : "#03808f", boxShadow: "0 10px 30px rgba(17,24,25,0.15)",
+          }}
+        >
+          {uploadError ? (
+            <div style={{ fontWeight: 700 }}>{uploadError}</div>
+          ) : (
+            <>
+              <div style={{ fontWeight: 700 }}>{uploadStatus.message}</div>
+              {uploadStatus.detail && <div style={{ fontSize: 11.5, marginTop: 3, opacity: 0.85 }}>{uploadStatus.detail}</div>}
+            </>
+          )}
+        </div>
+      )}
       {duplicateModal && (
         <DuplicateInvoiceModal
           fileName={duplicateModal.fileName}
@@ -171,6 +232,20 @@ export default function OnboardingPage() {
           onMerge={duplicateModal.onMerge}
           onSaveNew={duplicateModal.onSaveNew}
         />
+      )}
+      {menuReviewData && (
+        <ParseReviewModal
+          dishes={menuReviewData.dishes}
+          ingredientLibrary={menuReviewData.ingredientLibrary}
+          restaurantId={restaurantId}
+          onCommitted={() => { menuReviewData.resolve?.(); setMenuReviewData(null); }}
+          onClose={() => { menuReviewData.resolve?.(); setMenuReviewData(null); }}
+        />
+      )}
+      {menuParseError && (
+        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
+          <div style={{ fontWeight: 700 }}>{menuParseError}</div>
+        </div>
       )}
     </>
   );

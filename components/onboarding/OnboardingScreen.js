@@ -8,7 +8,10 @@ import { useState } from "react";
  * Props
  *   onFinish({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine })
  *                                                 called when step 5 completes
- *   onUploadMenuPhotos(files)                    wire to real upload
+ *   onParseMenu(files) => Promise      called once, with everything added, when
+ *                                      Continue is clicked on step 3 — resolves
+ *                                      only once the review/commit is actually
+ *                                      done (see pages/client/onboarding.js)
  *   onSelectPos(key)                             "square"|"shift4"|"upload" — matches
  *                                                 lib/pos/registry.js's real providers.
  *                                                 (Toast/Clover were listed here previously
@@ -27,7 +30,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onUploadMenuPhotos, onSelectPos, onUploadInvoices,
+  onFinish, onParseMenu, parsingMenu, onSelectPos, onUploadInvoices,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -47,12 +50,11 @@ export default function OnboardingScreen({
   const addMenuFiles = (fileList) => {
     const newFiles = Array.from(fileList);
     setMenuFiles((prev) => [...prev, ...newFiles]);
-    // Still calls through to whatever real pipeline exists — today, that's
-    // just a console.warn stub (see pages/client/onboarding.js) since there's
-    // no AI recipe-draft pipeline wired up yet. The files are now genuinely
-    // tracked and shown here regardless; what happens to them after that is
-    // a separate, still-open backend gap, not a UI bug.
-    onUploadMenuPhotos?.(newFiles);
+    // Deliberately does NOT call onParseMenu here — unlike invoices, a menu
+    // parse is one long synchronous request (OCR + a recipe-build call per
+    // dish), often a couple of minutes. Firing it per file-add would mean
+    // re-parsing repeatedly as someone adds pages one at a time. It fires
+    // once, on Continue, with everything they've added — see continueStep.
   };
   const removeMenuFile = (i) => setMenuFiles((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -71,8 +73,16 @@ export default function OnboardingScreen({
   const stepTitle = { fontSize: 21, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 6 };
   const stepSub = { fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 };
 
-  const continueStep = () => {
+  const continueStep = async () => {
     if (step === 1 && !name.trim()) { setNameError(true); return; }
+    if (step === 3 && menuFiles.length > 0) {
+      // Waits for the actual review (commit or discard) to finish before
+      // moving on — onParseMenu's promise doesn't resolve until then, see
+      // pages/client/onboarding.js.
+      await onParseMenu?.(menuFiles);
+      setStep((s) => s + 1);
+      return;
+    }
     if (step === 5) {
       onFinish?.({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine });
       setDone(true);
@@ -361,8 +371,13 @@ export default function OnboardingScreen({
                 {step > 1 ? (
                   <button type="button" onClick={() => setStep((s) => Math.max(1, s - 1))} style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 24, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Back</button>
                 ) : <span />}
-                <button type="button" onClick={continueStep} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                  {step === 5 ? "Finish setup" : "Continue"}
+                <button
+                  type="button"
+                  onClick={continueStep}
+                  disabled={parsingMenu}
+                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: 14, fontWeight: 700, cursor: parsingMenu ? "default" : "pointer", opacity: parsingMenu ? 0.6 : 1 }}
+                >
+                  {parsingMenu ? "Reading your menu…" : step === 5 ? "Finish setup" : "Continue"}
                 </button>
               </div>
             </div>

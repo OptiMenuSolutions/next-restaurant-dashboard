@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -9,6 +9,8 @@ import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import { parseMenuFiles } from "../../lib/parseMenu";
+import ParseReviewModal from "../../components/ParseReviewModal";
 
 /**
  * pages/client/menu-items.js — menu items screen, v5 shell.
@@ -112,9 +114,31 @@ export default function MenuItemsPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [error, setError] = useState(null);
   const [restaurantName, setRestaurantName] = useState("");
+  const [restaurantId, setRestaurantId] = useState(null);
   const [userName, setUserName] = useState("");
   const [targetMargin, setTargetMargin] = useState(70);
   const [items, setItems] = useState([]);
+
+  const menuFileInput = useRef(null);
+  const [menuParsing, setMenuParsing] = useState(false);
+  const [menuParseError, setMenuParseError] = useState("");
+  const [reviewData, setReviewData] = useState(null); // { dishes, ingredientLibrary } | null
+
+  async function handleMenuFiles(fileList) {
+    if (!fileList || !fileList.length || !restaurantId) return;
+    setMenuParseError("");
+    setMenuParsing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const result = await parseMenuFiles(fileList, restaurantId, session?.access_token);
+      setReviewData(result);
+    } catch (err) {
+      console.error("[menu-items] Menu parse failed:", err);
+      setMenuParseError(err.message);
+    } finally {
+      setMenuParsing(false);
+    }
+  }
 
   const load = useCallback(async (restaurantId) => {
     const since = new Date();
@@ -183,6 +207,7 @@ export default function MenuItemsPage() {
         const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
         if (!rest) return;
         if (!cancelled) {
+          setRestaurantId(profile.restaurant_id);
           setRestaurantName(rest?.name || "");
           if (rest?.target_food_cost) setTargetMargin(100 - num(rest.target_food_cost));
         }
@@ -219,6 +244,7 @@ export default function MenuItemsPage() {
         periodLabel={periodLabel}
         onOpenItem={(d) => router.push(`/client/menu-items/${d.id}`)}
         onAddItem={() => router.push("/client/menu-items?new=1")}
+        onUploadMenu={() => menuFileInput.current && menuFileInput.current.click()}
         onReprice={(d, suggested) => router.push(`/client/menu-items/${d.id}?price=${suggested}`)}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
@@ -229,6 +255,45 @@ export default function MenuItemsPage() {
       {tour.active && <TourOverlay tour={tour} />}
 
       <UniversalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      <input
+        ref={menuFileInput}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png,.webp"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => { handleMenuFiles(e.target.files); e.target.value = ""; }}
+      />
+
+      {menuParsing && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "var(--shell,#fff)", border: "1px solid var(--line,#d8dfe0)", borderRadius: 14, padding: "32px 36px", textAlign: "center", maxWidth: 360, fontFamily: "'Manrope',sans-serif" }}>
+            <div style={{ width: 32, height: 32, border: "3px solid #d8dfe0", borderTopColor: "#02a4ba", borderRadius: "50%", margin: "0 auto 18px", animation: "spin 0.8s linear infinite" }} />
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#111819", marginBottom: 6 }}>Reading your menu...</div>
+            <div style={{ fontSize: 12.5, color: "#4b585b", lineHeight: 1.5 }}>Building dish-by-dish recipes can take a few minutes for a full menu — don't close this tab.</div>
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {menuParseError && (
+        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
+          <div style={{ fontWeight: 700 }}>{menuParseError}</div>
+        </div>
+      )}
+
+      {reviewData && (
+        <ParseReviewModal
+          dishes={reviewData.dishes}
+          ingredientLibrary={reviewData.ingredientLibrary}
+          restaurantId={restaurantId}
+          onCommitted={async () => {
+            setReviewData(null);
+            await load(restaurantId);
+          }}
+          onClose={() => setReviewData(null)}
+        />
+      )}
     </>
   );
 }

@@ -93,6 +93,35 @@ export default async function handler(req, res) {
       invoiceRecord      = { id: append_to_invoice_id };
       results.invoice_id = append_to_invoice_id;
       console.log(`[confirm-invoice] Append mode — adding to invoice ${append_to_invoice_id}`);
+
+      // Bug fix: this branch never saved the new page's file reference at
+      // all — only the non-append branch below did. A merged multi-page
+      // invoice would silently lose every page's photo after the first,
+      // and "View original" would only ever show page 1. Continue the
+      // page numbering from whatever's already attached to this invoice,
+      // rather than always starting at 1 (which would collide with an
+      // existing page 1).
+      if (allFileUrls.length > 0) {
+        const { data: existingFiles } = await supabase
+          .from('invoice_files')
+          .select('page_number')
+          .eq('invoice_id', append_to_invoice_id)
+          .order('page_number', { ascending: false })
+          .limit(1);
+        const nextPageStart = (existingFiles?.[0]?.page_number || 0) + 1;
+
+        const filesToInsert = allFileUrls.map((url, idx) => ({
+          invoice_id:  append_to_invoice_id,
+          file_url:    url,
+          page_number: nextPageStart + idx,
+        }));
+        const { error: filesError } = await supabase
+          .from('invoice_files')
+          .insert(filesToInsert);
+        if (filesError) {
+          results.errors.push('Failed to save file URLs: ' + filesError.message);
+        }
+      }
     } else {
       const { data, error: invoiceError } = await supabase
         .from('invoices')

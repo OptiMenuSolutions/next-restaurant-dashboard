@@ -139,6 +139,7 @@ export default function MenuItemsScreen({
   onRetry,
   onOpenItem,
   onAddItem,
+  onUploadMenu,
   onReprice,
   onSearch,
   onSignOut,
@@ -352,6 +353,7 @@ export default function MenuItemsScreen({
                 periodLabel={periodLabel}
                 onPick={(d) => { setFilter("All"); setSelectedId(d.id); }}
                 onEstimated={() => { setFilter("Part-estimated"); setSelectedId(null); }}
+                onUploadMenu={onUploadMenu}
               />
             )}
           </div>
@@ -363,7 +365,7 @@ export default function MenuItemsScreen({
 
 /* ── right pane: the whole menu ─────────────────────────────────────── */
 
-function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, onEstimated }) {
+function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, onEstimated, onUploadMenu }) {
   const revenue = data.reduce((a, d) => a + d.price * d.covers, 0);
   const weighted = revenue ? (data.reduce((a, d) => a + (d.price - d.cost) * d.covers, 0) / revenue) * 100 : 0;
   const avgDrift = data.reduce((a, d) => a + d.drift, 0) / data.length;
@@ -383,6 +385,16 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 7 }}>
             {periodLabel || `${data.length} dishes costed · target margin ${pct(tgt)}`}
           </div>
+          {onUploadMenu && (
+            <button
+              type="button"
+              onClick={onUploadMenu}
+              style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 7, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, color: "var(--accent-deep)", cursor: "pointer" }}
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+              Upload new menu
+            </button>
+          )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
           <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{pct(weighted)}</div>

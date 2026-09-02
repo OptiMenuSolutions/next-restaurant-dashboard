@@ -1353,6 +1353,17 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'restaurant_id is required' });
   }
 
+  // Every other endpoint in this app verifies the caller owns the
+  // restaurant before doing anything — this one didn't. Even in review
+  // mode (no DB write), this triggers real Claude API calls per request;
+  // without this check, anyone who knew or guessed a restaurant_id could
+  // run up real API costs against someone else's account with no login at
+  // all. Matches the same pattern already used in commit-reviewed-menu.js
+  // and everywhere else (confirm-invoice.js, the Stripe routes, etc.).
+  const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
+    .then(m => m.verifyRestaurantAccess(req, restaurantId));
+  if (authError) return res.status(authStatus).json({ error: authError });
+
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   for (const file of fileList) {
     const ext = path.extname(file.originalFilename || '').toLowerCase();

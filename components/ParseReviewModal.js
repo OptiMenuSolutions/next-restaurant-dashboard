@@ -721,7 +721,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                             <optgroup label="Count">
                               <option value="each">each</option>
                               <option value="bunch">bunch</option>
-                              <option value="slice">slice</option>
                               <option value="sprig">sprig</option>
                               <option value="sheet">sheet</option>
                             </optgroup>

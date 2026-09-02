@@ -185,16 +185,29 @@ export default function InvoicesPage() {
     setUploadError("");
     const { uploadInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
+    // Files selected together in one action are treated as pages of the
+    // SAME invoice — see lib/uploadInvoice.js's header comment for why this
+    // is more robust than relying on invoice-number matching. Only the
+    // first file can trigger the "this looks like a duplicate of something
+    // already on file" prompt; every file after it in this same batch
+    // always appends into whatever invoice the first file established.
+    let batchInvoiceId = null;
+
     for (const file of Array.from(fileList)) {
       try {
         setUploadStatus({ message: `Uploading ${file.name}...`, detail: null });
-        const result = await uploadInvoice(file, restaurantId, session.access_token, (message, detail) => {
-          setUploadStatus({ message, detail });
-        });
+        const result = await uploadInvoice(
+          file, restaurantId, session.access_token,
+          (message, detail) => setUploadStatus({ message, detail }),
+          batchInvoiceId
+        );
 
         if (result.status === "duplicate") {
           const merge = await askDuplicateConfirm(file.name, result.existing);
-          await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+          const saved = await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+          batchInvoiceId = saved.invoiceId;
+        } else if (result.status === "saved") {
+          batchInvoiceId = result.invoiceId;
         }
       } catch (err) {
         console.error("[invoices] Upload failed:", err);
