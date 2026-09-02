@@ -38,6 +38,8 @@ export default function OnboardingPage() {
   const [menuParsing, setMenuParsing] = useState(false);
   const [menuParseError, setMenuParseError] = useState("");
   const [menuReviewData, setMenuReviewData] = useState(null); // { dishes, ingredientLibrary, resolve } | null
+  const [menuReviewChoice, setMenuReviewChoice] = useState(null); // null | 'self' | 'team'
+  const [teamHandoffSaving, setTeamHandoffSaving] = useState(false);
 
   // Returns a promise that only resolves once the review is actually done
   // (committed or discarded) — this is what OnboardingScreen's continueStep
@@ -62,6 +64,47 @@ export default function OnboardingPage() {
         resolve();
       }
     });
+  }
+
+  // Saves the already-parsed draft as-is, no edits — reuses the exact same
+  // {dishes, ingredientLibrary} the review modal would have shown, so
+  // there's no second AI call and no risk of a re-run producing a
+  // different result than what was just parsed.
+  async function handOffMenuToTeam() {
+    setTeamHandoffSaving(true);
+    setMenuParseError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/menu/commit-reviewed-menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          restaurant_id: restaurantId,
+          dishes: menuReviewData.dishes,
+          ingredient_library: menuReviewData.ingredientLibrary,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not save your menu.");
+      // Stop here and show confirmation — don't resolve/clear yet. The
+      // wizard only advances once they've actively acknowledged it via
+      // the "Continue" button below, not silently the moment saving
+      // finishes.
+      setMenuReviewChoice("team-done");
+    } catch (err) {
+      console.error("[onboarding] Team hand-off save failed:", err);
+      setMenuParseError(err.message);
+      // Back to the choice prompt so they can retry or pick self-review instead.
+      setMenuReviewChoice(null);
+    } finally {
+      setTeamHandoffSaving(false);
+    }
+  }
+
+  function finishTeamHandoff() {
+    menuReviewData.resolve?.();
+    setMenuReviewData(null);
+    setMenuReviewChoice(null);
   }
   const [uploadStatus, setUploadStatus] = useState(null); // { message, detail } | null
   const [uploadError, setUploadError] = useState("");
@@ -233,13 +276,68 @@ export default function OnboardingPage() {
           onSaveNew={duplicateModal.onSaveNew}
         />
       )}
-      {menuReviewData && (
+      {menuReviewData && !menuReviewChoice && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 460, background: "var(--shell,#fff)", border: "1px solid var(--line,#d8dfe0)", borderRadius: 14, boxShadow: "0 24px 60px rgba(17,24,25,0.25)", padding: "26px 28px", fontFamily: "'Manrope',sans-serif" }}>
+            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep,#03808f)", marginBottom: 8 }}>
+              {menuReviewData.dishes.length} dishes found
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text,#111819)", marginBottom: 10, lineHeight: 1.35 }}>
+              How do you want these recipes reviewed?
+            </div>
+            <div style={{ fontSize: 13.5, color: "var(--muted,#4b585b)", lineHeight: 1.55, marginBottom: 22 }}>
+              We've drafted a first-pass recipe for every dish. You can go through and correct them yourself now, or skip that and have an OptiMenu team member work through them with someone in your kitchen after signup.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setMenuReviewChoice("self")}
+                disabled={teamHandoffSaving}
+                style={{ padding: "13px 16px", borderRadius: 10, border: "1px solid var(--line,#d8dfe0)", background: "none", color: "var(--text,#111819)", fontSize: 13.5, fontWeight: 700, cursor: teamHandoffSaving ? "default" : "pointer", textAlign: "left", opacity: teamHandoffSaving ? 0.5 : 1 }}
+              >
+                I'll review it myself now
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted,#4b585b)", marginTop: 3 }}>Go through each dish and correct anything that's off.</div>
+              </button>
+              <button
+                type="button"
+                onClick={handOffMenuToTeam}
+                disabled={teamHandoffSaving}
+                style={{ padding: "13px 16px", borderRadius: 10, border: "none", background: "var(--accent,#02a4ba)", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: teamHandoffSaving ? "default" : "pointer", textAlign: "left", opacity: teamHandoffSaving ? 0.7 : 1 }}
+              >
+                {teamHandoffSaving ? "Saving..." : "Let OptiMenu handle it with your kitchen staff"}
+                <div style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.85)", marginTop: 3 }}>We'll reach out to review these with your kitchen team.</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {menuReviewData && menuReviewChoice === "team-done" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 420, background: "var(--shell,#fff)", border: "1px solid var(--line,#d8dfe0)", borderRadius: 14, boxShadow: "0 24px 60px rgba(17,24,25,0.25)", padding: "28px", fontFamily: "'Manrope',sans-serif", textAlign: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eaf6ee", border: "1px solid #bfe4c9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 20 }}>✓</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text,#111819)", marginBottom: 10 }}>
+              You're all set
+            </div>
+            <div style={{ fontSize: 13.5, color: "var(--muted,#4b585b)", lineHeight: 1.6, marginBottom: 24 }}>
+              A representative will reach out in the coming days to review your menu with your kitchen team.
+            </div>
+            <button
+              type="button"
+              onClick={finishTeamHandoff}
+              style={{ width: "100%", padding: "12px 16px", borderRadius: 10, border: "none", background: "var(--accent,#02a4ba)", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+      {menuReviewData && menuReviewChoice === "self" && (
         <ParseReviewModal
           dishes={menuReviewData.dishes}
           ingredientLibrary={menuReviewData.ingredientLibrary}
           restaurantId={restaurantId}
-          onCommitted={() => { menuReviewData.resolve?.(); setMenuReviewData(null); }}
-          onClose={() => { menuReviewData.resolve?.(); setMenuReviewData(null); }}
+          onCommitted={() => { menuReviewData.resolve?.(); setMenuReviewData(null); setMenuReviewChoice(null); }}
+          onClose={() => { menuReviewData.resolve?.(); setMenuReviewData(null); setMenuReviewChoice(null); }}
         />
       )}
       {menuParseError && (
