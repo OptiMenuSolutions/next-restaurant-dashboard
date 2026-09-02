@@ -12,14 +12,20 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
-import formidable from 'formidable';
-import fs from 'fs';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
 
+// Vercel's serverless functions have a hard 4.5MB request body limit,
+// enforced at the platform level — not configurable via formidable's own
+// maxFileSize or any Next.js config. This used to receive the raw file
+// directly via multipart upload, which meant any real phone photo of an
+// invoice could trivially exceed that limit and fail with a plain-text 413
+// the client couldn't even parse as an error. Now the client uploads to
+// Supabase Storage first (as it already did for record-keeping) and sends
+// only the small file_url here — this function fetches the actual file
+// content itself, server-to-server, which has no such limit.
 export const config = {
   api: {
-    bodyParser: false,
     responseLimit: false,
   },
   maxDuration: 300,
@@ -614,36 +620,20 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.flushHeaders();
 
-  const form = formidable({ maxFileSize: 20 * 1024 * 1024 });
-  let fields, files;
-  try {
-    [fields, files] = await form.parse(req);
-  } catch {
-    streamEvent(res, { type: 'error', error: 'Failed to parse upload' });
-    return res.end();
-  }
-
-  const file = Array.isArray(files.file) ? files.file[0] : files.file;
-  if (!file) {
-    streamEvent(res, { type: 'error', error: 'No file provided' });
-    return res.end();
-  }
-
-  const restaurantId = Array.isArray(fields.restaurant_id)
-    ? fields.restaurant_id[0]
-    : fields.restaurant_id;
-
-  const fileUrl = Array.isArray(fields.file_url)
-    ? fields.file_url[0]
-    : fields.file_url;
+  const { restaurant_id: restaurantId, file_url: fileUrl, file_name: fileNameInput } = req.body || {};
 
   if (!restaurantId) {
     streamEvent(res, { type: 'error', error: 'restaurant_id is required' });
     return res.end();
   }
+  if (!fileUrl) {
+    streamEvent(res, { type: 'error', error: 'file_url is required' });
+    return res.end();
+  }
 
-  const ext = path.extname(file.originalFilename || '').toLowerCase();
-  const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
+  const fileName = fileNameInput || 'invoice';
+  const ext = path.extname(fileName).toLowerCase();
+  const isPDF = ext === '.pdf';
 
   const mimeType = isPDF ? 'application/pdf'
     : ext === '.png' ? 'image/png'
@@ -656,10 +646,14 @@ export default async function handler(req, res) {
     return res.end();
   }
 
-  const fileName = file.originalFilename || 'invoice';
-
   try {
-    const fileBuffer = fs.readFileSync(file.filepath);
+    streamStatus(res, `Downloading ${fileName}...`, null);
+    const fileRes = await fetch(fileUrl);
+    if (!fileRes.ok) {
+      streamEvent(res, { type: 'error', error: `Could not download the uploaded file (${fileRes.status}).` });
+      return res.end();
+    }
+    const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
 
     // ── Pass 1: Mistral OCR ───────────────────────────────────────────────────
     streamStatus(res, `Reading ${fileName}...`, 'Extracting text with Mistral OCR');
@@ -669,7 +663,6 @@ export default async function handler(req, res) {
     console.log(`[parse-invoice] Mistral OCR done in ${Date.now() - t0}ms`);
 
     if (!ocrText || ocrText.trim().length < 20) {
-      try { fs.unlinkSync(file.filepath); } catch {}
       streamEvent(res, { type: 'error', error: 'Could not read invoice. Try a clearer photo.' });
       return res.end();
     }
@@ -682,7 +675,6 @@ export default async function handler(req, res) {
     console.log(`[parse-invoice] Pass 2 done in ${Date.now() - t1}ms`);
 
     if (!extracted) {
-      try { fs.unlinkSync(file.filepath); } catch {}
       streamEvent(res, { type: 'error', error: 'Could not parse invoice structure. Try a clearer image.' });
       return res.end();
     }
@@ -795,8 +787,6 @@ export default async function handler(req, res) {
     const lowConfCount = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
     const noCostCount  = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
 
-    try { fs.unlinkSync(file.filepath); } catch {}
-
     streamEvent(res, {
       type: 'result',
       data: {
@@ -832,7 +822,6 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error('[parse-invoice] Error:', err);
-    try { fs.unlinkSync(file.filepath); } catch {}
     streamEvent(res, { type: 'error', error: err.message || 'Failed to parse invoice' });
     res.end();
   }

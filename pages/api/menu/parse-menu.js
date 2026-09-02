@@ -5,12 +5,20 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
-import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
 
-export const config = { api: { bodyParser: false }, maxDuration: 300 };
+// Vercel's serverless functions have a hard 4.5MB request body limit,
+// enforced at the platform level — not configurable via formidable's own
+// maxFileSize or any Next.js config. This used to receive raw menu photos
+// directly via multipart upload, which meant a handful of real phone
+// photos could trivially exceed that combined and fail with a plain-text
+// 413 the client couldn't even parse as an error. Now the client uploads
+// each file to Supabase Storage first and sends only small file_url
+// references here — this function downloads the actual file content
+// itself, server-to-server, which has no such limit.
+export const config = { api: {}, maxDuration: 300 };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const supabase = createClient(
@@ -1330,25 +1338,29 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
+async function downloadToTempFile(fileUrl, fileName) {
+  const fileRes = await fetch(fileUrl);
+  if (!fileRes.ok) throw new Error(`Could not download "${fileName}" (${fileRes.status}).`);
+  const buffer = Buffer.from(await fileRes.arrayBuffer());
+  const ext = path.extname(fileName || '') || '.jpg';
+  const tempPath = `/tmp/menu-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`;
+  fs.writeFileSync(tempPath, buffer);
+  const extLower = ext.toLowerCase();
+  const mimetype = extLower === '.pdf' ? 'application/pdf'
+    : extLower === '.png' ? 'image/png'
+    : extLower === '.webp' ? 'image/webp'
+    : 'image/jpeg';
+  return { filepath: tempPath, originalFilename: fileName, mimetype };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const form = formidable({ maxFileSize: 20 * 1024 * 1024, multiples: true });
-  let fields, files;
-  try {
-    [fields, files] = await form.parse(req);
-  } catch {
-    return res.status(400).json({ error: 'Failed to parse upload' });
+  const { restaurant_id: restaurantId, files: fileRefs } = req.body || {};
+
+  if (!Array.isArray(fileRefs) || fileRefs.length === 0) {
+    return res.status(400).json({ error: 'No files provided' });
   }
-
-  const rawFiles = files.file;
-  const fileList = Array.isArray(rawFiles) ? rawFiles : rawFiles ? [rawFiles] : [];
-  if (fileList.length === 0) return res.status(400).json({ error: 'No files provided' });
-
-  const restaurantId = Array.isArray(fields.restaurant_id)
-    ? fields.restaurant_id[0]
-    : fields.restaurant_id;
-
   if (!restaurantId) {
     return res.status(400).json({ error: 'restaurant_id is required' });
   }
@@ -1365,12 +1377,12 @@ export default async function handler(req, res) {
   if (authError) return res.status(authStatus).json({ error: authError });
 
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-  for (const file of fileList) {
-    const ext = path.extname(file.originalFilename || '').toLowerCase();
-    const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
-    if (!allowed.includes(file.mimetype) && !isPDF) {
+  for (const f of fileRefs) {
+    const ext = path.extname(f.file_name || '').toLowerCase();
+    const mt = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg';
+    if (!allowed.includes(mt)) {
       return res.status(400).json({
-        error: `"${file.originalFilename}" is an unsupported type. Please upload JPG, PNG, WEBP, or PDF files.`,
+        error: `"${f.file_name}" is an unsupported type. Please upload JPG, PNG, WEBP, or PDF files.`,
       });
     }
   }
@@ -1383,6 +1395,15 @@ export default async function handler(req, res) {
 
     if (dbError) {
       return res.status(500).json({ error: 'Failed to load ingredient library.' });
+    }
+
+    // Download every referenced file before doing anything else — the rest
+    // of this handler is completely unchanged from here on, since it just
+    // consumes {filepath, originalFilename, mimetype} the same way it
+    // always did, regardless of where that file actually came from.
+    const fileList = [];
+    for (const f of fileRefs) {
+      fileList.push(await downloadToTempFile(f.file_url, f.file_name));
     }
 
     console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Vision key: ${process.env.GOOGLE_VISION_API_KEY ? 'SET' : 'MISSING'}`);
