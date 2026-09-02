@@ -43,7 +43,12 @@ export default function SignupPage() {
       if (profileError) {
         console.error("[signup] profile creation failed:", profileError.message);
       }
-      router.push("/client/checkout");
+      // Must await this — AuthScreen calls setConfirmEmail(true) the
+      // moment this promise resolves. Without awaiting, this function
+      // returned instantly while the route change was still in flight,
+      // so AuthScreen briefly rendered its "check your email" state
+      // before the page actually changed underneath it.
+      await router.push("/client/checkout");
       return;
     }
     // No session — email confirmation is still on. AuthScreen shows its own
