@@ -26,6 +26,51 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// ─── Concurrency + retry helpers ──────────────────────────────────────────────
+// Pass 2 used to run 5 dishes at a time, and every batch waited for its
+// slowest member before the next batch started — 66 dishes meant 14
+// sequential rounds, which is what ran a real two-page menu past Vercel's
+// 300s ceiling. These run a bounded pool instead, and retry on rate-limit /
+// overload responses with backoff that honors retry-after. The pool sizes
+// are set for the Scale tier (thousands of RPM); the retry is a safety net,
+// not the primary throttle.
+
+const PASS2_CONCURRENCY = 20;   // recipe builds in flight at once
+const CHUNK_CONCURRENCY = 6;    // menu sections processed at once (each runs its own Pass 2 pool)
+const RECONCILE_CONCURRENCY = 20;
+
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function withRetry(fn, label, maxAttempts = 5) {
+  let delay = 1000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.status ?? err?.response?.status;
+      const retryable = status === 429 || status === 529 || (status >= 500 && status < 600);
+      if (!retryable || attempt === maxAttempts) throw err;
+      const retryAfter = Number(err?.headers?.['retry-after'] ?? err?.response?.headers?.['retry-after']);
+      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : delay;
+      console.warn(`[retry] ${label} got ${status}, attempt ${attempt}/${maxAttempts}, waiting ${wait}ms`);
+      await new Promise(r => setTimeout(r, wait));
+      delay = Math.min(delay * 2, 16000);
+    }
+  }
+}
+
 // ─── Archetype component schema ───────────────────────────────────────────────
 
 const ARCHETYPES = {
@@ -213,43 +258,100 @@ async function fileToText(file) {
 }
 
 // ─── OCR text chunker ─────────────────────────────────────────────────────────
+// Splits the menu into sections so each Pass 1 call handles a manageable
+// amount. Two fixes here vs. the original:
+//
+// 1. Mistral returns MARKDOWN, not the plain text Google Vision did. Section
+//    headers now arrive as "## APPETIZERS", "**SALADS**", "# Entrees" — and
+//    the original regex only matched a bare all-caps line, so it saw almost
+//    none of them. Result: one giant chunk per file, which is exactly what
+//    blew past Pass 1's output limit and silently dropped dishes past the
+//    truncation point. Headers are now detected after stripping markdown.
+//
+// 2. A hard size cap as a backstop. Even if header detection misses, no
+//    chunk exceeds MAX_CHUNK_CHARS — oversized ones are split at line
+//    boundaries, with the section header carried onto each piece so Pass 1
+//    still knows what section it's looking at.
 
-const SECTION_WARN_CHARS = 4000;
+const MAX_CHUNK_CHARS = 2500;
+
+function stripMarkdown(line) {
+  return line
+    .replace(/^\s*#{1,6}\s*/, '')      // "## Header"
+    .replace(/^\s*[*_]{1,3}/, '')      // leading **bold** / _italic_
+    .replace(/[*_]{1,3}\s*$/, '')      // trailing
+    .replace(/^\s*[-•]\s*/, '')        // stray bullet
+    .trim();
+}
+
+function isSectionHeader(rawLine) {
+  const line = rawLine.trim();
+  if (!line) return false;
+  const wasMarkdownHeading = /^\s*#{1,6}\s/.test(line);
+  const text = stripMarkdown(line);
+  if (text.length < 3 || text.length > 48) return false;
+  if (/\$\s?\d/.test(text)) return false;                     // has a price → it's a dish line
+  if (/^[A-Z][A-Z\s&\/\-']{2,}$/.test(text)) return true;      // all caps (original rule)
+  if (wasMarkdownHeading) return true;                         // "## Entrees", "## Kids 12 & under"
+  return false;
+}
+
+function splitOversized(chunk) {
+  if (chunk.length <= MAX_CHUNK_CHARS) return [chunk];
+  const lines = chunk.split('\n');
+  // Carry the header onto each piece so Pass 1 knows the section — but only
+  // if the first line really is a header. A headerless wall of text would
+  // otherwise get its first dish duplicated onto every piece.
+  const hasHeader = isSectionHeader(lines[0]);
+  const header = hasHeader ? lines[0] : null;
+  const body = hasHeader ? lines.slice(1) : lines;
+  const pieces = [];
+  let current = header ? [header] : [];
+  let size = header ? header.length : 0;
+  for (const l of body) {
+    const minLines = header ? 1 : 0;
+    if (size + l.length + 1 > MAX_CHUNK_CHARS && current.length > minLines) {
+      pieces.push(current.join('\n'));
+      current = header ? [header, l] : [l];
+      size = (header ? header.length + 1 : 0) + l.length;
+    } else {
+      current.push(l);
+      size += l.length + 1;
+    }
+  }
+  if (current.length > (header ? 1 : 0)) pieces.push(current.join('\n'));
+  console.log(`[chunkMenuText] Section "${stripMarkdown(lines[0])}" was ${chunk.length} chars — split into ${pieces.length} piece(s)`);
+  return pieces;
+}
 
 function chunkMenuText(text) {
-  const headerRegex = /^([A-Z][A-Z\s&\/\-]{2,})$/m;
-
-  const splits = [];
-  let match;
-  const globalRegex = new RegExp(headerRegex.source, 'gm');
-  while ((match = globalRegex.exec(text)) !== null) {
-    splits.push(match.index);
+  const lines = text.split('\n');
+  const headerIdx = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isSectionHeader(lines[i])) headerIdx.push(i);
   }
 
-  if (splits.length === 0) {
-    console.log(`[chunkMenuText] No section headers found — processing as single chunk (${text.length} chars)`);
-    return [text];
-  }
-
-  const chunks = [];
-
-  const preamble = text.slice(0, splits[0]).trim();
-  if (preamble.length > 0) chunks.push(preamble);
-
-  for (let i = 0; i < splits.length; i++) {
-    const start = splits[i];
-    const end = i + 1 < splits.length ? splits[i + 1] : text.length;
-    const chunk = text.slice(start, end).trim();
-    if (chunk.length === 0) continue;
-
-    if (chunk.length > SECTION_WARN_CHARS) {
-      console.warn(`[chunkMenuText] Section "${chunk.split('\n')[0]}" is ${chunk.length} chars — large but proceeding`);
+  let sections = [];
+  if (headerIdx.length === 0) {
+    console.log(`[chunkMenuText] No section headers found — size-splitting ${text.length} chars`);
+    sections = [text];
+  } else {
+    const preamble = lines.slice(0, headerIdx[0]).join('\n').trim();
+    if (preamble.length > 0) sections.push(preamble);
+    for (let i = 0; i < headerIdx.length; i++) {
+      const start = headerIdx[i];
+      const end = i + 1 < headerIdx.length ? headerIdx[i + 1] : lines.length;
+      const section = lines.slice(start, end).join('\n').trim();
+      if (section.length > 0) sections.push(section);
     }
-
-    chunks.push(chunk);
   }
 
-  console.log(`[chunkMenuText] Split into ${chunks.length} section chunk(s)`);
+  // A chunk that's only a header (e.g. the restaurant's name as a title
+  // line) has nothing to extract and would just burn a Pass 1 call.
+  const chunks = sections
+    .flatMap(splitOversized)
+    .filter(c => c.split('\n').filter(l => l.trim()).length >= 2);
+  console.log(`[chunkMenuText] ${headerIdx.length} header(s) found → ${chunks.length} chunk(s)`);
   return chunks;
 }
 
@@ -407,6 +509,91 @@ function mergeRecipeIngredientsIntoMap(components, ingredientMap) {
   }
 }
 
+// ─── Reconciliation pass for matched recipes ─────────────────────────────────
+// A library match used to be taken verbatim, ignoring how THIS restaurant
+// describes the dish. "Hamburger — brie, fig preserves, arugula" matches the
+// generic Classic Cheeseburger (alias: "hamburger") and came out with
+// American cheese, ketchup, and pickles — wrong recipe, and wrong costing in
+// the direction that matters. This adjusts the template to the description:
+// add what it names, drop what it contradicts, keep the rest. Fast path: no
+// meaningful description → template used as-is, zero AI calls, so the speed
+// win of matching is preserved for plain "Cheeseburger $14" entries.
+
+function hasMeaningfulDescription(desc) {
+  if (!desc || typeof desc !== 'string') return false;
+  const d = desc.trim();
+  return d.length >= 12 && d.split(/\s+/).length >= 3;
+}
+
+async function reconcileMatchedRecipe(dish, templateComponents, ingredientLibrary, restaurantId) {
+  const libraryRef = (ingredientLibrary || [])
+    .map(i => `${i.name} | ${i.unit} | $${i.estimated_unit_cost}`)
+    .join('\n');
+
+  const response = await withRetry(() => anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 4000,
+    messages: [{
+      role: 'user',
+      content: [{
+        type: 'text',
+        text: `You are adjusting a GENERIC recipe template to match how a specific restaurant actually describes the dish.
+
+DISH: "${dish.name}"
+Menu price: $${dish.price ?? 'unknown'}
+THIS RESTAURANT'S DESCRIPTION: ${dish.description}
+
+GENERIC TEMPLATE RECIPE (a reasonable default for a dish with this name):
+${JSON.stringify(templateComponents, null, 2)}
+
+INGREDIENT LIBRARY (name | unit | cost per unit):
+${libraryRef}
+
+YOUR JOB — edit the template so it reflects the description:
+- ADD any ingredient the description names that the template lacks (e.g. description says brie and fig preserves → add them). Put each in the component where it logically belongs.
+- REMOVE or REPLACE template ingredients the description clearly contradicts (e.g. description says brie → the template's American cheese is wrong, replace it).
+- KEEP every template ingredient the description does not contradict. Do not strip base elements (bun, protein, starch, sides) just because the description doesn't mention them.
+- Keep the same component structure and the same JSON shape.
+- Prefer exact library names, units, and costs. If the description names something not in the library, add it anyway with a realistic estimated_unit_cost for a restaurant purchase.
+- Use realistic per-serving quantities. Garnishes and spices are small (0.1–0.5 oz).
+- If the description adds nothing beyond what the template already has, return the template unchanged.
+
+Return ONLY a JSON array of components — no prose, no markdown fences:
+[{"name": string, "ingredients": [{"name": string, "unit": string, "quantity": number, "estimated_unit_cost": number}]}]`,
+      }],
+    }],
+  }), `reconcile "${dish.name}"`);
+
+  await logAiUsage({
+    feature: 'menu_import',
+    model: 'claude-haiku-4-5-20251001',
+    usage: response.usage,
+    restaurantId,
+  });
+
+  const raw = response.content[0]?.text || '';
+  const cleaned = raw.replace(/```json|```/g, '').trim();
+  const start = cleaned.indexOf('[');
+  const end = cleaned.lastIndexOf(']');
+  if (start === -1 || end === -1) throw new Error('reconcile: no JSON array in response');
+  const parsed = JSON.parse(cleaned.slice(start, end + 1));
+  if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('reconcile: empty components');
+  return parsed
+    .filter(c => c && typeof c.name === 'string' && Array.isArray(c.ingredients))
+    .map(c => ({
+      name: c.name,
+      ingredients: c.ingredients
+        .filter(i => i && typeof i.name === 'string' && i.name.trim())
+        .map(i => ({
+          name: i.name.trim(),
+          unit: i.unit || 'oz',
+          quantity: Number(i.quantity) || 0,
+          estimated_unit_cost: Number(i.estimated_unit_cost) || 0,
+        })),
+    }))
+    .filter(c => c.ingredients.length > 0);
+}
+
 // ─── Safe JSON parser ─────────────────────────────────────────────────────────
 
 function safeParseJSON(text) {
@@ -490,9 +677,15 @@ function safeParseJSON(text) {
 async function pass1_extractAndClassify(menuText, globalIngredients, restaurantId) {
   const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
 
-  const response = await anthropic.messages.create({
+  // Wrapped in withRetry — Pass 1 now runs across CHUNK_CONCURRENCY chunks
+  // at once instead of one at a time, so it's more exposed to rate limits
+  // than before, not less.
+  const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 8000,
+    // Raised from 8000 — a real menu section hit that ceiling twice and got
+    // truncated, with dishes past the cutoff silently lost. The smaller
+    // chunks from chunkMenuText are the real fix; this is the backstop.
+    max_tokens: 16000,
     system: [
       {
         type: 'text',
@@ -648,7 +841,7 @@ Return ONLY valid JSON — no prose, no markdown outside the JSON block:
 }`,
       }],
     }],
-  });
+  }), 'pass1');
 
   await logAiUsage({
     feature: 'menu_import',
@@ -761,9 +954,14 @@ You must follow every rule below exactly. A recipe that violates any rule is wro
       ? `\nSPOONACULAR REFERENCE INGREDIENTS (use as strong guidance for what belongs in this dish):\n${spoonacularRef.map(i => `- ${i.name}: ${i.amount} ${i.unit}`).join('\n')}`
       : '';
 
-    const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+    // Haiku instead of Sonnet: roughly 2–3× faster per recipe. The quality
+    // tradeoff is deliberate — every recipe is reviewed and corrected by a
+    // human in ParseReviewModal before anything is saved, so this only
+    // needs to be a good starting draft, not a perfect one. max_tokens
+    // right-sized too: the largest real output observed was ~2,400 tokens.
+    const response = await withRetry(() => anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 6000,
       system: systemPrompt,
       messages: [{
         role: 'user',
@@ -878,11 +1076,11 @@ Return a valid JSON object first, then the cost check. No other prose.
 }`,
         }],
       }],
-    });
+    }), `pass2 "${dish.name}"`);
 
     await logAiUsage({
       feature: 'menu_import',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       usage: response.usage,
       restaurantId,
     });
@@ -896,15 +1094,17 @@ Return a valid JSON object first, then the cost check. No other prose.
     return parsed;
   };
 
-  const allResults = [];
-  const batchSize = 5;
-
-  for (let i = 0; i < dishManifest.length; i += batchSize) {
-    const batch = dishManifest.slice(i, i + batchSize);
-    console.log(`[pass2] Batch ${Math.floor(i / batchSize) + 1}: dishes ${i + 1}–${Math.min(i + batchSize, dishManifest.length)}`);
-    const batchResults = await Promise.all(batch.map(buildDish));
-    allResults.push(...batchResults);
-  }
+  // All dishes go through one bounded pool instead of sequential batches of
+  // 5 — 66 dishes is now ~4 rounds bounded by the slowest call, not 14.
+  console.log(`[pass2] Building ${dishManifest.length} dishes, ${PASS2_CONCURRENCY} at a time`);
+  const allResults = await mapWithConcurrency(dishManifest, PASS2_CONCURRENCY, async (dish) => {
+    try {
+      return await buildDish(dish);
+    } catch (err) {
+      console.error(`[pass2] "${dish.name}" failed after retries:`, err.message);
+      return null;
+    }
+  });
 
   const dishes = allResults.filter(Boolean);
   console.log(`[pass2] ${dishes.length}/${dishManifest.length} dishes built`);
@@ -1421,99 +1621,147 @@ export default async function handler(req, res) {
     const ingredientMap = {};
     let anyTruncated = false;
 
-    for (let i = 0; i < fileList.length; i++) {
-      const file = fileList[i];
+    // ── Stage 1: OCR every file in parallel, then chunk ────────────────────
+    // Files used to be processed strictly one after another, and each file's
+    // sections one after another too. Now all OCR runs at once, and every
+    // section from every file goes through one bounded pool below.
+    const ocrResults = await Promise.all(fileList.map(async (file, i) => {
       const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
-
       console.log(`[parse-menu] ${fileLabel} Running OCR...`);
       const t0 = Date.now();
-      const menuText = await fileToText(file);
-      console.log(`[parse-menu] ${fileLabel} OCR done in ${Date.now() - t0}ms`);
+      try {
+        const menuText = await fileToText(file);
+        console.log(`[parse-menu] ${fileLabel} OCR done in ${Date.now() - t0}ms`);
+        return { fileLabel, menuText };
+      } catch (err) {
+        console.error(`[parse-menu] ${fileLabel} OCR failed:`, err.message);
+        return { fileLabel, menuText: null };
+      }
+    }));
 
+    const workItems = [];
+    for (const { fileLabel, menuText } of ocrResults) {
       if (!menuText) {
         console.warn(`[parse-menu] ${fileLabel} No text extracted, skipping`);
         continue;
       }
-
       const chunks = chunkMenuText(menuText);
       console.log(`[parse-menu] ${fileLabel} ${chunks.length} chunk(s) to process`);
+      chunks.forEach((chunk, c) => {
+        workItems.push({
+          chunk,
+          fileLabel,
+          chunkLabel: chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '',
+        });
+      });
+    }
 
-      for (let c = 0; c < chunks.length; c++) {
-        const chunkLabel = chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '';
-        const sectionName = chunks[c].split('\n')[0].trim();
+    // ── Stage 2: process every chunk through a bounded pool ────────────────
+    // Same per-chunk logic as before, now with the reconciliation pass on
+    // matched dishes. ingredientMap / allDishes are plain shared objects —
+    // safe to mutate from concurrent async work here since JS is
+    // single-threaded and mutations happen between awaits, never mid-write.
+    const processChunk = async ({ chunk, fileLabel, chunkLabel }) => {
+      const sectionName = stripMarkdown(chunk.split('\n')[0]);
 
-        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
-        const t1 = Date.now();
-        const { ingredients: chunkIngredients, dishes: chunkDishManifest } =
-          await pass1_extractAndClassify(chunks[c], globalIngredients, restaurantId);
-        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 done in ${Date.now() - t1}ms`);
+      console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
+      const t1 = Date.now();
+      const { ingredients: chunkIngredients, dishes: chunkDishManifest } =
+        await pass1_extractAndClassify(chunk, globalIngredients, restaurantId);
+      console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 done in ${Date.now() - t1}ms`);
 
-        if (!chunkIngredients?.length) {
-          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No ingredients extracted, skipping`);
-          continue;
-        }
-        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
+      if (!chunkIngredients?.length) {
+        console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No ingredients extracted, skipping`);
+        return;
+      }
+      console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1 complete: ${chunkIngredients.length} ingredients, ${chunkDishManifest.length} dishes`);
 
-        const stampedDishManifest = chunkDishManifest.map(dish =>
-          Object.assign({}, dish, { section: sectionName })
-        );
+      const stampedDishManifest = chunkDishManifest.map(dish =>
+        Object.assign({}, dish, { section: sectionName })
+      );
 
-        // Filter out add-ons, combo tiers, sides, kids, desserts, beverages
-        const filteredDishManifest = filterDishManifest(stampedDishManifest);
+      // Filter out add-ons, combo tiers, sides, kids, desserts, beverages
+      const filteredDishManifest = filterDishManifest(stampedDishManifest);
 
-        if (!filteredDishManifest?.length) {
-          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes remaining after filter, skipping`);
-          continue;
-        }
+      if (!filteredDishManifest?.length) {
+        console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes remaining after filter, skipping`);
+        return;
+      }
 
-        for (const ing of chunkIngredients) {
-          const key = ing.name.trim().toLowerCase();
-          if (!ingredientMap[key]) ingredientMap[key] = ing;
-        }
+      for (const ing of chunkIngredients) {
+        const key = ing.name.trim().toLowerCase();
+        if (!ingredientMap[key]) ingredientMap[key] = ing;
+      }
 
-        // Match against global recipe library — pass archetype for compatibility check
-        const matchedDishes = [];
-        const unmatchedDishes = [];
+      // Match against global recipe library — pass archetype for compatibility check
+      const matchedRaw = [];
+      const unmatchedDishes = [];
 
-        for (const dish of filteredDishManifest) {
-          const components = matchRecipe(dish.name, dish.archetype, globalRecipes, dish.section || '');
-          if (components) {
-            console.log(`[recipes] Hit: "${dish.name}"`);
-            mergeRecipeIngredientsIntoMap(components, ingredientMap);
-            matchedDishes.push({
-              name: dish.name,
-              price: dish.price ?? null,
-              category: dish.category || 'Other',
-              archetype: dish.archetype || 'Small Plate / Other',
-              description: dish.description ?? null,
-              components,
-            });
-          } else {
-            unmatchedDishes.push(dish);
-          }
-        }
-
-        console.log(`[recipes] ${matchedDishes.length} matched, ${unmatchedDishes.length} going to Pass 2`);
-        allDishes.push(...validateDishes(matchedDishes));
-
-        if (unmatchedDishes.length > 0) {
-          console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2...`);
-          const t2 = Date.now();
-          const { dishes: rawDishes, truncated } =
-            await pass2_buildRecipes(unmatchedDishes, chunkIngredients, restaurantId, {});
-          console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 done in ${Date.now() - t2}ms`);
-
-          if (truncated) anyTruncated = true;
-
-          if (rawDishes && Array.isArray(rawDishes)) {
-            console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 complete: ${rawDishes.length} dishes`);
-            allDishes.push(...validateDishes(rawDishes));
-          } else {
-            console.warn(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 returned no dishes`);
-          }
+      for (const dish of filteredDishManifest) {
+        const components = matchRecipe(dish.name, dish.archetype, globalRecipes, dish.section || '');
+        if (components) {
+          console.log(`[recipes] Hit: "${dish.name}"`);
+          matchedRaw.push({ dish, template: components });
+        } else {
+          unmatchedDishes.push(dish);
         }
       }
-    }
+
+      // Reconcile matched templates against each dish's own description, in
+      // parallel. No description → template as-is, no call. Reconciliation
+      // failure → template as-is, never blocks the dish.
+      const matchedDishes = await mapWithConcurrency(matchedRaw, RECONCILE_CONCURRENCY, async ({ dish, template }) => {
+        let components = template;
+        if (hasMeaningfulDescription(dish.description)) {
+          try {
+            const t = Date.now();
+            components = await reconcileMatchedRecipe(dish, template, chunkIngredients, restaurantId);
+            console.log(`[reconcile] "${dish.name}" adjusted to description in ${Date.now() - t}ms`);
+          } catch (err) {
+            console.warn(`[reconcile] "${dish.name}" failed, using template as-is:`, err.message);
+            components = template;
+          }
+        }
+        mergeRecipeIngredientsIntoMap(components, ingredientMap);
+        return {
+          name: dish.name,
+          price: dish.price ?? null,
+          category: dish.category || 'Other',
+          archetype: dish.archetype || 'Small Plate / Other',
+          description: dish.description ?? null,
+          components,
+        };
+      });
+
+      console.log(`[recipes] ${matchedDishes.length} matched, ${unmatchedDishes.length} going to Pass 2`);
+      allDishes.push(...validateDishes(matchedDishes));
+
+      if (unmatchedDishes.length > 0) {
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2...`);
+        const t2 = Date.now();
+        const { dishes: rawDishes, truncated } =
+          await pass2_buildRecipes(unmatchedDishes, chunkIngredients, restaurantId, {});
+        console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 done in ${Date.now() - t2}ms`);
+
+        if (truncated) anyTruncated = true;
+
+        if (rawDishes && Array.isArray(rawDishes)) {
+          console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 complete: ${rawDishes.length} dishes`);
+          allDishes.push(...validateDishes(rawDishes));
+        } else {
+          console.warn(`[parse-menu] ${fileLabel}${chunkLabel} Pass 2 returned no dishes`);
+        }
+      }
+    };
+
+    await mapWithConcurrency(workItems, CHUNK_CONCURRENCY, async (item) => {
+      try {
+        await processChunk(item);
+      } catch (err) {
+        // One bad section shouldn't sink the whole menu.
+        console.error(`[parse-menu] ${item.fileLabel}${item.chunkLabel} failed:`, err.message);
+      }
+    });
 
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
@@ -1521,6 +1769,25 @@ export default async function handler(req, res) {
 
     if (allDishes.length === 0) {
       return res.status(500).json({ error: 'No menu items found across all uploaded files. Try clearer images.' });
+    }
+
+    // Dedupe across files and chunks. A dish printed on both sides of a
+    // menu (or straddling a chunk boundary) was coming through twice as
+    // two separate entries — "Penne Vodka" showed up from both pages of a
+    // real upload. First occurrence wins.
+    const seenDishKeys = new Set();
+    const beforeDedup = allDishes.length;
+    const dedupedDishes = [];
+    for (const d of allDishes) {
+      const key = normalizeDishName(d.name || '');
+      if (key && seenDishKeys.has(key)) continue;
+      if (key) seenDishKeys.add(key);
+      dedupedDishes.push(d);
+    }
+    allDishes.length = 0;
+    allDishes.push(...dedupedDishes);
+    if (beforeDedup !== allDishes.length) {
+      console.log(`[parse-menu] Deduped ${beforeDedup - allDishes.length} duplicate dish(es) across files/chunks`);
     }
 
     const rawIngredientLibrary = Object.values(ingredientMap);
