@@ -7,12 +7,12 @@ import React, { useState, useCallback, useRef } from 'react';
 import supabase from '../lib/supabaseClient';
 
 const CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@300;400;500;600&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
   @keyframes prm-fadein { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
   @keyframes prm-spin { to { transform: rotate(360deg); } }
 
   .prm-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    position: fixed; inset: 0; background: rgba(17,24,25,.5);
     backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
     z-index: 300; display: flex; align-items: center; justify-content: center;
     padding: 24px; animation: prm-fadein .2s ease;
@@ -20,270 +20,270 @@ const CSS = `
   .prm-shell {
     width: 100%; max-width: 860px; height: 90vh; max-height: 780px;
     display: flex; flex-direction: column;
-    background: #161514; border: 1px solid #2e2c29;
+    background: var(--shell, #fff); border: 1px solid var(--line, #d8dfe0);
     border-radius: 14px; overflow: hidden;
-    font-family: 'Inter', sans-serif;
-    box-shadow: 0 24px 64px rgba(0,0,0,.7);
+    font-family: 'Manrope', sans-serif;
+    box-shadow: 0 24px 64px rgba(17,24,25,.22);
   }
 
   /* ── Top bar ── */
   .prm-topbar {
-    background: #0d0c0b; border-bottom: 1px solid #252320;
+    background: var(--shell, #fff); border-bottom: 1px solid var(--line, #d8dfe0);
     padding: 11px 24px; display: flex; align-items: center;
     justify-content: space-between; flex-shrink: 0; gap: 16px;
   }
-  .prm-logo { font-family: 'Playfair Display', serif; font-size: 15px; color: #02a4ba; }
-  .prm-topbar-meta { font-size: 12px; color: #7a7570; text-align: center; }
-  .prm-topbar-meta strong { color: #d8d4ce; font-weight: 600; }
-  .prm-prog-wrap { width: 200px; background: #252320; height: 2px; border-radius: 2px; overflow: hidden; margin: 5px auto 0; }
-  .prm-prog-fill { height: 100%; background: #02a4ba; border-radius: 2px; transition: width .35s; }
+  .prm-logo { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-deep, #03808f); }
+  .prm-topbar-meta { font-size: 12px; color: var(--muted, #4b585b); text-align: center; }
+  .prm-topbar-meta strong { color: var(--text, #111819); font-weight: 700; }
+  .prm-prog-wrap { width: 200px; background: var(--line, #d8dfe0); height: 3px; border-radius: 2px; overflow: hidden; margin: 5px auto 0; }
+  .prm-prog-fill { height: 100%; background: var(--accent, #02a4ba); border-radius: 2px; transition: width .35s; }
   .prm-discard-btn {
-    background: none; border: 1px solid #2a2520; border-radius: 6px;
-    padding: 5px 12px; font-size: 11px; color: #6b6560; cursor: pointer;
-    font-family: 'Inter', sans-serif; transition: all .15s; white-space: nowrap; flex-shrink: 0;
+    background: none; border: 1px solid var(--line, #d8dfe0); border-radius: 6px;
+    padding: 5px 12px; font-size: 11px; color: var(--muted, #4b585b); cursor: pointer;
+    font-family: 'Manrope', sans-serif; font-weight: 600; transition: all .15s; white-space: nowrap; flex-shrink: 0;
   }
-  .prm-discard-btn:hover { border-color: #cc5555; color: #cc5555; }
+  .prm-discard-btn:hover { border-color: #c4473e; color: #c4473e; }
 
   /* ── Body ── */
   .prm-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
   /* ── Sidebar ── */
   .prm-sidebar {
-    width: 200px; background: #0d0c0b; border-right: 1px solid #1e1d1b;
+    width: 200px; background: #f7f8f8; border-right: 1px solid var(--line, #d8dfe0);
     overflow-y: auto; flex-shrink: 0;
   }
   .prm-sidebar::-webkit-scrollbar { width: 2px; }
-  .prm-sidebar::-webkit-scrollbar-thumb { background: #2a2620; border-radius: 2px; }
-  .prm-sb-section { border-bottom: 1px solid #161514; padding: 6px 0 8px; }
+  .prm-sidebar::-webkit-scrollbar-thumb { background: var(--line, #d8dfe0); border-radius: 2px; }
+  .prm-sb-section { border-bottom: 1px solid var(--line, #d8dfe0); padding: 6px 0 8px; }
   .prm-sb-cat {
-    font-size: 9px; font-weight: 700; color: #3a3530;
-    text-transform: uppercase; letter-spacing: .14em; padding: 6px 14px 4px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600; color: var(--muted, #4b585b);
+    text-transform: uppercase; letter-spacing: .1em; padding: 6px 14px 4px;
   }
   .prm-sb-item {
     display: flex; align-items: center; gap: 7px; padding: 5px 14px;
-    font-size: 12px; color: #6b6560; cursor: pointer; transition: all .1s;
+    font-size: 12.5px; color: var(--text, #111819); cursor: pointer; transition: all .1s;
     border-left: 2px solid transparent;
   }
-  .prm-sb-item:hover { background: #131211; color: #b8b4ae; }
-  .prm-sb-item.active { background: #141312; color: #02a4ba; border-left-color: #02a4ba; font-weight: 500; }
-  .prm-sb-item.confirmed { color: #4a8a5a; }
-  .prm-sb-dot { width: 5px; height: 5px; border-radius: 50%; background: #2e2c29; flex-shrink: 0; transition: background .15s; }
-  .prm-sb-dot.active { background: #02a4ba; }
-  .prm-sb-dot.confirmed { background: #4a8a5a; }
-  .prm-sb-check { font-size: 9px; color: #4a8a5a; margin-left: auto; flex-shrink: 0; }
+  .prm-sb-item:hover { background: #eef1f1; }
+  .prm-sb-item.active { background: #e8f7f9; color: var(--accent-deep, #03808f); border-left-color: var(--accent, #02a4ba); font-weight: 700; }
+  .prm-sb-item.confirmed { color: #2f8a4e; }
+  .prm-sb-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--line, #d8dfe0); flex-shrink: 0; transition: background .15s; }
+  .prm-sb-dot.active { background: var(--accent, #02a4ba); }
+  .prm-sb-dot.confirmed { background: #2f8a4e; }
+  .prm-sb-check { font-size: 9px; color: #2f8a4e; margin-left: auto; flex-shrink: 0; }
 
   /* ── Main ── */
   .prm-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
   .prm-scroll { flex: 1; overflow-y: auto; padding: 22px 28px 16px; }
   .prm-scroll::-webkit-scrollbar { width: 3px; }
-  .prm-scroll::-webkit-scrollbar-thumb { background: #252320; border-radius: 2px; }
+  .prm-scroll::-webkit-scrollbar-thumb { background: var(--line, #d8dfe0); border-radius: 2px; }
 
   /* ── Dish header ── */
   .prm-dish-hd { margin-bottom: 16px; }
   .prm-dish-title {
-    font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600;
-    color: #f0ece6; margin-bottom: 10px; line-height: 1.2;
+    font-family: 'Manrope', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -.03em;
+    color: var(--text, #111819); margin-bottom: 10px; line-height: 1.2;
   }
   .prm-dish-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .prm-badge {
-    font-size: 10px; font-weight: 600; padding: 3px 9px;
+    font-size: 10px; font-weight: 700; padding: 3px 9px;
     border-radius: 4px; letter-spacing: .02em; white-space: nowrap;
   }
-  .prm-badge-price { background: #0d2018; color: #4ecb72; border: 1px solid #1a3828; }
-  .prm-badge-margin-ok { background: #0d2018; color: #4ecb72; border: 1px solid #1a3828; }
-  .prm-badge-margin-warn { background: #240e0e; color: #e06060; border: 1px solid #3a1818; }
+  .prm-badge-price { background: #e8f7f9; color: var(--accent-deep, #03808f); border: 1px solid #bfe8ec; }
+  .prm-badge-margin-ok { background: #eaf6ee; color: #2f8a4e; border: 1px solid #cbe9d4; }
+  .prm-badge-margin-warn { background: #faeae8; color: #c4473e; border: 1px solid #f0c9c4; }
 
   /* Category text input */
   .prm-cat-input {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 500;
-    color: #7a7570; padding: 0; width: auto; min-width: 60px; max-width: 180px;
-    border-bottom: 1px dashed #3a3530; transition: border-color .15s;
+    font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 600;
+    color: var(--muted, #4b585b); padding: 0; width: auto; min-width: 60px; max-width: 180px;
+    border-bottom: 1px dashed var(--line, #d8dfe0); transition: border-color .15s;
   }
-  .prm-cat-input:focus { color: #d8d4ce; border-bottom-color: #02a4ba; }
+  .prm-cat-input:focus { color: var(--text, #111819); border-bottom-color: var(--accent, #02a4ba); }
 
   /* Warning */
   .prm-warn {
-    background: #1c0e0e; border: 1px solid #3a1818; border-radius: 6px;
-    padding: 9px 14px; font-size: 12px; color: #e06060;
+    background: #faeae8; border: 1px solid #f0c9c4; border-radius: 6px;
+    padding: 9px 14px; font-size: 12px; color: #c4473e;
     margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
   }
 
   /* ── Component block ── */
   .prm-comp {
-    background: #161514; border: 1px solid #252320;
+    background: var(--shell, #fff); border: 1px solid var(--line, #d8dfe0);
     border-radius: 8px; margin-bottom: 10px; overflow: visible;
   }
   .prm-comp-hd {
     display: flex; align-items: center; gap: 8px; padding: 9px 14px;
-    background: #1a1917; border-bottom: 1px solid #252320;
+    background: #f7f8f8; border-bottom: 1px solid var(--line, #d8dfe0);
     border-radius: 8px 8px 0 0;
   }
   .prm-comp-name-input {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700;
-    color: #02a4ba; text-transform: uppercase; letter-spacing: .1em; flex: 1; min-width: 0;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600;
+    color: var(--accent-deep, #03808f); text-transform: uppercase; letter-spacing: .09em; flex: 1; min-width: 0;
   }
-  .prm-comp-name-input:focus { background: #111110; padding: 2px 6px; border-radius: 3px; }
-  .prm-comp-cost { font-size: 11px; color: #6b6560; font-weight: 500; white-space: nowrap; }
+  .prm-comp-name-input:focus { background: #fff; padding: 2px 6px; border-radius: 3px; }
+  .prm-comp-cost { font-size: 11px; color: var(--muted, #4b585b); font-weight: 600; white-space: nowrap; }
   .prm-purchased-btn {
-    background: none; border: 1px solid #2a2520; border-radius: 4px;
-    font-size: 9px; font-weight: 700; color: #5a5550; cursor: pointer;
-    padding: 2px 8px; font-family: 'Inter', sans-serif; white-space: nowrap;
+    background: none; border: 1px solid var(--line, #d8dfe0); border-radius: 4px;
+    font-size: 9px; font-weight: 700; color: var(--muted, #4b585b); cursor: pointer;
+    padding: 2px 8px; font-family: 'Manrope', sans-serif; white-space: nowrap;
     letter-spacing: .04em; transition: all .15s; flex-shrink: 0; text-transform: uppercase;
   }
-  .prm-purchased-btn:hover { border-color: #c08830; color: #c08830; }
-  .prm-purchased-btn.active { border-color: #c08830; color: #111110; background: #c08830; }
+  .prm-purchased-btn:hover { border-color: #b8860b; color: #96690a; }
+  .prm-purchased-btn.active { border-color: #b8860b; color: #fff; background: #b8860b; }
   .prm-comp-del {
-    background: none; border: none; color: #3a3530; cursor: pointer;
+    background: none; border: none; color: var(--line, #d8dfe0); cursor: pointer;
     font-size: 14px; padding: 0 2px; line-height: 1; transition: color .15s; flex-shrink: 0;
   }
-  .prm-comp-del:hover { color: #e06060; }
+  .prm-comp-del:hover { color: #c4473e; }
 
   /* Purchased state */
   .prm-purchased-row {
     display: flex; align-items: center; gap: 12px; padding: 11px 14px;
-    background: #161008; border-top: 1px solid #2a1e08; flex-wrap: wrap;
+    background: #fdf6e8; border-top: 1px solid #f0e0b8; flex-wrap: wrap;
   }
-  .prm-purchased-label { font-size: 11px; color: #a07030; font-style: italic; flex: 1; min-width: 160px; }
+  .prm-purchased-label { font-size: 11px; color: #96690a; font-style: italic; flex: 1; min-width: 160px; }
   .prm-purchased-inputs { display: flex; align-items: center; gap: 8px; }
-  .prm-purchased-field-lbl { font-size: 9px; color: #5a5040; text-transform: uppercase; letter-spacing: .08em; }
+  .prm-purchased-field-lbl { font-size: 9px; color: #96690a; text-transform: uppercase; letter-spacing: .08em; }
   .prm-purchased-cost-input {
-    background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
-    padding: 5px 8px; font-size: 12px; color: #d8d4ce; width: 84px;
-    text-align: right; outline: none; font-family: 'Inter', sans-serif;
+    background: #fff; border: 1px solid #f0e0b8; border-radius: 4px;
+    padding: 5px 8px; font-size: 12px; color: var(--text, #111819); width: 84px;
+    text-align: right; outline: none; font-family: 'Manrope', sans-serif;
     -moz-appearance: textfield; appearance: textfield;
   }
   .prm-purchased-cost-input::-webkit-inner-spin-button,
   .prm-purchased-cost-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .prm-purchased-cost-input:focus { border-color: #c08830; }
+  .prm-purchased-cost-input:focus { border-color: #b8860b; }
   .prm-purchased-unit-input {
-    background: #1a1408; border: 1px solid #3a2a10; border-radius: 4px;
-    padding: 5px 8px; font-size: 12px; color: #9a9490; width: 60px;
-    text-align: center; outline: none; font-family: 'Inter', sans-serif;
+    background: #fff; border: 1px solid #f0e0b8; border-radius: 4px;
+    padding: 5px 8px; font-size: 12px; color: var(--muted, #4b585b); width: 60px;
+    text-align: center; outline: none; font-family: 'Manrope', sans-serif;
   }
-  .prm-purchased-unit-input:focus { border-color: #c08830; }
+  .prm-purchased-unit-input:focus { border-color: #b8860b; }
 
   /* Ingredient table */
   .prm-col-hd {
     display: grid; grid-template-columns: 1fr 70px 60px 24px;
     gap: 8px; padding: 7px 14px 4px;
-    font-size: 9px; font-weight: 700; color: #4a4845;
-    text-transform: uppercase; letter-spacing: .1em;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600; color: var(--muted, #4b585b);
+    text-transform: uppercase; letter-spacing: .09em;
   }
   .prm-ing-row {
     display: grid; grid-template-columns: 1fr 70px 60px 24px;
     gap: 8px; align-items: center; padding: 7px 14px;
-    border-bottom: 1px solid #1e1d1b; position: relative;
+    border-bottom: 1px solid var(--line, #d8dfe0); position: relative;
   }
   .prm-ing-row:last-child { border-bottom: none; }
   .prm-ing-wrap { position: relative; }
   .prm-ing-input {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 400;
-    color: #d8d4ce; width: 100%;
+    font-family: 'Manrope', sans-serif; font-size: 13px; font-weight: 500;
+    color: var(--text, #111819); width: 100%;
   }
-  .prm-ing-input:focus { color: #f0ece6; }
-  .prm-ing-input::placeholder { color: #3a3835; font-size: 12px; }
+  .prm-ing-input:focus { color: var(--text, #111819); }
+  .prm-ing-input::placeholder { color: #a7b0b1; font-size: 12px; }
   .prm-qty-input {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 12px; color: #9a9490;
+    font-family: 'Manrope', sans-serif; font-size: 12px; color: var(--muted, #4b585b);
     text-align: right; width: 100%;
     -moz-appearance: textfield; appearance: textfield;
   }
   .prm-qty-input::-webkit-inner-spin-button,
   .prm-qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-  .prm-qty-input:focus { color: #d8d4ce; }
+  .prm-qty-input:focus { color: var(--text, #111819); }
   .prm-unit-input {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 12px; color: #6a6560;
+    font-family: 'Manrope', sans-serif; font-size: 12px; color: var(--muted, #4b585b);
     text-align: right; width: 100%; cursor: pointer;
     appearance: none; -webkit-appearance: none;
   }
-  .prm-unit-input:focus { color: #9a9490; }
+  .prm-unit-input:focus { color: var(--text, #111819); }
   .prm-unit-select {
     background: transparent; border: none; outline: none;
-    font-family: 'Inter', sans-serif; font-size: 12px; color: #6a6560;
+    font-family: 'Manrope', sans-serif; font-size: 12px; color: var(--muted, #4b585b);
     text-align: right; width: 100%; cursor: pointer;
     appearance: none; -webkit-appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4' viewBox='0 0 6 4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%234a4845'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4' viewBox='0 0 6 4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%234b585b'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 2px center;
     padding-right: 12px;
   }
-  .prm-unit-select:focus { color: #d8d4ce; }
-  .prm-unit-select option { background: #1e1d1b; color: #d8d4ce; }
+  .prm-unit-select:focus { color: var(--text, #111819); }
+  .prm-unit-select option { background: #fff; color: var(--text, #111819); }
   .prm-ing-del {
-    background: none; border: none; color: #2e2c29; cursor: pointer;
+    background: none; border: none; color: var(--line, #d8dfe0); cursor: pointer;
     font-size: 13px; padding: 0; line-height: 1; transition: color .15s;
     display: flex; align-items: center; justify-content: center;
   }
-  .prm-ing-del:hover { color: #e06060; }
-  .prm-unit-warn { font-size: 9px; color: #c08830; margin-left: 2px; cursor: help; }
+  .prm-ing-del:hover { color: #c4473e; }
+  .prm-unit-warn { font-size: 9px; color: #b8860b; margin-left: 2px; cursor: help; }
 
   /* Autocomplete */
   .prm-ac-dropdown {
     position: absolute; top: calc(100% + 3px); left: -14px; right: -14px;
-    background: #1e1d1b; border: 1px solid #02a4ba;
+    background: #fff; border: 1px solid var(--accent, #02a4ba);
     border-radius: 6px; z-index: 200; overflow: hidden;
-    box-shadow: 0 6px 20px rgba(0,0,0,.6);
+    box-shadow: 0 6px 20px rgba(17,24,25,.15);
     max-height: 220px; overflow-y: auto;
   }
   .prm-ac-dropdown::-webkit-scrollbar { width: 2px; }
-  .prm-ac-dropdown::-webkit-scrollbar-thumb { background: #02a4ba; }
+  .prm-ac-dropdown::-webkit-scrollbar-thumb { background: var(--accent, #02a4ba); }
   .prm-ac-item {
     display: flex; align-items: center; justify-content: space-between;
     padding: 9px 14px; cursor: pointer; transition: background .1s;
-    border-bottom: 1px solid #252320;
+    border-bottom: 1px solid var(--line, #d8dfe0);
   }
   .prm-ac-item:last-child { border-bottom: none; }
-  .prm-ac-item:hover { background: #0d2a2e; }
-  .prm-ac-name { font-size: 13px; color: #d8d4ce; font-weight: 500; }
-  .prm-ac-meta { font-size: 10px; color: #6a6560; }
+  .prm-ac-item:hover { background: #e8f7f9; }
+  .prm-ac-name { font-size: 13px; color: var(--text, #111819); font-weight: 600; }
+  .prm-ac-meta { font-size: 10px; color: var(--muted, #4b585b); }
 
   /* Add buttons */
   .prm-add-ing {
-    background: none; border: none; color: #3a3a3a; cursor: pointer;
-    font-size: 11px; font-family: 'Inter', sans-serif; font-weight: 500;
+    background: none; border: none; color: #a7b0b1; cursor: pointer;
+    font-size: 11px; font-family: 'Manrope', sans-serif; font-weight: 600;
     padding: 7px 14px; display: flex; align-items: center; gap: 5px;
-    transition: color .15s; width: 100%; border-top: 1px solid #1a1917;
+    transition: color .15s; width: 100%; border-top: 1px solid var(--line, #d8dfe0);
   }
-  .prm-add-ing:hover { color: #02a4ba; }
+  .prm-add-ing:hover { color: var(--accent, #02a4ba); }
   .prm-add-comp {
-    width: 100%; background: none; border: 1px dashed #252320;
-    border-radius: 8px; padding: 10px; font-size: 11px; color: #3a3530;
-    font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer;
+    width: 100%; background: none; border: 1px dashed var(--line, #d8dfe0);
+    border-radius: 8px; padding: 10px; font-size: 11px; color: #a7b0b1;
+    font-weight: 600; font-family: 'Manrope', sans-serif; cursor: pointer;
     margin-bottom: 16px; transition: all .15s;
     display: flex; align-items: center; justify-content: center; gap: 6px;
   }
-  .prm-add-comp:hover { border-color: #02a4ba; color: #02a4ba; background: rgba(2,164,186,.03); }
+  .prm-add-comp:hover { border-color: var(--accent, #02a4ba); color: var(--accent, #02a4ba); background: #e8f7f9; }
 
   /* ── Footer ── */
   .prm-footer {
-    background: #0d0c0b; border-top: 1px solid #1e1d1b;
+    background: var(--shell, #fff); border-top: 1px solid var(--line, #d8dfe0);
     padding: 12px 24px; display: flex; align-items: center;
     justify-content: space-between; flex-shrink: 0; gap: 12px;
   }
   .prm-nav { display: flex; gap: 6px; }
   .prm-btn {
-    font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 600;
+    font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
     padding: 7px 16px; border-radius: 6px; cursor: pointer;
     transition: all .15s; border: none; white-space: nowrap;
   }
-  .prm-btn-ghost { background: transparent; border: 1px solid #252320; color: #7a7570; }
-  .prm-btn-ghost:hover { border-color: #3a3530; color: #c8c4be; }
-  .prm-btn-ghost:disabled { opacity: .3; cursor: default; }
-  .prm-btn-confirm { background: #02a4ba; color: #0a0908; font-weight: 700; font-size: 13px; }
-  .prm-btn-confirm:hover { background: #03bcd4; }
+  .prm-btn-ghost { background: transparent; border: 1px solid var(--line, #d8dfe0); color: var(--muted, #4b585b); }
+  .prm-btn-ghost:hover { border-color: #a7b0b1; color: var(--text, #111819); }
+  .prm-btn-ghost:disabled { opacity: .35; cursor: default; }
+  .prm-btn-confirm { background: var(--accent, #02a4ba); color: #fff; font-weight: 700; font-size: 13px; }
+  .prm-btn-confirm:hover { background: var(--accent-deep, #03808f); }
   .prm-btn-commit {
-    background: #1e5a2e; color: #a0ddb0; font-weight: 700;
-    font-size: 13px; padding: 8px 20px; border: 1px solid #2a7a40;
+    background: #eaf6ee; color: #227a41; font-weight: 700;
+    font-size: 13px; padding: 8px 20px; border: 1px solid #bfe4c9;
   }
-  .prm-btn-commit:hover { background: #286838; color: #c0eed0; }
-  .prm-btn-commit:disabled { background: #141e18; color: #2a4030; border-color: #1a2820; cursor: default; }
+  .prm-btn-commit:hover { background: #d9f0e0; }
+  .prm-btn-commit:disabled { background: #f2f4f4; color: #a7b0b1; border-color: var(--line, #d8dfe0); cursor: default; }
   .prm-confirmed-tag {
-    display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
-    color: #4ecb72; padding: 5px 12px; background: #0d2018;
-    border-radius: 6px; border: 1px solid #1a3828;
+    display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+    color: #227a41; padding: 5px 12px; background: #eaf6ee;
+    border-radius: 6px; border: 1px solid #bfe4c9;
   }
 
   /* ── Commit screen ── */
@@ -293,35 +293,35 @@ const CSS = `
   }
   .prm-commit-icon {
     width: 60px; height: 60px; border-radius: 50%;
-    background: rgba(30,90,46,.2); border: 1px solid rgba(42,122,64,.4);
+    background: #eaf6ee; border: 1px solid #bfe4c9;
     display: flex; align-items: center; justify-content: center;
-    font-size: 24px; margin-bottom: 18px;
+    font-size: 24px; margin-bottom: 18px; color: #227a41;
   }
   .prm-commit-title {
-    font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 600;
-    color: #f0ece6; margin-bottom: 8px;
+    font-family: 'Manrope', sans-serif; font-size: 22px; font-weight: 800; letter-spacing: -.03em;
+    color: var(--text, #111819); margin-bottom: 8px;
   }
-  .prm-commit-sub { font-size: 13px; color: #7a7570; margin-bottom: 24px; line-height: 1.7; max-width: 400px; }
+  .prm-commit-sub { font-size: 13px; color: var(--muted, #4b585b); margin-bottom: 24px; line-height: 1.7; max-width: 400px; }
   .prm-commit-summary {
-    background: #161514; border: 1px solid #252320; border-radius: 10px;
+    background: #f7f8f8; border: 1px solid var(--line, #d8dfe0); border-radius: 10px;
     padding: 16px 20px; width: 100%; max-width: 380px; margin-bottom: 24px; text-align: left;
   }
   .prm-summary-row {
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 13px; padding: 6px 0; border-bottom: 1px solid #1e1d1b;
+    font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--line, #d8dfe0);
   }
   .prm-summary-row:last-child { border-bottom: none; }
-  .prm-summary-row .lbl { color: #7a7570; }
-  .prm-summary-row .val { color: #d8d4ce; font-weight: 600; }
-  .prm-summary-row .val.warn { color: #e06060; }
+  .prm-summary-row .lbl { color: var(--muted, #4b585b); }
+  .prm-summary-row .val { color: var(--text, #111819); font-weight: 700; }
+  .prm-summary-row .val.warn { color: #c4473e; }
   .prm-commit-err {
-    background: #1c0e0e; border: 1px solid #3a1818; border-radius: 6px;
-    padding: 10px 16px; font-size: 12px; color: #e06060;
+    background: #faeae8; border: 1px solid #f0c9c4; border-radius: 6px;
+    padding: 10px 16px; font-size: 12px; color: #c4473e;
     margin-bottom: 16px; max-width: 380px; width: 100%;
   }
   .prm-spinner {
-    width: 16px; height: 16px; border: 2px solid #252320;
-    border-top-color: #02a4ba; border-radius: 50%;
+    width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4);
+    border-top-color: #fff; border-radius: 50%;
     animation: prm-spin .7s linear infinite;
     display: inline-block; margin-right: 8px; vertical-align: middle;
   }
@@ -624,7 +624,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                     <span className="prm-purchased-field-lbl">Unit</span>
                     <select
                       className="prm-unit-select"
-                      style={{ background: '#1a1408', border: '1px solid #3a2a10', borderRadius: 4, padding: '5px 20px 5px 8px', width: 80, color: '#9a9490' }}
+                      style={{ background: '#fff', border: '1px solid #f0e0b8', borderRadius: 4, padding: '5px 20px 5px 8px', width: 80, color: 'var(--muted, #4b585b)' }}
                       value={purchasedIng.unit}
                       onChange={e => updateIng(ci, 0, 'unit', e.target.value)}
                     >
@@ -816,7 +816,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                     <div className="prm-nav">
                       <button className="prm-btn prm-btn-ghost" onClick={() => { setCurrent(c => c - 1); setAcSearch({}); setAcOpen({}); }} disabled={current === 0}>← Prev</button>
                       <button className="prm-btn prm-btn-ghost" onClick={() => { setCurrent(c => c + 1); setAcSearch({}); setAcOpen({}); }} disabled={current === dishes.length - 1}>Next →</button>
-                      <button className="prm-btn prm-btn-ghost" style={{ color: '#e06060', borderColor: '#3a1818' }} onClick={removeDish}>Remove dish</button>
+                      <button className="prm-btn prm-btn-ghost" style={{ color: '#c4473e', borderColor: '#f0c9c4' }} onClick={removeDish}>Remove dish</button>
                     </div>
                     {confirmed[current]
                       ? <div className="prm-confirmed-tag">✓ Confirmed</div>
