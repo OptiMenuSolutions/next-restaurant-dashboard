@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import OnboardingScreen from "../../components/onboarding/OnboardingScreen";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -13,10 +14,19 @@ import OnboardingScreen from "../../components/onboarding/OnboardingScreen";
  * name/cuisine, rather than inserting a second one (which is what the
  * previous version of this file did, before the trigger was known about).
  *
- * `address` now has a real column (`shipping_address`) and gets saved —
- * previously dropped entirely, since restaurants had nowhere for it to go.
+ * `address` now has real, structured columns (shipping_address_line1,
+ * shipping_city, shipping_state, shipping_zip) and gets saved — previously
+ * dropped entirely, then briefly a single free-text column, now broken out
+ * per the real design (this is also where the address field moved to —
+ * step 2, "Pass tag", not step 1 — since it's specifically for shipping the
+ * NFC tag).
  * `style` is still dropped — no column exists for it either; same situation
  * as address was, just not asked about yet.
+ *
+ * Now also enforces that a subscription exists before allowing onboarding
+ * at all (this page had no guard whatsoever before) — obviously doesn't
+ * require onboarding to already be finished, since that's what this page
+ * is for.
  */
 export default function OnboardingPage() {
   const router = useRouter();
@@ -28,11 +38,16 @@ export default function OnboardingPage() {
       if (!user) return;
       const { data: profile } = await supabase
         .from("profiles").select("restaurant_id").eq("id", user.id).single();
-      if (profile?.restaurant_id) setRestaurantId(profile.restaurant_id);
+      if (!profile?.restaurant_id) return;
+
+      const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id, { requireOnboarding: false });
+      if (!rest) return;
+
+      setRestaurantId(profile.restaurant_id);
     })();
   }, []);
 
-  const finishOnboarding = async ({ name, address, style, cuisine }) => {
+  const finishOnboarding = async ({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/client/login"); return; }
 
@@ -42,7 +57,15 @@ export default function OnboardingPage() {
     if (profile?.restaurant_id) {
       const { error } = await supabase
         .from("restaurants")
-        .update({ name, shipping_address: address, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
+        .update({
+          name,
+          shipping_address_line1: addrLine1,
+          shipping_city: addrCity,
+          shipping_state: addrState,
+          shipping_zip: addrZip,
+          cuisine_type: cuisine,
+          onboarding_completed_at: new Date().toISOString(),
+        })
         .eq("id", profile.restaurant_id);
       if (error) throw error;
     } else {
@@ -52,7 +75,16 @@ export default function OnboardingPage() {
       // never fired. Create both explicitly rather than fail here.
       const { data: restaurant, error: restError } = await supabase
         .from("restaurants")
-        .insert({ name, user_id: user.id, shipping_address: address, cuisine_type: cuisine, onboarding_completed_at: new Date().toISOString() })
+        .insert({
+          name,
+          user_id: user.id,
+          shipping_address_line1: addrLine1,
+          shipping_city: addrCity,
+          shipping_state: addrState,
+          shipping_zip: addrZip,
+          cuisine_type: cuisine,
+          onboarding_completed_at: new Date().toISOString(),
+        })
         .select()
         .single();
       if (restError) throw restError;

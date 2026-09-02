@@ -19,7 +19,20 @@ import { CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
  *   onConfirmed     ({mode, subscriptionId?, setupIntentId?}) => Promise<{last4}>
  *                   — the page's job: call /api/stripe/finalize and return
  *                   its result
- *   NavLink, backHref
+ *   cancelHref      where the top "Back" link goes BEFORE payment completes.
+ *                   Deliberately separate from what happens after success —
+ *                   these used to share one prop (backHref), which meant
+ *                   clicking Back before ever paying could land on
+ *                   checkout-success as if payment had gone through.
+ *   onSuccess       "subscribe" mode only — called immediately after a
+ *                   successful confirm+onConfirmed, no inline success screen
+ *                   shown at all; the page navigates straight to
+ *                   checkout-success. "update" mode still shows the inline
+ *                   confirmation (via successHref below) since there's no
+ *                   urgency to leave the page right after updating a card.
+ *   successHref     "update" mode only — the inline success screen's
+ *                   "Return to billing" link target.
+ *   NavLink
  */
 export default function CheckoutScreen({
   mode = "update",
@@ -27,8 +40,10 @@ export default function CheckoutScreen({
   clientSecret,
   subscriptionId,
   onConfirmed,
+  onSuccess,
+  cancelHref = "/client/billing",
+  successHref = "/client/billing",
   NavLink = DefaultLink,
-  backHref = "/client/billing",
 }) {
   const stripe = useStripe();
   const elements = useElements();
@@ -67,8 +82,12 @@ export default function CheckoutScreen({
         });
         if (stripeError) throw new Error(stripeError.message);
         if (paymentIntent.status !== "succeeded") throw new Error("Payment was not completed.");
-        const res = await onConfirmed?.({ mode, subscriptionId });
-        setResult(res || {});
+        await onConfirmed?.({ mode, subscriptionId });
+        // No inline success screen for subscribe mode — go straight to the
+        // real checkout-success page instead of a redundant intermediate
+        // "you're in" state the person then has to click through.
+        onSuccess?.();
+        return;
       } else {
         const { error: stripeError, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
           payment_method: { card: cardElement, billing_details: billingDetails },
@@ -98,7 +117,7 @@ export default function CheckoutScreen({
       }}
     >
       <div style={{ flex: "1 1 340px", background: "var(--shell)", padding: "48px 44px", borderRight: "1px solid var(--line)" }}>
-        <NavLink href={backHref} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "var(--faint)", marginBottom: 36 }}>
+        <NavLink href={cancelHref} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: "var(--faint)", marginBottom: 36 }}>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
           {isSubscribe ? "Back" : "Back to billing"}
         </NavLink>
@@ -191,14 +210,14 @@ export default function CheckoutScreen({
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--accent-tint)", color: "var(--accent-deep)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               </div>
-              <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>{isSubscribe ? "You're in" : "Card updated"}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 6 }}>Card updated</div>
               <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 26 }}>
                 {result.last4
                   ? `Your card ending in ${result.last4} will be used for future charges.`
                   : "Your subscription is active."}
               </div>
-              <NavLink href={backHref} style={{ display: "inline-flex", background: "var(--accent)", color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700 }}>
-                {isSubscribe ? "Continue" : "Return to billing"}
+              <NavLink href={successHref} style={{ display: "inline-flex", background: "var(--accent)", color: "#fff", borderRadius: 8, padding: "11px 22px", fontSize: 14, fontWeight: 700 }}>
+                Return to billing
               </NavLink>
             </div>
           )}

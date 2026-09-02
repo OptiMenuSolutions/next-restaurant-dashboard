@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import ProfileScreen from "../../components/client/ProfileScreen";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 
 /**
  * pages/client/profile.js — data container.
@@ -48,15 +49,8 @@ export default function ProfilePage() {
         setUserName(profile?.full_name || "");
         if (profile?.restaurant_id) {
           setRestaurantId(profile.restaurant_id);
-          const { data: rest } = await supabase
-            .from("restaurants")
-            .select("name, target_food_cost, notif_weekly_summary, notif_price_alerts, notif_low_margin, deactivated_at")
-            .eq("id", profile.restaurant_id).single();
-          if (rest?.deactivated_at) {
-            await supabase.auth.signOut();
-            router.push("/client/login");
-            return;
-          }
+          const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
+          if (!rest) return;
           if (!cancelled && rest) {
             setRestaurantName(rest.name || "");
             if (rest.target_food_cost != null) setTargetFoodCost(Number(rest.target_food_cost));

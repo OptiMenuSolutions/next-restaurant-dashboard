@@ -8,6 +8,7 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 
 /**
  * pages/client/menu-items.js — menu items screen, v5 shell.
@@ -179,13 +180,8 @@ export default function MenuItemsPage() {
         if (cancelled) return;
         setUserName(profile.full_name || "");
 
-        const { data: rest } = await supabase
-          .from("restaurants").select("name, target_food_cost, deactivated_at").eq("id", profile.restaurant_id).single();
-        if (rest?.deactivated_at) {
-          await supabase.auth.signOut();
-          router.push("/client/login");
-          return;
-        }
+        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
+        if (!rest) return;
         if (!cancelled) {
           setRestaurantName(rest?.name || "");
           if (rest?.target_food_cost) setTargetMargin(100 - num(rest.target_food_cost));

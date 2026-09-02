@@ -8,6 +8,7 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import CsvImportPreview from "../../components/CsvImportPreview";
 
 /**
@@ -91,18 +92,14 @@ export default function AnalyticsPage() {
         setRestaurantId(profile.restaurant_id);
         setUserName(profile.full_name || "");
 
-        const [{ data: rest }, { data: menu }, { data: sessions }] = await Promise.all([
-          supabase.from("restaurants").select("name, target_food_cost, deactivated_at").eq("id", profile.restaurant_id).single(),
+        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
+        if (!rest) return;
+
+        const [{ data: menu }, { data: sessions }] = await Promise.all([
           supabase.from("menu_items").select("name, price, cost, category").eq("restaurant_id", profile.restaurant_id).limit(500),
           supabase.from("upload_sessions").select("*").eq("restaurant_id", profile.restaurant_id).order("uploaded_at", { ascending: false }).limit(1),
         ]);
         if (cancelled) return;
-
-        if (rest?.deactivated_at) {
-          await supabase.auth.signOut();
-          router.push("/client/login");
-          return;
-        }
 
         setRestaurantName(rest?.name || "");
         if (rest?.target_food_cost) setTargetFoodCost(num(rest.target_food_cost));

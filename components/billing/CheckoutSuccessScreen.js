@@ -3,13 +3,12 @@
  * Shown right after a NEW subscription's initial payment (distinct from
  * CheckoutScreen, which only updates the card on an existing subscription).
  *
- * Props: restaurantName, amount, last4, nextBillDate, NavLink
+ * Props: restaurantName, amount, last4, NavLink
  */
 export default function CheckoutSuccessScreen({
   restaurantName = "",
   amount = "$59.00",
   last4 = "4242",
-  nextBillDate = "Sep 28, 2026",
   NavLink = DefaultLink,
 }) {
   const vars = {
@@ -40,7 +39,7 @@ export default function CheckoutSuccessScreen({
               <div style={row}><span style={{ fontSize: 12.5, color: "var(--muted)" }}>Plan</span><span style={{ fontSize: 13, fontWeight: 700 }}>Founding member</span></div>
               <div style={row}><span style={{ fontSize: 12.5, color: "var(--muted)" }}>Amount charged today</span><span style={{ fontSize: 13, fontWeight: 700 }}>{amount}</span></div>
               <div style={row}><span style={{ fontSize: 12.5, color: "var(--muted)" }}>Card</span><span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: "var(--muted)" }}>•••• {last4}</span></div>
-              <div style={{ ...row, borderBottom: "none" }}><span style={{ fontSize: 12.5, color: "var(--muted)" }}>Next invoice</span><span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: "var(--muted)" }}>{nextBillDate}</span></div>
+              <div style={{ ...row, borderBottom: "none" }}><span style={{ fontSize: 12.5, color: "var(--muted)" }}>Billing</span><span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 13, color: "var(--muted)" }}>Monthly, recurring</span></div>
             </div>
 
             <NavLink href="/client/onboarding" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "var(--accent)", color: "#fff", borderRadius: 26, padding: 14, fontSize: 15, fontWeight: 700, marginBottom: 14 }}>

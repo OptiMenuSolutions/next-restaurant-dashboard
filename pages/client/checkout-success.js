@@ -44,7 +44,6 @@ export default function CheckoutSuccessPage() {
           {...(summary?.restaurantName ? { restaurantName: summary.restaurantName } : {})}
           {...(summary?.amount ? { amount: summary.amount } : {})}
           {...(summary?.last4 ? { last4: summary.last4 } : {})}
-          {...(summary?.nextBillDate ? { nextBillDate: summary.nextBillDate } : {})}
         />
       )}
     </>

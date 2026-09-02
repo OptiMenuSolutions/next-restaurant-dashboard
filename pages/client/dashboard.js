@@ -12,6 +12,7 @@ import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import { fetchSampleData, SAMPLE_AI_RECOMMENDATIONS } from "../../lib/seedSampleData";
 import UniversalSearch from "../../components/UniversalSearch";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 
 /**
  * pages/client/dashboard.js — "Tonight's Pass" dashboard, v5 shell.
@@ -180,23 +181,9 @@ export default function DashboardPage() {
         }
         setUserName(profile.full_name || "");
         setRestaurantId(profile.restaurant_id);
-        const { data: rd } = await supabase
-          .from("restaurants")
-          .select("name,created_at,target_food_cost,deactivated_at")
-          .eq("id", profile.restaurant_id)
-          .single();
 
-        // A still-valid session doesn't stop working just because the
-        // account was deactivated elsewhere (another tab, another device,
-        // or a session that predates the deactivation) — deactivation only
-        // ever set a column, it never revoked existing tokens. This is the
-        // actual enforcement point: sign out and send them to login, where
-        // the existing reactivation prompt (see login.js) takes over.
-        if (rd?.deactivated_at) {
-          await supabase.auth.signOut();
-          router.push("/client/login");
-          return;
-        }
+        const rd = await enforceAccountGuard(supabase, router, profile.restaurant_id);
+        if (!rd) return; // already redirected — deactivated, unpaid, or onboarding incomplete
 
         if (rd?.name) setRestaurantName(rd.name);
         if (rd?.created_at) setRestaurantCreatedAt(rd.created_at);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import BillingScreen from "../../components/client/BillingScreen";
+import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 
 /**
  * pages/client/billing.js — data container.
@@ -18,6 +19,13 @@ import BillingScreen from "../../components/client/BillingScreen";
  * AccountChrome) was always showing the hardcoded demo "Marco Rossi" /
  * marco@lunaosteria.com for every real signed-in user, and the sign-out
  * button in its account dropdown did nothing.
+ *
+ * Now also enforces that a subscription actually exists before rendering —
+ * this page was previously reachable with no subscription at all. Still
+ * deliberately allows a deactivated account to view it (their subscription
+ * really is canceled at that point, and confirming that is a reasonable
+ * thing to want) and doesn't require onboarding to be finished either —
+ * someone might reasonably want to fix a card issue before finishing setup.
  */
 export default function BillingPage() {
   const router = useRouter();
@@ -33,11 +41,19 @@ export default function BillingPage() {
         if (!session) return;
 
         const { data: profile } = await supabase
-          .from("profiles").select("full_name, email").eq("id", session.user.id).single();
+          .from("profiles").select("full_name, email, restaurant_id").eq("id", session.user.id).single();
         setUser({
           name: profile?.full_name || session.user.email || "",
           email: profile?.email || session.user.email || "",
         });
+
+        if (profile?.restaurant_id) {
+          const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id, {
+            requireNotDeactivated: false,
+            requireOnboarding: false,
+          });
+          if (!rest) return;
+        }
 
         const [summaryRes, historyRes] = await Promise.all([
           fetch("/api/stripe/subscription-summary", { headers: { Authorization: `Bearer ${session.access_token}` } }),

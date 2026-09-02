@@ -12,6 +12,14 @@ import CheckoutScreen from "../../components/billing/CheckoutScreen";
  * subscription checkout and card-update. /api/stripe/create-intent decides
  * which mode this is (based on whether the restaurant already has a
  * stripe_subscription_id) — this page just renders whatever it's told.
+ *
+ * cancelHref (before payment) and the post-success destination used to be
+ * the same prop — for subscribe mode that meant clicking "Back" before ever
+ * paying landed on checkout-success as if payment had gone through. Now
+ * separate: cancelHref sends an abandoned signup back to login (they can
+ * always sign back in and resume — login.js routes them straight back to
+ * checkout since no subscription exists yet); onSuccess navigates to the
+ * real checkout-success page immediately, no inline "you're in" screen.
  */
 export default function CheckoutPage() {
   const router = useRouter();
@@ -80,7 +88,9 @@ export default function CheckoutPage() {
             clientSecret={intent.clientSecret}
             subscriptionId={intent.subscriptionId}
             onConfirmed={handleConfirmed}
-            backHref={intent.mode === "subscribe" ? "/client/checkout-success" : "/client/billing"}
+            cancelHref={intent.mode === "subscribe" ? "/client/login" : "/client/billing"}
+            successHref="/client/billing"
+            onSuccess={intent.mode === "subscribe" ? () => router.push("/client/checkout-success") : undefined}
           />
         </Elements>
       )}
