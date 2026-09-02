@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import OnboardingScreen from "../../components/onboarding/OnboardingScreen";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -31,6 +32,18 @@ import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 export default function OnboardingPage() {
   const router = useRouter();
   const [restaurantId, setRestaurantId] = useState(null);
+  const [duplicateModal, setDuplicateModal] = useState(null);
+
+  function askDuplicateConfirm(fileName, existing) {
+    return new Promise((resolve) => {
+      setDuplicateModal({
+        fileName,
+        existing,
+        onMerge: () => { setDuplicateModal(null); resolve(true); },
+        onSaveNew: () => { setDuplicateModal(null); resolve(false); },
+      });
+    });
+  }
 
   useEffect(() => {
     (async () => {
@@ -141,9 +154,7 @@ export default function OnboardingPage() {
                 console.log(`[onboarding upload] ${file.name}: ${message}`);
               });
               if (result.status === "duplicate") {
-                const merge = window.confirm(
-                  `${file.name} looks like invoice #${result.existing.existing_number}, already on file. Add to that invoice? (Cancel = save as new)`
-                );
+                const merge = await askDuplicateConfirm(file.name, result.existing);
                 await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
               }
             } catch (err) {
@@ -153,6 +164,14 @@ export default function OnboardingPage() {
           }
         }}
       />
+      {duplicateModal && (
+        <DuplicateInvoiceModal
+          fileName={duplicateModal.fileName}
+          existing={duplicateModal.existing}
+          onMerge={duplicateModal.onMerge}
+          onSaveNew={duplicateModal.onSaveNew}
+        />
+      )}
     </>
   );
 }

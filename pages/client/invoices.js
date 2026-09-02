@@ -9,6 +9,7 @@ import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
 
 /**
  * pages/client/invoices.js — invoices screen, v5 shell.
@@ -160,6 +161,21 @@ export default function InvoicesPage() {
   const [uploadStatus, setUploadStatus] = useState(null); // { message, detail } | null
   const [searchOpen, setSearchOpen] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [duplicateModal, setDuplicateModal] = useState(null);
+
+  // Promise-based stand-in for what window.confirm() used to do
+  // synchronously — resolves once the person clicks a button on the real
+  // in-app modal instead of a native browser dialog.
+  function askDuplicateConfirm(fileName, existing) {
+    return new Promise((resolve) => {
+      setDuplicateModal({
+        fileName,
+        existing,
+        onMerge: () => { setDuplicateModal(null); resolve(true); },
+        onSaveNew: () => { setDuplicateModal(null); resolve(false); },
+      });
+    });
+  }
 
   async function handleFiles(fileList) {
     if (!fileList || !fileList.length || !restaurantId) return;
@@ -177,10 +193,7 @@ export default function InvoicesPage() {
         });
 
         if (result.status === "duplicate") {
-          const merge = window.confirm(
-            `This looks like invoice #${result.existing.existing_number} from ${result.existing.existing_supplier}, already on file from ${result.existing.existing_date}. ` +
-            `Add these items to that invoice? (Cancel = save as a new invoice instead)`
-          );
+          const merge = await askDuplicateConfirm(file.name, result.existing);
           await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
         }
       } catch (err) {
@@ -210,7 +223,7 @@ export default function InvoicesPage() {
       {(uploadStatus || uploadError) && (
         <div
           style={{
-            position: "fixed", top: 16, right: 16, zIndex: 500, maxWidth: 340,
+            position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340,
             background: uploadError ? "#faeae8" : "#e8f7f9",
             border: `1px solid ${uploadError ? "#c4473e" : "#02a4ba"}`,
             borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif",
@@ -226,6 +239,14 @@ export default function InvoicesPage() {
             </>
           )}
         </div>
+      )}
+      {duplicateModal && (
+        <DuplicateInvoiceModal
+          fileName={duplicateModal.fileName}
+          existing={duplicateModal.existing}
+          onMerge={duplicateModal.onMerge}
+          onSaveNew={duplicateModal.onSaveNew}
+        />
       )}
       <InvoicesScreen
         invoices={withLines}
