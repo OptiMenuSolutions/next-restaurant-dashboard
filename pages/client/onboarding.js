@@ -222,7 +222,7 @@ export default function OnboardingPage() {
           if (!session) return;
           setUploadError("");
           setParsingInvoices(true);
-          const { parseInvoiceBatch, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+          const { parseInvoiceBatch, groupParsedInvoices, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
           const fileArr = Array.from(files);
 
@@ -234,31 +234,35 @@ export default function OnboardingPage() {
             setUploadStatus({ message: fileArr.length > 1 ? `[${i + 1}/${fileArr.length}] ${fileName}: ${message}` : message, detail });
           });
 
-          // Same batching rule as invoices.js — files selected together in
-          // one action are pages of one invoice, regardless of what each
-          // page's own OCR reads for its invoice number.
-          let batchInvoiceId = null;
-          for (const item of parsed) {
-            if (item.error) {
-              setUploadError(`${item.file.name}: ${item.error}`);
-              continue;
-            }
-            try {
-              setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
-              if (batchInvoiceId) {
-                const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, batchInvoiceId);
-                batchInvoiceId = saved.invoiceId;
-              } else if (item.parseResult.duplicate) {
-                const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
-                const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
-                batchInvoiceId = saved.invoiceId;
-              } else {
-                const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
-                batchInvoiceId = saved.invoiceId;
+          // Group by (supplier, invoice_number) — NOT "everything selected
+          // together is one invoice". See groupParsedInvoices's own
+          // comment in lib/uploadInvoice.js for the full reasoning.
+          const groups = groupParsedInvoices(parsed);
+
+          for (const group of groups) {
+            let groupInvoiceId = null;
+            for (const item of group.items) {
+              if (item.error) {
+                setUploadError(`${item.file.name}: ${item.error}`);
+                continue;
               }
-            } catch (err) {
-              console.error("[onboarding] Invoice save failed:", err);
-              setUploadError(`${item.file.name}: ${err.message}`);
+              try {
+                setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
+                if (groupInvoiceId) {
+                  const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, groupInvoiceId);
+                  groupInvoiceId = saved.invoiceId;
+                } else if (item.parseResult.duplicate) {
+                  const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
+                  const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
+                  groupInvoiceId = saved.invoiceId;
+                } else {
+                  const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
+                  groupInvoiceId = saved.invoiceId;
+                }
+              } catch (err) {
+                console.error("[onboarding] Invoice save failed:", err);
+                setUploadError(`${item.file.name}: ${err.message}`);
+              }
             }
           }
           setUploadStatus(null);

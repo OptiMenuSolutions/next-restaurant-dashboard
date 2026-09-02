@@ -183,7 +183,7 @@ export default function InvoicesPage() {
     if (!session) return;
 
     setUploadError("");
-    const { parseInvoiceBatch, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+    const { parseInvoiceBatch, groupParsedInvoices, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
     const files = Array.from(fileList);
 
@@ -197,35 +197,40 @@ export default function InvoicesPage() {
       setUploadStatus({ message: files.length > 1 ? `[${i + 1}/${files.length}] ${fileName}: ${message}` : message, detail });
     });
 
-    // Files selected together in one action are treated as pages of the
-    // SAME invoice — see lib/uploadInvoice.js's header comment for why this
-    // is more robust than relying on invoice-number matching. Only the
-    // first successfully-parsed file can trigger the "this looks like a
-    // duplicate of something already on file" prompt; every file after it
-    // in this same batch always appends into whatever invoice resulted.
-    let batchInvoiceId = null;
+    // Group by (supplier, invoice_number) — NOT "everything selected
+    // together is one invoice". A batch can be several pages of one
+    // invoice, several separate invoices, or a mix of both; see
+    // groupParsedInvoices's own comment in lib/uploadInvoice.js for the
+    // full reasoning. Each group gets its own independent save: the first
+    // successfully-parsed file in a group can trigger the "this looks like
+    // a duplicate of something already on file" prompt; every file after
+    // it in that SAME group always appends into whatever invoice resulted.
+    const groups = groupParsedInvoices(parsed);
 
-    for (const item of parsed) {
-      if (item.error) {
-        setUploadError(`${item.file.name}: ${item.error}`);
-        continue;
-      }
-      try {
-        setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
-        if (batchInvoiceId) {
-          const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, batchInvoiceId);
-          batchInvoiceId = saved.invoiceId;
-        } else if (item.parseResult.duplicate) {
-          const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
-          const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
-          batchInvoiceId = saved.invoiceId;
-        } else {
-          const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
-          batchInvoiceId = saved.invoiceId;
+    for (const group of groups) {
+      let groupInvoiceId = null;
+      for (const item of group.items) {
+        if (item.error) {
+          setUploadError(`${item.file.name}: ${item.error}`);
+          continue;
         }
-      } catch (err) {
-        console.error("[invoices] Save failed:", err);
-        setUploadError(`${item.file.name}: ${err.message}`);
+        try {
+          setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
+          if (groupInvoiceId) {
+            const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, groupInvoiceId);
+            groupInvoiceId = saved.invoiceId;
+          } else if (item.parseResult.duplicate) {
+            const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
+            const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
+            groupInvoiceId = saved.invoiceId;
+          } else {
+            const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
+            groupInvoiceId = saved.invoiceId;
+          }
+        } catch (err) {
+          console.error("[invoices] Save failed:", err);
+          setUploadError(`${item.file.name}: ${err.message}`);
+        }
       }
     }
 
