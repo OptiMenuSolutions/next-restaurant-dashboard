@@ -37,6 +37,29 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Same retry/backoff as parse-menu.js — none of the three Claude calls this
+// makes (parseWithClaude, sanityCheckCosts, matchWithClaude) were wrapped
+// before. With multiple files now parsing at once (see the batch changes
+// in lib/uploadInvoice.js), this is more exposed to rate limits than it
+// was running one file at a time.
+async function withRetry(fn, label, maxAttempts = 5) {
+  let delay = 1000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.status ?? err?.response?.status;
+      const retryable = status === 429 || status === 529 || (status >= 500 && status < 600);
+      if (!retryable || attempt === maxAttempts) throw err;
+      const retryAfter = Number(err?.headers?.['retry-after'] ?? err?.response?.headers?.['retry-after']);
+      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : delay;
+      console.warn(`[retry] ${label} got ${status}, attempt ${attempt}/${maxAttempts}, waiting ${wait}ms`);
+      await new Promise(r => setTimeout(r, wait));
+      delay = Math.min(delay * 2, 16000);
+    }
+  }
+}
+
 // ─── Stream helpers ───────────────────────────────────────────────────────────
 
 function streamEvent(res, event) {
@@ -81,19 +104,23 @@ async function callMistralOCR(fileBuffer, mimeType) {
     table_format: 'html',
   };
 
-  const response = await fetch('https://api.mistral.ai/v1/ocr', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Mistral OCR error ${response.status}: ${errText}`);
-  }
+  const response = await withRetry(async () => {
+    const res = await fetch('https://api.mistral.ai/v1/ocr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      const err = new Error(`Mistral OCR error ${res.status}: ${errText}`);
+      err.status = res.status; // withRetry needs this to detect 429/529/5xx
+      throw err;
+    }
+    return res;
+  }, 'mistral-ocr');
 
   const data = await response.json();
   const pages = data.pages || [];
@@ -122,7 +149,7 @@ async function callMistralOCR(fileBuffer, mimeType) {
 async function parseWithClaude(ocrText, restaurantId, res) {
   streamStatus(res, 'Extracting line items...', 'Parsing rows and computing unit costs');
 
-  const response = await anthropic.messages.create({
+  const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 16000,
     messages: [{
@@ -302,7 +329,7 @@ OUTPUT FORMAT
   }
 }`,
     }],
-  });
+  }), 'parseWithClaude');
 
   await logAiUsage({
     feature: 'invoice_parse',
@@ -334,7 +361,7 @@ async function sanityCheckCosts(foodItems, restaurantId) {
     return `${idx}: "${item.item_name_normalized || item.item_name_raw}" | qty=${qty} | pack=${pack} | size=${size} ${sizeUnit} | case_price=$${price} | line_total=$${lineTotal}${catchWeight ? ` | ${catchWeight}` : ''}`;
   }).join('\n');
 
-  const response = await anthropic.messages.create({
+  const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
     messages: [{
@@ -403,7 +430,7 @@ Flag ALL items that fail ANY check above. Be liberal with flagging.
   ]
 }`,
     }],
-  });
+  }), 'sanityCheckCosts');
 
   await logAiUsage({
     feature: 'invoice_sanity',
@@ -444,7 +471,7 @@ async function matchWithClaude(foodItems, restaurantIngredients, restaurantId) {
     .map((item, idx) => `${idx}: "${item.item_name_normalized || item.item_name_raw}"`)
     .join('\n');
 
-  const response = await anthropic.messages.create({
+  const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 4000,
     messages: [{
@@ -482,7 +509,7 @@ OUTPUT FORMAT:
   ]
 }`,
     }],
-  });
+  }), 'matchWithClaude');
 
   await logAiUsage({
     feature: 'invoice_match',

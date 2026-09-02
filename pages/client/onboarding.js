@@ -220,29 +220,43 @@ export default function OnboardingPage() {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
           setUploadError("");
-          const { uploadInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+          const { parseInvoiceBatch, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+
+          const fileArr = Array.from(files);
+
+          // Same speed change as invoices.js — parse every file at once,
+          // since one file's OCR-and-Claude pipeline never depended on
+          // another's. Only saving stays sequential (see below).
+          setUploadStatus({ message: fileArr.length > 1 ? `Reading ${fileArr.length} files...` : `Reading ${fileArr[0].name}...`, detail: null });
+          const parsed = await parseInvoiceBatch(fileArr, restaurantId, session.access_token, (i, fileName, message, detail) => {
+            setUploadStatus({ message: fileArr.length > 1 ? `[${i + 1}/${fileArr.length}] ${fileName}: ${message}` : message, detail });
+          });
+
           // Same batching rule as invoices.js — files selected together in
           // one action are pages of one invoice, regardless of what each
           // page's own OCR reads for its invoice number.
           let batchInvoiceId = null;
-          for (const file of Array.from(files)) {
+          for (const item of parsed) {
+            if (item.error) {
+              setUploadError(`${item.file.name}: ${item.error}`);
+              continue;
+            }
             try {
-              setUploadStatus({ message: `Uploading ${file.name}...`, detail: null });
-              const result = await uploadInvoice(
-                file, restaurantId, session.access_token,
-                (message, detail) => setUploadStatus({ message, detail }),
-                batchInvoiceId
-              );
-              if (result.status === "duplicate") {
-                const merge = await askDuplicateConfirm(file.name, result.existing);
-                const saved = await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+              setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
+              if (batchInvoiceId) {
+                const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, batchInvoiceId);
                 batchInvoiceId = saved.invoiceId;
-              } else if (result.status === "saved") {
-                batchInvoiceId = result.invoiceId;
+              } else if (item.parseResult.duplicate) {
+                const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
+                const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
+                batchInvoiceId = saved.invoiceId;
+              } else {
+                const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
+                batchInvoiceId = saved.invoiceId;
               }
             } catch (err) {
-              console.error("[onboarding] Invoice upload failed:", err);
-              setUploadError(`${file.name}: ${err.message}`);
+              console.error("[onboarding] Invoice save failed:", err);
+              setUploadError(`${item.file.name}: ${err.message}`);
             }
           }
           setUploadStatus(null);

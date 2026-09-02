@@ -183,35 +183,49 @@ export default function InvoicesPage() {
     if (!session) return;
 
     setUploadError("");
-    const { uploadInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+    const { parseInvoiceBatch, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
+
+    const files = Array.from(fileList);
+
+    // Parse every file at once — this is the actual speed change. One
+    // file's OCR-and-Claude pipeline never depended on another's; only
+    // SAVING has an order dependency (a continuation page needs to know
+    // the first page's resulting invoice id), so that part stays
+    // sequential below, after all parsing is already done.
+    setUploadStatus({ message: files.length > 1 ? `Reading ${files.length} files...` : `Reading ${files[0].name}...`, detail: null });
+    const parsed = await parseInvoiceBatch(files, restaurantId, session.access_token, (i, fileName, message, detail) => {
+      setUploadStatus({ message: files.length > 1 ? `[${i + 1}/${files.length}] ${fileName}: ${message}` : message, detail });
+    });
 
     // Files selected together in one action are treated as pages of the
     // SAME invoice — see lib/uploadInvoice.js's header comment for why this
     // is more robust than relying on invoice-number matching. Only the
-    // first file can trigger the "this looks like a duplicate of something
-    // already on file" prompt; every file after it in this same batch
-    // always appends into whatever invoice the first file established.
+    // first successfully-parsed file can trigger the "this looks like a
+    // duplicate of something already on file" prompt; every file after it
+    // in this same batch always appends into whatever invoice resulted.
     let batchInvoiceId = null;
 
-    for (const file of Array.from(fileList)) {
+    for (const item of parsed) {
+      if (item.error) {
+        setUploadError(`${item.file.name}: ${item.error}`);
+        continue;
+      }
       try {
-        setUploadStatus({ message: `Uploading ${file.name}...`, detail: null });
-        const result = await uploadInvoice(
-          file, restaurantId, session.access_token,
-          (message, detail) => setUploadStatus({ message, detail }),
-          batchInvoiceId
-        );
-
-        if (result.status === "duplicate") {
-          const merge = await askDuplicateConfirm(file.name, result.existing);
-          const saved = await confirmDuplicateInvoice(result.parseResult, restaurantId, session.access_token, merge);
+        setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
+        if (batchInvoiceId) {
+          const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, batchInvoiceId);
           batchInvoiceId = saved.invoiceId;
-        } else if (result.status === "saved") {
-          batchInvoiceId = result.invoiceId;
+        } else if (item.parseResult.duplicate) {
+          const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
+          const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
+          batchInvoiceId = saved.invoiceId;
+        } else {
+          const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
+          batchInvoiceId = saved.invoiceId;
         }
       } catch (err) {
-        console.error("[invoices] Upload failed:", err);
-        setUploadError(`${file.name}: ${err.message}`);
+        console.error("[invoices] Save failed:", err);
+        setUploadError(`${item.file.name}: ${err.message}`);
       }
     }
 
