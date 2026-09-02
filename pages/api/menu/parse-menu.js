@@ -1,6 +1,6 @@
 // pages/api/menu/parse-menu.js
 // Production two-pass menu parser.
-// Google Vision handles OCR. Claude Haiku handles dish extraction and recipe building.
+// Mistral OCR handles OCR (switched from Google Vision). Claude Haiku handles dish extraction and recipe building.
 // Writes to: ingredients, menu_items, menu_item_components, component_ingredients, menu_categories
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -144,38 +144,61 @@ const ARCHETYPE_COMPAT = {
   'Steak / Chop / Fillet':   ['Steak / Chop / Fillet', 'Seafood Entree', 'Chicken Entree'],
 };
 
-// ─── Google Vision OCR ────────────────────────────────────────────────────────
+// ─── Mistral OCR ────────────────────────────────────────────────────────────
+// Switched from Google Vision — Mistral's already proven reliable for
+// invoices all session, this removes a second OCR provider (and the Google
+// Cloud billing setup that kept tripping up) in favor of one already-working
+// one. Also a genuine simplification: Mistral accepts PDFs natively in one
+// call and returns per-page text already joined, so the manual pdf2pic
+// page-by-page conversion this used to need for PDFs is gone entirely —
+// that dependency isn't used anywhere else in this file.
 
-async function extractTextWithVision(filePath) {
-  const apiKey = process.env.GOOGLE_VISION_API_KEY;
-  if (!apiKey) throw new Error('GOOGLE_VISION_API_KEY is not set');
+async function callMistralOCR(fileBuffer, mimeType) {
+  const base64Content = fileBuffer.toString('base64');
+  const isPDF = mimeType === 'application/pdf';
 
-  const imageData = fs.readFileSync(filePath);
-  const base64Image = imageData.toString('base64');
+  const documentPayload = isPDF
+    ? { type: 'document_url', document_url: `data:application/pdf;base64,${base64Content}` }
+    : { type: 'image_url', image_url: `data:${mimeType};base64,${base64Content}` };
 
-  const response = await fetch(
-    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requests: [{
-          image: { content: base64Image },
-          features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
-        }],
-      }),
-    }
-  );
+  const body = {
+    model: 'mistral-ocr-latest',
+    document: documentPayload,
+    table_format: 'html',
+  };
+
+  const response = await fetch('https://api.mistral.ai/v1/ocr', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.MISTRAL_API_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
 
   if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`Google Vision API error: ${err}`);
+    const errText = await response.text();
+    throw new Error(`Mistral OCR error ${response.status}: ${errText}`);
   }
 
   const data = await response.json();
-  const text = data.responses?.[0]?.fullTextAnnotation?.text || '';
-  console.log(`[vision] Extracted ${text.length} characters from ${filePath}`);
-  return text;
+  const pages = data.pages || [];
+  const fullText = pages.map(p => {
+    let markdown = p.markdown || '';
+    if (p.tables && p.tables.length > 0) {
+      for (const table of p.tables) {
+        const tableId = table.id || '';
+        const placeholder = `[${tableId}](${tableId})`;
+        if (tableId && markdown.includes(placeholder)) {
+          markdown = markdown.replace(placeholder, table.content || '');
+        }
+      }
+    }
+    return markdown;
+  }).join('\n\n--- PAGE BREAK ---\n\n');
+
+  console.log(`[mistral-ocr] Extracted ${fullText.length} characters, ${pages.length} page(s)`);
+  return fullText;
 }
 
 // ─── Single file → extracted text string ─────────────────────────────────────
@@ -183,33 +206,10 @@ async function extractTextWithVision(filePath) {
 async function fileToText(file) {
   const ext = path.extname(file.originalFilename || '').toLowerCase();
   const isPDF = ext === '.pdf' || file.mimetype === 'application/pdf';
+  const mimeType = isPDF ? 'application/pdf' : (file.mimetype || 'image/jpeg');
 
-  if (isPDF) {
-    const { fromPath } = await import('pdf2pic');
-    const convert = fromPath(file.filepath, {
-      density: 150,
-      saveFilename: 'page',
-      savePath: '/tmp',
-      format: 'png',
-      width: 1200,
-      height: 1600,
-    });
-    const textParts = [];
-    for (let i = 1; i <= 6; i++) {
-      try {
-        const result = await convert(i, { responseType: 'base64' });
-        if (!result?.base64) break;
-        const tempPath = `/tmp/page_${i}.png`;
-        fs.writeFileSync(tempPath, Buffer.from(result.base64, 'base64'));
-        const pageText = await extractTextWithVision(tempPath);
-        fs.unlinkSync(tempPath);
-        if (pageText) textParts.push(pageText);
-      } catch { break; }
-    }
-    return textParts.join('\n\n--- PAGE BREAK ---\n\n');
-  }
-
-  return await extractTextWithVision(file.filepath);
+  const fileBuffer = fs.readFileSync(file.filepath);
+  return await callMistralOCR(fileBuffer, mimeType);
 }
 
 // ─── OCR text chunker ─────────────────────────────────────────────────────────
@@ -1387,6 +1387,14 @@ export default async function handler(req, res) {
     }
   }
 
+  // Declared here, before the try block, specifically so the catch block's
+  // cleanup code below can still see it — it was declared with const
+  // *inside* the try block before, which meant any error thrown before
+  // that point (like the Vision billing error this was hit with) crashed
+  // the error handler itself with "fileList is not defined", masking the
+  // real error behind a second, unrelated one.
+  let fileList = [];
+
   try {
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
@@ -1401,12 +1409,11 @@ export default async function handler(req, res) {
     // of this handler is completely unchanged from here on, since it just
     // consumes {filepath, originalFilename, mimetype} the same way it
     // always did, regardless of where that file actually came from.
-    const fileList = [];
     for (const f of fileRefs) {
       fileList.push(await downloadToTempFile(f.file_url, f.file_name));
     }
 
-    console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Vision key: ${process.env.GOOGLE_VISION_API_KEY ? 'SET' : 'MISSING'}`);
+    console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Mistral key: ${process.env.MISTRAL_API_KEY ? 'SET' : 'MISSING'}`);
     console.log(`[parse-menu] Global ingredients loaded: ${globalIngredients.length}`);
     const globalRecipes = await loadGlobalRecipes();
 
