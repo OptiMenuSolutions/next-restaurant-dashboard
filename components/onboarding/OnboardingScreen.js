@@ -19,7 +19,10 @@ import { useState } from "react";
  *                                                 selecting either would hit a real 400 from
  *                                                 /api/pos/oauth-start. Add them back only
  *                                                 once a real provider adapter exists for them.)
- *   onUploadInvoices(files)
+ *   onParseInvoices(files) => Promise  called once, with everything added, when
+ *                                      Continue is clicked on step 4 — same
+ *                                      pattern as onParseMenu, resolves once
+ *                                      parsing/saving actually finishes
  *   NavLink, skipHref (defaults to /client/dashboard), doneHref (defaults to /client/dashboard)
  */
 const STEP_LABELS = ["Profile", "Pass tag", "Menu", "Invoices", "POS"];
@@ -30,7 +33,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onParseMenu, parsingMenu, onSelectPos, onUploadInvoices,
+  onFinish, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -63,7 +66,9 @@ export default function OnboardingScreen({
   const addInvoiceFiles = (fileList) => {
     const newFiles = Array.from(fileList);
     setInvoiceFiles((prev) => [...prev, ...newFiles]);
-    onUploadInvoices?.(newFiles);
+    // Deliberately does NOT call onParseInvoices here — same reasoning as
+    // menu files: parsing fires once, on Continue, with everything they've
+    // added, not once per drop/select.
   };
   const removeInvoiceFile = (i) => setInvoiceFiles((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -80,6 +85,13 @@ export default function OnboardingScreen({
       // moving on — onParseMenu's promise doesn't resolve until then, see
       // pages/client/onboarding.js.
       await onParseMenu?.(menuFiles);
+      setStep((s) => s + 1);
+      return;
+    }
+    if (step === 4 && invoiceFiles.length > 0) {
+      // Same pattern as step 3 — parse the whole batch once, on Continue,
+      // and wait for it to actually finish before advancing.
+      await onParseInvoices?.(invoiceFiles);
       setStep((s) => s + 1);
       return;
     }
@@ -374,10 +386,10 @@ export default function OnboardingScreen({
                 <button
                   type="button"
                   onClick={continueStep}
-                  disabled={parsingMenu}
-                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: 14, fontWeight: 700, cursor: parsingMenu ? "default" : "pointer", opacity: parsingMenu ? 0.6 : 1 }}
+                  disabled={parsingMenu || parsingInvoices}
+                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: 14, fontWeight: 700, cursor: (parsingMenu || parsingInvoices) ? "default" : "pointer", opacity: (parsingMenu || parsingInvoices) ? 0.6 : 1 }}
                 >
-                  {parsingMenu ? "Reading your menu…" : step === 5 ? "Finish setup" : "Continue"}
+                  {parsingMenu ? "Reading your menu…" : parsingInvoices ? "Reading your invoices…" : step === 5 ? "Finish setup" : "Continue"}
                 </button>
               </div>
             </div>

@@ -108,6 +108,7 @@ export default function OnboardingPage() {
   }
   const [uploadStatus, setUploadStatus] = useState(null); // { message, detail } | null
   const [uploadError, setUploadError] = useState("");
+  const [parsingInvoices, setParsingInvoices] = useState(false);
 
   function askDuplicateConfirm(fileName, existing) {
     return new Promise((resolve) => {
@@ -215,11 +216,12 @@ export default function OnboardingPage() {
             window.alert(err.message || "Could not connect that POS right now.");
           }
         }}
-        onUploadInvoices={async (files) => {
+        onParseInvoices={async (files) => {
           if (!files || !files.length || !restaurantId) return;
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
           setUploadError("");
+          setParsingInvoices(true);
           const { parseInvoiceBatch, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
           const fileArr = Array.from(files);
@@ -260,7 +262,9 @@ export default function OnboardingPage() {
             }
           }
           setUploadStatus(null);
+          setParsingInvoices(false);
         }}
+        parsingInvoices={parsingInvoices}
       />
       {(uploadStatus || uploadError) && (
         <div
