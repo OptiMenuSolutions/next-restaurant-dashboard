@@ -118,11 +118,43 @@ export default function MenuItemsPage() {
   const [userName, setUserName] = useState("");
   const [targetMargin, setTargetMargin] = useState(70);
   const [items, setItems] = useState([]);
+  const [repriceError, setRepriceError] = useState("");
 
   const menuFileInput = useRef(null);
   const [menuParsing, setMenuParsing] = useState(false);
   const [menuParseError, setMenuParseError] = useState("");
   const [reviewData, setReviewData] = useState(null); // { dishes, ingredientLibrary } | null
+
+  // Same risk as onboarding's menu step, actually worse here — this page
+  // has a full always-visible nav bar (Dashboard, Invoices, Ingredients,
+  // Analytics), any of which would silently lose an in-flight or
+  // not-yet-saved menu parse. Active from when parsing starts through the
+  // whole review-modal period, since nothing's saved until it's committed.
+  const menuFlowActive = menuParsing || !!reviewData;
+
+  useEffect(() => {
+    if (!menuFlowActive) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    const handleRouteChangeStart = () => {
+      if (!window.confirm("Your menu is still being processed and hasn't been saved yet. Leave anyway?")) {
+        router.events.emit("routeChangeError");
+        // eslint-disable-next-line no-throw-literal
+        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change from a routeChangeStart handler
+      }
+    };
+    router.events.on("routeChangeStart", handleRouteChangeStart);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      router.events.off("routeChangeStart", handleRouteChangeStart);
+    };
+  }, [menuFlowActive, router.events]);
 
   async function handleMenuFiles(fileList) {
     if (!fileList || !fileList.length || !restaurantId) return;
@@ -245,7 +277,27 @@ export default function MenuItemsPage() {
         onOpenItem={(d) => router.push(`/client/menu-items/${d.id}`)}
         onAddItem={() => router.push("/client/menu-items?new=1")}
         onUploadMenu={() => menuFileInput.current && menuFileInput.current.click()}
-        onReprice={(d, suggested) => router.push(`/client/menu-items/${d.id}?price=${suggested}`)}
+        onReprice={async (d, suggested) => {
+          setRepriceError("");
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch("/api/menu-items/update-price", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+              body: JSON.stringify({ restaurant_id: restaurantId, menu_item_id: d.id, price: suggested }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.error || "Could not update price.");
+            // Updates the SAME card in place — no navigation. margin/drift
+            // are derived from price inside MenuItemsScreen's own render
+            // transform, so updating price here is all that's needed for
+            // those to recompute correctly on the next render.
+            setItems((prev) => prev.map((item) => (item.id === d.id ? { ...item, price: suggested } : item)));
+          } catch (err) {
+            console.error("[menu-items] Reprice failed:", err);
+            setRepriceError(err.message);
+          }
+        }}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
@@ -279,6 +331,12 @@ export default function MenuItemsPage() {
       {menuParseError && (
         <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
           <div style={{ fontWeight: 700 }}>{menuParseError}</div>
+        </div>
+      )}
+
+      {repriceError && (
+        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
+          <div style={{ fontWeight: 700 }}>{repriceError}</div>
         </div>
       )}
 
