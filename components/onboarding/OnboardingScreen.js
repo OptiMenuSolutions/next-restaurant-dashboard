@@ -33,7 +33,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices,
+  onFinish, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -136,7 +136,11 @@ export default function OnboardingScreen({
           </div>
         )}
 
-        <NavLink href={skipHref} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>Skip for now</NavLink>
+        {blockNavigation ? (
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--line)", flexShrink: 0, cursor: "default" }} title="Your menu is still being processed">Skip for now</span>
+        ) : (
+          <NavLink href={skipHref} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>Skip for now</NavLink>
+        )}
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "36px 20px" }}>

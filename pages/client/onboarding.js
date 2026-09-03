@@ -41,6 +41,43 @@ export default function OnboardingPage() {
   const [menuReviewChoice, setMenuReviewChoice] = useState(null); // null | 'self' | 'team'
   const [teamHandoffSaving, setTeamHandoffSaving] = useState(false);
 
+  // Menu parsing/review has real, uncommitted work in flight the whole
+  // time this is true — not just during the OCR+AI call itself, but
+  // through the choice prompt and review modal too, since nothing is
+  // actually saved until one of those resolves. Navigating away anywhere
+  // in this window loses the parsed data silently: Next.js client-side
+  // navigation doesn't kill the underlying request, but it does unmount
+  // this component, so the state update that would show/save the result
+  // becomes a no-op once it comes back. Guards against: browser
+  // back/forward, closing or refreshing the tab, and (as a second layer)
+  // the top-of-page "Skip for now" link, which OnboardingScreen disables
+  // via the menuFlowActive prop below.
+  const menuFlowActive = menuParsing || !!menuReviewData;
+
+  useEffect(() => {
+    if (!menuFlowActive) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    const handleRouteChangeStart = () => {
+      if (!window.confirm("Your menu is still being processed and hasn't been saved yet. Leave anyway?")) {
+        router.events.emit("routeChangeError");
+        // eslint-disable-next-line no-throw-literal
+        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change from a routeChangeStart handler
+      }
+    };
+    router.events.on("routeChangeStart", handleRouteChangeStart);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      router.events.off("routeChangeStart", handleRouteChangeStart);
+    };
+  }, [menuFlowActive, router.events]);
+
   // Returns a promise that only resolves once the review is actually done
   // (committed or discarded) — this is what OnboardingScreen's continueStep
   // awaits before advancing past step 3, so the wizard can't move on mid-parse.
@@ -198,6 +235,7 @@ export default function OnboardingPage() {
         onFinish={finishOnboarding}
         onParseMenu={parseMenuAndWaitForReview}
         parsingMenu={menuParsing}
+        blockNavigation={menuFlowActive}
         onSelectPos={async (key) => {
           if (key === "upload") return; // "I'll upload manually" — no OAuth, just continue the wizard
           if (!restaurantId) return;
