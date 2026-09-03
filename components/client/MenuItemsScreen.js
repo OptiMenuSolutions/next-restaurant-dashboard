@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -22,7 +22,6 @@ import {
  *   loading, error, onRetry
  *   onOpenItem (dish) => void      – detail route
  *   onAddItem  () => void          – empty-state CTA
- *   onReprice  (dish, suggestedPrice) => void
  *   restaurantName, user, theme/defaultTheme/onThemeChange, NavLink
  */
 
@@ -140,7 +139,6 @@ export default function MenuItemsScreen({
   onOpenItem,
   onAddItem,
   onUploadMenu,
-  onReprice,
   onSearch,
   onSignOut,
   periodLabel,
@@ -342,7 +340,6 @@ export default function MenuItemsScreen({
                 open={open}
                 setOpen={setOpen}
                 onBack={() => setSelectedId(null)}
-                onReprice={onReprice}
               />
             ) : (
               <MenuSummary
@@ -447,26 +444,43 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 
 /* ── right pane: one dish ───────────────────────────────────────────── */
 
-function DishDetail({ d, tgt, open, setOpen, onBack, onReprice }) {
+function DishDetail({ d, tgt, open, setOpen, onBack }) {
   const chart = useMemo(() => buildMarginChart(d.history, tgt), [d.history, tgt]);
-  const holdPrice = d.cost / (1 - tgt / 100);
-  const suggested = Math.ceil(holdPrice);
 
   const biggest = d.components.slice().sort((a, b) => b.cost - a.cost)[0];
   const keyOf = (c) => d.id + "|" + c.name;
   const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : biggest && c.name === biggest.name);
   const anyOpen = d.components.some(isOpen);
 
+  // ── What-if portions ────────────────────────────────────────────────────
+  // Pure client-side exploration — nothing here ever writes to Supabase.
+  // whatIfQty holds ONLY the overridden quantities a person has typed;
+  // every real dish/component/ingredient number stays exactly as loaded.
+  // Resets whenever they switch to a different dish, so exploration never
+  // silently carries over onto the next thing they look at.
+  const [whatIfQty, setWhatIfQty] = useState({});
+  useEffect(() => { setWhatIfQty({}); }, [d.id]);
+
+  const ingKey = (ci, ii) => `${ci}-${ii}`;
+  const effectiveQty = (ci, ii, ing) => {
+    const key = ingKey(ci, ii);
+    return key in whatIfQty ? whatIfQty[key] : ing.quantity;
+  };
+  const effectiveIngCost = (ci, ii, ing) => effectiveQty(ci, ii, ing) * (Number(ing.unitPrice) || 0);
+  const effectiveComponentCost = (ci, comp) =>
+    comp.ingredients.reduce((sum, ing, ii) => sum + effectiveIngCost(ci, ii, ing), 0);
+
+  const isExploring = Object.keys(whatIfQty).length > 0;
+  const effectiveDishCost = d.components.reduce((sum, comp, ci) => sum + effectiveComponentCost(ci, comp), 0);
+  const effectiveMargin = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
+  const displayCost = isExploring ? effectiveDishCost : d.cost;
+  const displayMargin = isExploring ? effectiveMargin : d.margin;
+
   const priceLines = [
     { label: "On the menu", value: money0(d.price), color: "var(--text)" },
-    { label: "Plate cost", value: money2(d.cost), color: "var(--text)" },
-    { label: `Holds ${pct(tgt)}`, value: money0(suggested), color: suggested > d.price ? "var(--amber)" : "var(--text)" },
+    { label: "Plate cost", value: money2(displayCost), color: isExploring ? "var(--accent-deep)" : "var(--text)" },
+    { label: `Holds ${pct(tgt)}`, value: money0(Math.ceil(displayCost / (1 - tgt / 100))), color: displayCost / (1 - tgt / 100) > d.price ? "var(--amber)" : "var(--text)" },
   ];
-
-  const repriceNote = suggested > d.price
-    ? `${money0(suggested)} would put ${d.name.split(",")[0]} back at ${pct(tgt)}.` +
-      (d.covers ? ` At ${d.covers} covers that is ${money0((suggested - d.price) * d.covers)} a month.` : "")
-    : `Priced above target. Holding ${money0(d.price)} banks ${money0((d.price - holdPrice) * (d.covers || 0))} a month over the ${pct(tgt)} line.`;
 
   return (
     <>
@@ -481,12 +495,18 @@ function DishDetail({ d, tgt, open, setOpen, onBack, onReprice }) {
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: d.margin < tgt ? "var(--red)" : "var(--text)" }}>{pct(d.margin)}</div>
-          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>
-            {d.margin >= tgt ? "On target" : ppLabel(d.margin - tgt) + " off target"}
+          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: displayMargin < tgt ? "var(--red)" : "var(--text)", fontStyle: isExploring ? "italic" : "normal" }}>{pct(displayMargin)}</div>
+          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: isExploring ? "var(--amber)" : "var(--accent-deep)", marginTop: 7 }}>
+            {isExploring ? "What if — not saved" : (d.margin >= tgt ? "On target" : ppLabel(d.margin - tgt) + " off target")}
           </div>
         </div>
       </div>
+      {isExploring && (
+        <div style={{ flexShrink: 0, background: "#fdf6e8", borderBottom: "1px solid #f0e0b8", padding: "8px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ fontSize: 12, color: "#96690a", fontWeight: 600 }}>You're exploring portion changes — nothing here is saved to the real recipe.</span>
+          <button type="button" onClick={() => setWhatIfQty({})} style={{ flexShrink: 0, background: "none", border: "1px solid #b8860b", borderRadius: 14, padding: "4px 11px", cursor: "pointer", fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#96690a" }}>Reset</button>
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "stretch", flexWrap: "wrap", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
         <div style={{ flex: "1 1 150px", minWidth: 0, padding: "16px 18px 10px", display: "flex", flexDirection: "column" }}>
@@ -537,10 +557,6 @@ function DishDetail({ d, tgt, open, setOpen, onBack, onReprice }) {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: "auto", border: "1px dashed var(--line)", borderRadius: 8, padding: "11px 12px" }}>
-            <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--muted)", textWrap: "pretty" }}>{repriceNote}</div>
-            <button type="button" onClick={() => onReprice && onReprice(d, suggested)} className="om-hover-accent" style={{ marginTop: 9, width: "100%", background: "none", border: "1px solid var(--accent)", borderRadius: 20, padding: "7px 12px", cursor: "pointer", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Reprice to target</button>
-          </div>
         </div>
       </div>
 
@@ -560,17 +576,18 @@ function DishDetail({ d, tgt, open, setOpen, onBack, onReprice }) {
           </button>
         </div>
         <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", marginTop: 10, borderTop: "1px dashed var(--line)" }}>
-          {d.components.map((c) => {
+          {d.components.map((c, ci) => {
             const opened = isOpen(c);
-            const move = c.cost - c.costThen;
-            const share = d.cost ? (c.cost / d.cost) * 100 : 0;
+            const compCost = effectiveComponentCost(ci, c);
+            const move = c.cost - c.costThen; // real cost movement — not affected by what-if exploration
+            const share = effectiveDishCost ? (compCost / effectiveDishCost) * 100 : 0;
             return (
               <div key={c.name} style={{ padding: "11px 2px 12px", borderBottom: "1px dashed var(--line)" }}>
                 <div onClick={() => setOpen((prev) => ({ ...prev, [keyOf(c)]: !opened }))} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, cursor: "pointer" }}>
                   <span style={{ fontSize: 10, color: "var(--accent-deep)", width: 9, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
                   <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text)", whiteSpace: "nowrap" }}>{c.name}</span>
                   <span style={{ flex: 1, borderBottom: "1px dotted var(--faint)", transform: "translateY(-3px)" }} />
-                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(c.cost)}</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
                   <span style={{ fontSize: 11.5, fontWeight: 500, whiteSpace: "nowrap", minWidth: 56, textAlign: "right", fontVariantNumeric: "tabular-nums", color: c.allEstimated || c.unknownMove ? "var(--faint)" : moveColor(move) }}>
                     {c.allEstimated || c.unknownMove ? "—" : moveLabel(move)}
                   </span>
@@ -585,19 +602,41 @@ function DishDetail({ d, tgt, open, setOpen, onBack, onReprice }) {
                 </div>
                 {opened && (
                   <div style={{ margin: "8px 0 0 17px", paddingLeft: 12, borderLeft: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 5 }}>
-                    {c.ingredients.map((i, n) => {
-                      const im = (Number(i.cost) || 0) - (Number(i.costThen != null ? i.costThen : i.cost) || 0);
+                    {c.ingredients.map((i, ii) => {
+                      const im = (Number(i.cost) || 0) - (Number(i.costThen != null ? i.costThen : i.cost) || 0); // real move — not what-if
+                      const qVal = effectiveQty(ci, ii, i);
+                      const iCost = effectiveIngCost(ci, ii, i);
+                      const key = ingKey(ci, ii);
+                      const overridden = key in whatIfQty;
                       return (
-                        <div key={n} style={{ display: "flex", alignItems: "baseline", gap: 7, fontFamily: MONO }}>
+                        <div key={ii} style={{ display: "flex", alignItems: "baseline", gap: 7, fontFamily: MONO }}>
                           <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
                           {i.estimated && (
                             <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
                           )}
+                          <input
+                            type="number"
+                            step="any"
+                            min="0"
+                            value={qVal}
+                            onChange={(e) => {
+                              const val = e.target.value === "" ? 0 : Number(e.target.value);
+                              setWhatIfQty((prev) => ({ ...prev, [key]: val }));
+                            }}
+                            title="Try a different portion size — this doesn't change the real recipe"
+                            style={{
+                              width: 44, flexShrink: 0, fontSize: 11, textAlign: "right", fontFamily: MONO,
+                              background: overridden ? "#fdf6e8" : "transparent",
+                              border: overridden ? "1px solid #b8860b" : "1px solid var(--line)",
+                              borderRadius: 4, padding: "1px 4px",
+                              color: overridden ? "#96690a" : "var(--faint)",
+                            }}
+                          />
                           <span style={{ fontSize: 11, color: "var(--faint)", whiteSpace: "nowrap" }}>
-                            {i.qty}{i.unitPrice != null ? ` · ${money2(i.unitPrice)}/${i.unit || "ea"}` : ""}
+                            {i.unit || "ea"}{i.unitPrice != null ? ` · ${money2(i.unitPrice)}/${i.unit || "ea"}` : ""}
                           </span>
                           <span style={{ flex: 1, borderBottom: "1px dotted var(--line)", transform: "translateY(-3px)" }} />
-                          <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(i.cost)}</span>
+                          <span style={{ fontSize: 12, color: overridden ? "#96690a" : "var(--muted)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
                           <span style={{ fontSize: 11, whiteSpace: "nowrap", minWidth: 56, textAlign: "right", fontVariantNumeric: "tabular-nums", color: i.estimated || i.costThen == null ? "var(--faint)" : moveColor(im) }}>
                             {i.estimated || i.costThen == null ? "—" : moveLabel(im)}
                           </span>

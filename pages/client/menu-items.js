@@ -55,6 +55,7 @@ function toDish(row, costHistory, covers) {
       return {
         name: g.name || "Ingredient",
         unit: ci.unit || g.unit || "ea",
+        quantity: num(ci.quantity), // raw number — needed for live what-if math below
         qty: [ci.quantity, ci.unit || g.unit].filter(Boolean).join(" "),
         unitPrice,
         cost: num(ci.quantity) * unitPrice,
@@ -71,6 +72,7 @@ function toDish(row, costHistory, covers) {
     return {
       name: g.name || "Ingredient",
       unit: g.unit || "ea",
+      quantity: num(mi.quantity),
       qty: [mi.quantity, g.unit].filter(Boolean).join(" "),
       unitPrice,
       cost: num(mi.quantity) * unitPrice,
@@ -118,7 +120,6 @@ export default function MenuItemsPage() {
   const [userName, setUserName] = useState("");
   const [targetMargin, setTargetMargin] = useState(70);
   const [items, setItems] = useState([]);
-  const [repriceError, setRepriceError] = useState("");
 
   const menuFileInput = useRef(null);
   const [menuParsing, setMenuParsing] = useState(false);
@@ -277,27 +278,6 @@ export default function MenuItemsPage() {
         onOpenItem={(d) => router.push(`/client/menu-items/${d.id}`)}
         onAddItem={() => router.push("/client/menu-items?new=1")}
         onUploadMenu={() => menuFileInput.current && menuFileInput.current.click()}
-        onReprice={async (d, suggested) => {
-          setRepriceError("");
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const res = await fetch("/api/menu-items/update-price", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-              body: JSON.stringify({ restaurant_id: restaurantId, menu_item_id: d.id, price: suggested }),
-            });
-            const data = await res.json();
-            if (!res.ok || !data.success) throw new Error(data.error || "Could not update price.");
-            // Updates the SAME card in place — no navigation. margin/drift
-            // are derived from price inside MenuItemsScreen's own render
-            // transform, so updating price here is all that's needed for
-            // those to recompute correctly on the next render.
-            setItems((prev) => prev.map((item) => (item.id === d.id ? { ...item, price: suggested } : item)));
-          } catch (err) {
-            console.error("[menu-items] Reprice failed:", err);
-            setRepriceError(err.message);
-          }
-        }}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
@@ -331,12 +311,6 @@ export default function MenuItemsPage() {
       {menuParseError && (
         <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
           <div style={{ fontWeight: 700 }}>{menuParseError}</div>
-        </div>
-      )}
-
-      {repriceError && (
-        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
-          <div style={{ fontWeight: 700 }}>{repriceError}</div>
         </div>
       )}
 
