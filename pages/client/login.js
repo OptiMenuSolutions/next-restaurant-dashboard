@@ -28,6 +28,13 @@ import AuthScreen from "../../components/client/AuthScreen";
 export default function LoginPage() {
   const router = useRouter();
 
+  const handleForgotPassword = async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/client/reset-password`,
+    });
+    if (error) throw error;
+  };
+
   const handleSubmit = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
@@ -108,7 +115,7 @@ export default function LoginPage() {
         <title>Sign in — OptiMenu</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
-      <AuthScreen mode="login" onSubmit={handleSubmit} NavLink={Link} />
+      <AuthScreen mode="login" onSubmit={handleSubmit} onForgotPassword={handleForgotPassword} NavLink={Link} />
     </>
   );
 }

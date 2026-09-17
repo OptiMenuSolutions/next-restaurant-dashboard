@@ -12,7 +12,7 @@ import { useState } from "react";
  *   NavLink         component, defaults to <a>. Pass a next/link wrapper.
  *   showConfirmEmail boolean — show the "check your email" success state (signup only)
  */
-export default function AuthScreen({ mode = "login", onSubmit, NavLink = DefaultLink, showConfirmEmail = false }) {
+export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword, NavLink = DefaultLink, showConfirmEmail = false }) {
   const isLogin = mode === "login";
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -21,6 +21,25 @@ export default function AuthScreen({ mode = "login", onSubmit, NavLink = Default
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState("");
   const [confirmEmail, setConfirmEmail] = useState(showConfirmEmail);
+  const [resetSent, setResetSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setErrorText('Enter your email above first, then click "Forgot password?"');
+      return;
+    }
+    setErrorText("");
+    setResetLoading(true);
+    try {
+      await onForgotPassword?.(email);
+      setResetSent(true);
+    } catch (err) {
+      setErrorText(err?.message || "Could not send reset email. Please try again.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -122,6 +141,12 @@ export default function AuthScreen({ mode = "login", onSubmit, NavLink = Default
                 </div>
               )}
 
+              {isLogin && resetSent && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#f0fafb", border: "1px solid #cfe9ec", borderLeft: "3px solid #02a4ba", borderRadius: 8, padding: "12px 14px", marginBottom: 22 }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#03808f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 1 }}><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>
+                  <span style={{ fontSize: 14, lineHeight: 1.5, color: "#0d5c66" }}>If an account exists for that email, we've sent a password reset link.</span>
+                </div>
+              )}
               {!isLogin && confirmEmail && (
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10, background: "#f0fafb", border: "1px solid #cfe9ec", borderLeft: "3px solid #02a4ba", borderRadius: 8, padding: "12px 14px", marginBottom: 22 }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#03808f" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: "none", marginTop: 1 }}><path d="M4 6h16v12H4z" /><path d="m4 7 8 6 8-6" /></svg>
@@ -168,7 +193,9 @@ export default function AuthScreen({ mode = "login", onSubmit, NavLink = Default
                       <input type="checkbox" name="remember-me" style={{ width: 15, height: 15, accentColor: "#02a4ba", cursor: "pointer" }} />
                       <span style={{ fontSize: 14, color: "#5a6669" }}>Remember me</span>
                     </label>
-                    <a href="#" style={{ fontSize: 14, fontWeight: 500 }}>Forgot password?</a>
+                    <button type="button" onClick={handleForgotPassword} disabled={resetLoading} style={{ fontSize: 14, fontWeight: 500, background: "none", border: "none", padding: 0, color: "#03808f", cursor: "pointer" }}>
+                      {resetLoading ? "Sending…" : "Forgot password?"}
+                    </button>
                   </div>
                 )}
 
