@@ -188,6 +188,12 @@ export default function OnboardingPage() {
             shipping_city: data.addrCity,
             shipping_state: data.addrState,
             shipping_zip: data.addrZip,
+            // Name + address are the only two things actually required to use
+            // the app (see enforceAccountGuard's requireOnboarding check) —
+            // menu/invoices/POS on steps 3-5 are genuinely optional and can be
+            // added later from their real pages. So this is the point
+            // "onboarding" is considered done for gating purposes, not step 5.
+            onboarding_completed_at: new Date().toISOString(),
           };
     const { error } = await supabase.from("restaurants").update(updates).eq("id", restaurantId);
     if (error) throw error;
