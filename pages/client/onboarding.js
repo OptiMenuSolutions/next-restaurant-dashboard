@@ -247,7 +247,7 @@ export default function OnboardingPage() {
       if (profileError) throw profileError;
     }
 
-    router.push("/client/dashboard");
+    router.push("/client/dashboard?justOnboarded=true");
   };
 
   return (
@@ -260,6 +260,8 @@ export default function OnboardingPage() {
         NavLink={Link}
         onFinish={finishOnboarding}
         onSaveStep={saveOnboardingStep}
+        skipHref="/client/dashboard?justOnboarded=true"
+        doneHref="/client/dashboard?justOnboarded=true"
         onParseMenu={parseMenuAndWaitForReview}
         parsingMenu={menuParsing}
         blockNavigation={menuFlowActive}

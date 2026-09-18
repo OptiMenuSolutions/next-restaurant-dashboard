@@ -159,6 +159,16 @@ export default function DashboardPage() {
   const [recommendations, setRecommendations] = useState([]);
   const [data, setData] = useState({ ingredients: [], menuItems: [], wasteRisk: [], stats: null });
   const [reloadKey, setReloadKey] = useState(0);
+  const [showTourPrompt, setShowTourPrompt] = useState(false);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    if (router.query.justOnboarded === "true") {
+      setShowTourPrompt(true);
+      router.replace("/client/dashboard", undefined, { shallow: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady]);
 
   // Computed fresh each render (not stored state) — re-evaluates whenever
   // this component re-renders, which happens reliably when the tour ends
@@ -586,6 +596,21 @@ export default function DashboardPage() {
       )}
 
       {tour.active && <TourOverlay tour={tour} />}
+
+      {showTourPrompt && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 700, background: "rgba(17,24,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 420, background: "#fff", border: "1px solid #d8dfe0", borderRadius: 14, boxShadow: "0 24px 60px rgba(17,24,25,0.25)", padding: 28, fontFamily: "'Manrope',sans-serif", textAlign: "center" }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "#111819", marginBottom: 10 }}>Want a quick tour?</div>
+            <div style={{ fontSize: 13.5, color: "#4b585b", lineHeight: 1.6, marginBottom: 24 }}>
+              Two minutes to see how a fully set-up OptiMenu account works, using sample data — nothing here touches your real numbers.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" onClick={() => { localStorage.setItem("optimenu_tour_done", "1"); setShowTourPrompt(false); }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid #d8dfe0", background: "none", color: "#111819", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>No thanks</button>
+              <button type="button" onClick={() => router.push("/client/dashboard?tour=true")} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "none", background: "#02a4ba", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Yes, show me</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <UniversalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>

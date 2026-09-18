@@ -11,8 +11,22 @@
 export default function TourOverlay({ tour }) {
   if (!tour || !tour.active) return null;
 
+  const TOKENS = {
+    '--shell': '#ffffff',
+    '--panel': '#eef0ef',
+    '--line': '#d8dfe0',
+    '--line-soft': '#eef1f2',
+    '--text': '#111819',
+    '--muted': '#5a6669',
+    '--faint': '#9aa5a7',
+    '--accent': '#02a4ba',
+    '--accent-deep': '#03808f',
+    '--accent-tint': '#e8f7f9',
+    '--shadow-lg': '0 22px 60px rgba(17,24,25,0.12)',
+  };
+
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: tour.pointerEvents }}>
+    <div style={{ ...TOKENS, position: 'fixed', inset: 0, zIndex: 9998, pointerEvents: tour.pointerEvents }}>
       <svg
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: tour.pointerEvents }}
         viewBox={`0 0 ${tour.vw} ${tour.vh}`}
