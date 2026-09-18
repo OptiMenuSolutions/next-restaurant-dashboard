@@ -173,7 +173,7 @@ export default function DashboardPage() {
     (async () => {
       try {
         const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError || !user) { setError("Authentication required"); setLoading(false); return; }
+        if (userError || !user) { router.push("/client/login"); return; }
         const { data: profile, error: profileError } = await supabase
           .from("profiles").select("restaurant_id,full_name").eq("id", user.id).single();
         if (profileError || !profile?.restaurant_id) {
