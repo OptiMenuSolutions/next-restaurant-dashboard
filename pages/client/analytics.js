@@ -10,6 +10,20 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import CsvImportPreview from "../../components/CsvImportPreview";
+import { fetchSampleData } from "../../lib/seedSampleData";
+
+const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+function isTourQueryActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("tour") !== "true") return false;
+  try {
+    return localStorage.getItem("optimenu_tour_done") !== "1";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * pages/client/analytics.js — POS analytics screen, v5 shell.
@@ -64,6 +78,14 @@ export default function AnalyticsPage() {
   const [session, setSession] = useState(null);
 
   const loadSales = useCallback(async (restId) => {
+    if (isTourQueryActive()) {
+      const sample = await fetchSampleData();
+      if (sample) {
+        setSales(sample.posSales || []);
+        return;
+      }
+      // fetchSampleData() failed — fall through to the real query below.
+    }
     let rows = [];
     for (let page = 0, from = 0; page < MAX_PAGES; page++, from += PAGE_SIZE) {
       const { data, error: qErr } = await supabase
@@ -95,18 +117,30 @@ export default function AnalyticsPage() {
         const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
         if (!rest) return;
 
-        const [{ data: menu }, { data: sessions }] = await Promise.all([
-          supabase.from("menu_items").select("name, price, cost, category").eq("restaurant_id", profile.restaurant_id).limit(500),
-          supabase.from("upload_sessions").select("*").eq("restaurant_id", profile.restaurant_id).order("uploaded_at", { ascending: false }).limit(1),
-        ]);
+        let menu = [];
+        let sessions = [];
+        if (isTourQueryActive()) {
+          const sample = await fetchSampleData();
+          menu = sample?.menuItems || [];
+          // Sample data has no upload_sessions row — sessions stays empty,
+          // syncStamp below already handles that by falling back to the
+          // sales array's own pos_system/count.
+        } else {
+          const [{ data: realMenu }, { data: realSessions }] = await Promise.all([
+            supabase.from("menu_items").select("name, price, cost, category").eq("restaurant_id", profile.restaurant_id).limit(500),
+            supabase.from("upload_sessions").select("*").eq("restaurant_id", profile.restaurant_id).order("uploaded_at", { ascending: false }).limit(1),
+          ]);
+          menu = realMenu || [];
+          sessions = realSessions || [];
+        }
         if (cancelled) return;
 
         setRestaurantName(rest?.name || "");
         if (rest?.target_food_cost) setTargetFoodCost(num(rest.target_food_cost));
-        setSession(sessions && sessions[0] ? sessions[0] : null);
+        setSession(sessions[0] || null);
 
         const map = {};
-        (menu || []).forEach((m) => {
+        menu.forEach((m) => {
           map[String(m.name || "").toLowerCase().trim()] = { cost: num(m.cost), price: num(m.price), category: m.category };
         });
         setCosts(map);

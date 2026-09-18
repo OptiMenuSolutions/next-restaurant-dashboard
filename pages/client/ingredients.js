@@ -9,6 +9,60 @@ import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import { fetchSampleData } from "../../lib/seedSampleData";
+
+const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+function isTourQueryActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("tour") !== "true") return false;
+  try {
+    return localStorage.getItem("optimenu_tour_done") !== "1";
+  } catch {
+    return true;
+  }
+}
+
+/* Sample invoice_items have no ingredient_id set (unlike real invoice
+   data), so tour-mode history is matched by normalized name instead of FK. */
+function buildSampleIngredientRows(sample) {
+  const flatItems = [];
+  (sample.invoices || []).forEach((inv) => {
+    (inv.invoice_items || []).forEach((item) => {
+      flatItems.push({ ...item, invoices: { id: inv.id, date: inv.date, supplier: inv.supplier, number: inv.number } });
+    });
+  });
+
+  return (sample.ingredients || []).map((g) => {
+    const lines = flatItems
+      .filter((r) => (r.ingredient_name_normalized || r.item_name || "").toLowerCase().trim() === (g.name || "").toLowerCase().trim())
+      .sort((a, b) => (String(a.invoices.date) < String(b.invoices.date) ? 1 : -1));
+
+    return {
+      id: g.id,
+      name: g.name,
+      unit: g.unit || "ea",
+      estimated: !!g.is_estimated,
+      estimatedPrice: Number(g.last_price) || 0,
+      supplier: lines[0]?.invoices?.supplier || null,
+      lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
+      history: toHistory(lines),
+      purchases: lines.map((r) => ({
+        date: shortDate(r.invoices.date),
+        supplier: r.invoices.supplier || "Supplier",
+        invoice: r.invoices.number || "No number",
+        invoiceId: r.invoices.id,
+        qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
+        unitCost: Number(r.unit_cost) || 0,
+      })),
+      // Sample data doesn't seed component_ingredients/menu_item_ingredients,
+      // so this stays empty for tour ingredients — same known gap as the
+      // dashboard ticket's recipe flip-side.
+      menuItems: [],
+    };
+  });
+}
 
 /**
  * pages/client/ingredients.js — ingredients screen, v5 shell.
@@ -66,6 +120,25 @@ export default function IngredientsPage() {
   const [spend, setSpend] = useState(null);
 
   const load = useCallback(async (restaurantId) => {
+    if (isTourQueryActive()) {
+      const sample = await fetchSampleData();
+      if (sample) {
+        const rows = buildSampleIngredientRows(sample);
+        setIngredients(rows);
+        const thisMonth = monthKey(new Date().toISOString());
+        const flatItems = [];
+        (sample.invoices || []).forEach((inv) => {
+          (inv.invoice_items || []).forEach((item) => flatItems.push({ ...item, invoices: { date: inv.date } }));
+        });
+        setSpend(
+          flatItems
+            .filter((r) => monthKey(r.invoices.date) === thisMonth)
+            .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0)
+        );
+        return;
+      }
+      // fetchSampleData() failed — fall through to the real query below.
+    }
     const [{ data: ings }, { data: items }, { data: flatLinks }, { data: componentLinks }] = await Promise.all([
       supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).order("name").limit(1000),
       supabase

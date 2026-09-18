@@ -10,6 +10,20 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import { parseMenuFiles } from "../../lib/parseMenu";
+import { fetchSampleData } from "../../lib/seedSampleData";
+
+const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+function isTourQueryActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("tour") !== "true") return false;
+  try {
+    return localStorage.getItem("optimenu_tour_done") !== "1";
+  } catch {
+    return true;
+  }
+}
 import ParseReviewModal from "../../components/ParseReviewModal";
 
 /**
@@ -174,6 +188,29 @@ export default function MenuItemsPage() {
   }
 
   const load = useCallback(async (restaurantId) => {
+    if (isTourQueryActive()) {
+      const sample = await fetchSampleData();
+      if (sample) {
+        const coverMap = new Map();
+        (sample.posSales || []).forEach((s) => {
+          const key = String(s.item_name || "").toLowerCase().trim();
+          coverMap.set(key, (coverMap.get(key) || 0) + num(s.quantity_sold));
+        });
+        // Sample data has no menu_item_components/menu_item_ingredients or
+        // menu_item_cost_history rows (same known gap as the dashboard
+        // ticket recipe flip-side), so toDish() renders these dishes with
+        // an empty recipe and no margin trend — real name/price/cost/
+        // category and real cover counts still come through correctly.
+        setItems(
+          (sample.menuItems || []).map((m) =>
+            toDish(m, [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0)
+          )
+        );
+        return;
+      }
+      // fetchSampleData() failed — fall through to the real query below.
+    }
+
     const since = new Date();
     since.setDate(since.getDate() - 30);
 

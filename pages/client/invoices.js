@@ -10,6 +10,21 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
+import { fetchSampleData } from "../../lib/seedSampleData";
+
+// Matches SAMPLE_RESTAURANT_ID in lib/seedSampleData.js exactly.
+const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+
+function isTourQueryActive() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("tour") !== "true") return false;
+  try {
+    return localStorage.getItem("optimenu_tour_done") !== "1";
+  } catch {
+    return true;
+  }
+}
 
 /**
  * pages/client/invoices.js — invoices screen, v5 shell.
@@ -88,6 +103,15 @@ export default function InvoicesPage() {
   const [lines, setLines] = useState({}); // invoiceId -> line items
 
   const loadInvoices = useCallback(async (restId) => {
+    if (isTourQueryActive()) {
+      const sample = await fetchSampleData();
+      if (sample) {
+        setInvoices((sample.invoices || []).map(toInvoice));
+        return;
+      }
+      // fetchSampleData() failed — fall through to the real query rather
+      // than leave the tour on a blank invoices page.
+    }
     const { data, error: qErr } = await supabase
       .from("invoices")
       .select("*")
@@ -131,6 +155,14 @@ export default function InvoicesPage() {
      old detail page ran, minus the ocr_text fetch (not shown in this design). */
   const handleSelect = useCallback(async (invoice) => {
     if (!invoice || lines[invoice.id]) return;
+    if (isTourQueryActive()) {
+      const sample = await fetchSampleData();
+      const matched = sample?.invoices?.find((iv) => iv.id === invoice.id);
+      if (matched) {
+        setLines((prev) => ({ ...prev, [invoice.id]: (matched.invoice_items || []).map(toLine) }));
+        return;
+      }
+    }
     const { data } = await supabase
       .from("invoice_items")
       .select("*, ingredients(name, unit)")
