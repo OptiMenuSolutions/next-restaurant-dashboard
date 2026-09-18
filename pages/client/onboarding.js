@@ -173,6 +173,26 @@ export default function OnboardingPage() {
     })();
   }, []);
 
+  const saveOnboardingStep = async (stepNumber, data) => {
+    if (!restaurantId) {
+      // Effect that loads restaurantId hasn't finished yet — throw rather
+      // than silently no-op, so continueStep's catch blocks it from
+      // advancing (and losing this step's data) instead of pretending it saved.
+      throw new Error("Still setting up your account — please wait a moment and try again.");
+    }
+    const updates =
+      stepNumber === 1
+        ? { name: data.name, cuisine_type: data.cuisine } // `style` still has no column, same as before
+        : {
+            shipping_address_line1: data.addrLine1,
+            shipping_city: data.addrCity,
+            shipping_state: data.addrState,
+            shipping_zip: data.addrZip,
+          };
+    const { error } = await supabase.from("restaurants").update(updates).eq("id", restaurantId);
+    if (error) throw error;
+  };
+
   const finishOnboarding = async ({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine }) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/client/login"); return; }
@@ -233,6 +253,7 @@ export default function OnboardingPage() {
       <OnboardingScreen
         NavLink={Link}
         onFinish={finishOnboarding}
+        onSaveStep={saveOnboardingStep}
         onParseMenu={parseMenuAndWaitForReview}
         parsingMenu={menuParsing}
         blockNavigation={menuFlowActive}

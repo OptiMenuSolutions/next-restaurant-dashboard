@@ -33,7 +33,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation,
+  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -80,6 +80,22 @@ export default function OnboardingScreen({
 
   const continueStep = async () => {
     if (step === 1 && !name.trim()) { setNameError(true); return; }
+    if (step === 1) {
+      try {
+        await onSaveStep?.(1, { name, style, cuisine });
+      } catch (err) {
+        window.alert(err.message || "Could not save your restaurant profile. Please try again.");
+        return;
+      }
+    }
+    if (step === 2) {
+      try {
+        await onSaveStep?.(2, { addrLine1, addrCity, addrState, addrZip });
+      } catch (err) {
+        window.alert(err.message || "Could not save your shipping address. Please try again.");
+        return;
+      }
+    }
     if (step === 3 && menuFiles.length > 0) {
       // Waits for the actual review (commit or discard) to finish before
       // moving on — onParseMenu's promise doesn't resolve until then, see
@@ -136,10 +152,12 @@ export default function OnboardingScreen({
           </div>
         )}
 
-        {blockNavigation ? (
-          <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--line)", flexShrink: 0, cursor: "default" }} title="Your menu is still being processed">Skip for now</span>
-        ) : (
-          <NavLink href={skipHref} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>Skip for now</NavLink>
+        {step > 2 && (
+          blockNavigation ? (
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--line)", flexShrink: 0, cursor: "default" }} title="Your menu is still being processed">Skip for now</span>
+          ) : (
+            <NavLink href={skipHref} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>Skip for now</NavLink>
+          )
         )}
       </div>
 
