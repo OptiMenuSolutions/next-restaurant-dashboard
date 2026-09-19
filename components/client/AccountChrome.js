@@ -77,7 +77,7 @@ const NAV = [
 export function useAccountChrome({
   theme: themeProp,
   onThemeChange,
-  user = { name: "Marco Rossi", email: "marco@lunaosteria.com" },
+  user = null, // null = still loading; never fall back to a fake identity
   notifItems = DEMO_NOTIFS,
   NavLink = DefaultLink,
   logoSrc = "/landing/logo.png",
@@ -92,8 +92,12 @@ export function useAccountChrome({
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState(notifItems);
 
-  const initials = (user.name || "U").split(" ").map((p) => p.charAt(0)).join("").substring(0, 2).toUpperCase();
-  const firstName = (user.name || "").split(" ")[0] || user.name;
+  // Guards against user being explicitly null (still loading) — a default
+  // parameter only applies when the arg is undefined, not null, so a caller
+  // passing user={null} would otherwise crash on user.name below.
+  const safeUser = user || { name: "", email: "" };
+  const initials = (safeUser.name || "U").split(" ").map((p) => p.charAt(0)).join("").substring(0, 2).toUpperCase() || "•";
+  const firstName = (safeUser.name || "").split(" ")[0] || (user ? safeUser.name : "");
   const hasUnread = notifs.some((n) => n.unread);
 
   const header = (
@@ -101,6 +105,7 @@ export function useAccountChrome({
       style={{
         display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
         padding: "9px max(20px, calc((100vw - 1460px) / 2))", borderBottom: "1px solid var(--line)", flexWrap: "wrap",
+        position: "sticky", top: 0, zIndex: 50, background: "var(--shell)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0, flexShrink: 1 }}>
@@ -174,8 +179,8 @@ export function useAccountChrome({
               <div onClick={() => setDropdownOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
               <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 10, width: 230, overflow: "hidden", boxShadow: "var(--shadow-lg)", zIndex: 200 }}>
                 <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line-soft)" }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>{user.name}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>{safeUser.name || "Loading…"}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{safeUser.email}</div>
                 </div>
                 <div style={{ padding: 6 }}>
                   <NavLink href="/client/profile" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 500 }}>

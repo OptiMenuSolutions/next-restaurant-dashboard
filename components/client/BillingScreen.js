@@ -45,26 +45,36 @@ export default function BillingScreen({
 
           <div style={cardStyle}>
             <div style={cardHead}>Current plan</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px" }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{plan.name}</div>
-                <div style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 3 }}>Renews monthly · locked-in rate for life</div>
+            {plan ? (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 18px" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 700 }}>{plan.name}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 3 }}>Renews monthly · locked-in rate for life</div>
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-deep)" }}>{plan.price}</div>
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-deep)" }}>{plan.price}</div>
-            </div>
+            ) : (
+              <div style={{ padding: "18px", fontSize: 13, color: "var(--faint)" }}>Loading your plan…</div>
+            )}
           </div>
 
           <div style={cardStyle}>
             <div style={cardHead}>Payment method</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ width: 32, height: 21, borderRadius: 3, background: "var(--text)", opacity: 0.85, flexShrink: 0 }} />
-                <div style={{ fontSize: 14, fontWeight: 600 }}>•••• {card.last4}</div>
-                <div style={{ fontSize: 12, color: "var(--faint)" }}>Exp {card.exp}</div>
-              </div>
-              <NavLink href="/client/checkout" style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-deep)" }}>Update</NavLink>
-            </div>
-            <div style={{ padding: "0 18px 16px", fontSize: 12, color: "var(--faint)", lineHeight: 1.5 }}>Updating your card or cancelling redirects to our payment processor's secure portal.</div>
+            {card ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 21, borderRadius: 3, background: "var(--text)", opacity: 0.85, flexShrink: 0 }} />
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>•••• {card.last4}</div>
+                    <div style={{ fontSize: 12, color: "var(--faint)" }}>Exp {card.exp}</div>
+                  </div>
+                  <NavLink href="/client/checkout" style={{ fontSize: 13, fontWeight: 700, color: "var(--accent-deep)" }}>Update</NavLink>
+                </div>
+                <div style={{ padding: "0 18px 16px", fontSize: 12, color: "var(--faint)", lineHeight: 1.5 }}>Updating your card or cancelling redirects to our payment processor's secure portal.</div>
+              </>
+            ) : (
+              <div style={{ padding: "18px", fontSize: 13, color: "var(--faint)" }}>Loading your payment method…</div>
+            )}
           </div>
 
           <div style={{ ...cardStyle, marginBottom: 20 }}>
