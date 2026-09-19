@@ -233,7 +233,7 @@ export default function InvoicesScreen({
               <SearchIcon size={13} />
               <span style={{ fontSize: 11.5, color: "var(--faint)" }}>Search supplier or number</span>
             </button>
-            <button type="button" onClick={onUpload} style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 22, padding: "9px 18px", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 20px rgba(2,164,186,0.26)", whiteSpace: "nowrap" }}>↑ Upload invoice</button>
+            <button data-tour="inv-upload" type="button" onClick={onUpload} style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 22, padding: "9px 18px", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 20px rgba(2,164,186,0.26)", whiteSpace: "nowrap" }}>↑ Upload invoice</button>
           </div>
         </div>
 

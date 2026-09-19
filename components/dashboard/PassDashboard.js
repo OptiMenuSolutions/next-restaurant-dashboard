@@ -880,7 +880,7 @@ export default function PassDashboard({
             minHeight: "280px",
           }}
         >
-          <div style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+          <div data-tour="db-waste" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             <div
               style={{
                 display: "flex",
@@ -985,7 +985,7 @@ export default function PassDashboard({
             </div>
           </div>
 
-          <div style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+          <div data-tour="db-week" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             <div
               style={{
                 display: "grid",

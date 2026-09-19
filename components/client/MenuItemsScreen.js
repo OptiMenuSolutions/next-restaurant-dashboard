@@ -210,7 +210,7 @@ export default function MenuItemsScreen({
             <div key={d.id} onClick={() => onOpenItem && onOpenItem(d)} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{d.name}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--text)" }}>{pct(d.margin)}</span>
+                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>{money0(d.price)} menu · {money2(d.cost)} cost</span>
@@ -280,7 +280,7 @@ export default function MenuItemsScreen({
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money0(d.price)} menu · {money2(d.cost)} cost</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--text)" }}>{pct(d.margin)}</span>
+                          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
                           <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>mgn</span>
                           <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
                         </div>
@@ -314,7 +314,7 @@ export default function MenuItemsScreen({
                         <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: "var(--muted)" }}>{money0(d.price)}</div>
                         <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: "var(--text)" }}>{money2(d.cost)}</div>
                         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--text)" }}>{pct(d.margin)}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</div>
                           <div style={{ fontFamily: MONO, fontSize: 10.5, color: ppColor(d.drift), marginTop: 2 }}>{ppLabel(d.drift)}</div>
                         </div>
                       </div>
