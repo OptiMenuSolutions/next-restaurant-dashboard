@@ -34,6 +34,30 @@ function buildSampleIngredientRows(sample) {
     });
   });
 
+  // fetchSampleData()'s menu_items query already nests
+  // menu_item_components -> component_ingredients -> ingredients, so build
+  // the same ingredient-id -> [dishes] map the real data path builds from
+  // componentLinks, just sourced from the sample menuItems array instead.
+  const menuByIngredient = new Map();
+  (sample.menuItems || []).forEach((mi) => {
+    (mi.menu_item_components || []).forEach((comp) => {
+      (comp.component_ingredients || []).forEach((ci) => {
+        const ingId = ci.ingredients?.id;
+        if (!ingId) return;
+        const list = menuByIngredient.get(ingId) || [];
+        if (list.some((existing) => existing.id === mi.id)) return; // dish already added via another component
+        list.push({
+          id: mi.id,
+          name: mi.name,
+          qty: [ci.quantity, ci.unit].filter(Boolean).join(" ") || String(ci.quantity || ""),
+          price: Number(mi.price) || 0,
+          cost: Number(mi.cost) || 0,
+        });
+        menuByIngredient.set(ingId, list);
+      });
+    });
+  });
+
   return (sample.ingredients || []).map((g) => {
     const lines = flatItems
       .filter((r) => (r.ingredient_name_normalized || r.item_name || "").toLowerCase().trim() === (g.name || "").toLowerCase().trim())
@@ -56,10 +80,7 @@ function buildSampleIngredientRows(sample) {
         qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
         unitCost: Number(r.unit_cost) || 0,
       })),
-      // Sample data doesn't seed component_ingredients/menu_item_ingredients,
-      // so this stays empty for tour ingredients — same known gap as the
-      // dashboard ticket's recipe flip-side.
-      menuItems: [],
+      menuItems: menuByIngredient.get(g.id) || [],
     };
   });
 }
