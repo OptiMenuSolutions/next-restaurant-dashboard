@@ -27,9 +27,7 @@ import { useState } from "react";
  */
 const STEP_LABELS = ["Profile", "Pass tag", "Menu", "Invoices", "POS"];
 const POS_LIST = [
-  { key: "square", label: "Connect Square POS", mono: "POS" },
-  { key: "shift4", label: "Connect Shift4 POS", mono: "POS" },
-  { key: "upload", label: "I'll connect this later", mono: "SKIP" },
+  { key: "upload", label: "Upload sales data manually (CSV)", mono: "CSV" },
 ];
 
 export default function OnboardingScreen({
@@ -379,8 +377,8 @@ export default function OnboardingScreen({
               {step === 5 && (
                 <div>
                   <div style={stepKicker}>Step 5 of 5</div>
-                  <div style={stepTitle}>Connect your POS</div>
-                  <div style={stepSub}>Link your point-of-sale system and we'll pull in sales data automatically to power recommendations and analytics.</div>
+                  <div style={stepTitle}>Add your sales data</div>
+                  <div style={stepSub}>Automatic POS syncing is coming soon. For now, export your sales as a CSV and upload it here to power recommendations and analytics.</div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {POS_LIST.map((opt) => {
