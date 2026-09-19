@@ -44,6 +44,10 @@ export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword,
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorText("");
+    if (!email.trim() || !password) {
+      setErrorText("Please enter your email and password.");
+      return;
+    }
     setLoading(true);
     try {
       await onSubmit?.({ ...(isLogin ? {} : { fullName }), email, password });
