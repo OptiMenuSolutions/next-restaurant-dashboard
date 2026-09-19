@@ -9,17 +9,11 @@ import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
  * Props: user, billingHistory [{date,desc,amount,onDownload}], card {last4,exp},
  * NavLink, onSignOut.
  */
-const DEMO_HISTORY = [
-  { date: "Aug 1, 2026", desc: "Founding member plan", amount: "$59.00" },
-  { date: "Jul 1, 2026", desc: "Founding member plan", amount: "$59.00" },
-  { date: "Jun 1, 2026", desc: "Founding member plan", amount: "$59.00" },
-];
-
 export default function BillingScreen({
-  user = { name: "Marco Rossi", email: "marco@lunaosteria.com" },
-  plan = { name: "Founding member", price: "$59/mo" },
-  billingHistory = DEMO_HISTORY,
-  card = { last4: "4242", exp: "04/28" },
+  user = null,
+  plan = null,
+  billingHistory = null,
+  card = null,
   onDownloadReceipt,
   NavLink,
   onSignOut,
@@ -75,18 +69,24 @@ export default function BillingScreen({
 
           <div style={{ ...cardStyle, marginBottom: 20 }}>
             <div style={cardHead}>Billing history</div>
-            {billingHistory.map((b, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid var(--line-soft)" }}>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{b.date}</div>
-                  <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{b.desc}</div>
+            {billingHistory === null ? (
+              <div style={{ padding: "18px", fontSize: 13, color: "var(--faint)" }}>Loading your billing history…</div>
+            ) : billingHistory.length === 0 ? (
+              <div style={{ padding: "18px", fontSize: 13, color: "var(--faint)" }}>No invoices yet.</div>
+            ) : (
+              billingHistory.map((b, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px", borderBottom: "1px solid var(--line-soft)" }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{b.date}</div>
+                    <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{b.desc}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 600 }}>{b.amount}</span>
+                    <a href="#" onClick={async (e) => { e.preventDefault(); await onDownloadReceipt?.(b); flash("Downloading receipt…"); }} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent-deep)" }}>Download ↓</a>
+                  </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{b.amount}</span>
-                  <a href="#" onClick={async (e) => { e.preventDefault(); await onDownloadReceipt?.(b); flash("Downloading receipt…"); }} style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent-deep)" }}>Download ↓</a>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
