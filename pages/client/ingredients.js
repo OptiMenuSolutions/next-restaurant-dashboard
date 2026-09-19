@@ -118,6 +118,7 @@ export default function IngredientsPage() {
   const [userName, setUserName] = useState("");
   const [ingredients, setIngredients] = useState([]);
   const [spend, setSpend] = useState(null);
+  const [restaurantId, setRestaurantId] = useState(null);
 
   const load = useCallback(async (restaurantId) => {
     if (isTourQueryActive()) {
@@ -258,6 +259,7 @@ export default function IngredientsPage() {
         if (!profile?.restaurant_id) { setLoading(false); return; }
         if (cancelled) return;
         setUserName(profile.full_name || "");
+        setRestaurantId(profile.restaurant_id);
         const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
         if (!rest) return;
         if (!cancelled) setRestaurantName(rest?.name || "");
@@ -270,6 +272,12 @@ export default function IngredientsPage() {
     })();
     return () => { cancelled = true; };
   }, [router, load]);
+
+  useEffect(() => {
+    const handler = () => { if (restaurantId) load(restaurantId); };
+    window.addEventListener('optimenu-tour-ended', handler);
+    return () => window.removeEventListener('optimenu-tour-ended', handler);
+  }, [restaurantId, load]);
 
   const summary = useMemo(() => {
     const now = new Date();

@@ -76,7 +76,7 @@ function toLine(row) {
     name: row.item_name || row.name || "Item",
     qty: [row.quantity, unit].filter(Boolean).join(" ") || "1",
     unitCost: Number(row.unit_cost != null ? row.unit_cost : row.amount) || 0,
-    link: row.ingredients ? row.ingredients.name : null,
+    link: row.ingredients ? row.ingredients.name : (row.ingredient_name_normalized || null),
   };
 }
 
@@ -150,6 +150,12 @@ export default function InvoicesPage() {
     })();
     return () => { cancelled = true; };
   }, [router, loadInvoices]);
+
+  useEffect(() => {
+    const handler = () => { if (restaurantId) loadInvoices(restaurantId); };
+    window.addEventListener('optimenu-tour-ended', handler);
+    return () => window.removeEventListener('optimenu-tour-ended', handler);
+  }, [restaurantId, loadInvoices]);
 
   /* Line items are fetched lazily when a row is selected — same two queries the
      old detail page ran, minus the ocr_text fetch (not shown in this design). */

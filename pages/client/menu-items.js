@@ -292,6 +292,12 @@ export default function MenuItemsPage() {
     return () => { cancelled = true; };
   }, [router, load]);
 
+  useEffect(() => {
+    const handler = () => { if (restaurantId) load(restaurantId); };
+    window.addEventListener('optimenu-tour-ended', handler);
+    return () => window.removeEventListener('optimenu-tour-ended', handler);
+  }, [restaurantId, load]);
+
   const periodLabel = useMemo(
     () => `Tonight’s prices · ${items.length} dishes costed · target margin ${Math.round(targetMargin)}%`,
     [items.length, targetMargin]

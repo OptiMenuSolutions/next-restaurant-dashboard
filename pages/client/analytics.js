@@ -155,6 +155,12 @@ export default function AnalyticsPage() {
     return () => { cancelled = true; };
   }, [router, loadSales]);
 
+  useEffect(() => {
+    const handler = () => { if (restaurantId) loadSales(restaurantId); };
+    window.addEventListener('optimenu-tour-ended', handler);
+    return () => window.removeEventListener('optimenu-tour-ended', handler);
+  }, [restaurantId, loadSales]);
+
   /* pos_sales rows -> one night per date, with per-dish lines. */
   const days = useMemo(() => {
     const byDate = new Map();

@@ -114,44 +114,42 @@ export default function TourOverlay({ tour }) {
           >
             Skip tour
           </button>
+          {tour.showBack && (
+            <button
+              type="button"
+              onClick={tour.goBack}
+              style={{
+                background: 'none',
+                border: '1px solid var(--line)',
+                borderRadius: 20,
+                padding: '7px 14px',
+                fontSize: 12,
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                fontFamily: "'Manrope',sans-serif",
+              }}
+            >
+              ← Back
+            </button>
+          )}
           {!tour.isClick && (
-            <>
-              {tour.showBack && (
-                <button
-                  type="button"
-                  onClick={tour.goBack}
-                  style={{
-                    background: 'none',
-                    border: '1px solid var(--line)',
-                    borderRadius: 20,
-                    padding: '7px 14px',
-                    fontSize: 12,
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    fontFamily: "'Manrope',sans-serif",
-                  }}
-                >
-                  ← Back
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={tour.goNext}
-                style={{
-                  border: tour.nextBorder,
-                  borderRadius: 20,
-                  padding: '8px 18px',
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontFamily: "'Manrope',sans-serif",
-                  background: tour.nextBg,
-                  color: tour.nextColor,
-                }}
-              >
-                {tour.nextLabel}
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={tour.goNext}
+              style={{
+                border: tour.nextBorder,
+                borderRadius: 20,
+                padding: '8px 18px',
+                fontSize: 12.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontFamily: "'Manrope',sans-serif",
+                background: tour.nextBg,
+                color: tour.nextColor,
+              }}
+            >
+              {tour.nextLabel}
+            </button>
           )}
         </div>
 
