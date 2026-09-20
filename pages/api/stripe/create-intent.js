@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
     const { data: restaurant, error: restError } = await supabase
       .from('restaurants')
-      .select('id, name, stripe_customer_id, stripe_subscription_id')
+      .select('id, name, stripe_customer_id, stripe_subscription_id, subscription_status')
       .eq('id', profile.restaurant_id)
       .single();
 
@@ -59,7 +59,17 @@ export default async function handler(req, res) {
       await supabase.from('restaurants').update({ stripe_customer_id: customerId }).eq('id', restaurant.id);
     }
 
-    if (restaurant.stripe_subscription_id) {
+    // A canceled/unpaid/expired subscription has no live billing to update —
+    // treat it the same as never having subscribed, and create a fresh one
+    // below instead. This is what actually made reactivation broken:
+    // stripe_subscription_id stayed populated after cancellation, so this
+    // check alone always routed a reactivating account into card-update
+    // mode, which only attaches a payment method and never bills anything.
+    const NEEDS_NEW_SUBSCRIPTION_STATUSES = ['canceled', 'unpaid', 'incomplete_expired'];
+    const hasBillableSubscription =
+      restaurant.stripe_subscription_id && !NEEDS_NEW_SUBSCRIPTION_STATUSES.includes(restaurant.subscription_status);
+
+    if (hasBillableSubscription) {
       // ── Card-update path ──────────────────────────────────────────────
       const setupIntent = await stripe.setupIntents.create({
         customer: customerId,

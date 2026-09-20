@@ -1,8 +1,10 @@
+import { useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import AuthScreen from "../../components/client/AuthScreen";
+import ReactivateAccountModal from "../../components/client/ReactivateAccountModal";
 
 /**
  * pages/client/login.js — data container.
@@ -27,6 +29,19 @@ import AuthScreen from "../../components/client/AuthScreen";
  */
 export default function LoginPage() {
   const router = useRouter();
+  const [reactivatePrompt, setReactivatePrompt] = useState(null); // { onConfirm, onCancel } | null
+
+  // Promise-based stand-in for what window.confirm() used to do
+  // synchronously — same pattern as onboarding.js's askDuplicateConfirm,
+  // resolves once the person clicks a button on the real in-app modal.
+  function askReactivateConfirm() {
+    return new Promise((resolve) => {
+      setReactivatePrompt({
+        onConfirm: () => { setReactivatePrompt(null); resolve(true); },
+        onCancel: () => { setReactivatePrompt(null); resolve(false); },
+      });
+    });
+  }
 
   const handleForgotPassword = async (email) => {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -80,9 +95,7 @@ export default function LoginPage() {
       .single();
 
     if (restaurant?.deactivated_at) {
-      const wantsReactivation = window.confirm(
-        "This account was deactivated. Your data is still here — reactivate to pick up where you left off?"
-      );
+      const wantsReactivation = await askReactivateConfirm();
       if (!wantsReactivation) {
         await supabase.auth.signOut();
         throw new Error("Account remains deactivated.");
@@ -98,7 +111,8 @@ export default function LoginPage() {
       }
     }
 
-    if (!restaurant?.stripe_subscription_id) {
+    const NEEDS_NEW_SUBSCRIPTION_STATUSES = ["canceled", "unpaid", "incomplete_expired"];
+    if (!restaurant?.stripe_subscription_id || NEEDS_NEW_SUBSCRIPTION_STATUSES.includes(restaurant?.subscription_status)) {
       router.push("/client/checkout");
       return;
     }
@@ -120,6 +134,12 @@ export default function LoginPage() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <AuthScreen mode="login" onSubmit={handleSubmit} onForgotPassword={handleForgotPassword} NavLink={Link} />
+      {reactivatePrompt && (
+        <ReactivateAccountModal
+          onConfirm={reactivatePrompt.onConfirm}
+          onCancel={reactivatePrompt.onCancel}
+        />
+      )}
     </>
   );
 }
