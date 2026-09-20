@@ -118,6 +118,13 @@ export default function CheckoutScreen({
         if (stripeError) throw new Error(friendlyCardError(stripeError));
         if (setupIntent.status !== "succeeded") throw new Error("Card setup was not completed.");
         const res = await onConfirmed?.({ mode, setupIntentId: setupIntent.id });
+        if (res?.paymentCleared && onSuccess) {
+          // This card update just cleared a real past_due lockout — skip
+          // the generic "card updated" screen and go straight back in,
+          // same as the subscribe flow already does on success.
+          onSuccess();
+          return;
+        }
         setResult(res || {});
       }
     } catch (err) {

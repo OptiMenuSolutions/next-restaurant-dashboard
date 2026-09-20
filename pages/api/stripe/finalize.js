@@ -80,7 +80,38 @@ export default async function handler(req, res) {
       }
 
       const pm = await stripe.paymentMethods.retrieve(setupIntent.payment_method);
-      return res.status(200).json({ ok: true, last4: pm.card?.last4 || null });
+
+      // If this account was past_due, updating the card should immediately
+      // try to clear the outstanding invoice with it — otherwise the person
+      // is stuck on the payment-failed page after doing exactly what it
+      // asked, needing a separate "Retry payment" click for no real reason.
+      let paymentCleared = false;
+      if (restaurant.stripe_subscription_id) {
+        const openInvoices = await stripe.invoices.list({
+          subscription: restaurant.stripe_subscription_id,
+          status: 'open',
+          limit: 1,
+        });
+        const openInvoice = openInvoices.data[0];
+        if (openInvoice) {
+          try {
+            const paid = await stripe.invoices.pay(openInvoice.id);
+            paymentCleared = paid.status === 'paid';
+          } catch (payErr) {
+            // New card still didn't work (e.g. also declines) — leave
+            // subscription_status alone and let the payment-failed page's
+            // own retry/error handling take over from here.
+            console.error('[stripe/finalize] Retry-on-update failed:', payErr.message);
+          }
+        }
+      }
+      if (paymentCleared) {
+        await supabase.from('restaurants')
+          .update({ subscription_status: 'active' })
+          .eq('id', profile.restaurant_id);
+      }
+
+      return res.status(200).json({ ok: true, last4: pm.card?.last4 || null, paymentCleared });
     }
 
     return res.status(400).json({ error: 'Unknown mode' });

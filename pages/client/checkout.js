@@ -57,7 +57,7 @@ export default function CheckoutPage() {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Could not confirm — try again.");
-    return { last4: json.last4 || null };
+    return { last4: json.last4 || null, paymentCleared: json.paymentCleared || false };
   };
 
   return (
@@ -90,7 +90,7 @@ export default function CheckoutPage() {
             onConfirmed={handleConfirmed}
             cancelHref={intent.mode === "subscribe" ? "/client/login" : "/client/billing"}
             successHref="/client/billing"
-            onSuccess={intent.mode === "subscribe" ? () => router.push("/client/checkout-success") : undefined}
+            onSuccess={intent.mode === "subscribe" ? () => router.push("/client/checkout-success") : () => router.push("/client/dashboard")}
           />
         </Elements>
       )}
