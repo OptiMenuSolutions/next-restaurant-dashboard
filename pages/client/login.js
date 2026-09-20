@@ -102,6 +102,10 @@ export default function LoginPage() {
       router.push("/client/checkout");
       return;
     }
+    if (restaurant?.subscription_status === "past_due") {
+      router.push("/client/payment-failed");
+      return;
+    }
     if (!restaurant?.onboarding_completed_at) {
       router.push("/client/onboarding");
       return;
