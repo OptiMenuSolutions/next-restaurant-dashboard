@@ -34,6 +34,29 @@ import { CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
  *                   "Return to billing" link target.
  *   NavLink
  */
+
+function friendlyCardError(stripeError) {
+  switch (stripeError.code) {
+    case "card_declined":
+      return "That card was declined — please try another.";
+    case "expired_card":
+      return "That card has expired — please try another.";
+    case "incorrect_cvc":
+    case "invalid_cvc":
+      return "That card's security code doesn't look right.";
+    case "incorrect_number":
+    case "invalid_number":
+      return "That card number doesn't look right.";
+    case "processing_error":
+      return "Something went wrong processing that card — please try again.";
+    default:
+      // Not a recognized card-specific issue — Stripe's own message is
+      // usually still clear here (e.g. an incomplete field), so pass it
+      // through rather than hiding useful detail behind a generic line.
+      return stripeError.message || "Something went wrong. Try again.";
+  }
+}
+
 export default function CheckoutScreen({
   mode = "update",
   plan = { name: "Founding member plan", price: "$59" },
@@ -80,7 +103,7 @@ export default function CheckoutScreen({
         const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
           payment_method: { card: cardElement, billing_details: billingDetails },
         });
-        if (stripeError) throw new Error(stripeError.message);
+        if (stripeError) throw new Error(friendlyCardError(stripeError));
         if (paymentIntent.status !== "succeeded") throw new Error("Payment was not completed.");
         await onConfirmed?.({ mode, subscriptionId });
         // No inline success screen for subscribe mode — go straight to the
@@ -92,7 +115,7 @@ export default function CheckoutScreen({
         const { error: stripeError, setupIntent } = await stripe.confirmCardSetup(clientSecret, {
           payment_method: { card: cardElement, billing_details: billingDetails },
         });
-        if (stripeError) throw new Error(stripeError.message);
+        if (stripeError) throw new Error(friendlyCardError(stripeError));
         if (setupIntent.status !== "succeeded") throw new Error("Card setup was not completed.");
         const res = await onConfirmed?.({ mode, setupIntentId: setupIntent.id });
         setResult(res || {});
