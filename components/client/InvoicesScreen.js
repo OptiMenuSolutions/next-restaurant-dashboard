@@ -213,7 +213,7 @@ export default function InvoicesScreen({
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                   <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>
-                    {(v.number || "Awaiting number") + " · " + v.date + " · " + (v.items && v.items.length ? v.items.length + " items" : "—")}
+                    {(v.number || "Awaiting number") + " · " + v.date + " · " + ((v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—")}
                   </span>
                   <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: "0.1em", textTransform: "uppercase", borderRadius: 12, padding: "3px 8px", color: m.color, background: m.bg }}>{m.label}</span>
                 </div>
@@ -274,7 +274,7 @@ export default function InvoicesScreen({
                     </div>
                     <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</div>
                     <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--muted)", textAlign: "right", whiteSpace: "nowrap" }}>{v.date}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--faint)", textAlign: "right", whiteSpace: "nowrap" }}>{v.items && v.items.length ? v.items.length + " items" : "—"}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--faint)", textAlign: "right", whiteSpace: "nowrap" }}>{(v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—"}</div>
                     <div style={{ display: "flex", justifyContent: "flex-end" }}>
                       <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
                     </div>

@@ -73,7 +73,14 @@ function toInvoice(row) {
     isoDate: row.date || null,
     amount: row.amount == null ? null : Math.round(parseFloat(row.amount) * 100) / 100,
     status: flagged ? "review" : processed ? "processed" : "pending",
-    items: new Array(lineCount).fill(null),
+    // Real line count for the LINES column, WITHOUT ever putting fake
+    // entries into items — those get rendered/summed by the Receipt panel
+    // for whichever invoice is currently selected, and a placeholder null
+    // there crashes lineTotal() trying to read .amount off it (confirmed
+    // live). items stays genuinely empty until handleSelect fetches the
+    // real rows.
+    lineCount,
+    items: [],
   };
 }
 
