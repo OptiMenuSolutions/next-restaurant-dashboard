@@ -91,7 +91,13 @@ export const DEMO_INVOICES = [
   ] },
 ];
 
-const lineTotal = (i) => (Number(i.unitCost) || 0) * (parseFloat(i.qty) || 0);
+// Use the line's own stored amount rather than recomputing unitCost x qty
+// client-side — that recomputation is redundant floating-point math on
+// already-rounded values, and can drift a cent from the real total
+// (confirmed live: invoice_items.amount summed to the correct total in the
+// database, but this recomputation produced a $0.02 discrepancy and
+// falsely flagged a real, balanced invoice as off).
+const lineTotal = (i) => (i.amount != null ? Number(i.amount) : (Number(i.unitCost) || 0) * (parseFloat(i.qty) || 0));
 const sumItems = (items) => (items || []).reduce((a, i) => a + lineTotal(i), 0);
 
 function resolveAmount(v) {
@@ -133,7 +139,14 @@ export default function InvoicesScreen({
   );
 
   const selected = rows.find((v) => v.id === selectedId) || rows[0];
-  const monthSpend = rows.reduce((a, v) => a + (v.amount || 0), 0);
+  const now = new Date();
+  const monthSpend = rows
+    .filter((v) => {
+      if (!v.isoDate) return false;
+      const d = new Date(v.isoDate);
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+    })
+    .reduce((a, v) => a + (v.amount || 0), 0);
   const pendingCount = rows.filter((v) => v.status !== "processed").length;
   const countLabel = `Showing ${rows.length} of ${rows.length} invoices`;
 
