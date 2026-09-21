@@ -54,6 +54,14 @@ const yearOf = (iso) => (iso ? Number(String(iso).split("-")[0]) : new Date().ge
 function toInvoice(row) {
   const processed = row.processed === true || (row.number && row.amount != null);
   const flagged = row.needs_review === true || row.status === "review";
+  // Supabase's embedded count() comes back as invoice_items: [{ count: N }].
+  // A placeholder array of that length lets the LINES column show the real
+  // count immediately via items.length, without fetching full item rows for
+  // every invoice up front. The receipt panel only ever reads `items` for
+  // whichever invoice is actually selected, and handleSelect replaces this
+  // placeholder with the real fetched lines the moment that happens — so
+  // this array's contents are never rendered as real data.
+  const lineCount = row.invoice_items?.[0]?.count || 0;
   return {
     id: row.id,
     number: row.number || null,
@@ -65,7 +73,7 @@ function toInvoice(row) {
     isoDate: row.date || null,
     amount: row.amount == null ? null : Math.round(parseFloat(row.amount) * 100) / 100,
     status: flagged ? "review" : processed ? "processed" : "pending",
-    items: [],
+    items: new Array(lineCount).fill(null),
   };
 }
 
@@ -113,9 +121,13 @@ export default function InvoicesPage() {
       // fetchSampleData() failed — fall through to the real query rather
       // than leave the tour on a blank invoices page.
     }
+    // Embedded count() gives every invoice's real line count in this same
+    // query — cheap, no full item rows fetched — so the LINES column is
+    // accurate for the whole list immediately, not just whichever invoice
+    // has actually been clicked/lazy-loaded via handleSelect below.
     const { data, error: qErr } = await supabase
       .from("invoices")
-      .select("*")
+      .select("*, invoice_items(count)")
       .eq("restaurant_id", restId)
       .order("date", { ascending: false, nullsFirst: false })
       .limit(1000);
