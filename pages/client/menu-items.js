@@ -11,6 +11,7 @@ import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import { parseMenuFiles } from "../../lib/parseMenu";
 import { fetchSampleData } from "../../lib/seedSampleData";
+import { calculateStandardizedCost, getUnitCategory } from "../../lib/standardizedUnits";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -66,15 +67,26 @@ function toDish(row, costHistory, covers) {
     ingredients: (c.component_ingredients || []).map((ci) => {
       const g = ci.ingredients || {};
       const unitPrice = num(g.last_price);
+      const recipeUnit = ci.unit || g.unit || "ea";
+      const ingredientUnit = g.unit || recipeUnit;
+      // The recipe's unit (set once, at menu-parse time) and the
+      // ingredient's CURRENT unit (which confirm-invoice.js can silently
+      // change on every real invoice — e.g. standardizing "lb" to "oz")
+      // can drift apart over an ingredient's life. A plain quantity x
+      // unitPrice multiply then silently assumes they still match — this
+      // converts first, and flags rather than guesses when it can't.
+      const unitMismatch =
+        recipeUnit !== ingredientUnit && getUnitCategory(recipeUnit) !== getUnitCategory(ingredientUnit);
       return {
         name: g.name || "Ingredient",
-        unit: ci.unit || g.unit || "ea",
+        unit: recipeUnit,
         quantity: num(ci.quantity), // raw number — needed for live what-if math below
-        qty: [ci.quantity, ci.unit || g.unit].filter(Boolean).join(" "),
+        qty: [ci.quantity, recipeUnit].filter(Boolean).join(" "),
         unitPrice,
-        cost: num(ci.quantity) * unitPrice,
+        cost: calculateStandardizedCost(num(ci.quantity), recipeUnit, unitPrice, ingredientUnit),
         costThen: null, // per-line history is not stored; the Δ column shows "—"
         estimated: !!g.is_estimated,
+        unitMismatch,
       };
     }),
   }));
@@ -83,15 +95,20 @@ function toDish(row, costHistory, covers) {
   const flat = (row.menu_item_ingredients || []).map((mi) => {
     const g = mi.ingredients || {};
     const unitPrice = num(g.last_price);
+    const recipeUnit = g.unit || "ea";
+    const ingredientUnit = g.unit || recipeUnit;
+    const unitMismatch =
+      recipeUnit !== ingredientUnit && getUnitCategory(recipeUnit) !== getUnitCategory(ingredientUnit);
     return {
       name: g.name || "Ingredient",
-      unit: g.unit || "ea",
+      unit: recipeUnit,
       quantity: num(mi.quantity),
-      qty: [mi.quantity, g.unit].filter(Boolean).join(" "),
+      qty: [mi.quantity, recipeUnit].filter(Boolean).join(" "),
       unitPrice,
-      cost: num(mi.quantity) * unitPrice,
+      cost: calculateStandardizedCost(num(mi.quantity), recipeUnit, unitPrice, ingredientUnit),
       costThen: null,
       estimated: !!g.is_estimated,
+      unitMismatch,
     };
   });
   if (flat.length) components.push({ name: "Recipe", ingredients: flat });
