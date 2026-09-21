@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
 
 /**
@@ -38,6 +38,21 @@ export default function ProfileScreen({
   const [targetFoodCost, setTargetFoodCost] = useState(targetFoodCostProp);
   const [notifs, setNotifs] = useState(notifPrefs);
   const [freezeSettings, setFreezeSettings] = useState(freezeSettingsProp);
+
+  // Each of these props arrives late (profile.js renders once with defaults
+  // before its data fetch resolves, then re-renders with real values) —
+  // useState only reads its initial-value argument on first mount, so
+  // without these, every one of these fields would stay permanently stuck
+  // on whatever it saw during that very first, pre-data render. Confirmed
+  // live: this exact bug on freezeSettings made a saved toggle appear to
+  // revert after navigating away and back, even though the real value was
+  // correctly saved and used elsewhere (dashboard.js reads fresh each time
+  // via its own effect, with no equivalent local-state cache to go stale).
+  useEffect(() => { setRestaurantName(restaurantNameProp); }, [restaurantNameProp]);
+  useEffect(() => { setTargetFoodCost(targetFoodCostProp); }, [targetFoodCostProp]);
+  useEffect(() => { setNotifs(notifPrefs); }, [notifPrefs]);
+  useEffect(() => { setFreezeSettings(freezeSettingsProp); }, [freezeSettingsProp]);
+  useEffect(() => { setFreezeSettings(freezeSettingsProp); }, [freezeSettingsProp]);
   const [message, setMessage] = useState(null); // { text, isError }
   const [editing, setEditing] = useState(null); // "name" | "restaurant" | "foodCost" | "password"
   const [temp, setTemp] = useState({ name: "", restaurant: "", foodCost: "", password: "", passwordConfirm: "" });
