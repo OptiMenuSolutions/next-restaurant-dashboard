@@ -44,6 +44,11 @@ export default function OnboardingScreen({
   const [addrZip, setAddrZip] = useState("");
   const [style, setStyle] = useState("");
   const [cuisine, setCuisine] = useState("");
+  const [freezesBeef, setFreezesBeef] = useState(false);
+  const [freezesPoultry, setFreezesPoultry] = useState(false);
+  const [freezesPork, setFreezesPork] = useState(false);
+  const [freezesSeafood, setFreezesSeafood] = useState(false);
+  const [freezesBakery, setFreezesBakery] = useState(false);
   const [menuFiles, setMenuFiles] = useState([]);
   const [menuDragOver, setMenuDragOver] = useState(false);
   const [posChoice, setPosChoice] = useState(null);
@@ -80,7 +85,10 @@ export default function OnboardingScreen({
     if (step === 1 && !name.trim()) { setNameError(true); return; }
     if (step === 1) {
       try {
-        await onSaveStep?.(1, { name, style, cuisine });
+        await onSaveStep?.(1, {
+          name, style, cuisine,
+          freezesBeef, freezesPoultry, freezesPork, freezesSeafood, freezesBakery,
+        });
       } catch (err) {
         window.alert(err.message || "Could not save your restaurant profile. Please try again.");
         return;
@@ -217,6 +225,32 @@ export default function OnboardingScreen({
                         <option value="seafood">Seafood</option>
                         <option value="other">Other</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: 20 }}>
+                    <span style={labelCls}>Do you freeze any of these before use?</span>
+                    <div style={{ fontSize: 12, color: "var(--faint)", marginBottom: 10 }}>
+                      This helps us estimate shelf life accurately — frozen items last much longer than fresh.
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {[
+                        { label: "Beef (and other red meat)", checked: freezesBeef, set: setFreezesBeef },
+                        { label: "Poultry", checked: freezesPoultry, set: setFreezesPoultry },
+                        { label: "Pork", checked: freezesPork, set: setFreezesPork },
+                        { label: "Seafood", checked: freezesSeafood, set: setFreezesSeafood },
+                        { label: "Bread & bakery items", checked: freezesBakery, set: setFreezesBakery },
+                      ].map((opt) => (
+                        <label key={opt.label} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13.5 }}>
+                          <input
+                            type="checkbox"
+                            checked={opt.checked}
+                            onChange={(e) => opt.set(e.target.checked)}
+                            style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }}
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
                     </div>
                   </div>
                 </div>

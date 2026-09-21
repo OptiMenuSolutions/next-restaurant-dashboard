@@ -34,6 +34,7 @@ export default function ProfilePage() {
   const [restaurantName, setRestaurantName] = useState("");
   const [targetFoodCost, setTargetFoodCost] = useState(30);
   const [notifPrefs, setNotifPrefs] = useState({ weekly: true, priceAlert: true, lowMargin: false });
+  const [freezeSettings, setFreezeSettings] = useState({ beef: false, poultry: false, pork: false, seafood: false, bakery: false });
 
   useEffect(() => {
     let cancelled = false;
@@ -58,6 +59,13 @@ export default function ProfilePage() {
               weekly: rest.notif_weekly_summary ?? true,
               priceAlert: rest.notif_price_alerts ?? true,
               lowMargin: rest.notif_low_margin ?? false,
+            });
+            setFreezeSettings({
+              beef: !!rest.freezes_beef,
+              poultry: !!rest.freezes_poultry,
+              pork: !!rest.freezes_pork,
+              seafood: !!rest.freezes_seafood,
+              bakery: !!rest.freezes_bakery,
             });
           }
         }
@@ -93,6 +101,22 @@ export default function ProfilePage() {
   const savePassword = async (pw) => {
     const { error } = await supabase.auth.updateUser({ password: pw });
     if (error) throw error;
+  };
+
+  const saveFreezeSetting = async (key, next) => {
+    if (!restaurantId) return;
+    const columnMap = {
+      beef: "freezes_beef",
+      poultry: "freezes_poultry",
+      pork: "freezes_pork",
+      seafood: "freezes_seafood",
+      bakery: "freezes_bakery",
+    };
+    const column = columnMap[key];
+    if (!column) return;
+    const { error } = await supabase.from("restaurants").update({ [column]: next }).eq("id", restaurantId);
+    if (error) throw error;
+    setFreezeSettings((prev) => ({ ...prev, [key]: next }));
   };
 
   const toggleNotif = async (key, next) => {
@@ -172,9 +196,11 @@ export default function ProfilePage() {
         restaurantName={restaurantName}
         targetFoodCost={targetFoodCost}
         notifPrefs={notifPrefs}
+        freezeSettings={freezeSettings}
         onSaveName={saveName}
         onSaveRestaurant={saveRestaurant}
         onSaveFoodCost={saveFoodCost}
+        onSaveFreezeSetting={saveFreezeSetting}
         onSavePassword={savePassword}
         onToggleNotif={toggleNotif}
         onExportData={exportData}

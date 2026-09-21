@@ -182,7 +182,14 @@ export default function OnboardingPage() {
     }
     const updates =
       stepNumber === 1
-        ? { name: data.name, cuisine_type: data.cuisine } // `style` still has no column, same as before
+        ? {
+            name: data.name, cuisine_type: data.cuisine, // `style` still has no column, same as before
+            freezes_beef: !!data.freezesBeef,
+            freezes_poultry: !!data.freezesPoultry,
+            freezes_pork: !!data.freezesPork,
+            freezes_seafood: !!data.freezesSeafood,
+            freezes_bakery: !!data.freezesBakery,
+          }
         : {
             shipping_address_line1: data.addrLine1,
             shipping_city: data.addrCity,

@@ -26,7 +26,8 @@ export default function ProfileScreen({
   restaurantName: restaurantNameProp = "Luna Osteria",
   targetFoodCost: targetFoodCostProp = 30,
   notifPrefs = { weekly: true, priceAlert: true, lowMargin: false },
-  onSaveName, onSaveRestaurant, onSaveFoodCost, onSavePassword,
+  freezeSettings: freezeSettingsProp = { beef: false, poultry: false, pork: false, seafood: false, bakery: false },
+  onSaveName, onSaveRestaurant, onSaveFoodCost, onSaveFreezeSetting, onSavePassword,
   onToggleNotif, onExportData, onDeleteAccount, onSendFeedback, onRestartTour,
   onSignOut, NavLink, initialTab = "account",
 }) {
@@ -36,6 +37,7 @@ export default function ProfileScreen({
   const [restaurantName, setRestaurantName] = useState(restaurantNameProp);
   const [targetFoodCost, setTargetFoodCost] = useState(targetFoodCostProp);
   const [notifs, setNotifs] = useState(notifPrefs);
+  const [freezeSettings, setFreezeSettings] = useState(freezeSettingsProp);
   const [message, setMessage] = useState(null); // { text, isError }
   const [editing, setEditing] = useState(null); // "name" | "restaurant" | "foodCost" | "password"
   const [temp, setTemp] = useState({ name: "", restaurant: "", foodCost: "", password: "", passwordConfirm: "" });
@@ -243,6 +245,43 @@ export default function ProfileScreen({
                   <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-deep)" }}>{targetFoodCost}%</div>
                 )}
                 <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 8, lineHeight: 1.5 }}>Menu items with food cost above this threshold are flagged as low margin across the app.</div>
+              </div>
+
+              <div style={{ padding: "14px 18px" }}>
+                <div style={{ ...rowLabel, marginBottom: 4 }}>Do you freeze any of these before use?</div>
+                <div style={{ fontSize: 12, color: "var(--faint)", marginBottom: 10, lineHeight: 1.5 }}>
+                  Frozen items last much longer — this keeps your waste-risk estimates accurate.
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { key: "beef", label: "Beef (and other red meat)" },
+                    { key: "poultry", label: "Poultry" },
+                    { key: "pork", label: "Pork" },
+                    { key: "seafood", label: "Seafood" },
+                    { key: "bakery", label: "Bread & bakery items" },
+                  ].map((opt) => (
+                    <div key={opt.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{opt.label}</div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const next = !freezeSettings[opt.key];
+                          setFreezeSettings((f) => ({ ...f, [opt.key]: next }));
+                          try {
+                            await onSaveFreezeSetting?.(opt.key, next);
+                            flash("Preference saved");
+                          } catch (err) {
+                            setFreezeSettings((f) => ({ ...f, [opt.key]: !next })); // revert on failure
+                            flash(err?.message || "Could not save that setting", true);
+                          }
+                        }}
+                        style={{ width: 38, height: 22, borderRadius: 11, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: freezeSettings[opt.key] ? "var(--accent)" : "var(--line)" }}
+                      >
+                        <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: freezeSettings[opt.key] ? 18 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}

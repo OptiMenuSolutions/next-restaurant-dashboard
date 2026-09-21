@@ -153,6 +153,7 @@ export default function DashboardPage() {
   const [restaurantName, setRestaurantName] = useState("Your Restaurant");
   const [restaurantCreatedAt, setRestaurantCreatedAt] = useState(null);
   const [targetFoodCost, setTargetFoodCost] = useState(null);
+  const [freezeSettings, setFreezeSettings] = useState({});
   const [wasteResolution, setWasteResolution] = useState(null);
   const [pendingConfirmations, setPendingConfirmations] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -190,7 +191,6 @@ export default function DashboardPage() {
           setError("Could not determine restaurant access"); setLoading(false); return;
         }
         setUserName(profile.full_name || "");
-        setRestaurantId(profile.restaurant_id);
 
         const rd = await enforceAccountGuard(supabase, router, profile.restaurant_id);
         if (!rd) return; // already redirected — deactivated, unpaid, or onboarding incomplete
@@ -198,6 +198,20 @@ export default function DashboardPage() {
         if (rd?.name) setRestaurantName(rd.name);
         if (rd?.created_at) setRestaurantCreatedAt(rd.created_at);
         if (rd?.target_food_cost != null) setTargetFoodCost(Number(rd.target_food_cost));
+        setFreezeSettings({
+          beef: !!rd?.freezes_beef,
+          poultry: !!rd?.freezes_poultry,
+          pork: !!rd?.freezes_pork,
+          seafood: !!rd?.freezes_seafood,
+          bakery: !!rd?.freezes_bakery,
+        });
+        // Set last — this is what the data-loading effect (below) keys off
+        // of, so it must not fire until freezeSettings above is already
+        // populated. React batches state updates from the same synchronous
+        // block together, so setting this last guarantees both land in the
+        // same render rather than restaurantId triggering the data effect
+        // one render early, before freezeSettings has real values.
+        setRestaurantId(profile.restaurant_id);
       } catch {
         setError("An unexpected error occurred"); setLoading(false);
       }
@@ -260,7 +274,7 @@ export default function DashboardPage() {
               .eq("restaurant_id", restaurantId).gte("sale_date", fromDate),
           ]);
 
-        const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || []);
+        const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || [], new Date(), freezeSettings);
         const priced = (menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
         const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
         const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
@@ -288,7 +302,7 @@ export default function DashboardPage() {
         setLoading(false);
       }
     })();
-  }, [restaurantId, reloadKey, tourActive]);
+  }, [restaurantId, reloadKey, tourActive, freezeSettings]);
 
   // Which month the desktop calendar is currently browsing. Defaults to the
   // current month; useWeekInReview always fetches the trailing 7 days too
