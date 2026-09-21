@@ -13,6 +13,7 @@ import CheckoutSuccessScreen from "../../components/billing/CheckoutSuccessScree
  */
 export default function CheckoutSuccessPage() {
   const [summary, setSummary] = useState(null);
+  const [alreadyOnboarded, setAlreadyOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,10 +21,25 @@ export default function CheckoutSuccessPage() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) return;
-        const res = await fetch("/api/stripe/subscription-summary", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (res.ok) setSummary(await res.json());
+
+        const [summaryRes, profileRes] = await Promise.all([
+          fetch("/api/stripe/subscription-summary", {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+          supabase.from("profiles").select("restaurant_id").eq("id", session.user.id).single(),
+        ]);
+        if (summaryRes.ok) setSummary(await summaryRes.json());
+
+        if (profileRes.data?.restaurant_id) {
+          const { data: restaurant } = await supabase
+            .from("restaurants").select("onboarding_completed_at").eq("id", profileRes.data.restaurant_id).single();
+          // Distinguishes a genuine first-time subscriber (send to
+          // onboarding) from a reactivating customer who already finished
+          // setup — previously this page always pointed "Set up your
+          // kitchen" at /client/onboarding regardless, which sent a
+          // returning customer through setup they'd already done.
+          setAlreadyOnboarded(!!restaurant?.onboarding_completed_at);
+        }
       } catch (err) {
         console.error("[checkout-success] Failed to load subscription summary:", err);
       } finally {
@@ -41,6 +57,7 @@ export default function CheckoutSuccessPage() {
       {!loading && (
         <CheckoutSuccessScreen
           NavLink={Link}
+          alreadyOnboarded={alreadyOnboarded}
           {...(summary?.restaurantName ? { restaurantName: summary.restaurantName } : {})}
           {...(summary?.amount ? { amount: summary.amount } : {})}
           {...(summary?.last4 ? { last4: summary.last4 } : {})}
