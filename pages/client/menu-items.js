@@ -75,18 +75,15 @@ function toDish(row, costHistory, covers) {
       // can drift apart over an ingredient's life. A plain quantity x
       // unitPrice multiply then silently assumes they still match — this
       // converts first, and flags rather than guesses when it can't.
-      const unitMismatch =
-        recipeUnit !== ingredientUnit && getUnitCategory(recipeUnit) !== getUnitCategory(ingredientUnit);
       return {
         name: g.name || "Ingredient",
         unit: recipeUnit,
         quantity: num(ci.quantity), // raw number — needed for live what-if math below
         qty: [ci.quantity, recipeUnit].filter(Boolean).join(" "),
         unitPrice,
-        cost: calculateStandardizedCost(num(ci.quantity), recipeUnit, unitPrice, ingredientUnit),
+        cost: calculateStandardizedCost(num(ci.quantity), recipeUnit, unitPrice, ingredientUnit, g.name),
         costThen: null, // per-line history is not stored; the Δ column shows "—"
         estimated: !!g.is_estimated,
-        unitMismatch,
       };
     }),
   }));
