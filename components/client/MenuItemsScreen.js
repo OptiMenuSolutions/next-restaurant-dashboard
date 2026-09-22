@@ -445,21 +445,20 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 /* ── right pane: one dish ───────────────────────────────────────────── */
 
 function DishDetail({ d, tgt, open, setOpen, onBack }) {
-  const chart = useMemo(() => buildMarginChart(d.history, tgt), [d.history, tgt]);
+  const biggest = d.components.slice().sort((a, b) => b.cost - a.cost)[0];
+  const keyOf = (c) => d.id + "|" + c.name;
+  const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : biggest && c.name === biggest.name);
+  const anyOpen = d.components.some(isOpen);
 
   // ── What-if portions ────────────────────────────────────────────────────
   // Pure client-side exploration — nothing here ever writes to Supabase.
   // whatIfQty holds ONLY the overridden quantities a person has typed;
   // every real dish/component/ingredient number stays exactly as loaded.
-  // Resets whenever they switch to a different dish, so exploration never
-  // silently carries over onto the next thing they look at.
+  // Locked behind editMode so numbers can't change by an accidental click,
+  // and both reset whenever they switch to a different dish.
   const [whatIfQty, setWhatIfQty] = useState({});
-  useEffect(() => { setWhatIfQty({}); }, [d.id]);
-
-  // ── Margin chart / price-and-cost chart toggle ──────────────────────────
-  const [chartView, setChartView] = useState("margin");
-  useEffect(() => { setChartView("margin"); }, [d.id]);
-  const priceCostChart = useMemo(() => buildPriceCostChart(d.history, d.price), [d.history, d.price]);
+  const [editMode, setEditMode] = useState(false);
+  useEffect(() => { setWhatIfQty({}); setEditMode(false); }, [d.id]);
 
   const ingKey = (ci, ii) => `${ci}-${ii}`;
   const effectiveQty = (ci, ii, ing) => {
@@ -472,184 +471,115 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
 
   const isExploring = Object.keys(whatIfQty).length > 0;
   const effectiveDishCost = d.components.reduce((sum, comp, ci) => sum + effectiveComponentCost(ci, comp), 0);
-  const effectiveMargin = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
-  const displayCost = isExploring ? effectiveDishCost : d.cost;
-  const displayMargin = isExploring ? effectiveMargin : d.margin;
-
-    const Field = ({ label, value, valueColor, sub }) => (
-    <div>
-      <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{label}</div>
-      <div style={{ fontFamily: SANS, fontWeight: 700, fontSize: 17, letterSpacing: "-0.02em", marginTop: 4, fontVariantNumeric: "tabular-nums", color: valueColor || "var(--ink)" }}>{value}</div>
-      {sub && <div style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--ink-faint)", marginTop: 2 }}>{sub}</div>}
-      <div style={{ borderBottom: "1px solid var(--paper-line)", marginTop: 8 }} />
-    </div>
-  );
 
   return (
     <div style={{ flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", borderRadius: 4, boxShadow: "var(--shadow-lg)", overflowY: "auto", overflowX: "hidden", padding: "18px 22px 20px" }}>
-        <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", padding: 0, marginBottom: 16, cursor: "pointer", fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 }}>
+        <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", padding: 0, marginBottom: 14, cursor: "pointer", fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 }}>
           <span style={{ fontSize: 13, lineHeight: 1 }}>‹</span><span>All dishes</span>
         </button>
 
-        <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", gap: 28, flexShrink: 0 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <Field label={d.category || "Dish"} value={d.name} />
-            <Field label="Price" value={money0(d.price)} />
-            <Field label="Cost" value={money2(displayCost)} valueColor={isExploring ? "var(--amber)" : "var(--ink)"} />
-            <Field
-              label="Margin"
-              value={pct(displayMargin)}
-              valueColor={isExploring ? "var(--amber)" : displayMargin < tgt ? "var(--red)" : "var(--ink)"}
-              sub={isExploring ? "what if — not saved" : (d.margin >= tgt ? `on target · holds ${pct(tgt)} at ${money0(Math.ceil(displayCost / (1 - tgt / 100)))}` : `${ppLabel(d.margin - tgt)} off target`)}
-            />
-          </div>
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
+          <div style={{ fontFamily: SANS, fontWeight: 800, letterSpacing: "-0.03em", fontSize: 22, lineHeight: 1.15, marginTop: 4, textWrap: "pretty" }}>{d.name}</div>
+          {d.covers > 0 && (
+            <div style={{ fontSize: 12, color: "var(--ink-soft)", marginTop: 7 }}>Serves {d.covers}</div>
+          )}
+        </div>
 
-          <div style={{ border: "1px dashed var(--paper-line)", borderRadius: 4, padding: "10px 14px 6px" }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                <button type="button" onClick={() => setChartView("margin")} style={{ background: "none", border: "none", borderBottom: chartView === "margin" ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: chartView === "margin" ? "var(--ink)" : "var(--ink-faint)" }}>Margin</button>
-                <button type="button" onClick={() => setChartView("priceCost")} style={{ background: "none", border: "none", borderBottom: chartView === "priceCost" ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: chartView === "priceCost" ? "var(--ink)" : "var(--ink-faint)" }}>Price &amp; cost</button>
-              </div>
-              <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: chartView === "margin" ? ppColor(d.drift) : "var(--ink-faint)" }}>
-                {chartView === "margin" ? ppLabel(d.drift) : `${money2(d.cost)} cost · ${money0(d.price)} menu`}
-              </span>
-            </div>
-            {chartView === "priceCost" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6, fontFamily: MONO, fontSize: 9, color: "var(--ink-faint)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "1.6px solid var(--ink-soft)" }} />cost</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ display: "inline-block", width: 12, height: 0, borderTop: "1.6px dashed var(--ink)" }} />menu price</span>
-              </div>
+        <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "14px 0 0" }} />
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginTop: 11, flexShrink: 0 }}>
+          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>Ingredients</span>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", color: "var(--ink-faint)" }}>{d.components.length} components · {d.lineCount} ingredients</span>
+            {isExploring && (
+              <button type="button" onClick={() => setWhatIfQty({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#96690a" }}>
+                reset
+              </button>
             )}
-            <div style={{ padding: "8px 20px 16px 26px" }}>
-              <div style={{ position: "relative" }}>
-                {chartView === "margin" ? (
-                  <>
-                    <svg viewBox="0 0 120 50" style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
-                      {chart.gridLines.map((g, i) => (
-                        <line key={i} x1="0" y1={g.y} x2="120" y2={g.y} stroke="var(--paper-line)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                      ))}
-                      <path d={chart.areaPath} fill="var(--paper-line)" opacity="0.5" stroke="none" />
-                      <path d={chart.linePath} fill="none" stroke="var(--ink-soft)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                      {chart.hasTargetLine && (
-                        <line x1="0" y1={chart.targetY} x2="120" y2={chart.targetY} stroke="var(--ink-faint)" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
-                      )}
-                    </svg>
-                    {chart.points.map((p, i) => (
-                      <div key={"pt" + i} style={{ position: "absolute", left: p.leftPct, top: p.topPct, width: 7, height: 7, margin: "-3.5px 0 0 -3.5px", borderRadius: "50%", background: "var(--paper)", border: "1.8px solid var(--ink-soft)" }} />
-                    ))}
-                    {chart.gridLines.map((g, i) => (
-                      <div key={"gl" + i} style={{ position: "absolute", right: "100%", marginRight: 8, top: g.topPct, transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{g.label}</div>
-                    ))}
-                    {chart.hasTargetLine && (
-                      <div style={{ position: "absolute", left: 0, top: chart.targetTopPct, transform: "translateY(-140%)", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-faint)", whiteSpace: "nowrap" }}>Target {pct(tgt)}</div>
-                    )}
-                    {chart.points.map((p, i) => (
-                      <div key={"lb" + i} style={{ position: "absolute", top: "100%", marginTop: 6, left: p.leftPct, transform: "translateX(-50%)", fontFamily: MONO, fontSize: 10, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{p.label}</div>
-                    ))}
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 120 50" style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}>
-                      {priceCostChart.gridLines.map((g, i) => (
-                        <line key={i} x1="0" y1={g.y} x2="120" y2={g.y} stroke="var(--paper-line)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                      ))}
-                      <line x1="0" y1={priceCostChart.priceY} x2="120" y2={priceCostChart.priceY} stroke="var(--ink)" strokeWidth="1.4" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
-                      <path d={priceCostChart.costPath} fill="none" stroke="var(--ink-soft)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                    </svg>
-                    {priceCostChart.costPoints.map((p, i) => (
-                      <div key={"cpt" + i} style={{ position: "absolute", left: p.leftPct, top: p.topPct, width: 7, height: 7, margin: "-3.5px 0 0 -3.5px", borderRadius: "50%", background: "var(--paper)", border: "1.8px solid var(--ink-soft)" }} />
-                    ))}
-                    {priceCostChart.gridLines.map((g, i) => (
-                      <div key={"pgl" + i} style={{ position: "absolute", right: "100%", marginRight: 8, top: g.topPct, transform: "translateY(-50%)", fontFamily: MONO, fontSize: 10, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{g.label}</div>
-                    ))}
-                    <div style={{ position: "absolute", left: 0, top: priceCostChart.priceTopPct, transform: "translateY(-140%)", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-faint)", whiteSpace: "nowrap" }}>Menu price {money0(d.price)}</div>
-                    {priceCostChart.costPoints.map((p, i) => (
-                      <div key={"clb" + i} style={{ position: "absolute", top: "100%", marginTop: 6, left: p.leftPct, transform: "translateX(-50%)", fontFamily: MONO, fontSize: 10, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{p.label}</div>
-                    ))}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
+            <button type="button" onClick={() => setOpen((prev) => {
+              const next = { ...prev };
+              d.components.forEach((c) => { next[d.id + "|" + c.name] = !anyOpen; });
+              return next;
+            })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-soft)" }}>
+              {anyOpen ? "collapse all" : "expand all"}
+            </button>
+            <button type="button" onClick={() => setEditMode((v) => !v)} style={{ background: "none", border: "none", borderBottom: editMode ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: editMode ? "var(--ink)" : "var(--ink-soft)" }}>
+              {editMode ? "done editing" : "edit portions"}
+            </button>
+          </span>
         </div>
 
-        {isExploring && (
-          <div style={{ flexShrink: 0, marginTop: 14, background: "#fdf6e8", border: "1px solid #f0e0b8", borderRadius: 4, padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-            <span style={{ fontSize: 11.5, color: "#96690a", fontWeight: 600 }}>Exploring portion changes — nothing here is saved to the real recipe.</span>
-            <button type="button" onClick={() => setWhatIfQty({})} style={{ flexShrink: 0, background: "none", border: "1px solid #b8860b", borderRadius: 14, padding: "4px 11px", cursor: "pointer", fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "#96690a" }}>Reset</button>
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginTop: 22, flexShrink: 0 }}>
-          <span style={{ fontFamily: SANS, fontWeight: 700, fontSize: 14, letterSpacing: "-0.01em", color: "var(--ink)" }}>Recipe</span>
-          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", color: "var(--ink-faint)" }}>{d.components.length} components · {d.lineCount} ingredients</span>
-        </div>
-
-        <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", marginTop: 6 }}>
+        <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", marginTop: 9 }}>
           {d.components.map((c, ci) => {
+            const opened = isOpen(c);
             const compCost = effectiveComponentCost(ci, c);
-            const move = c.cost - c.costThen;
+            const move = c.cost - c.costThen; // real cost movement — not affected by what-if exploration
             const share = effectiveDishCost ? (compCost / effectiveDishCost) * 100 : 0;
             return (
-              <div key={c.name} style={{ marginTop: 14 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink)" }}>{c.name}</span>
-                  <span style={{ fontSize: 9.5, color: "var(--ink-faint)" }}>{share.toFixed(0)}% of plate</span>
-                  <span style={{ flex: 1 }} />
-                  <span style={{ fontSize: 11.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
-                  <span style={{ fontSize: 10, whiteSpace: "nowrap", minWidth: 48, textAlign: "right", fontVariantNumeric: "tabular-nums", color: c.allEstimated || c.unknownMove ? "var(--ink-faint)" : moveColor(move) }}>
+              <div key={c.name} style={{ padding: "9px 0 10px", borderBottom: "1px dashed var(--paper-line)" }}>
+                <div onClick={() => setOpen((prev) => ({ ...prev, [keyOf(c)]: !opened }))} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, cursor: "pointer" }}>
+                  <span style={{ fontSize: 10, color: "var(--ink-soft)", width: 9, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
+                  <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink)", whiteSpace: "nowrap" }}>{c.name}</span>
+                  <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
+                  <span style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
+                  <span style={{ fontSize: 10.5, whiteSpace: "nowrap", minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums", color: c.allEstimated || c.unknownMove ? "var(--ink-faint)" : moveColor(move) }}>
                     {c.allEstimated || c.unknownMove ? "—" : moveLabel(move)}
                   </span>
                 </div>
-                {c.ingredients.map((i, ii) => {
-                  const im = (Number(i.cost) || 0) - (Number(i.costThen != null ? i.costThen : i.cost) || 0);
-                  const qVal = effectiveQty(ci, ii, i);
-                  const iCost = effectiveIngCost(ci, ii, i);
-                  const key = ingKey(ci, ii);
-                  const overridden = key in whatIfQty;
-                  return (
-                    <div key={ii} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, padding: "8px 0", borderBottom: "1px solid var(--paper-line)" }}>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={qVal}
-                        onChange={(e) => {
-                          const val = e.target.value === "" ? 0 : Number(e.target.value);
-                          setWhatIfQty((prev) => ({ ...prev, [key]: val }));
-                        }}
-                        title="Try a different portion size — this doesn't change the real recipe"
-                        style={{
-                          width: 36, flexShrink: 0, fontSize: 11.5, textAlign: "right", fontFamily: MONO,
-                          background: overridden ? "#fdf6e8" : "transparent",
-                          border: overridden ? "1px solid #b8860b" : "none",
-                          borderRadius: 3, padding: "1px 3px",
-                          color: overridden ? "#96690a" : "var(--ink-soft)",
-                        }}
-                      />
-                      <span style={{ fontSize: 11, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{i.unit || "ea"}</span>
-                      <span style={{ fontSize: 12.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
-                      {i.estimated && (
-                        <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
-                      )}
-                      <span style={{ flex: 1 }} />
-                      <span style={{ fontSize: 12.5, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
-                      <span style={{ fontSize: 10, whiteSpace: "nowrap", minWidth: 48, textAlign: "right", fontVariantNumeric: "tabular-nums", color: i.estimated || i.costThen == null ? "var(--ink-faint)" : moveColor(im) }}>
-                        {i.estimated || i.costThen == null ? "—" : moveLabel(im)}
-                      </span>
-                    </div>
-                  );
-                })}
+                <div style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--ink-soft)", marginTop: 3, paddingLeft: 17 }}>
+                  {share.toFixed(0)}% of plate{!opened && ` · ${c.ingredients.length === 1 ? "1 ingredient" : c.ingredients.length + " ingredients"}`}
+                </div>
+                {opened && (
+                  <div style={{ margin: "7px 0 0 17px", paddingLeft: 12, borderLeft: "1px solid var(--paper-line)", display: "flex", flexDirection: "column", gap: 6 }}>
+                    {c.ingredients.map((i, ii) => {
+                      const im = (Number(i.cost) || 0) - (Number(i.costThen != null ? i.costThen : i.cost) || 0); // real move — not what-if
+                      const qVal = effectiveQty(ci, ii, i);
+                      const iCost = effectiveIngCost(ci, ii, i);
+                      const key = ingKey(ci, ii);
+                      const overridden = key in whatIfQty;
+                      return (
+                        <div key={ii} style={{ display: "flex", alignItems: "baseline", gap: 7, fontFamily: MONO }}>
+                          {editMode ? (
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              value={qVal}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                setWhatIfQty((prev) => ({ ...prev, [key]: val }));
+                              }}
+                              title="Try a different portion size — this doesn't change the real recipe"
+                              style={{
+                                width: 40, flexShrink: 0, fontSize: 11, textAlign: "right", fontFamily: MONO,
+                                background: overridden ? "#fdf6e8" : "transparent",
+                                border: overridden ? "1px solid #b8860b" : "1px dashed var(--ink-faint)",
+                                borderRadius: 3, padding: "1px 3px",
+                                color: overridden ? "#96690a" : "var(--ink-soft)",
+                              }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 11, minWidth: 40, textAlign: "right", color: overridden ? "#96690a" : "var(--ink-soft)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap" }}>{qVal}</span>
+                          )}
+                          <span style={{ fontSize: 11, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{i.unit || "ea"}</span>
+                          <span style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
+                          {i.estimated && (
+                            <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
+                          )}
+                          <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
+                          <span style={{ fontSize: 12, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
+                          <span style={{ fontSize: 10.5, whiteSpace: "nowrap", minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums", color: i.estimated || i.costThen == null ? "var(--ink-faint)" : moveColor(im) }}>
+                            {i.estimated || i.costThen == null ? "—" : moveLabel(im)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
-        </div>
-
-        <div style={{ flexShrink: 0, marginTop: 12, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.04em", color: "var(--ink-faint)", textAlign: "center" }}>
-          {d.estCount
-            ? `${d.estCount} of ${d.lineCount} lines priced by hand · ${pct(d.estShare * 100)} of plate cost`
-            : "Every line priced from an invoice"}
         </div>
       </div>
     </div>
