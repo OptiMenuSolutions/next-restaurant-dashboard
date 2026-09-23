@@ -276,7 +276,7 @@ export default function MenuItemsScreen({
                   const active = selected && d.id === selected.id;
                   return (
                     <div key={d.id} data-tour="mi-card" onClick={() => setSelectedId(d.id)} onDoubleClick={() => onOpenItem && onOpenItem(d)} className="om-hover-accent"
-                      style={{ aspectRatio: "1", minHeight: 146, background: active ? "var(--accent-tint)" : "var(--panel)", border: `1px solid ${active ? "var(--accent)" : "var(--line-soft)"}`, borderRadius: 10, padding: "11px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8, cursor: "pointer", overflow: "hidden" }}>
+                      style={{ height: 150, background: active ? "var(--accent-tint)" : "var(--panel)", border: `1px solid ${active ? "var(--accent)" : "var(--line-soft)"}`, borderRadius: 10, padding: "11px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8, cursor: "pointer", overflow: "hidden" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                           <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.category}</span>
