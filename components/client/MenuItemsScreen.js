@@ -454,9 +454,8 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 /* ── right pane: one dish ───────────────────────────────────────────── */
 
 function DishDetail({ d, tgt, open, setOpen, onBack }) {
-  const biggest = d.components.slice().sort((a, b) => b.cost - a.cost)[0];
   const keyOf = (c) => d.id + "|" + c.name;
-  const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : biggest && c.name === biggest.name);
+  const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : false);
   const anyOpen = d.components.some(isOpen);
 
   // ── What-if portions ────────────────────────────────────────────────────
@@ -565,8 +564,8 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                             <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
                             <span style={{ fontSize: 10.5, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 500 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
                           </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "90px 14px 78px auto", alignItems: "center", columnGap: 4, marginTop: 2, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
-                              <span style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "56px 30px 14px 78px auto", alignItems: "center", columnGap: 4, marginTop: 2, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
+                              <>
                                 {editMode ? (
                                   <input
                                     type="number"
@@ -589,10 +588,10 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                                 ) : (
                                   <span style={{ fontVariantNumeric: "tabular-nums", color: overridden ? "#96690a" : "var(--ink-faint)", fontWeight: overridden ? 500 : 400 }}>{fmtQty(qVal)}</span>
                                 )}
-                                <span style={{ width: 26, textAlign: "left" }}>{i.unit || "ea"}</span>
-                              </span>
+                                <span>{i.unit || "ea"}</span>
+                              </>
                               <span style={{ textAlign: "center" }}>@</span>
-                              <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money2(recipeUnitPrice(i))}/{i.unit || "ea"}</span>
+                                <span style={{ textAlign: "left", fontVariantNumeric: "tabular-nums" }}>{money2(recipeUnitPrice(i))}/{i.unit || "ea"}</span>
                               <span style={{ display: "flex", gap: 8, paddingLeft: 8 }}>
                                 {i.estimated && (
                                   <span style={{ letterSpacing: "0.06em", color: "var(--amber)" }}>▲ estimated price</span>
@@ -610,6 +609,27 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
               </div>
             );
           })}
+        </div>
+
+        <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "10px 0", flexShrink: 0 }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: "var(--ink-soft)" }}>
+            <span>MENU PRICE</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{money2(d.price)}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500, color: isExploring ? "#96690a" : "var(--ink)" }}>
+            <span style={{ letterSpacing: "0.08em" }}>PLATE COST{isExploring ? " (WHAT-IF)" : ""}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{money2(effectiveDishCost)}</span>
+          </div>
+          {(() => {
+            const m = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
+            return (
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: m < tgt ? "var(--red)" : "var(--green)" }}>
+                <span>MARGIN · TARGET {pct(tgt)}</span>
+                <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct(m)}</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
