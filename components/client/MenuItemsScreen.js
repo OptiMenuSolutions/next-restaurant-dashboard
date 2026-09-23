@@ -520,9 +520,9 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
               <div key={c.name} style={{ padding: "9px 0 10px", borderBottom: "1px dashed var(--paper-line)" }}>
                 <div onClick={() => setOpen((prev) => ({ ...prev, [keyOf(c)]: !opened }))} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, cursor: "pointer" }}>
                   <span style={{ fontSize: 10, color: "var(--ink-soft)", width: 9, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
-                  <span style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink)", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
-                  <span style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", whiteSpace: "nowrap" }}>{c.name}</span>
+                  <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
                   <span style={{ fontSize: 10.5, whiteSpace: "nowrap", minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums", color: c.allEstimated || c.unknownMove ? "var(--ink-faint)" : moveColor(move) }}>
                     {c.allEstimated || c.unknownMove ? "—" : moveLabel(move)}
                   </span>
@@ -562,13 +562,13 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                           ) : (
                             <span style={{ fontSize: 11, minWidth: 40, textAlign: "right", color: overridden ? "#96690a" : "var(--ink-soft)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap" }}>{qVal}</span>
                           )}
-                          <span style={{ fontSize: 11, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{i.unit || "ea"}</span>
-                          <span style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
+                          <span style={{ fontSize: 10.5, color: "var(--ink-soft)", whiteSpace: "nowrap" }}>{i.unit || "ea"}</span>
+                          <span style={{ fontFamily: SANS, fontSize: 12.5, fontWeight: 500, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
                           {i.estimated && (
                             <span style={{ fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
                           )}
                           <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
-                          <span style={{ fontSize: 12, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 700 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
+                          <span style={{ fontSize: 12.5, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 700 : 600, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
                           <span style={{ fontSize: 10.5, whiteSpace: "nowrap", minWidth: 52, textAlign: "right", fontVariantNumeric: "tabular-nums", color: i.estimated || i.costThen == null ? "var(--ink-faint)" : moveColor(im) }}>
                             {i.estimated || i.costThen == null ? "—" : moveLabel(im)}
                           </span>
