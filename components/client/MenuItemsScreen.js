@@ -271,7 +271,7 @@ export default function MenuItemsScreen({
                 <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="mi-grid-wrap" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             {layout === "cards" ? (
-              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, alignContent: "start" }}>
+              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", margin: "8px 6px 0 0", padding: "6px 10px 14px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 14, alignContent: "start", scrollbarGutter: "stable" }}>
                 {shown.map((d) => {
                   const active = selected && d.id === selected.id;
                   return (
@@ -305,7 +305,7 @@ export default function MenuItemsScreen({
                     <span key={c.label} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", textAlign: c.align }}>{c.label}</span>
                   ))}
                 </div>
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", margin: "6px 6px 0 0", scrollbarGutter: "stable" }}>
                   {shown.map((d) => {
                     const active = selected && d.id === selected.id;
                     return (
