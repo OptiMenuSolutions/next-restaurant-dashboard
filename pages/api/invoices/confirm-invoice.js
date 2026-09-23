@@ -28,9 +28,20 @@ function resolveUnitCost(item) {
       unitCost = item.invoice_price;
       unit     = item.size_unit || 'lb';
     } else if (item.pack && item.size && item.size_unit) {
+      // Suppliers print either a per-case or a per-lb/per-unit price on
+      // case-packed lines, and invoice_price can't tell us which. The line
+      // total can: total ÷ (cases × pack × size) is the true per-unit cost
+      // either way. (Butter: $94.68 ÷ 36 lb = $2.63/lb — the old math
+      // divided a per-lb price by 36 again and got $0.073/lb.)
       const totalUnits = item.pack * item.size;
-      unitCost = totalUnits > 0 ? item.invoice_price / totalUnits : null;
-      unit     = item.size_unit;
+      const shipped    = item.quantity_shipped ?? item.quantity_ordered ?? 1;
+      const lineTotal  = Number(item.line_total);
+      if (lineTotal > 0 && totalUnits > 0 && shipped > 0) {
+        unitCost = lineTotal / (shipped * totalUnits);
+      } else {
+        unitCost = totalUnits > 0 ? item.invoice_price / totalUnits : null;
+      }
+      unit = item.size_unit;
     } else if (item.size_unit === 'each' || item.standard_unit === 'each') {
       unitCost = item.invoice_price || null;
       unit     = 'each';
@@ -356,7 +367,7 @@ export default async function handler(req, res) {
             const ingUnit    = ci.ingredients?.unit || 'oz';
 
             if (unitCost > 0 && qty > 0) {
-              newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingUnit);
+              newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingUnit, ci.ingredients?.name || '')
             }
           }
         }

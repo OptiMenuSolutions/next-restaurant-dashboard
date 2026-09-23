@@ -593,6 +593,9 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                               <span style={{ textAlign: "center" }}>@</span>
                                 <span style={{ textAlign: "left", fontVariantNumeric: "tabular-nums" }}>{money2(recipeUnitPrice(i))}/{i.unit || "ea"}</span>
                               <span style={{ display: "flex", gap: 8, paddingLeft: 8 }}>
+                                {i.unitMismatch && (
+                                  <span style={{ letterSpacing: "0.06em", color: "var(--red)" }}>▲ unit mismatch — check pricing</span>
+                                )}
                                 {i.estimated && (
                                   <span style={{ letterSpacing: "0.06em", color: "var(--amber)" }}>▲ estimated price</span>
                                 )}

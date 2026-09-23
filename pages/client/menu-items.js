@@ -11,7 +11,7 @@ import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import { parseMenuFiles } from "../../lib/parseMenu";
 import { fetchSampleData } from "../../lib/seedSampleData";
-import { calculateStandardizedCost, getUnitCategory } from "../../lib/standardizedUnits";
+import { calculateStandardizedCost, getUnitCategory, hasUnitMismatch } from "../../lib/standardizedUnits";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -84,6 +84,7 @@ function toDish(row, costHistory, covers) {
         cost: calculateStandardizedCost(num(ci.quantity), recipeUnit, unitPrice, ingredientUnit, g.name),
         costThen: null, // per-line history is not stored; the Δ column shows "—"
         estimated: !!g.is_estimated,
+        unitMismatch: hasUnitMismatch(recipeUnit, ingredientUnit),
       };
     }),
   }));
@@ -111,7 +112,12 @@ function toDish(row, costHistory, covers) {
   if (flat.length) components.push({ name: "Recipe", ingredients: flat });
 
   const history = toMarginHistory(costHistory, price);
-  const cost = num(row.cost) || components.reduce((a, c) => a + c.ingredients.reduce((n, i) => n + i.cost, 0), 0);
+  // Live, unit-converted recipe sum is the source of truth — same number the
+  // detail footer shows. Stored menu_items.cost is only a fallback for dishes
+  // with no recipe rows (e.g. tour sample data); it's only recomputed when an
+  // invoice touches the dish, so it goes stale after any costing fix.
+  const recipeCost = components.reduce((a, c) => a + c.ingredients.reduce((n, i) => n + i.cost, 0), 0);
+  const cost = recipeCost > 0 ? recipeCost : num(row.cost);
   const costThen = history.length ? price - (history[0].value / 100) * price : cost;
 
   return {
@@ -254,13 +260,23 @@ export default function MenuItemsPage() {
     });
 
     const ids = (menuItems || []).map((m) => m.id);
-    const { data: history } = ids.length
-      ? await supabase
+    // Supabase caps a select at 1,000 rows — this used to silently drop the
+    // newest history and made drift compare against stale mid-May costs.
+    const history = [];
+    if (ids.length) {
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error: hErr } = await supabase
           .from("menu_item_cost_history")
-          .select("*")
+          .select("menu_item_id, new_cost, created_at")
           .in("menu_item_id", ids)
           .order("created_at", { ascending: true })
-      : { data: [] };
+          .range(from, from + PAGE - 1);
+        if (hErr || !page || !page.length) break;
+        history.push(...page);
+        if (page.length < PAGE) break;
+      }
+    }
 
     const historyById = new Map();
     (history || []).forEach((h) => {
