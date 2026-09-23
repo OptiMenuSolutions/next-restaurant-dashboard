@@ -268,7 +268,7 @@ export default function MenuItemsScreen({
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(420px,0.95fr) minmax(0,1fr)", gap: 16, flex: 1, minHeight: 0 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="mi-grid-wrap" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             {layout === "cards" ? (
               <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, alignContent: "start" }}>
@@ -474,7 +474,18 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
     const key = ingKey(ci, ii);
     return key in whatIfQty ? whatIfQty[key] : ing.quantity;
   };
-  const effectiveIngCost = (ci, ii, ing) => effectiveQty(ci, ii, ing) * (Number(ing.unitPrice) || 0);
+  // Price per RECIPE unit, derived from the line cost toDish() already
+  // unit-converted (oz↔lb etc.). Multiplying qty × ing.unitPrice directly
+  // skipped that conversion and under-costed mixed-unit lines.
+  const recipeUnitPrice = (ing) => {
+    const q = Number(ing.quantity);
+    return q ? (Number(ing.cost) || 0) / q : (Number(ing.unitPrice) || 0);
+  };
+  const effectiveIngCost = (ci, ii, ing) => {
+    const key = ingKey(ci, ii);
+    if (!(key in whatIfQty)) return Number(ing.cost) || 0;
+    return whatIfQty[key] * recipeUnitPrice(ing);
+  };
   const effectiveComponentCost = (ci, comp) =>
     comp.ingredients.reduce((sum, ing, ii) => sum + effectiveIngCost(ci, ii, ing), 0);
 
@@ -489,8 +500,8 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
         </button>
 
         <div style={{ flexShrink: 0 }}>
-          <div style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
-          <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", lineHeight: 1.3, marginTop: 4, textWrap: "pretty" }}>{d.name}</div>
+          <div style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
+          <div style={{ fontSize: 16, fontWeight: 500, letterSpacing: "0.02em", lineHeight: 1.25, marginTop: 5, textWrap: "pretty" }}>{d.name}</div>
           {d.covers > 0 && (
             <div style={{ fontSize: 8.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)", marginTop: 3 }}>Serves {d.covers}</div>
           )}
@@ -498,7 +509,7 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
 
         <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "14px 0 0" }} />
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginTop: 11, flexShrink: 0 }}>
-          <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>Ingredients</span>
+          <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)" }}>Recipe</span>
           <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
             <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.components.length} components · {d.lineCount} ingredients</span>
             {isExploring && (
@@ -528,15 +539,15 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
             return (
               <div key={c.name} style={{ padding: "9px 0 10px", borderBottom: "1px dashed var(--paper-line)" }}>
                 <div onClick={() => setOpen((prev) => ({ ...prev, [keyOf(c)]: !opened }))} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, cursor: "pointer" }}>
-                  <span style={{ fontSize: 9, color: "var(--ink-soft)", width: 9, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
+                  <span style={{ fontSize: 12, lineHeight: 1, color: "var(--ink-soft)", width: 12, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
                   <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-deep)", whiteSpace: "nowrap" }}>{c.name}</span>
                   <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
-                  <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--ink)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--accent-deep)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
                   {!(c.allEstimated || c.unknownMove) && Math.abs(move) > 0.005 && (
                     <span style={{ fontSize: 9, whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums", color: moveColor(move) }}>{moveLabel(move)}</span>
                   )}
                 </div>
-                <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--ink-faint)", marginTop: 2, paddingLeft: 17 }}>
+                <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--ink-faint)", marginTop: 2, paddingLeft: 20 }}>
                   {share.toFixed(0)}% of plate{!opened && ` · ${c.ingredients.length === 1 ? "1 ingredient" : c.ingredients.length + " ingredients"}`}
                 </div>
                 {opened && (
@@ -554,39 +565,43 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                             <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
                             <span style={{ fontSize: 10.5, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 500 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-                            <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
-                              {editMode ? (
-                                <input
-                                  type="number"
-                                  step="any"
-                                  min="0"
-                                  value={qVal}
-                                  onChange={(e) => {
-                                    const val = e.target.value === "" ? 0 : Number(e.target.value);
-                                    setWhatIfQty((prev) => ({ ...prev, [key]: val }));
-                                  }}
-                                  title="Try a different portion size — this doesn't change the real recipe"
-                                  style={{
-                                    width: 52, fontSize: 9, fontFamily: MONO, textAlign: "right",
-                                    background: overridden ? "#fdf6e8" : "transparent",
-                                    border: overridden ? "1px solid #b8860b" : "1px dashed var(--ink-faint)",
-                                    borderRadius: 3, padding: "0 3px",
-                                    color: overridden ? "#96690a" : "var(--ink-soft)",
-                                  }}
-                                />
-                              ) : (
-                                <span style={{ color: overridden ? "#96690a" : "var(--ink-faint)", fontWeight: overridden ? 500 : 400 }}>{fmtQty(qVal)}</span>
-                              )}
-                              <span>{i.unit || "ea"} @ {money2(Number(i.unitPrice) || 0)}</span>
-                            </span>
-                            {i.estimated && (
-                              <span style={{ fontSize: 9, letterSpacing: "0.06em", color: "var(--amber)", whiteSpace: "nowrap" }}>▲ estimated price</span>
-                            )}
-                            {!i.estimated && i.costThen != null && Math.abs(im) > 0.005 && (
-                              <span style={{ fontSize: 9, letterSpacing: "0.06em", color: moveColor(im), whiteSpace: "nowrap" }}>{moveLabel(im)}</span>
-                            )}
-                          </div>
+                            <div style={{ display: "grid", gridTemplateColumns: "90px 14px 78px auto", alignItems: "center", columnGap: 4, marginTop: 2, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
+                              <span style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
+                                {editMode ? (
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    min="0"
+                                    value={qVal}
+                                    onChange={(e) => {
+                                      const val = e.target.value === "" ? 0 : Number(e.target.value);
+                                      setWhatIfQty((prev) => ({ ...prev, [key]: val }));
+                                    }}
+                                    title="Try a different portion size — this doesn't change the real recipe"
+                                    style={{
+                                      width: 52, fontSize: 9, fontFamily: MONO, textAlign: "right",
+                                      background: overridden ? "#fdf6e8" : "transparent",
+                                      border: overridden ? "1px solid #b8860b" : "1px dashed var(--ink-faint)",
+                                      borderRadius: 3, padding: "0 3px",
+                                      color: overridden ? "#96690a" : "var(--ink-soft)",
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontVariantNumeric: "tabular-nums", color: overridden ? "#96690a" : "var(--ink-faint)", fontWeight: overridden ? 500 : 400 }}>{fmtQty(qVal)}</span>
+                                )}
+                                <span style={{ width: 26, textAlign: "left" }}>{i.unit || "ea"}</span>
+                              </span>
+                              <span style={{ textAlign: "center" }}>@</span>
+                              <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money2(recipeUnitPrice(i))}/{i.unit || "ea"}</span>
+                              <span style={{ display: "flex", gap: 8, paddingLeft: 8 }}>
+                                {i.estimated && (
+                                  <span style={{ letterSpacing: "0.06em", color: "var(--amber)" }}>▲ estimated price</span>
+                                )}
+                                {!i.estimated && i.costThen != null && Math.abs(im) > 0.005 && (
+                                  <span style={{ letterSpacing: "0.06em", color: moveColor(im) }}>{moveLabel(im)}</span>
+                                )}
+                              </span>
+                            </div>
                         </div>
                       );
                     })}
