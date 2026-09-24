@@ -86,6 +86,12 @@ export default async function handler(req, res) {
   if (authError) return res.status(authStatus).json({ error: authError });
 
   const activeItems = (line_items || []).filter(i => !i.dismissed);
+  console.log('[confirm-invoice] raw items', JSON.stringify(activeItems.map(i => ({
+    name: i.item_name, shipped: i.quantity_shipped, ordered: i.quantity_ordered,
+    pack: i.pack, size: i.size, size_unit: i.size_unit,
+    catch_weight: i.catch_weight, actual_weight: i.actual_weight,
+    invoice_price: i.invoice_price, line_total: i.line_total,
+  }))));
   const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
   const appendMode  = !!append_to_invoice_id;
 
