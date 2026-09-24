@@ -66,7 +66,10 @@ function toDish(row, costHistory, covers) {
     name: c.name || "Component",
     ingredients: (c.component_ingredients || []).map((ci) => {
       const g = ci.ingredients || {};
-      const unitPrice = num(g.last_price);
+      // Only invoice prices and admin-approved estimates are shown to the
+      // restaurant. Raw AI guesses from the menu parse count as unpriced.
+      const priced = g.is_estimated === false || !!g.price_approved_at;
+      const unitPrice = priced ? num(g.last_price) : 0;
       const recipeUnit = ci.unit || g.unit || "ea";
       const ingredientUnit = g.unit || recipeUnit;
       // The recipe's unit (set once, at menu-parse time) and the
@@ -85,6 +88,7 @@ function toDish(row, costHistory, covers) {
         costThen: null, // per-line history is not stored; the Δ column shows "—"
         estimated: !!g.is_estimated,
         unitMismatch: hasUnitMismatch(recipeUnit, ingredientUnit),
+        unpriced: !priced,
       };
     }),
   }));
@@ -92,7 +96,8 @@ function toDish(row, costHistory, covers) {
   /* Dishes recorded the old way — a flat menu_item_ingredients list. */
   const flat = (row.menu_item_ingredients || []).map((mi) => {
     const g = mi.ingredients || {};
-    const unitPrice = num(g.last_price);
+    const priced = g.is_estimated === false || !!g.price_approved_at;
+    const unitPrice = priced ? num(g.last_price) : 0;
     const recipeUnit = g.unit || "ea";
     const ingredientUnit = g.unit || recipeUnit;
     const unitMismatch =
@@ -107,6 +112,7 @@ function toDish(row, costHistory, covers) {
       costThen: null,
       estimated: !!g.is_estimated,
       unitMismatch,
+      unpriced: !priced,
     };
   });
   if (flat.length) components.push({ name: "Recipe", ingredients: flat });
@@ -116,8 +122,12 @@ function toDish(row, costHistory, covers) {
   // detail footer shows. Stored menu_items.cost is only a fallback for dishes
   // with no recipe rows (e.g. tour sample data); it's only recomputed when an
   // invoice touches the dish, so it goes stale after any costing fix.
-  const recipeCost = components.reduce((a, c) => a + c.ingredients.reduce((n, i) => n + i.cost, 0), 0);
-  const cost = recipeCost > 0 ? recipeCost : num(row.cost);
+  const allLines = components.flatMap((c) => c.ingredients);
+  const unpricedCount = allLines.filter((i) => i.unpriced).length;
+  const recipeCost = allLines.reduce((n, i) => n + i.cost, 0);
+  // Stored menu_items.cost was computed from AI price guesses — only fall
+  // back to it for dishes with no recipe rows at all (tour sample data).
+  const cost = allLines.length ? recipeCost : num(row.cost);
   const costThen = history.length ? price - (history[0].value / 100) * price : cost;
 
   return {
@@ -130,6 +140,7 @@ function toDish(row, costHistory, covers) {
     covers,
     history,
     components,
+    unpricedCount,
   };
 }
 
@@ -240,8 +251,8 @@ export default function MenuItemsPage() {
         .select(`
           id, name, price, cost, category,
           menu_item_components(id, name, cost,
-            component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated))),
-          menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated))
+            component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at))),
+          menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at))
         `)
         .eq("restaurant_id", restaurantId)
         .order("name")
@@ -329,8 +340,11 @@ export default function MenuItemsPage() {
   }, [restaurantId, load]);
 
   const periodLabel = useMemo(
-    () => `Tonight’s prices · ${items.length} dishes costed · target margin ${Math.round(targetMargin)}%`,
-    [items.length, targetMargin]
+    () => {
+      const costed = items.filter((i) => !i.unpricedCount).length;
+      return `Tonight’s prices · ${costed} of ${items.length} dishes costed · target margin ${Math.round(targetMargin)}%`;
+    },
+    [items, targetMargin]
   );
 
   const initials = (userName || "Chef").split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();

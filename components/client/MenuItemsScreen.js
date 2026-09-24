@@ -136,6 +136,8 @@ function decorate(d) {
     history: d.history || [],
     estCount: estIngs.length,
     estShare: cost ? estCost / cost : 0,
+    unpricedCount: Number(d.unpricedCount) || 0,
+    awaiting: (Number(d.unpricedCount) || 0) > 0,
   };
 }
 
@@ -170,9 +172,12 @@ export default function MenuItemsScreen({
   const data = useMemo(() => (itemsProp || DEMO_ITEMS).map(decorate), [itemsProp]);
   const tgt = targetMargin;
 
-  const belowTarget = data.filter((d) => d.margin < tgt);
-  const slipping = data.filter((d) => d.drift < -2);
-  const estimated = data.filter((d) => d.estShare > 0.15);
+  // Dishes awaiting pricing have no trustworthy cost — keep them out of
+  // every count, filter, and average.
+  const priced = data.filter((d) => !d.awaiting);
+  const belowTarget = priced.filter((d) => d.margin < tgt);
+  const slipping = priced.filter((d) => d.drift < -2);
+  const estimated = priced.filter((d) => d.estShare > 0.15);
 
   const shown =
     filter === "Below target" ? belowTarget :
@@ -204,7 +209,7 @@ export default function MenuItemsScreen({
   }
 
   const countLabel = `Showing ${shown.length} of ${data.length} dishes`;
-  const avgMargin = data.reduce((a, d) => a + d.margin, 0) / data.length;
+  const avgMargin = priced.length ? priced.reduce((a, d) => a + d.margin, 0) / priced.length : 0;
 
   if (isMobile) {
     return (
@@ -219,11 +224,17 @@ export default function MenuItemsScreen({
             <div key={d.id} onClick={() => onOpenItem && onOpenItem(d)} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{d.name}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
+                {d.awaiting ? (
+                  <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</span>
+                ) : (
+                  <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>{money0(d.price)} menu · {money2(d.cost)} cost</span>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>{money0(d.price)} menu · {d.awaiting ? "awaiting pricing" : `${money2(d.cost)} cost`}</span>
+                {!d.awaiting && (
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
+                )}
               </div>
             </div>
           ))}
@@ -287,12 +298,16 @@ export default function MenuItemsScreen({
                         <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, textWrap: "pretty", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{d.name}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money0(d.price)} menu · {money2(d.cost)} cost</div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
-                          <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>mgn</span>
-                          <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
-                        </div>
+                        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money2(d.price)} menu · {d.awaiting ? "cost pending" : `${money2(d.cost)} cost`}</div>
+                        {d.awaiting ? (
+                          <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Awaiting pricing</div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
+                            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>mgn</span>
+                            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -321,10 +336,16 @@ export default function MenuItemsScreen({
                           <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", marginTop: 3 }}>{d.category}</div>
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: "var(--muted)" }}>{money0(d.price)}</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: "var(--text)" }}>{money2(d.cost)}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: d.awaiting ? "var(--faint)" : "var(--text)" }}>{d.awaiting ? "—" : money2(d.cost)}</div>
                         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</div>
-                          <div style={{ fontFamily: MONO, fontSize: 10.5, color: ppColor(d.drift), marginTop: 2 }}>{ppLabel(d.drift)}</div>
+                          {d.awaiting ? (
+                            <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</div>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</div>
+                              <div style={{ fontFamily: MONO, fontSize: 10.5, color: ppColor(d.drift), marginTop: 2 }}>{ppLabel(d.drift)}</div>
+                            </>
+                          )}
                         </div>
                       </div>
                     );
@@ -352,7 +373,7 @@ export default function MenuItemsScreen({
               />
             ) : (
               <MenuSummary
-                data={data}
+                data={priced}
                 tgt={tgt}
                 belowTarget={belowTarget}
                 estimated={estimated}
@@ -372,6 +393,16 @@ export default function MenuItemsScreen({
 /* ── right pane: the whole menu ─────────────────────────────────────── */
 
 function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, onEstimated, onUploadMenu }) {
+  if (!data.length) {
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 28px", gap: 10 }}>
+        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em" }}>Your recipes are in</div>
+        <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, maxWidth: 420 }}>
+          Plate costs and margins appear here as soon as your ingredient prices come in from your invoices.
+        </div>
+      </div>
+    );
+  }
   const revenue = data.reduce((a, d) => a + d.price * d.covers, 0);
   const weighted = revenue ? (data.reduce((a, d) => a + (d.price - d.cost) * d.covers, 0) / revenue) * 100 : 0;
   const avgDrift = data.reduce((a, d) => a + d.drift, 0) / data.length;
@@ -541,13 +572,13 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                   <span style={{ fontSize: 12, lineHeight: 1, color: "var(--ink-soft)", width: 12, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
                   <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-deep)", whiteSpace: "nowrap" }}>{c.name}</span>
                   <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
-                  <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--accent-deep)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(compCost)}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--accent-deep)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{c.ingredients.some((i) => i.unpriced) ? "—" : money2(compCost)}</span>
                   {!(c.allEstimated || c.unknownMove) && Math.abs(move) > 0.005 && (
                     <span style={{ fontSize: 9, whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums", color: moveColor(move) }}>{moveLabel(move)}</span>
                   )}
                 </div>
                 <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--ink-faint)", marginTop: 2, paddingLeft: 20 }}>
-                  {share.toFixed(0)}% of plate{!opened && ` · ${c.ingredients.length === 1 ? "1 ingredient" : c.ingredients.length + " ingredients"}`}
+                  {d.awaiting ? "Awaiting pricing" : `${share.toFixed(0)}% of plate`}{!opened && ` · ${c.ingredients.length === 1 ? "1 ingredient" : c.ingredients.length + " ingredients"}`}
                 </div>
                 {opened && (
                   <div style={{ margin: "6px 0 0 17px", paddingLeft: 12, borderLeft: "1px solid var(--paper-line)", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -562,7 +593,7 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                           <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
                             <span style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
                             <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
-                            <span style={{ fontSize: 10.5, color: overridden ? "#96690a" : "var(--ink)", fontWeight: overridden ? 500 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money2(iCost)}</span>
+                            <span style={{ fontSize: 10.5, color: overridden ? "#96690a" : i.unpriced ? "var(--ink-faint)" : "var(--ink)", fontWeight: overridden ? 500 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{i.unpriced ? "—" : money2(iCost)}</span>
                           </div>
                             <div style={{ display: "grid", gridTemplateColumns: "56px 30px 14px 78px auto", alignItems: "center", columnGap: 4, marginTop: 2, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
                               <>
@@ -591,7 +622,7 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                                 <span>{i.unit || "ea"}</span>
                               </>
                               <span style={{ textAlign: "center" }}>@</span>
-                                <span style={{ textAlign: "left", fontVariantNumeric: "tabular-nums" }}>{money2(recipeUnitPrice(i))}/{i.unit || "ea"}</span>
+                                <span style={{ textAlign: "left", fontVariantNumeric: "tabular-nums" }}>{i.unpriced ? "awaiting price" : `${money2(recipeUnitPrice(i))}/${i.unit || "ea"}`}</span>
                               <span style={{ display: "flex", gap: 8, paddingLeft: 8 }}>
                                 {i.unitMismatch && (
                                   <span style={{ letterSpacing: "0.06em", color: "var(--red)" }}>▲ unit mismatch — check pricing</span>
@@ -622,9 +653,9 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
           </div>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500, color: isExploring ? "#96690a" : "var(--ink)" }}>
             <span style={{ letterSpacing: "0.08em" }}>PLATE COST{isExploring ? " (WHAT-IF)" : ""}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{money2(effectiveDishCost)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{d.awaiting ? "Awaiting pricing" : money2(effectiveDishCost)}</span>
           </div>
-          {(() => {
+          {!d.awaiting && (() => {
             const m = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
             return (
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: m < tgt ? "var(--red)" : "var(--green)" }}>

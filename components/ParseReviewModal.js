@@ -573,8 +573,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   function renderDish() {
     const dish = dishes[current];
-    const mgn = margin(dish);
-    const losing = mgn !== null && mgn < 0;
 
     return (
       <>
@@ -588,29 +586,16 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
               size={Math.max(8, dish.category.length)}
             />
             {dish.price && <span className="prm-badge prm-badge-price">${dish.price.toFixed(2)}</span>}
-            {mgn !== null && (
-              <span className={`prm-badge ${losing ? 'prm-badge-margin-warn' : 'prm-badge-margin-ok'}`}>
-                {losing ? '⚠ ' : ''}{mgn.toFixed(1)}% margin
-              </span>
-            )}
           </div>
         </div>
 
-        {losing && (
-          <div className="prm-warn">
-            ⚠ Cost (${dish.total_estimated_cost?.toFixed(2)}) exceeds price — losing ${Math.abs(dish.total_estimated_cost - dish.price).toFixed(2)}/order
-          </div>
-        )}
-
         {dish.components.map((comp, ci) => {
-          const cost = compCost(comp);
           const isPurchased = comp.purchased === true;
           const purchasedIng = isPurchased ? comp.ingredients[0] : null;
           return (
             <div key={ci} className="prm-comp">
               <div className="prm-comp-hd">
                 <input className="prm-comp-name-input" value={comp.name} onChange={e => updateCompName(ci, e.target.value)} />
-                <span className="prm-comp-cost">${cost.toFixed(2)}</span>
                 <button className={`prm-purchased-btn${isPurchased ? ' active' : ''}`} onClick={() => markPurchased(ci)}>
                   {isPurchased ? '✓ Finished Good' : 'Purchased as Finished Good'}
                 </button>
@@ -648,10 +633,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                         <option value="sheet">sheet</option>
                       </optgroup>
                     </select>
-                    <span className="prm-purchased-field-lbl">Cost/$</span>
-                    <input className="prm-purchased-cost-input" type="number" step="0.01" min="0"
-                      value={purchasedIng.estimated_unit_cost}
-                      onChange={e => updateIng(ci, 0, 'estimated_unit_cost', parseFloat(e.target.value) || 0)} />
                   </div>
                 </div>
               ) : (
@@ -692,7 +673,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                                   onClick={() => selectAcItem(ci, ii, lib)}
                                 >
                                   <span className="prm-ac-name">{lib.name}</span>
-                                  <span className="prm-ac-meta">{lib.unit} · ${lib.estimated_unit_cost?.toFixed(2) ?? '—'}/{lib.unit}</span>
+                                   <span className="prm-ac-meta">{lib.unit}</span>
                                 </div>
                               ))}
                             </div>
@@ -750,7 +731,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   function renderCommitScreen() {
     const totalComps = dishes.reduce((s, d) => s + d.components.length, 0);
     const totalIngs = dishes.reduce((s, d) => s + d.components.reduce((ss, c) => ss + c.ingredients.length, 0), 0);
-    const losing = dishes.filter(d => { const m = margin(d); return m !== null && m < 0; });
     return (
       <div className="prm-commit-screen">
         <div className="prm-commit-icon">✓</div>
@@ -763,12 +743,6 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           <div className="prm-summary-row"><span className="lbl">Dishes</span><span className="val">{dishes.length}</span></div>
           <div className="prm-summary-row"><span className="lbl">Components</span><span className="val">{totalComps}</span></div>
           <div className="prm-summary-row"><span className="lbl">Ingredients</span><span className="val">{totalIngs}</span></div>
-          <div className="prm-summary-row">
-            <span className="lbl">Losing money</span>
-            <span className={`val${losing.length > 0 ? ' warn' : ''}`}>
-              {losing.length > 0 ? `${losing.length} — ${losing.map(d => d.name).join(', ')}` : 'None ✓'}
-            </span>
-          </div>
         </div>
         {commitError && <div className="prm-commit-err">⚠ {commitError}</div>}
         <button className="prm-btn prm-btn-confirm" style={{ fontSize: 14, padding: '11px 32px' }}
