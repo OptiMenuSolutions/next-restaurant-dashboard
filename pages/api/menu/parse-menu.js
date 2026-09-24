@@ -1777,7 +1777,11 @@ export default async function handler(req, res) {
     const beforeDedup = allDishes.length;
     const dedupedDishes = [];
     for (const d of allDishes) {
-      const key = normalizeDishName(d.name || '');
+      // Plain name only. normalizeDishName strips words like "boneless",
+      // "traditional", sizes, and pasta shapes — right for matching recipe
+      // templates, wrong for dedupe: "Wings - Boneless" and "Wings -
+      // Traditional" both became "wings" and one was dropped.
+      const key = (d.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
       if (key && seenDishKeys.has(key)) continue;
       if (key) seenDishKeys.add(key);
       dedupedDishes.push(d);
