@@ -1267,6 +1267,87 @@ function canonicalizeIngredients(ingredientMap, allDishes) {
   return canonicalMap;
 }
 
+// ─── Map parsed ingredients to global library names ──────────────────────────
+// Pass 1 is told to use global names exactly but drifts ("Cilantro" vs "Fresh
+// Cilantro", "Onion" vs "Yellow Onion"), so every run and every restaurant
+// ended up with different names for the same thing. This enforces it in code:
+// a name or alias match takes the global name (and unit, converting weight
+// quantities and prices); anything unmatched is kept and marked is_new for
+// admin review.
+
+const WEIGHT_TO_OZ_NORM = { oz: 1, lb: 16, g: 0.035274, kg: 35.274 };
+
+function normalizeToGlobalNames(library, allDishes, globalIngredients) {
+  const lookup = new Map();
+  for (const g of globalIngredients || []) {
+    const entry = { name: g.name, unit: g.unit };
+    lookup.set(g.name.trim().toLowerCase(), entry);
+    for (const a of g.aliases || []) {
+      const k = String(a).trim().toLowerCase();
+      if (k && !lookup.has(k)) lookup.set(k, entry);
+    }
+  }
+
+  const out = new Map();
+  let renamed = 0, matched = 0, unmatched = 0;
+
+  for (const ing of library) {
+    const key = ing.name.trim().toLowerCase();
+    const g = lookup.get(key);
+    if (!g) {
+      unmatched++;
+      if (!out.has(key)) out.set(key, { ...ing, name: ing.name.trim(), is_new: true });
+      continue;
+    }
+    matched++;
+    if (g.name.toLowerCase() !== key) renamed++;
+    const finalKey = g.name.toLowerCase();
+    if (out.has(finalKey)) continue; // e.g. "Cilantro" and "Fresh Cilantro" collapse to one entry
+
+    const from = (ing.unit || '').toLowerCase();
+    const to = (g.unit || '').toLowerCase();
+    let unit = ing.unit;
+    let cost = ing.estimated_unit_cost;
+    if (from !== to && WEIGHT_TO_OZ_NORM[from] && WEIGHT_TO_OZ_NORM[to] && typeof cost === 'number') {
+      // price per new unit = price per old unit × (oz per new unit / oz per old unit)
+      cost = Math.round(cost * (WEIGHT_TO_OZ_NORM[to] / WEIGHT_TO_OZ_NORM[from]) * 10000) / 10000;
+      unit = g.unit;
+    } else if (from === to) {
+      unit = g.unit;
+    }
+    // Units that can't convert (e.g. Pizza Dough: global "each", parsed "oz")
+    // keep the parsed unit; the per-piece-weight work will close that gap.
+    out.set(finalKey, { ...ing, name: g.name, unit, estimated_unit_cost: cost, is_new: false });
+  }
+
+  // Rewrite every dish line to the final names, converting weight quantities
+  // when the unit changes, and taking the library entry's unit cost.
+  for (const dish of allDishes) {
+    for (const comp of dish.components || []) {
+      for (const line of comp.ingredients || []) {
+        const key = line.name.trim().toLowerCase();
+        const g = lookup.get(key);
+        const finalKey = g ? g.name.toLowerCase() : key;
+        const lib = out.get(finalKey);
+        if (!lib) continue;
+        line.name = lib.name;
+        const from = (line.unit || '').toLowerCase();
+        const to = (lib.unit || '').toLowerCase();
+        if (from !== to && WEIGHT_TO_OZ_NORM[from] && WEIGHT_TO_OZ_NORM[to]) {
+          line.quantity = Math.round(line.quantity * (WEIGHT_TO_OZ_NORM[from] / WEIGHT_TO_OZ_NORM[to]) * 10000) / 10000;
+          line.unit = lib.unit;
+        }
+        if (from === to || (WEIGHT_TO_OZ_NORM[from] && WEIGHT_TO_OZ_NORM[to])) {
+          line.estimated_unit_cost = lib.estimated_unit_cost;
+        }
+      }
+    }
+  }
+
+  console.log(`[normalize] ${matched} matched global names (${renamed} renamed), ${unmatched} new, ${out.size} final ingredients`);
+  return [...out.values()];
+}
+
 // ─── Validate and shape raw dishes from pass 2 ───────────────────────────────
 
 // Heuristic cheese keyword list — catches obvious component misclassifications
@@ -1592,7 +1673,7 @@ export default async function handler(req, res) {
   try {
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
-      .select('name, unit')
+      .select('name, unit, aliases')
       .order('name');
 
     if (dbError) {
@@ -1793,7 +1874,7 @@ export default async function handler(req, res) {
     // Canonicalize ingredient names across all chunks before saving.
     // Returns a cleaned map and rewrites dish component references in-place.
     const canonicalMap = canonicalizeIngredients(ingredientMap, allDishes);
-    const mergedIngredientLibrary = Object.values(canonicalMap);
+    const mergedIngredientLibrary = normalizeToGlobalNames(Object.values(canonicalMap), allDishes, globalIngredients);
 
     console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients (${rawIngredientLibrary.length} raw)`);
     const reviewMode = req.query.review === 'true';
