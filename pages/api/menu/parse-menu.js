@@ -1329,7 +1329,12 @@ function normalizeToGlobalNames(library, allDishes, globalIngredients) {
         const g = lookup.get(key);
         const finalKey = g ? g.name.toLowerCase() : key;
         const lib = out.get(finalKey);
-        if (!lib) continue;
+        if (!lib) {
+          // Pass 2 added this line without a library entry (e.g. "Dough").
+          // Still take the global name so it doesn't save as a duplicate.
+          if (g) line.name = g.name;
+          continue;
+        }
         line.name = lib.name;
         const from = (line.unit || '').toLowerCase();
         const to = (lib.unit || '').toLowerCase();
@@ -1395,7 +1400,7 @@ function validateDishes(rawDishes) {
 
         // Heuristic: warn if protein component ingredient doesn't match dish name variant
         // Only applies to variant dishes (name contains " - ")
-        if (d.name.includes(' - ')) {
+        if (d.name.includes(' - ') && (c.name === 'Protein' || c.name === 'Main Element')) {
           const variant = d.name.split(' - ').pop().toLowerCase();
           const proteinComp = (d.components || []).find(c => c.name === 'Protein' || c.name === 'Main Element');
           if (proteinComp) {
