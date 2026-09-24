@@ -932,7 +932,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
   const systemPrompt = [
     {
       type: 'text',
-      text: `You are a restaurant recipe builder. Your job is to produce accurate, cost-realistic recipes for restaurant dishes using only the provided ingredient library.
+      text: `You are a restaurant recipe builder. Your job is to produce accurate, portion-realistic recipes for restaurant dishes using only the provided ingredient library.
 
 You must follow every rule below exactly. A recipe that violates any rule is wrong even if it looks reasonable.`,
     },
@@ -1030,29 +1030,25 @@ DRESSING RULE:
 - Never substitute a generic "House Dressing" for a named dressing unless the menu explicitly says "house dressing"
 - If the correct dressing is not in the library, use the closest available match and add a substitution_note
 
-QUANTITY REALISM:
-- Use realistic per-serving kitchen quantities proportional to the dish's menu price and category
-- Higher priced entrees warrant larger protein portions than lower priced items
-- Use the dish description as the primary guide for quantities when specific amounts or sizes are mentioned
-- Garnishes, finishing herbs, and spices should always be small: 0.1–0.5 oz
-- Sauces and dressings: 1–3 oz typical
-- When no description is available, estimate conservatively — the cost guardrail below will catch quantities that are too large
-
-COST GUARDRAIL — mandatory:
-After building the recipe, calculate total estimated cost = sum of all (quantity × estimated_unit_cost) across every component and ingredient.
-If total cost exceeds 50% of menu price ($${dish.price ?? 'unknown'}), your quantities are too high.
-Scale ALL ingredient quantities down proportionally until total cost is at or below 50% of menu price.
-Never output a recipe where total estimated cost exceeds the menu price.
-If the guardrail cannot be satisfied without quantities becoming unrealistically small, flag it with ⚠️ after the JSON and note which ingredient is the likely culprit.
-
-Show your cost check after the JSON in this format:
-**Cost Check:** [ingredient]: [qty] × $[cost] = $[line total] | ... | **Total: $X.XX | 50% cap: $Y.YY | ✅ or ⚠️**
+PORTION NORMS — quantities come from standard kitchen portions, never from price:
+- If the menu or description states a size or count (e.g. "12 oz", "half-pound", "10 wings"), use it exactly
+- Burger patty: 5.3 oz (3:1) standard; 8 oz for a half-pound burger
+- Steaks: NY strip / ribeye 12–14 oz, filet 8 oz, skirt / steak tips 8–10 oz
+- Chicken breast entree: one 7–8 oz breast. Chicken on a sandwich, salad, or taco: 4–6 oz
+- Fish fillet entree: 6–8 oz. Shrimp entree: 6–8 oz. Shrimp or seafood appetizer: 3–4 oz
+- Wings: about 1 lb raw per order unless a piece count is stated
+- Dry pasta entree: 4–5 oz. Fresh or filled pasta (ravioli): 6–8 oz
+- 12-inch pizza or flatbread: dough 10–12 oz, sauce 3–4 oz, cheese 5–6 oz, toppings 2–4 oz total
+- Salad greens: 2–4 oz. Salad protein: 4–5 oz
+- Starch sides: fries 5–6 oz, rice or potatoes 5–6 oz
+- Sauces and dressings: 1–3 oz. Garnishes, herbs, and spices: 0.1–0.5 oz
+- Menu price is NOT a portion signal — do not shrink or enlarge portions to fit a price
 
 ════════════════════════════════════════
 OUTPUT FORMAT
 ════════════════════════════════════════
 
-Return a valid JSON object first, then the cost check. No other prose.
+Return only the JSON object. No other prose.
 
 {
   "name": string,
@@ -1326,32 +1322,13 @@ function validateDishes(rawDishes) {
         ? Math.round(d.price * 100) / 100
         : null;
 
-      // Auto-scale if cost exceeds 50% of menu price
-      let scaledComponents = components;
-      let scaledCost = totalEstimatedCost;
-
-      if (price && totalEstimatedCost > price * 0.50) {
-        const scaleFactor = (price * 0.50) / totalEstimatedCost;
-        console.warn(`[validate] Cost guardrail triggered for "${d.name}": $${totalEstimatedCost.toFixed(2)} > 50% of $${price} — scaling by ${scaleFactor.toFixed(3)}`);
-        
-        scaledComponents = components.map(comp => {
-          const scaledIngredients = comp.ingredients.map(ing => {
-            const newQty = Math.round(ing.quantity * scaleFactor * 10000) / 10000;
-            return {
-              ...ing,
-              quantity: newQty,
-              estimated_total_cost: Math.round(newQty * ing.estimated_unit_cost * 10000) / 10000,
-            };
-          });
-          const newCompCost = scaledIngredients.reduce((s, i) => s + i.estimated_total_cost, 0);
-          return {
-            ...comp,
-            ingredients: scaledIngredients,
-            component_cost: Math.round(newCompCost * 10000) / 10000,
-          };
-        });
-
-        scaledCost = scaledComponents.reduce((s, c) => s + c.component_cost, 0);
+      // No auto-scaling: quantities come from portion norms, never from price.
+      // Scaling against AI-guessed prices shrank real portions (Brisket x0.634)
+      // and pinned dishes at exactly 50% food cost in every run.
+      const scaledComponents = components;
+      const scaledCost = totalEstimatedCost;
+      if (price && totalEstimatedCost > price) {
+        console.warn(`[validate] Estimated cost exceeds price for "${d.name}": $${totalEstimatedCost.toFixed(2)} vs $${price} — flagged for review`);
       }
 
       const estimatedMargin = price && scaledCost > 0
