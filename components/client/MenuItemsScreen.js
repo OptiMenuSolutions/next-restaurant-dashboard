@@ -627,7 +627,7 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
                                 {i.unitMismatch && (
                                   <span style={{ letterSpacing: "0.06em", color: "var(--red)" }}>▲ unit mismatch — check pricing</span>
                                 )}
-                                {i.estimated && (
+                                {i.estimated && !i.unpriced && (
                                   <span style={{ letterSpacing: "0.06em", color: "var(--amber)" }}>▲ estimated price</span>
                                 )}
                                 {!i.estimated && i.costThen != null && Math.abs(im) > 0.005 && (
