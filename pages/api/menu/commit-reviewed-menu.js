@@ -104,7 +104,9 @@ export default async function handler(req, res) {
       unit: ing.unit,
       standard_unit: ing.unit,
       original_unit: ing.unit,
-      last_price: ing.estimated_unit_cost ?? null,
+      // 0 means "no price given" (e.g. Pizza Dough added by Pass 2 with no
+      // library cost) — save as unpriced, not as a real $0 cost.
+      last_price: Number(ing.estimated_unit_cost) > 0 ? Number(ing.estimated_unit_cost) : null,
       ingredient_category: 'weight',
       is_sample: false,
       is_estimated: true,
@@ -131,7 +133,9 @@ export default async function handler(req, res) {
             unit: ing.unit,
             standard_unit: ing.unit,
             original_unit: ing.unit,
-            last_price: ing.estimated_unit_cost ?? null,
+            // 0 means "no price given" (e.g. Pizza Dough added by Pass 2 with no
+            // library cost) — save as unpriced, not as a real $0 cost.
+            last_price: Number(ing.estimated_unit_cost) > 0 ? Number(ing.estimated_unit_cost) : null,
             ingredient_category: 'weight',
             is_sample: false,
             is_estimated: true,
