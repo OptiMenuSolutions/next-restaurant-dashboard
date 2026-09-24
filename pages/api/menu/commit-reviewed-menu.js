@@ -49,7 +49,34 @@ export default async function handler(req, res) {
 
   const ingredientIdMap = {};
 
-  const ingredientLookups = await Promise.all(ingredient_library.map(async (ing) => {
+  // Every ingredient a dish actually uses must get an ID. The parser's
+  // ingredient_library doesn't always contain them all — Pass 2 can name
+  // an ingredient its section's library didn't list, canonicalization can
+  // drop one, and ingredients typed in review or "Purchased as Finished
+  // Good" components never appear in it. Those lines used to be silently
+  // skipped (Baby Back Ribs saved with no ribs, pizzas with no dough).
+  const libraryByKey = new Map();
+  for (const ing of ingredient_library) {
+    const key = ing?.name?.trim().toLowerCase();
+    if (key) libraryByKey.set(key, ing);
+  }
+  for (const dish of dishes) {
+    for (const comp of dish.components || []) {
+      for (const ing of comp.ingredients || []) {
+        const key = ing?.name?.trim().toLowerCase();
+        if (key && !libraryByKey.has(key)) {
+          libraryByKey.set(key, {
+            name: ing.name.trim(),
+            unit: ing.unit || 'oz',
+            estimated_unit_cost: ing.estimated_unit_cost ?? null,
+          });
+        }
+      }
+    }
+  }
+  const fullLibrary = [...libraryByKey.values()];
+
+  const ingredientLookups = await Promise.all(fullLibrary.map(async (ing) => {
     const { data: existing } = await supabase
       .from('ingredients')
       .select('id')
@@ -256,6 +283,10 @@ export default async function handler(req, res) {
       }
     }));
   }));
+
+  if (results.errors.length) {
+    console.warn(`[commit-reviewed-menu] ${results.errors.length} error(s):`, results.errors);
+  }
 
   return res.status(200).json({
     success: true,

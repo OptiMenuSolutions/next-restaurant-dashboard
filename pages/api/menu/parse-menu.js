@@ -991,6 +991,7 @@ RULES
 LIBRARY FIDELITY:
 - Use ONLY ingredients from the library above
 - Copy name, unit, and estimated_unit_cost exactly — no synonyms, abbreviations, or alternate spellings
+- The quantity must be expressed in the library's unit for that ingredient. The portion norms below are written in oz — convert when the library unit is lb (16 oz = 1 lb): a 5.5 oz side of fries is 0.34 lb, 3 oz of greens is 0.19 lb. Never write an oz amount next to a lb unit.
 - The ingredient name in your output must match the library name character-for-character
 - If an ingredient from the dish description has no exact library match, use the closest match and add a "substitution_note" field on that ingredient explaining what was substituted and why
 - Never invent a cost — use the library cost exactly
@@ -1240,8 +1241,25 @@ function canonicalizeIngredients(ingredientMap, allDishes) {
         if (canonicalKey) {
           const canonicalEntry = canonicalMap[canonicalKey];
           ing.name = canonicalEntry.name;
-          ing.estimated_unit_cost = canonicalEntry.estimated_unit_cost;
-          ing.unit = canonicalEntry.unit;
+          const fromUnit = (ing.unit || '').toLowerCase();
+          const toUnit = (canonicalEntry.unit || '').toLowerCase();
+          if (!fromUnit || fromUnit === toUnit) {
+            ing.unit = canonicalEntry.unit;
+            ing.estimated_unit_cost = canonicalEntry.estimated_unit_cost;
+          } else {
+            // Units differ: convert the quantity instead of just swapping the
+            // label (which turned "1 each" into "1 oz"). If the units can't be
+            // converted (count vs weight), keep this line's own unit and cost —
+            // the costing layer handles the unit difference later.
+            const WEIGHT_TO_OZ = { oz: 1, lb: 16, g: 0.035274, kg: 35.274 };
+            const f = WEIGHT_TO_OZ[fromUnit];
+            const t = WEIGHT_TO_OZ[toUnit];
+            if (f && t) {
+              ing.quantity = Math.round((ing.quantity * f / t) * 10000) / 10000;
+              ing.unit = canonicalEntry.unit;
+              ing.estimated_unit_cost = canonicalEntry.estimated_unit_cost;
+            }
+          }
           rewriteCount++;
         }
       }
@@ -1272,6 +1290,9 @@ function validateDishes(rawDishes) {
         .filter(i => (typeof i.quantity === 'number' ? i.quantity : 0) > 0)
         .map(i => {
           const qty = i.quantity;
+          if ((i.unit || '').toLowerCase() === 'lb' && qty > 2) {
+            console.warn(`[validate] Suspicious quantity: "${i.name}" ${qty} lb in "${d.name}" — likely an oz amount with a lb unit`);
+          }
           const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
           return {
             name: i.name || 'Unknown',
