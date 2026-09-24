@@ -609,7 +609,6 @@ function safeParseJSON(text) {
 
   try {
     const result = JSON.parse(stripped);
-    console.log('[safeParseJSON] Parsed dish: ' + (result?.name || 'unknown'));
     return result;
   } catch {}
 
@@ -658,7 +657,6 @@ function safeParseJSON(text) {
         if (nameIdx !== -1 && componentsIdx !== -1) {
           const parsed = JSON.parse(stripped);
           if (parsed.name && parsed.components) {
-            console.log('[safeParseJSON] Parsed dish: ' + parsed.name);
             return parsed;
           }
         }
@@ -921,7 +919,6 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
     })
     .join('\n');
 
-  console.log(`[pass2] ingredient library sample:`, JSON.stringify(ingredientLibrary.slice(0, 3)));
   console.log(`[pass2] libraryRef: ${ingredientLibrary.length} ingredients, ${libraryRef.length} chars`);
 
   // Build a lightweight index of all dishes in this chunk for sibling context
@@ -1084,7 +1081,6 @@ Return only the JSON object. No other prose.
 
     console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
     const raw = response.content[0]?.text || '{}';
-    console.log(`[pass2] "${dish.name}" content[0] type: ${response.content[0]?.type} | raw length: ${raw.length}`);
 
     const parsed = safeParseJSON(raw);
     if (!parsed) console.warn(`[pass2] Failed to parse dish: ${dish.name}`);
@@ -1357,7 +1353,7 @@ function validateDishes(rawDishes) {
         : null;
 
       if (estimatedMargin !== null && estimatedMargin < 45) {
-        console.warn(`[validate] Low margin warning: "${d.name}" estimated margin ${estimatedMargin}% after scaling`);
+        console.warn(`[validate] Low margin warning: "${d.name}" estimated margin ${estimatedMargin}%`);
       }
 
       return {
