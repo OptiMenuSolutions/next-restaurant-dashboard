@@ -393,8 +393,13 @@ const CSS = `
   /* ── Commit screen ── */
   .prm-commit-screen {
     display: flex; flex-direction: column; align-items: center;
-    justify-content: center; flex: 1; padding: 48px 24px; text-align: center;
+    justify-content: flex-start; flex: 1; min-height: 0; overflow-y: auto;
+    padding: 32px 24px; text-align: center;
   }
+  /* Centered when there's room; scrolls from the top when there isn't
+     (plain center would clip the top and the Launch button). */
+  .prm-commit-screen > :first-child { margin-top: auto; }
+  .prm-commit-screen > :last-child { margin-bottom: auto; }
   .prm-commit-icon {
     width: 60px; height: 60px; border-radius: 50%;
     background: #eaf6ee; border: 1px solid #bfe4c9;
