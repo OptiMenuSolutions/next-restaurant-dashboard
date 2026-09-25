@@ -59,7 +59,7 @@ function toMarginHistory(rows, price) {
 }
 
 /** One menu_items row (with nested recipe) -> screen dish. */
-function toDish(row, costHistory, covers) {
+function toDish(row, costHistory, covers, opts = {}) {
   const price = num(row.price);
 
   const components = (row.menu_item_components || []).map((c) => ({
@@ -68,7 +68,7 @@ function toDish(row, costHistory, covers) {
       const g = ci.ingredients || {};
       // Only invoice prices and admin-approved estimates are shown to the
       // restaurant. Raw AI guesses from the menu parse count as unpriced.
-      const priced = g.is_estimated === false || !!g.price_approved_at;
+      const priced = opts.trustPrices || g.is_estimated === false || !!g.price_approved_at;
       const unitPrice = priced ? num(g.last_price) : 0;
       const recipeUnit = ci.unit || g.unit || "ea";
       const ingredientUnit = g.unit || recipeUnit;
@@ -96,7 +96,7 @@ function toDish(row, costHistory, covers) {
   /* Dishes recorded the old way — a flat menu_item_ingredients list. */
   const flat = (row.menu_item_ingredients || []).map((mi) => {
     const g = mi.ingredients || {};
-    const priced = g.is_estimated === false || !!g.price_approved_at;
+    const priced = opts.trustPrices || g.is_estimated === false || !!g.price_approved_at;
     const unitPrice = priced ? num(g.last_price) : 0;
     const recipeUnit = g.unit || "ea";
     const ingredientUnit = g.unit || recipeUnit;
@@ -234,7 +234,7 @@ export default function MenuItemsPage() {
         // category and real cover counts still come through correctly.
         setItems(
           (sample.menuItems || []).map((m) =>
-            toDish(m, [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0)
+            toDish(m, [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0, { trustPrices: true })
           )
         );
         return;
