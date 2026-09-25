@@ -254,6 +254,7 @@ export default async function handler(req, res) {
 
     results.menu_items_created++;
     createdIds.push(menuItem.id);
+    let dishFailed = false;
 
     await Promise.all((dish.components || []).map(async (comp) => {
       const compCost = (comp.ingredients || []).reduce((s, i) => {
@@ -271,6 +272,7 @@ export default async function handler(req, res) {
         .single();
 
       if (compError) {
+        dishFailed = true;
         results.errors.push(`Component "${comp.name}" on "${dish.name}": ${compError.message}`);
         return;
       }
@@ -283,6 +285,7 @@ export default async function handler(req, res) {
         const ingredientId = ingredientIdMap[normalizedName];
 
         if (!ingredientId) {
+          dishFailed = true;
           results.errors.push(`No ingredient ID for "${ing.name}" on "${comp.name}"`);
           continue;
         }
@@ -300,10 +303,26 @@ export default async function handler(req, res) {
           .from('component_ingredients')
           .insert(ciRows);
         if (ciError) {
+          dishFailed = true;
           results.errors.push(`component_ingredients for "${comp.name}" on "${dish.name}": ${ciError.message}`);
         }
       }
     }));
+
+    // All-or-nothing per dish: a dish missing a component or its ingredient
+    // rows would silently under-cost. Remove it entirely and report it.
+    if (dishFailed) {
+      const { data: comps } = await supabase
+        .from('menu_item_components').select('id').eq('menu_item_id', menuItem.id);
+      const compIds = (comps || []).map(c => c.id);
+      if (compIds.length) await supabase.from('component_ingredients').delete().in('component_id', compIds);
+      await supabase.from('menu_item_components').delete().eq('menu_item_id', menuItem.id);
+      await supabase.from('menu_items').delete().eq('id', menuItem.id);
+      results.menu_items_created--;
+      const idx = createdIds.indexOf(menuItem.id);
+      if (idx >= 0) createdIds.splice(idx, 1);
+      results.failed_dishes = [...(results.failed_dishes || []), dish.name];
+    }
   }));
 
   // ── Launch a new menu: update kept dishes, archive dropped ones ─────────

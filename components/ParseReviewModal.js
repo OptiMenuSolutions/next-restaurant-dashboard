@@ -1081,6 +1081,10 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
         );
       }
 
+      const failed = data.save_results?.failed_dishes || [];
+      if (failed.length) {
+        window.alert(`Your menu was saved, but ${failed.length} dish${failed.length === 1 ? '' : 'es'} could not be saved and ${failed.length === 1 ? 'was' : 'were'} left out: ${failed.join(', ')}. You can upload the menu again to add ${failed.length === 1 ? 'it' : 'them'}.`);
+      }
       onCommitted(data);
     } catch (err) {
       setCommitError(err.message);
