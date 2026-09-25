@@ -315,6 +315,17 @@ export default async function handler(req, res) {
       // cause a dish the restaurant kept to be archived below.
       keepIds.add(u.id);
       const patch = { archived_at: null };
+
+      // A user-confirmed possible match keeps the saved database ID and
+      // every related recipe/history record, but adopts the newly parsed
+      // menu name.
+      if (
+        typeof u.name === "string" &&
+        u.name.trim()
+      ) {
+        patch.name = u.name.trim();
+      }
+
       if (u.price != null) patch.price = u.price;
       if (u.category) { patch.category = u.category; patch.category_id = categoryIdMap[u.category] ?? null; }
       if (u.description != null) patch.description = u.description;

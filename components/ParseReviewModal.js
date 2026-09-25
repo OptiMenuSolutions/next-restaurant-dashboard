@@ -109,6 +109,85 @@ const CSS = `
     margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
   }
 
+  /* Possible saved-menu match */
+  .prm-match-card {
+    background: #f7f8f8;
+    border: 1px solid var(--line, #d8dfe0);
+    border-radius: 9px;
+    padding: 14px;
+    margin-bottom: 18px;
+  }
+
+  .prm-match-card.matched {
+    background: #eaf6ee;
+    border-color: #bfe4c9;
+  }
+
+  .prm-match-card.new {
+    background: #e8f7f9;
+    border-color: #bfe8ec;
+  }
+
+  .prm-match-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-deep, #03808f);
+    margin-bottom: 9px;
+  }
+
+  .prm-match-row {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 10px;
+    font-size: 12.5px;
+    padding: 3px 0;
+    align-items: start;
+  }
+
+  .prm-match-row-label {
+    color: var(--muted, #4b585b);
+  }
+
+  .prm-match-row-value {
+    color: var(--text, #111819);
+    font-weight: 700;
+  }
+
+  .prm-match-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+  }
+
+  .prm-match-select {
+    width: 100%;
+    margin-top: 10px;
+    background: #fff;
+    border: 1px solid var(--line, #d8dfe0);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 12px;
+    color: var(--text, #111819);
+    outline: none;
+  }
+
+  .prm-match-select:focus {
+    border-color: var(--accent, #02a4ba);
+  }
+
+  .prm-match-note {
+    margin-top: 9px;
+    font-size: 11.5px;
+    color: var(--muted, #4b585b);
+    line-height: 1.5;
+  }
+
   /* ── Component block ── */
   .prm-comp {
     background: var(--shell, #fff); border: 1px solid var(--line, #d8dfe0);
@@ -376,6 +455,28 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   // unitWarnings: set of keys `${dishIdx}-${ci}-${ii}` where unit conversion wasn't possible
   const [unitWarnings, setUnitWarnings] = useState(new Set());
 
+  const possibleMatchesByDish =
+    updateSummary?.possibleMatches || {};
+
+  const matchableExisting =
+    updateSummary?.matchableExisting || [];
+
+  const [matchDecisions, setMatchDecisions] = useState(() => {
+    const initial = {};
+
+    for (const [dishKey, candidates] of Object.entries(
+      updateSummary?.possibleMatches || {}
+    )) {
+      initial[dishKey] = {
+        status: "pending",
+        selectedId: candidates?.[0]?.id || "",
+        choosingAnother: false,
+      };
+    }
+
+    return initial;
+  });
+
   const allConfirmed = confirmed.every(Boolean);
   const sidebarCategories = [...new Set(dishes.map(d => d.category))];
 
@@ -407,6 +508,210 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   const unconfirm = useCallback((idx) => {
     setConfirmed(prev => { const n = [...prev]; n[idx] = false; return n; });
   }, []);
+
+  function getMatchReview(dish) {
+    const key = dish?._menuUpdateKey;
+    const candidates = key
+      ? possibleMatchesByDish[key]
+      : null;
+
+    if (
+      !key ||
+      !Array.isArray(candidates) ||
+      candidates.length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      key,
+      candidates,
+      decision: matchDecisions[key],
+    };
+  }
+
+  function getSavedDish(id) {
+    return matchableExisting.find(
+      (menuItem) => menuItem.id === id
+    );
+  }
+
+  function matchIdInUse(id, exceptDishKey = null) {
+    return Object.entries(matchDecisions).some(
+      ([dishKey, decision]) =>
+        dishKey !== exceptDishKey &&
+        decision.status === "matched" &&
+        decision.selectedId === id
+    );
+  }
+
+  function advanceAfterConfirmation() {
+    if (current < dishes.length - 1) {
+      setCurrent((value) => value + 1);
+      setAcSearch({});
+      setAcOpen({});
+    }
+  }
+
+  function confirmSameDish() {
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+    const selectedId = review?.decision?.selectedId;
+
+    if (!review || !selectedId) return;
+
+    if (matchIdInUse(selectedId, review.key)) return;
+
+    setMatchDecisions((previous) => ({
+      ...previous,
+      [review.key]: {
+        ...previous[review.key],
+        status: "matched",
+        choosingAnother: false,
+      },
+    }));
+
+    setConfirmed((previous) => {
+      const next = [...previous];
+      next[current] = true;
+      return next;
+    });
+
+    advanceAfterConfirmation();
+  }
+
+  function keepAsNewDish() {
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+
+    if (!review) return;
+
+    setMatchDecisions((previous) => ({
+      ...previous,
+      [review.key]: {
+        ...previous[review.key],
+        status: "new",
+        choosingAnother: false,
+      },
+    }));
+
+    // It is now a genuinely new dish, so its parsed recipe still needs the
+    // normal recipe confirmation.
+    unconfirm(current);
+  }
+
+  function reconsiderMatch() {
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+
+    if (!review) return;
+
+    setMatchDecisions((previous) => ({
+      ...previous,
+      [review.key]: {
+        ...previous[review.key],
+        status: "pending",
+        choosingAnother: false,
+      },
+    }));
+
+    unconfirm(current);
+  }
+
+  function chooseAnotherMatch() {
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+
+    if (!review) return;
+
+    setMatchDecisions((previous) => ({
+      ...previous,
+      [review.key]: {
+        ...previous[review.key],
+        choosingAnother: true,
+      },
+    }));
+  }
+
+  function selectPossibleMatch(savedDishId) {
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+
+    if (!review) return;
+
+    setMatchDecisions((previous) => ({
+      ...previous,
+      [review.key]: {
+        ...previous[review.key],
+        selectedId: savedDishId,
+        status: "pending",
+      },
+    }));
+
+    unconfirm(current);
+  }
+
+  function getResolvedUpdateState() {
+    const exactMatches = updateSummary?.matched || [];
+    const confirmedSimilarMatches = [];
+    const matchedDishKeys = new Set();
+    const matchedSavedIds = new Set();
+
+    for (const dish of dishes) {
+      const dishKey = dish?._menuUpdateKey;
+      const decision = dishKey
+        ? matchDecisions[dishKey]
+        : null;
+
+      if (
+        !dishKey ||
+        decision?.status !== "matched" ||
+        !decision.selectedId
+      ) {
+        continue;
+      }
+
+      const savedDish = getSavedDish(decision.selectedId);
+      if (!savedDish) continue;
+
+      matchedDishKeys.add(dishKey);
+      matchedSavedIds.add(savedDish.id);
+
+      confirmedSimilarMatches.push({
+        id: savedDish.id,
+        oldName: savedDish.name,
+        name: dish.name,
+        oldPrice: savedDish.price,
+        price: dish.price ?? savedDish.price,
+        category:
+          dish.category ||
+          savedDish.category ||
+          null,
+        description:
+          dish.description ??
+          savedDish.description ??
+          null,
+        restored: Boolean(savedDish.archived_at),
+        renamed: savedDish.name !== dish.name,
+      });
+    }
+
+    return {
+      matched: [
+        ...exactMatches,
+        ...confirmedSimilarMatches,
+      ],
+
+      newDishes: dishes.filter(
+        (dish) =>
+          !matchedDishKeys.has(dish?._menuUpdateKey)
+      ),
+
+      toArchive: (updateSummary?.toArchive || []).filter(
+        (menuItem) => !matchedSavedIds.has(menuItem.id)
+      ),
+    };
+  }
 
   function updateCategory(val) {
     setDishes(prev => { const d = deepClone(prev); d[current].category = val; return d; });
@@ -539,35 +844,116 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   // ── Confirm / commit ──────────────────────────────────────────────────────
 
   function confirmDish() {
-    setConfirmed(prev => { const n = [...prev]; n[current] = true; return n; });
-    if (current < dishes.length - 1) { setCurrent(c => c + 1); setAcSearch({}); setAcOpen({}); }
+    const dish = dishes[current];
+    const review = getMatchReview(dish);
+
+    // A suggested match must be resolved before normal recipe
+    // confirmation can continue.
+    if (
+      review &&
+      (!review.decision ||
+        review.decision.status === "pending")
+    ) {
+      return;
+    }
+
+    setConfirmed((previous) => {
+      const next = [...previous];
+      next[current] = true;
+      return next;
+    });
+
+    advanceAfterConfirmation();
   }
 
   function removeDish() {
-    setDishes(prev => prev.filter((_, i) => i !== current));
-    setConfirmed(prev => prev.filter((_, i) => i !== current));
+    const removedDishKey =
+      dishes[current]?._menuUpdateKey;
+
+    setDishes((previous) =>
+      previous.filter((_, index) => index !== current)
+    );
+
+    setConfirmed((previous) =>
+      previous.filter((_, index) => index !== current)
+    );
+
+    if (removedDishKey) {
+      setMatchDecisions((previous) => {
+        const next = { ...previous };
+        delete next[removedDishKey];
+        return next;
+      });
+    }
+
     setAcSearch({});
     setAcOpen({});
-    setCurrent(c => Math.max(0, Math.min(c, dishes.length - 2)));
-    if (dishes.length <= 1) setView('commit');
+
+    setCurrent((value) =>
+      Math.max(
+        0,
+        Math.min(value, dishes.length - 2)
+      )
+    );
+
+    if (dishes.length <= 1) {
+      setView("commit");
+    }
   }
 
   async function handleCommit() {
-    setCommitting(true); setCommitError('');
+    setCommitting(true);
+    setCommitError("");
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch('/api/menu/commit-reviewed-menu', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({
-          restaurant_id: restaurantId,
-          dishes,
-          ingredient_library: ingredientLibrary,
-          ...(mode === 'update' ? { mode: 'update', updates: updateSummary?.matched || [] } : {}),
-        }),
-      });
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const resolvedUpdate =
+        mode === "update"
+          ? getResolvedUpdateState()
+          : null;
+
+      const res = await fetch(
+        "/api/menu/commit-reviewed-menu",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization:
+              `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            restaurant_id: restaurantId,
+
+            // Confirmed matches preserve their saved records and therefore
+            // must not also be inserted as new menu items.
+            dishes:
+              mode === "update"
+                ? resolvedUpdate.newDishes
+                : dishes,
+
+            ingredient_library: ingredientLibrary,
+
+            ...(mode === "update"
+              ? {
+                  mode: "update",
+                  updates: resolvedUpdate.matched,
+                }
+              : {}),
+          }),
+        }
+      );
+
       const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Commit failed');
+
+      if (!res.ok || !data.success) {
+        throw new Error(
+          data.error || "Commit failed"
+        );
+      }
+
       onCommitted(data);
     } catch (err) {
       setCommitError(err.message);
@@ -581,8 +967,198 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     const dish = dishes[current];
     if (!dish) return null;
 
+    const matchReview = getMatchReview(dish);
+    const matchDecision = matchReview?.decision;
+
+    const selectedSavedDish = matchDecision?.selectedId
+      ? getSavedDish(matchDecision.selectedId)
+      : null;
+
+    const selectedMatchUnavailable =
+      selectedSavedDish &&
+      matchIdInUse(
+        selectedSavedDish.id,
+        matchReview?.key
+      );
+
     return (
       <>
+        {mode === "update" &&
+          matchReview &&
+          matchDecision?.status === "pending" && (
+            <div className="prm-match-card">
+              <div className="prm-match-label">
+                Possible existing match
+              </div>
+
+              <div className="prm-match-row">
+                <span className="prm-match-row-label">
+                  New menu
+                </span>
+                <span className="prm-match-row-value">
+                  {dish.name}
+                </span>
+              </div>
+
+              <div className="prm-match-row">
+                <span className="prm-match-row-label">
+                  Saved menu
+                </span>
+                <span className="prm-match-row-value">
+                  {selectedSavedDish?.name ||
+                    "Choose a saved dish"}
+                </span>
+              </div>
+
+              {matchDecision.choosingAnother && (
+                <select
+                  className="prm-match-select"
+                  value={matchDecision.selectedId}
+                  onChange={(event) =>
+                    selectPossibleMatch(
+                      event.target.value
+                    )
+                  }
+                >
+                  <option value="">
+                    Choose a saved menu item
+                  </option>
+
+                  {matchableExisting.map(
+                    (savedDish) => {
+                      const unavailable =
+                        matchIdInUse(
+                          savedDish.id,
+                          matchReview.key
+                        );
+
+                      return (
+                        <option
+                          key={savedDish.id}
+                          value={savedDish.id}
+                          disabled={unavailable}
+                        >
+                          {savedDish.name}
+                          {savedDish.archived_at
+                            ? " — archived"
+                            : ""}
+                        </option>
+                      );
+                    }
+                  )}
+                </select>
+              )}
+
+              <div className="prm-match-actions">
+                <button
+                  type="button"
+                  className="prm-btn prm-btn-confirm"
+                  onClick={confirmSameDish}
+                  disabled={
+                    !selectedSavedDish ||
+                    selectedMatchUnavailable
+                  }
+                >
+                  Confirm same dish
+                </button>
+
+                <button
+                  type="button"
+                  className="prm-btn prm-btn-ghost"
+                  onClick={keepAsNewDish}
+                >
+                  Keep as new dish
+                </button>
+
+                <button
+                  type="button"
+                  className="prm-btn prm-btn-ghost"
+                  onClick={chooseAnotherMatch}
+                >
+                  Choose another match
+                </button>
+              </div>
+
+              {selectedMatchUnavailable && (
+                <div className="prm-match-note">
+                  That saved dish has already been
+                  matched to another item.
+                </div>
+              )}
+            </div>
+          )}
+
+        {mode === "update" &&
+          matchReview &&
+          matchDecision?.status === "matched" && (
+            <div className="prm-match-card matched">
+              <div className="prm-match-label">
+                Confirmed as the same dish
+              </div>
+
+              <div className="prm-match-row">
+                <span className="prm-match-row-label">
+                  Saved name
+                </span>
+                <span className="prm-match-row-value">
+                  {selectedSavedDish?.name}
+                </span>
+              </div>
+
+              <div className="prm-match-row">
+                <span className="prm-match-row-label">
+                  New name
+                </span>
+                <span className="prm-match-row-value">
+                  {dish.name}
+                </span>
+              </div>
+
+              <div className="prm-match-note">
+                The saved ID, recipe, cost history, and
+                sales history will be preserved. Its name,
+                price, category, and description will be
+                updated.
+              </div>
+
+              <div className="prm-match-actions">
+                <button
+                  type="button"
+                  className="prm-btn prm-btn-ghost"
+                  onClick={reconsiderMatch}
+                >
+                  Change decision
+                </button>
+              </div>
+            </div>
+          )}
+
+        {mode === "update" &&
+          matchReview &&
+          matchDecision?.status === "new" && (
+            <div className="prm-match-card new">
+              <div className="prm-match-label">
+                Confirmed as a new dish
+              </div>
+
+              <div className="prm-match-note">
+                This dish will be created separately. The
+                saved dish’s existing keep or archive
+                treatment is unchanged.
+              </div>
+
+              <div className="prm-match-actions">
+                <button
+                  type="button"
+                  className="prm-btn prm-btn-ghost"
+                  onClick={reconsiderMatch}
+                >
+                  Change decision
+                </button>
+              </div>
+            </div>
+          )}
+
         <div className="prm-dish-hd">
           <div className="prm-dish-title">{dish.name}</div>
           <div className="prm-dish-meta">
@@ -742,10 +1318,31 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
       <div className="prm-commit-screen">
         <div className="prm-commit-icon">✓</div>
         {mode === 'update' ? (() => {
-          const matched = updateSummary?.matched || [];
-          const archived = updateSummary?.toArchive || [];
-          const repriced = matched.filter(m => m.oldPrice != null && m.price != null && Number(m.oldPrice) !== Number(m.price));
-          const restored = matched.filter(m => m.restored);
+          const resolvedUpdate =
+            getResolvedUpdateState();
+
+          const matched = resolvedUpdate.matched;
+          const archived = resolvedUpdate.toArchive;
+          const newDishes = resolvedUpdate.newDishes;
+
+          const repriced = matched.filter(
+            (menuItem) =>
+              menuItem.oldPrice != null &&
+              menuItem.price != null &&
+              Number(menuItem.oldPrice) !==
+                Number(menuItem.price)
+          );
+
+          const restored = matched.filter(
+            (menuItem) => menuItem.restored
+          );
+
+          const renamed = matched.filter(
+            (menuItem) =>
+              menuItem.oldName &&
+              menuItem.name &&
+              menuItem.oldName !== menuItem.name
+          );
           return (
             <>
               <div className="prm-commit-title">Ready to launch your new menu</div>
@@ -758,7 +1355,25 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                 {restored.length > 0 && (
                   <div className="prm-summary-row"><span className="lbl">Brought back</span><span className="val">{restored.length}</span></div>
                 )}
-                <div className="prm-summary-row"><span className="lbl">New dishes</span><span className="val">{dishes.length}</span></div>
+                {renamed.length > 0 && (
+                  <div className="prm-summary-row">
+                    <span className="lbl">
+                      Names updated
+                    </span>
+                    <span className="val">
+                      {renamed.length}
+                    </span>
+                  </div>
+                )}
+
+                <div className="prm-summary-row">
+                  <span className="lbl">
+                    New dishes
+                  </span>
+                  <span className="val">
+                    {newDishes.length}
+                  </span>
+                </div>
                 <div className="prm-summary-row"><span className="lbl">Archived</span><span className={`val${archived.length ? ' warn' : ''}`}>{archived.length}</span></div>
               </div>
               {archived.length > 0 && (
@@ -800,8 +1415,23 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   // ── Shell ─────────────────────────────────────────────────────────────────
 
-  const confirmedCount = confirmed.filter(Boolean).length;
-  const pct = dishes.length ? Math.round((confirmedCount / dishes.length) * 100) : 100;
+  const confirmedCount =
+    confirmed.filter(Boolean).length;
+
+  const pct = dishes.length
+    ? Math.round(
+        (confirmedCount / dishes.length) * 100
+      )
+    : 100;
+
+  const currentMatchReview =
+    getMatchReview(dishes[current]);
+
+  const currentMatchPending =
+    Boolean(currentMatchReview) &&
+    (!currentMatchReview.decision ||
+      currentMatchReview.decision.status ===
+        "pending");
 
   return (
     <>
@@ -833,10 +1463,25 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                       <button className="prm-btn prm-btn-ghost" onClick={() => { setCurrent(c => c + 1); setAcSearch({}); setAcOpen({}); }} disabled={current === dishes.length - 1}>Next →</button>
                       <button className="prm-btn prm-btn-ghost" style={{ color: '#c4473e', borderColor: '#f0c9c4' }} onClick={removeDish}>Remove dish</button>
                     </div>
-                    {confirmed[current]
-                      ? <div className="prm-confirmed-tag">✓ Confirmed</div>
-                      : <button className="prm-btn prm-btn-confirm" onClick={confirmDish}>Confirm dish →</button>
-                    }
+                    {currentMatchPending ? (
+                      <button
+                        className="prm-btn prm-btn-confirm"
+                        disabled
+                      >
+                        Resolve possible match
+                      </button>
+                    ) : confirmed[current] ? (
+                      <div className="prm-confirmed-tag">
+                        ✓ Confirmed
+                      </div>
+                    ) : (
+                      <button
+                        className="prm-btn prm-btn-confirm"
+                        onClick={confirmDish}
+                      >
+                        Confirm dish →
+                      </button>
+                    )}
                     <button className="prm-btn prm-btn-commit" onClick={() => setView('commit')} disabled={!allConfirmed}>
                       {allConfirmed ? 'Review & Commit →' : `${confirmedCount}/${dishes.length} confirmed`}
                     </button>

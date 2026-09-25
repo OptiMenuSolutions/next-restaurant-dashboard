@@ -302,7 +302,12 @@ export default function ProfilePage() {
           mode="update"
           dishes={menuUpdate.newDishes}
           ingredientLibrary={menuUpdate.ingredientLibrary}
-          updateSummary={{ matched: menuUpdate.matched, toArchive: menuUpdate.toArchive }}
+          updateSummary={{
+            matched: menuUpdate.matched,
+            toArchive: menuUpdate.toArchive,
+            possibleMatches: menuUpdate.possibleMatches,
+            matchableExisting: menuUpdate.matchableExisting,
+          }}
           restaurantId={restaurantId}
           onCommitted={() => { setMenuUpdate(null); router.push("/client/menu-items"); }}
           onClose={() => setMenuUpdate(null)}
