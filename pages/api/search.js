@@ -42,7 +42,7 @@ export default async function handler(req, res) {
         .limit(8),
       supabase
         .from('ingredients')
-        .select('id, name, unit, last_price')
+        .select('id, name, unit, last_price, is_estimated, price_approved_at')
         .eq('restaurant_id', restaurantId)
         .ilike('name', like)
         .order('name')
@@ -52,14 +52,24 @@ export default async function handler(req, res) {
         .select('id, name, category, price')
         .eq('restaurant_id', restaurantId)
         .is('archived_at', null)
+        .is('archived_at', null)
         .ilike('name', like)
         .order('name')
         .limit(8),
     ]);
 
+    // Only invoice prices and admin-approved estimates are shown to the
+    // restaurant. Raw AI guesses from the menu parse go out as no price.
+    const visibleIngredients = (ingredients || []).map((g) => ({
+      id: g.id,
+      name: g.name,
+      unit: g.unit,
+      last_price: g.is_estimated === false || g.price_approved_at ? g.last_price : null,
+    }));
+
     return res.status(200).json({
       invoices: invoices || [],
-      ingredients: ingredients || [],
+      ingredients: visibleIngredients,
       menuItems: menuItems || [],
     });
   } catch (err) {
