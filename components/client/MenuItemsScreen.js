@@ -291,7 +291,7 @@ export default function MenuItemsScreen({
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                           <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.category}</span>
-                          {d.estShare > 0.15 && (
+                          {!d.awaiting && d.estShare > 0.15 && (
                             <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
                           )}
                         </div>
@@ -329,7 +329,7 @@ export default function MenuItemsScreen({
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                             <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
-                            {d.estShare > 0.15 && (
+                            {!d.awaiting && d.estShare > 0.15 && (
                               <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 10, padding: "1px 5px", flexShrink: 0 }}>Est</span>
                             )}
                           </div>
@@ -531,19 +531,21 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
 
         <div style={{ flexShrink: 0 }}>
           <div style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
-          <div style={{ fontSize: 16, fontWeight: 500, letterSpacing: "0.02em", lineHeight: 1.25, marginTop: 5, textWrap: "pretty" }}>{d.name}</div>
+          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.02em", lineHeight: 1.25, marginTop: 5, textWrap: "pretty" }}>{d.name}</div>
           {d.covers > 0 && (
             <div style={{ fontSize: 8.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)", marginTop: 3 }}>Serves {d.covers}</div>
           )}
         </div>
 
         <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "14px 0 0" }} />
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginTop: 11, flexShrink: 0 }}>
-          <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)" }}>Recipe</span>
-          <span style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", columnGap: 12, rowGap: 6, marginTop: 11, flexShrink: 0 }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
+            <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)" }}>Recipe</span>
             <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.components.length} components · {d.lineCount} ingredients</span>
+          </span>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 12, marginLeft: "auto" }}>
             {isExploring && (
-              <button type="button" onClick={() => setWhatIfQty({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "#96690a" }}>
+              <button type="button" onClick={() => setWhatIfQty({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "#96690a" }}>
                 reset
               </button>
             )}
@@ -551,10 +553,10 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
               const next = { ...prev };
               d.components.forEach((c) => { next[d.id + "|" + c.name] = !anyOpen; });
               return next;
-            })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-soft)" }}>
+            })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-soft)" }}>
               {anyOpen ? "collapse all" : "expand all"}
             </button>
-            <button type="button" onClick={() => setEditMode((v) => !v)} style={{ background: "none", border: "none", borderBottom: editMode ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: editMode ? "var(--ink)" : "var(--ink-soft)" }}>
+            <button type="button" onClick={() => setEditMode((v) => !v)} style={{ background: "none", border: "none", borderBottom: editMode ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: editMode ? "var(--ink)" : "var(--ink-soft)" }}>
               {editMode ? "done editing" : "edit portions"}
             </button>
           </span>
