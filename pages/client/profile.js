@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import ProfileScreen from "../../components/client/ProfileScreen";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import { parseMenuFiles, splitForMenuUpdate } from "../../lib/parseMenu";
+import ParseReviewModal from "../../components/ParseReviewModal";
 
 /**
  * pages/client/profile.js — data container.
@@ -35,6 +37,20 @@ export default function ProfilePage() {
   const [targetFoodCost, setTargetFoodCost] = useState(30);
   const [notifPrefs, setNotifPrefs] = useState({ weekly: true, priceAlert: true, lowMargin: false });
   const [freezeSettings, setFreezeSettings] = useState({ beef: false, poultry: false, pork: false, seafood: false, bakery: false });
+
+  // Launch a new menu
+  const menuFileInput = useRef(null);
+  const [menuParsing, setMenuParsing] = useState(false);
+  const [menuError, setMenuError] = useState("");
+  const [menuUpdate, setMenuUpdate] = useState(null); // { newDishes, matched, toArchive, ingredientLibrary }
+
+  // Warn before closing the tab mid-parse or mid-review (nothing is saved until launch).
+  useEffect(() => {
+    if (!menuParsing && !menuUpdate) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [menuParsing, menuUpdate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -166,6 +182,23 @@ export default function ProfilePage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleNewMenuFiles = async (files) => {
+    if (!files || !files.length || !restaurantId) return;
+    setMenuError("");
+    setMenuParsing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const parsed = await parseMenuFiles(files, restaurantId, session?.access_token);
+      const split = await splitForMenuUpdate(parsed.dishes, restaurantId);
+      setMenuUpdate({ ...split, ingredientLibrary: parsed.ingredientLibrary });
+    } catch (err) {
+      console.error("[profile] New menu parse failed:", err);
+      setMenuError(err.message);
+    } finally {
+      setMenuParsing(false);
+    }
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push("/client/login");
@@ -206,12 +239,52 @@ export default function ProfilePage() {
         onExportData={exportData}
         onDeleteAccount={deactivateAccount}
         onSendFeedback={sendFeedback}
+        onLaunchNewMenu={() => menuFileInput.current && menuFileInput.current.click()}
+        launchingMenu={menuParsing}
         onRestartTour={() => {
           try { localStorage.removeItem("optimenu_tour_done"); sessionStorage.removeItem("optimenu_tour_step"); } catch {}
           router.push("/client/dashboard?tour=true");
         }}
         onSignOut={signOut}
       />
+
+      <input
+        ref={menuFileInput}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png,.webp"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => { handleNewMenuFiles(e.target.files); e.target.value = ""; }}
+      />
+
+      {menuParsing && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "#fff", border: "1px solid #d8dfe0", borderRadius: 14, padding: "32px 36px", textAlign: "center", maxWidth: 360, fontFamily: "'Manrope',sans-serif" }}>
+            <div style={{ width: 32, height: 32, border: "3px solid #d8dfe0", borderTopColor: "#02a4ba", borderRadius: "50%", margin: "0 auto 18px", animation: "spin 0.8s linear infinite" }} />
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#111819", marginBottom: 6 }}>Reading your new menu...</div>
+            <div style={{ fontSize: 12.5, color: "#4b585b", lineHeight: 1.5 }}>This can take a few minutes for a full menu. Don't close this tab.</div>
+          </div>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {menuError && (
+        <div onClick={() => setMenuError("")} style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)", cursor: "pointer" }}>
+          <div style={{ fontWeight: 700 }}>{menuError}</div>
+        </div>
+      )}
+
+      {menuUpdate && (
+        <ParseReviewModal
+          mode="update"
+          dishes={menuUpdate.newDishes}
+          ingredientLibrary={menuUpdate.ingredientLibrary}
+          updateSummary={{ matched: menuUpdate.matched, toArchive: menuUpdate.toArchive }}
+          restaurantId={restaurantId}
+          onCommitted={() => { setMenuUpdate(null); router.push("/client/menu-items"); }}
+          onClose={() => setMenuUpdate(null)}
+        />
+      )}
     </>
   );
 }

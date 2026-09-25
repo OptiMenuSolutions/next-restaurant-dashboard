@@ -362,11 +362,11 @@ function convertUnitCost(oldUnit, newUnit, oldCost) {
   return { newCost: oldCost, converted: false };
 }
 
-export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary, restaurantId, onCommitted, onClose }) {
+export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary, restaurantId, onCommitted, onClose, mode = 'create', updateSummary = null }) {
   const [dishes, setDishes] = useState(() => deepClone(rawDishes));
   const [confirmed, setConfirmed] = useState(() => new Array(rawDishes.length).fill(false));
   const [current, setCurrent] = useState(0);
-  const [view, setView] = useState('review');
+  const [view, setView] = useState(() => (rawDishes.length ? 'review' : 'commit'));
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState('');
   const [acSearch, setAcSearch] = useState({});
@@ -548,7 +548,8 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     setConfirmed(prev => prev.filter((_, i) => i !== current));
     setAcSearch({});
     setAcOpen({});
-    setCurrent(c => Math.min(c, dishes.length - 2));
+    setCurrent(c => Math.max(0, Math.min(c, dishes.length - 2)));
+    if (dishes.length <= 1) setView('commit');
   }
 
   async function handleCommit() {
@@ -558,7 +559,12 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
       const res = await fetch('/api/menu/commit-reviewed-menu', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ restaurant_id: restaurantId, dishes, ingredient_library: ingredientLibrary }),
+        body: JSON.stringify({
+          restaurant_id: restaurantId,
+          dishes,
+          ingredient_library: ingredientLibrary,
+          ...(mode === 'update' ? { mode: 'update', updates: updateSummary?.matched || [] } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Commit failed');
@@ -573,6 +579,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
 
   function renderDish() {
     const dish = dishes[current];
+    if (!dish) return null;
 
     return (
       <>
@@ -734,23 +741,57 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     return (
       <div className="prm-commit-screen">
         <div className="prm-commit-icon">✓</div>
-        <div className="prm-commit-title">All dishes reviewed</div>
-        <div className="prm-commit-sub">
-          Review the summary below, then commit to your database.<br />
-          This writes all dishes, components, and ingredients to Supabase.
-        </div>
-        <div className="prm-commit-summary">
-          <div className="prm-summary-row"><span className="lbl">Dishes</span><span className="val">{dishes.length}</span></div>
-          <div className="prm-summary-row"><span className="lbl">Components</span><span className="val">{totalComps}</span></div>
-          <div className="prm-summary-row"><span className="lbl">Ingredients</span><span className="val">{totalIngs}</span></div>
-        </div>
+        {mode === 'update' ? (() => {
+          const matched = updateSummary?.matched || [];
+          const archived = updateSummary?.toArchive || [];
+          const repriced = matched.filter(m => m.oldPrice != null && m.price != null && Number(m.oldPrice) !== Number(m.price));
+          const restored = matched.filter(m => m.restored);
+          return (
+            <>
+              <div className="prm-commit-title">Ready to launch your new menu</div>
+              <div className="prm-commit-sub">
+                Dishes you kept hold on to their recipes and history. Archived dishes are hidden, not deleted, and come back automatically if they return on a future menu.
+              </div>
+              <div className="prm-commit-summary">
+                <div className="prm-summary-row"><span className="lbl">Dishes kept</span><span className="val">{matched.length}</span></div>
+                <div className="prm-summary-row"><span className="lbl">Prices updated</span><span className="val">{repriced.length}</span></div>
+                {restored.length > 0 && (
+                  <div className="prm-summary-row"><span className="lbl">Brought back</span><span className="val">{restored.length}</span></div>
+                )}
+                <div className="prm-summary-row"><span className="lbl">New dishes</span><span className="val">{dishes.length}</span></div>
+                <div className="prm-summary-row"><span className="lbl">Archived</span><span className={`val${archived.length ? ' warn' : ''}`}>{archived.length}</span></div>
+              </div>
+              {archived.length > 0 && (
+                <div className="prm-commit-summary" style={{ maxHeight: 150, overflowY: 'auto' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 6 }}>Not on the new menu, so these will be archived:</div>
+                  {archived.map(a => (
+                    <div key={a.id} style={{ fontSize: 12.5, padding: '2px 0', color: 'var(--text, #111819)' }}>{a.name}</div>
+                  ))}
+                </div>
+              )}
+            </>
+          );
+        })() : (
+          <>
+            <div className="prm-commit-title">All dishes reviewed</div>
+            <div className="prm-commit-sub">
+              Review the summary below, then commit to your database.<br />
+              This writes all dishes, components, and ingredients to Supabase.
+            </div>
+            <div className="prm-commit-summary">
+              <div className="prm-summary-row"><span className="lbl">Dishes</span><span className="val">{dishes.length}</span></div>
+              <div className="prm-summary-row"><span className="lbl">Components</span><span className="val">{totalComps}</span></div>
+              <div className="prm-summary-row"><span className="lbl">Ingredients</span><span className="val">{totalIngs}</span></div>
+            </div>
+          </>
+        )}
         {commitError && <div className="prm-commit-err">⚠ {commitError}</div>}
         <button className="prm-btn prm-btn-confirm" style={{ fontSize: 14, padding: '11px 32px' }}
           onClick={handleCommit} disabled={committing}>
-          {committing ? <><span className="prm-spinner" />Saving...</> : 'Save to Menu'}
+          {committing ? <><span className="prm-spinner" />Saving...</> : (mode === 'update' ? 'Launch new menu' : 'Save to Menu')}
         </button>
         <button className="prm-btn prm-btn-ghost" style={{ marginTop: 10 }}
-          onClick={() => setView('review')} disabled={committing}>
+          onClick={() => setView('review')} disabled={committing || dishes.length === 0}>
           ← Back to review
         </button>
       </div>
@@ -760,7 +801,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   // ── Shell ─────────────────────────────────────────────────────────────────
 
   const confirmedCount = confirmed.filter(Boolean).length;
-  const pct = Math.round((confirmedCount / dishes.length) * 100);
+  const pct = dishes.length ? Math.round((confirmedCount / dishes.length) * 100) : 100;
 
   return (
     <>

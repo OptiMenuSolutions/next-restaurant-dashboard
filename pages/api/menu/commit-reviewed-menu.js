@@ -24,10 +24,13 @@ const supabase = createClient(
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { restaurant_id, dishes, ingredient_library } = req.body;
+  const { restaurant_id, dishes, ingredient_library, mode, updates } = req.body;
+  // "update" = Launch a new menu from Profile: keep matched dishes, add new
+  // ones, archive the rest. Anything else = first-time upload (unchanged).
+  const isUpdate = mode === 'update';
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
-  if (!Array.isArray(dishes) || dishes.length === 0) return res.status(400).json({ error: 'dishes array is required' });
+  if (!Array.isArray(dishes) || (dishes.length === 0 && !isUpdate)) return res.status(400).json({ error: 'dishes array is required' });
   if (!Array.isArray(ingredient_library)) return res.status(400).json({ error: 'ingredient_library is required' });
 
   // Verify the calling user owns this restaurant
@@ -40,6 +43,8 @@ export default async function handler(req, res) {
     ingredients_created: 0,
     ingredients_reused: 0,
     components_created: 0,
+    menu_items_updated: 0,
+    menu_items_archived: 0,
     errors: [],
   };
 
@@ -56,9 +61,18 @@ export default async function handler(req, res) {
   // Good" components never appear in it. Those lines used to be silently
   // skipped (Baby Back Ribs saved with no ribs, pizzas with no dough).
   const libraryByKey = new Map();
+  const usedKeys = new Set();
+  for (const dish of dishes) {
+    for (const comp of dish.components || []) {
+      for (const ing of comp.ingredients || []) {
+        const k = ing?.name?.trim().toLowerCase();
+        if (k) usedKeys.add(k);
+      }
+    }
+  }
   for (const ing of ingredient_library) {
     const key = ing?.name?.trim().toLowerCase();
-    if (key) libraryByKey.set(key, ing);
+    if (key && (!isUpdate || usedKeys.has(key))) libraryByKey.set(key, ing);
   }
   for (const dish of dishes) {
     for (const comp of dish.components || []) {
@@ -162,7 +176,9 @@ export default async function handler(req, res) {
   // independent of each other.
 
   const categoryIdMap = {};
-  const uniqueCategories = [...new Set(dishes.map(d => d.category).filter(Boolean))];
+  const uniqueCategories = [...new Set(
+    [...dishes, ...(isUpdate && Array.isArray(updates) ? updates : [])].map(d => d.category).filter(Boolean)
+  )];
 
   const categoryLookups = await Promise.all(uniqueCategories.map(async (catName) => {
     const { data: existingCat } = await supabase
@@ -208,6 +224,7 @@ export default async function handler(req, res) {
   // batch-inserted in a single query since nothing needs to match them
   // back individually afterward.
 
+  const createdIds = [];
   await Promise.all(dishes.map(async (dish) => {
     const totalCost = (dish.components || []).reduce((sum, comp) => {
       return sum + (comp.ingredients || []).reduce((s, i) => {
@@ -236,6 +253,7 @@ export default async function handler(req, res) {
     }
 
     results.menu_items_created++;
+    createdIds.push(menuItem.id);
 
     await Promise.all((dish.components || []).map(async (comp) => {
       const compCost = (comp.ingredients || []).reduce((s, i) => {
@@ -287,6 +305,49 @@ export default async function handler(req, res) {
       }
     }));
   }));
+
+  // ── Launch a new menu: update kept dishes, archive dropped ones ─────────
+  if (isUpdate) {
+    const keepIds = new Set(createdIds);
+    await Promise.all((Array.isArray(updates) ? updates : []).map(async (u) => {
+      if (!u?.id) return;
+      // Mark as kept before updating: a failed price update must never
+      // cause a dish the restaurant kept to be archived below.
+      keepIds.add(u.id);
+      const patch = { archived_at: null };
+      if (u.price != null) patch.price = u.price;
+      if (u.category) { patch.category = u.category; patch.category_id = categoryIdMap[u.category] ?? null; }
+      if (u.description != null) patch.description = u.description;
+      const { error: upErr } = await supabase
+        .from('menu_items')
+        .update(patch)
+        .eq('id', u.id)
+        .eq('restaurant_id', restaurant_id);
+      if (upErr) { results.errors.push(`Update "${u.name || u.id}": ${upErr.message}`); return; }
+      results.menu_items_updated++;
+    }));
+
+    // Archive every active dish that was neither kept nor just created.
+    const { data: active, error: activeErr } = await supabase
+      .from('menu_items')
+      .select('id')
+      .eq('restaurant_id', restaurant_id)
+      .is('archived_at', null);
+    if (activeErr) {
+      results.errors.push(`Archive lookup: ${activeErr.message}`);
+    } else {
+      const toArchive = (active || []).map(r => r.id).filter(id => !keepIds.has(id));
+      if (toArchive.length) {
+        const { error: archErr } = await supabase
+          .from('menu_items')
+          .update({ archived_at: new Date().toISOString() })
+          .in('id', toArchive)
+          .eq('restaurant_id', restaurant_id);
+        if (archErr) results.errors.push(`Archive: ${archErr.message}`);
+        else results.menu_items_archived = toArchive.length;
+      }
+    }
+  }
 
   if (results.errors.length) {
     console.warn(`[commit-reviewed-menu] ${results.errors.length} error(s):`, results.errors);
