@@ -400,6 +400,24 @@ const CSS = `
      (plain center would clip the top and the Launch button). */
   .prm-commit-screen > :first-child { margin-top: auto; }
   .prm-commit-screen > :last-child { margin-bottom: auto; }
+  /* Never squeeze a card or list; the screen scrolls instead. */
+  .prm-commit-screen > * { flex-shrink: 0; }
+
+  /* Launch summary: compact count grid */
+  .prm-stat-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    width: 100%; max-width: 420px; margin-bottom: 16px;
+  }
+  .prm-stat {
+    background: #f7f8f8; border: 1px solid var(--line, #d8dfe0);
+    border-radius: 8px; padding: 9px 11px; text-align: left;
+  }
+  .prm-stat-lbl {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted, #4b585b);
+  }
+  .prm-stat-val { font-size: 18px; font-weight: 800; color: var(--text, #111819); margin-top: 3px; }
+  .prm-stat-val.warn { color: #c4473e; }
   .prm-commit-icon {
     width: 60px; height: 60px; border-radius: 50%;
     background: #eaf6ee; border: 1px solid #bfe4c9;
@@ -1412,32 +1430,20 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
               <div className="prm-commit-sub">
                 Dishes you kept hold on to their recipes and history. Archived dishes are hidden, not deleted, and come back automatically if they return on a future menu.
               </div>
-              <div className="prm-commit-summary">
-                <div className="prm-summary-row"><span className="lbl">Dishes kept</span><span className="val">{matched.length}</span></div>
-                <div className="prm-summary-row"><span className="lbl">Prices updated</span><span className="val">{repriced.length}</span></div>
-                {restored.length > 0 && (
-                  <div className="prm-summary-row"><span className="lbl">Brought back</span><span className="val">{restored.length}</span></div>
-                )}
-                {renamed.length > 0 && (
-                  <div className="prm-summary-row">
-                    <span className="lbl">
-                      Names updated
-                    </span>
-                    <span className="val">
-                      {renamed.length}
-                    </span>
+              <div className="prm-stat-grid">
+                {[
+                  ['Kept', matched.length],
+                  ['Prices updated', repriced.length],
+                  ['Brought back', restored.length],
+                  ['Renamed', renamed.length],
+                  ['New', newDishes.length],
+                  ['Archived', archived.length, archived.length > 0],
+                ].map(([label, value, warn]) => (
+                  <div key={label} className="prm-stat">
+                    <div className="prm-stat-lbl">{label}</div>
+                    <div className={`prm-stat-val${warn ? ' warn' : ''}`}>{value}</div>
                   </div>
-                )}
-
-                <div className="prm-summary-row">
-                  <span className="lbl">
-                    New dishes
-                  </span>
-                  <span className="val">
-                    {newDishes.length}
-                  </span>
-                </div>
-                <div className="prm-summary-row"><span className="lbl">Archived</span><span className={`val${archived.length ? ' warn' : ''}`}>{archived.length}</span></div>
+                ))}
               </div>
               {(restored.length > 0 || renamed.length > 0) && (
                 <div className="prm-commit-summary" style={{ maxHeight: 160, overflowY: 'auto' }}>
