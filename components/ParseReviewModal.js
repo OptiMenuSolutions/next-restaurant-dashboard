@@ -414,7 +414,13 @@ const CSS = `
   }
 
   /* Same scrollbar as the rest of the app: 4px, rounded thumb, no arrows */
-  .prm-list-scroll, .prm-commit-screen { scrollbar-gutter: stable; }
+  .prm-list-scroll, .prm-commit-screen {
+    scrollbar-gutter: stable;
+    /* Chrome ignores ::-webkit-scrollbar styles if either of these is set
+       anywhere (e.g. a global rule), and draws the default bar with arrows. */
+    scrollbar-width: auto !important;
+    scrollbar-color: auto !important;
+  }
   .prm-list-scroll::-webkit-scrollbar,
   .prm-commit-screen::-webkit-scrollbar { width: 4px; height: 4px; }
   .prm-list-scroll::-webkit-scrollbar-thumb,
@@ -1487,7 +1493,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
               )}
 
               {resolvedUpdate.archiveCandidates.length > 0 && (
-                <div className="prm-commit-summary" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                <div className="prm-commit-summary prm-list-scroll" style={{ maxHeight: 200, overflowY: 'auto' }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>
                     Not found on the new menu
                   </div>
