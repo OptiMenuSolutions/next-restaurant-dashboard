@@ -170,6 +170,8 @@ export default function MenuItemsPage() {
   const [menuParsing, setMenuParsing] = useState(false);
   const [menuParseError, setMenuParseError] = useState("");
   const [reviewData, setReviewData] = useState(null); // { dishes, ingredientLibrary } | null
+  const [reviewChoice, setReviewChoice] = useState(null); // null | 'self' | 'team-done'
+  const [teamHandoffSaving, setTeamHandoffSaving] = useState(false);
 
   // Same risk as onboarding's menu step, actually worse here — this page
   // has a full always-visible nav bar (Dashboard, Invoices, Ingredients,
@@ -209,6 +211,7 @@ export default function MenuItemsPage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const result = await parseMenuFiles(fileList, restaurantId, session?.access_token);
+      setReviewChoice(null);
       setReviewData(result);
     } catch (err) {
       console.error("[menu-items] Menu parse failed:", err);
@@ -216,6 +219,41 @@ export default function MenuItemsPage() {
     } finally {
       setMenuParsing(false);
     }
+  }
+
+  // Same hand-off as onboarding: save the parsed draft as-is, and record
+  // that the restaurant asked OptiMenu to review it with their kitchen.
+  async function handOffMenuToTeam() {
+    setTeamHandoffSaving(true);
+    setMenuParseError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/menu/commit-reviewed-menu", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({
+          restaurant_id: restaurantId,
+          dishes: reviewData.dishes,
+          ingredient_library: reviewData.ingredientLibrary,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Could not save your menu.");
+      await supabase.from("restaurants").update({ menu_review_requested_at: new Date().toISOString() }).eq("id", restaurantId);
+      setReviewChoice("team-done");
+    } catch (err) {
+      console.error("[menu-items] Team hand-off save failed:", err);
+      setMenuParseError(err.message);
+      setReviewChoice(null);
+    } finally {
+      setTeamHandoffSaving(false);
+    }
+  }
+
+  async function finishTeamHandoff() {
+    setReviewData(null);
+    setReviewChoice(null);
+    await load(restaurantId);
   }
 
   const load = useCallback(async (restaurantId) => {
@@ -407,16 +445,72 @@ export default function MenuItemsPage() {
         </div>
       )}
 
-      {reviewData && (
+      {reviewData && !reviewChoice && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 460, background: "var(--shell,#fff)", border: "1px solid var(--line,#d8dfe0)", borderRadius: 14, boxShadow: "0 24px 60px rgba(17,24,25,0.25)", padding: "26px 28px", fontFamily: "'Manrope',sans-serif" }}>
+            <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep,#03808f)", marginBottom: 8 }}>
+              {reviewData.dishes.length} dishes found
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text,#111819)", marginBottom: 10, lineHeight: 1.35 }}>
+              How do you want these recipes reviewed?
+            </div>
+            <div style={{ fontSize: 13.5, color: "var(--muted,#4b585b)", lineHeight: 1.55, marginBottom: 22 }}>
+              We've drafted a first-pass recipe for every dish. You can go through and correct them yourself now, or skip that and have an OptiMenu team member work through them with someone in your kitchen.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setReviewChoice("self")}
+                disabled={teamHandoffSaving}
+                style={{ padding: "13px 16px", borderRadius: 10, border: "1px solid var(--line,#d8dfe0)", background: "none", color: "var(--text,#111819)", fontSize: 13.5, fontWeight: 700, cursor: teamHandoffSaving ? "default" : "pointer", textAlign: "left", opacity: teamHandoffSaving ? 0.5 : 1 }}
+              >
+                I'll review it myself now
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--muted,#4b585b)", marginTop: 3 }}>Go through each dish and correct anything that's off.</div>
+              </button>
+              <button
+                type="button"
+                onClick={handOffMenuToTeam}
+                disabled={teamHandoffSaving}
+                style={{ padding: "13px 16px", borderRadius: 10, border: "none", background: "var(--accent,#02a4ba)", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: teamHandoffSaving ? "default" : "pointer", textAlign: "left", opacity: teamHandoffSaving ? 0.7 : 1 }}
+              >
+                {teamHandoffSaving ? "Saving..." : "Let OptiMenu handle it with your kitchen staff"}
+                <div style={{ fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.85)", marginTop: 3 }}>We'll reach out to review these with your kitchen team.</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewData && reviewChoice === "team-done" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(17,24,25,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ width: "100%", maxWidth: 420, background: "var(--shell,#fff)", border: "1px solid var(--line,#d8dfe0)", borderRadius: 14, boxShadow: "0 24px 60px rgba(17,24,25,0.25)", padding: "28px", fontFamily: "'Manrope',sans-serif", textAlign: "center" }}>
+            <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#eaf6ee", border: "1px solid #bfe4c9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 20 }}>✓</div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: "var(--text,#111819)", marginBottom: 10 }}>You're all set</div>
+            <div style={{ fontSize: 13.5, color: "var(--muted,#4b585b)", lineHeight: 1.6, marginBottom: 24 }}>
+              A representative will reach out in the coming days to review your menu with your kitchen team.
+            </div>
+            <button
+              type="button"
+              onClick={finishTeamHandoff}
+              style={{ width: "100%", padding: "12px 16px", borderRadius: 10, border: "none", background: "var(--accent,#02a4ba)", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reviewData && reviewChoice === "self" && (
         <ParseReviewModal
           dishes={reviewData.dishes}
           ingredientLibrary={reviewData.ingredientLibrary}
           restaurantId={restaurantId}
           onCommitted={async () => {
             setReviewData(null);
+            setReviewChoice(null);
             await load(restaurantId);
           }}
-          onClose={() => setReviewData(null)}
+          onClose={() => { setReviewData(null); setReviewChoice(null); }}
         />
       )}
     </>

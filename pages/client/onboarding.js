@@ -127,6 +127,7 @@ export default function OnboardingPage() {
       // wizard only advances once they've actively acknowledged it via
       // the "Continue" button below, not silently the moment saving
       // finishes.
+      await supabase.from("restaurants").update({ menu_review_requested_at: new Date().toISOString() }).eq("id", restaurantId);
       setMenuReviewChoice("team-done");
     } catch (err) {
       console.error("[onboarding] Team hand-off save failed:", err);
