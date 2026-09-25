@@ -381,7 +381,13 @@ export default function MenuItemsPage() {
         accept=".pdf,.jpg,.jpeg,.png,.webp"
         multiple
         style={{ display: "none" }}
-        onChange={(e) => { handleMenuFiles(e.target.files); e.target.value = ""; }}
+        onChange={(e) => {
+          // Copy the files first: clearing the input empties the browser's
+          // live FileList, and handleMenuFiles reads it after an await.
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          handleMenuFiles(files);
+        }}
       />
 
       {menuParsing && (
