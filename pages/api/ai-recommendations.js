@@ -320,6 +320,7 @@ If fewer than 3 dishes show a margin, fill the remaining picks by waste urgency,
 
 RULE 5 — PRICING HONESTY
 Never state a margin %, margin per cover, food cost, or dollar profit for a dish marked "margin not yet known", and never describe such a dish as "high margin", "top margin", "best margin", "most profitable", or similar. Explain those picks by waste, sales, rotation, or variety instead, and do not use type "margin" for them. Dollar values shown for EXPIRING ingredients come from real invoices and may be cited.
+A dish marked "no POS data" has UNKNOWN sales. Never say it is unsold, has zero or few sales, is overlooked, or "isn't moving" — only describe sales using the "sold N last 7d" figures actually shown.
 
 RULE 6 — ROTATION
 Any dish appearing in the last 3 nights is ineligible unless forced by Rule 1. If forced, explain in reason_selected.
@@ -334,7 +335,7 @@ ${expiringLines}
 ━━━ MENU ━━━
 ${menuLines}
 
-${!hasPOS ? 'Note: No POS data available — base popularity judgment on margin value and waste context only.' : ''}
+${!hasPOS ? 'Note: No POS data is connected yet — sales for every dish are UNKNOWN, not zero. Base picks on waste context, known margins (if any), rotation, and variety.' : ''}
 
 ━━━ RESPONSE FORMAT ━━━
 Return ONLY valid JSON, no markdown, no commentary:
