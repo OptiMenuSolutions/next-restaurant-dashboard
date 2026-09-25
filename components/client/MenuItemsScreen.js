@@ -298,7 +298,7 @@ export default function MenuItemsScreen({
                         <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, textWrap: "pretty", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{d.name}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{money2(d.price)} menu · {d.awaiting ? "cost pending" : `${money2(d.cost)} cost`}</div>
+                        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.awaiting ? `${money2(d.price)} menu` : `${money2(d.price)} menu · ${money2(d.cost)} cost`}</div>
                         {d.awaiting ? (
                           <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Awaiting pricing</div>
                         ) : (
@@ -357,7 +357,7 @@ export default function MenuItemsScreen({
               <span>{countLabel}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span>{belowTarget.length} below {pct(tgt)}</span>
-                <span>Menu average {pct(avgMargin)}</span>
+                <span>Menu average {priced.length ? pct(avgMargin) : "—"}</span>
               </span>
             </div>
           </div>

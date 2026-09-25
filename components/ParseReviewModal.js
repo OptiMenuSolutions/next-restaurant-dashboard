@@ -1527,8 +1527,8 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           <>
             <div className="prm-commit-title">All dishes reviewed</div>
             <div className="prm-commit-sub">
-              Review the summary below, then commit to your database.<br />
-              This writes all dishes, components, and ingredients to Supabase.
+              Everything looks good. Save your menu to start tracking plate <br />
+              costs as your invoices come in.
             </div>
             <div className="prm-commit-summary">
               <div className="prm-summary-row"><span className="lbl">Dishes</span><span className="val">{dishes.length}</span></div>
