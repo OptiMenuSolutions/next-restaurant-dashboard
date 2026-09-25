@@ -255,6 +255,7 @@ export default function MenuItemsPage() {
           menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at))
         `)
         .eq("restaurant_id", restaurantId)
+        .is("archived_at", null)
         .order("name")
         .limit(500),
       supabase

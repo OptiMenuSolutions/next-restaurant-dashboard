@@ -135,6 +135,7 @@ async function loadRestaurantContext(restaurantId) {
         )
       `)
       .eq('restaurant_id', restaurantId)
+      .is('archived_at', null)
       .not('price', 'is', null)
       .limit(200),
 

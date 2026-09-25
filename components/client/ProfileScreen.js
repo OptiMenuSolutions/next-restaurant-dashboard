@@ -29,7 +29,7 @@ export default function ProfileScreen({
   freezeSettings: freezeSettingsProp = { beef: false, poultry: false, pork: false, seafood: false, bakery: false },
   onSaveName, onSaveRestaurant, onSaveFoodCost, onSaveFreezeSetting, onSavePassword,
   onToggleNotif, onExportData, onDeleteAccount, onSendFeedback, onRestartTour,
-  onSignOut, NavLink, initialTab = "account",
+  onSignOut, NavLink, initialTab = "account", onLaunchNewMenu, launchingMenu = false,
 }) {
   const { header, theme } = useAccountChrome({ user, NavLink, onSignOut });
 
@@ -297,6 +297,19 @@ export default function ProfileScreen({
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "restaurant" && onLaunchNewMenu && (
+            <div style={{ ...card, marginBottom: 20 }}>
+              <div style={cardHead}>Menu</div>
+              <div onClick={() => { if (!launchingMenu) onLaunchNewMenu(); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", cursor: launchingMenu ? "default" : "pointer" }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{launchingMenu ? "Reading your menu…" : "Launch a new menu"}</div>
+                  <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2, lineHeight: 1.5 }}>Upload your updated menu. Dishes you keep hold on to their history and recipes, prices update, new dishes come to you for review, and dishes you've dropped are archived.</div>
+                </div>
+                <div style={{ color: "var(--faint)", flexShrink: 0 }}>→</div>
               </div>
             </div>
           )}
