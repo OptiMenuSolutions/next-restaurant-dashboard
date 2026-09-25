@@ -405,13 +405,22 @@ const CSS = `
 
   /* Brought back / Not found lists: side by side, or one centered */
   .prm-lists-row {
-    display: flex; gap: 12px; width: 100%; max-width: 640px;
+    display: flex; gap: 14px; width: 100%; max-width: 820px;
     justify-content: center; align-items: flex-start; margin-bottom: 20px;
   }
   .prm-lists-row:empty { display: none; }
   .prm-lists-row > .prm-commit-summary {
-    flex: 1 1 0; min-width: 0; max-width: 380px; margin-bottom: 0;
+    flex: 1 1 0; min-width: 0; max-width: 400px; margin-bottom: 0;
   }
+
+  /* Same scrollbar as the rest of the app: 4px, rounded thumb, no arrows */
+  .prm-list-scroll, .prm-commit-screen { scrollbar-gutter: stable; }
+  .prm-list-scroll::-webkit-scrollbar,
+  .prm-commit-screen::-webkit-scrollbar { width: 4px; height: 4px; }
+  .prm-list-scroll::-webkit-scrollbar-thumb,
+  .prm-commit-screen::-webkit-scrollbar-thumb { background: var(--line, #d8dfe0); border-radius: 3px; }
+  .prm-list-scroll::-webkit-scrollbar-track,
+  .prm-commit-screen::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
 
   /* Launch summary: compact count grid */
   .prm-stat-grid {
@@ -1457,7 +1466,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
               </div>
               <div className="prm-lists-row">
               {(restored.length > 0 || renamed.length > 0) && (
-                <div className="prm-commit-summary" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                <div className="prm-commit-summary prm-list-scroll" style={{ maxHeight: 200, overflowY: 'auto' }}>
                   {restored.length > 0 && (
                     <>
                       <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>Brought back</div>
@@ -1574,7 +1583,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           </div>
 
           <div className="prm-body">
-            <div className="prm-sidebar">{renderSidebar()}</div>
+            {view !== 'commit' && <div className="prm-sidebar">{renderSidebar()}</div>}
             <div className="prm-main">
               {view === 'commit' ? renderCommitScreen() : (
                 <>
@@ -1586,7 +1595,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                       <button className="prm-btn prm-btn-ghost" style={{ color: '#c4473e', borderColor: '#f0c9c4' }} onClick={removeDish}>Remove dish</button>
                     </div>
                     {currentMatchPending ? (
-                      <div className="prm-match-hint">↑ Choose an option in the match card above</div>
+                      <div className="prm-match-hint">↑ Resolve the match above</div>
                     ) : confirmed[current] ? (
                       <div className="prm-confirmed-tag">
                         ✓ Confirmed
