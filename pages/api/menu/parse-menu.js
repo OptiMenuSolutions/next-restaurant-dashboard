@@ -1618,7 +1618,17 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-async function downloadToTempFile(fileUrl, fileName) {
+async function downloadToTempFile(fileUrl, fileName, restaurantId) {
+  // Only fetch this restaurant's own files from our Supabase Storage. The
+  // URL comes from the client, so an unchecked fetch would let anyone make
+  // this server request arbitrary addresses (server-side request forgery).
+  let u;
+  try { u = new URL(fileUrl); } catch { throw new Error(`Invalid file URL for "${fileName}".`); }
+  const allowedHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host;
+  const allowedPrefix = `/storage/v1/object/public/menus/${restaurantId}/`;
+  if (u.protocol !== 'https:' || u.host !== allowedHost || !u.pathname.startsWith(allowedPrefix)) {
+    throw new Error(`File "${fileName}" is not from this restaurant's uploads.`);
+  }
   const fileRes = await fetch(fileUrl);
   if (!fileRes.ok) throw new Error(`Could not download "${fileName}" (${fileRes.status}).`);
   const buffer = Buffer.from(await fileRes.arrayBuffer());
@@ -1690,7 +1700,7 @@ export default async function handler(req, res) {
     // consumes {filepath, originalFilename, mimetype} the same way it
     // always did, regardless of where that file actually came from.
     for (const f of fileRefs) {
-      fileList.push(await downloadToTempFile(f.file_url, f.file_name));
+      fileList.push(await downloadToTempFile(f.file_url, f.file_name, restaurantId));
     }
 
     console.log(`[parse-menu] Restaurant: ${restaurantId} | Files: ${fileList.length} | Mistral key: ${process.env.MISTRAL_API_KEY ? 'SET' : 'MISSING'}`);
