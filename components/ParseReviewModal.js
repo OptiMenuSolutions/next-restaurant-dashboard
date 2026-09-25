@@ -188,6 +188,31 @@ const CSS = `
     line-height: 1.5;
   }
 
+  .prm-match-hint {
+    font-size: 12px; font-weight: 600; color: var(--muted, #4b585b); white-space: nowrap;
+  }
+
+  /* Keep / Archive toggle on the launch summary */
+  .prm-archive-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 7px 0; border-bottom: 1px solid var(--line, #d8dfe0);
+  }
+  .prm-archive-row:last-child { border-bottom: none; }
+  .prm-archive-name { font-size: 12.5px; font-weight: 600; color: var(--text, #111819); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prm-seg {
+    display: inline-flex; gap: 2px; padding: 2px; flex-shrink: 0;
+    background: #fff; border: 1px solid var(--line, #d8dfe0); border-radius: 20px;
+  }
+  .prm-seg-btn {
+    border: none; background: transparent; cursor: pointer;
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; font-weight: 600;
+    letter-spacing: .08em; text-transform: uppercase; color: #a7b0b1;
+    padding: 4px 11px; border-radius: 16px; transition: all .15s;
+  }
+  .prm-seg-btn:hover { color: var(--text, #111819); }
+  .prm-seg-btn.keep { background: #eaf6ee; color: #227a41; }
+  .prm-seg-btn.archive { background: #faeae8; color: #c4473e; }
+
   /* ── Component block ── */
   .prm-comp {
     background: var(--shell, #fff); border: 1px solid var(--line, #d8dfe0);
@@ -1414,19 +1439,25 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>
                     Not found on the new menu
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted, #4b585b)', marginBottom: 8, lineHeight: 1.5 }}>
-                    Checked dishes will be archived. Uncheck any dish that is still on your menu.
+                  <div style={{ fontSize: 11.5, color: 'var(--muted, #4b585b)', marginBottom: 6, lineHeight: 1.5 }}>
+                    Choose Keep for any dish that is still on your menu. Archived dishes are hidden from your menu, not deleted.
                   </div>
                   {resolvedUpdate.archiveCandidates.map((a) => {
                     const willArchive = !keepFromArchive.has(a.id);
                     return (
-                      <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '3px 0', cursor: 'pointer', color: willArchive ? 'var(--text, #111819)' : 'var(--muted, #4b585b)' }}>
-                        <input type="checkbox" checked={willArchive} onChange={() => toggleKeepFromArchive(a.id)} />
-                        <span>{a.name}</span>
-                        {!willArchive && (
-                          <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', color: '#2f8a4e' }}>KEEP</span>
-                        )}
-                      </label>
+                      <div key={a.id} className="prm-archive-row">
+                        <span className="prm-archive-name">{a.name}</span>
+                        <div className="prm-seg">
+                          <button type="button" className={`prm-seg-btn${!willArchive ? ' keep' : ''}`}
+                            onClick={() => { if (willArchive) toggleKeepFromArchive(a.id); }}>
+                            Keep
+                          </button>
+                          <button type="button" className={`prm-seg-btn${willArchive ? ' archive' : ''}`}
+                            onClick={() => { if (!willArchive) toggleKeepFromArchive(a.id); }}>
+                            Archive
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -1511,12 +1542,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                       <button className="prm-btn prm-btn-ghost" style={{ color: '#c4473e', borderColor: '#f0c9c4' }} onClick={removeDish}>Remove dish</button>
                     </div>
                     {currentMatchPending ? (
-                      <button
-                        className="prm-btn prm-btn-confirm"
-                        disabled
-                      >
-                        Resolve possible match
-                      </button>
+                      <div className="prm-match-hint">↑ Choose an option in the match card above</div>
                     ) : confirmed[current] ? (
                       <div className="prm-confirmed-tag">
                         ✓ Confirmed
