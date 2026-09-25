@@ -252,7 +252,7 @@ export default function IngredientsScreen({
                       )}
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}>/{g.unit}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}>{g.awaiting ? "" : `/${g.unit}`}</div>
                     <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, textAlign: "right", whiteSpace: "nowrap", color: pctColor(g.pct) }}>{pctLabel(g.pct)}</div>
                   </div>
                 );
@@ -262,7 +262,7 @@ export default function IngredientsScreen({
               <span>{countLabel}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ color: "var(--red)" }}>{monthMoved} of {all.length} up</span>
-                <span>{priced.length} priced from invoices · {all.length - priced.length} estimated</span>
+                <span>{priced.length} priced from invoices · {all.filter((g) => g.awaiting).length} awaiting price</span>
               </span>
             </div>
           </div>
@@ -311,7 +311,7 @@ function Summary({ all, risers, fallers, unpriced, override, onPick, onNeedsPric
   const stats = [
     { label: "Rising", value: String(risers.length), color: "var(--red)", note: "up since last month" },
     { label: "Falling", value: String(fallers.length), color: "var(--green)", note: "down since last month" },
-    { label: "Basket drift", value: (basketDrift >= 0 ? "+" : "−") + Math.abs(basketDrift).toFixed(1) + "%", color: basketDrift > 1.5 ? "var(--red)" : "var(--text)", note: "average across the list" },
+    { label: "Basket drift", value: drifted.length ? (basketDrift >= 0 ? "+" : "−") + Math.abs(basketDrift).toFixed(1) + "%" : "—", color: drifted.length && basketDrift > 1.5 ? "var(--red)" : "var(--text)", note: "average across the list" },
   ];
 
   return (
