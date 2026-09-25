@@ -37,6 +37,11 @@ const CSS = `
   .prm-topbar-meta strong { color: var(--text, #111819); font-weight: 700; }
   .prm-prog-wrap { width: 200px; background: var(--line, #d8dfe0); height: 3px; border-radius: 2px; overflow: hidden; margin: 5px auto 0; }
   .prm-prog-fill { height: 100%; background: var(--accent, #02a4ba); border-radius: 2px; transition: width .35s; }
+  .prm-confirm-all {
+    display: block; margin: 6px auto 0; background: none; border: none; padding: 0; cursor: pointer;
+    font-family: 'Manrope', sans-serif; font-size: 11px; font-weight: 700; color: var(--accent-deep, #03808f);
+  }
+  .prm-confirm-all:hover { text-decoration: underline; }
   .prm-discard-btn {
     background: none; border: 1px solid var(--line, #d8dfe0); border-radius: 6px;
     padding: 5px 12px; font-size: 11px; color: var(--muted, #4b585b); cursor: pointer;
@@ -972,6 +977,22 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     advanceAfterConfirmation();
   }
 
+  // Confirms every dish not yet confirmed, except dishes with an
+  // unresolved possible-match card (those need a keep/match decision).
+  function confirmAllRemaining() {
+    const remaining = confirmed.filter((c) => !c).length;
+    if (!remaining) return;
+    if (!window.confirm(`Confirm all ${remaining} remaining dishes as drafted? You can still review them first by clicking through each one.`)) return;
+    const next = confirmed.map((c, i) => {
+      if (c) return true;
+      const review = getMatchReview(dishes[i]);
+      return !(review && (!review.decision || review.decision.status === 'pending'));
+    });
+    setConfirmed(next);
+    const firstOpen = next.findIndex((c) => !c);
+    if (firstOpen >= 0) { setCurrent(firstOpen); setAcSearch({}); setAcOpen({}); }
+  }
+
   function removeDish() {
     const removedDishKey =
       dishes[current]?._menuUpdateKey;
@@ -1420,6 +1441,17 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
   function renderCommitScreen() {
     const totalComps = dishes.reduce((s, d) => s + d.components.length, 0);
     const totalIngs = dishes.reduce((s, d) => s + d.components.reduce((ss, c) => ss + c.ingredients.length, 0), 0);
+
+    // Launch with nothing to change: same dishes, same names, same prices,
+    // nothing new, nothing to archive or bring back.
+    const upd = mode === 'update' ? getResolvedUpdateState() : null;
+    const noChanges = !!upd
+      && upd.newDishes.length === 0
+      && upd.archiveCandidates.length === 0
+      && !upd.matched.some((m) =>
+        m.restored
+        || (m.oldName && m.name && m.oldName !== m.name)
+        || (m.oldPrice != null && m.price != null && Number(m.oldPrice) !== Number(m.price)));
     return (
       <div className="prm-commit-screen">
         <div className="prm-commit-icon">✓</div>
@@ -1451,9 +1483,11 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           );
           return (
             <>
-              <div className="prm-commit-title">Ready to launch your new menu</div>
+              <div className="prm-commit-title">{noChanges ? 'No changes found' : 'Ready to launch your new menu'}</div>
               <div className="prm-commit-sub">
-                Dishes you kept hold on to their recipes and history. Archived dishes are hidden, not deleted, and come back automatically if they return on a future menu.
+                {noChanges
+                  ? 'This menu matches what you already have saved. Every dish, name, and price is the same, so there is nothing to update.'
+                  : 'Dishes you kept hold on to their recipes and history. Archived dishes are hidden, not deleted, and come back automatically if they return on a future menu.'}
               </div>
               <div className="prm-stat-grid">
                 {[
@@ -1539,13 +1573,15 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
         )}
         {commitError && <div className="prm-commit-err">⚠ {commitError}</div>}
         <button className="prm-btn prm-btn-confirm" style={{ fontSize: 14, padding: '11px 32px' }}
-          onClick={handleCommit} disabled={committing}>
-          {committing ? <><span className="prm-spinner" />Saving...</> : (mode === 'update' ? 'Launch new menu' : 'Save to Menu')}
+          onClick={noChanges ? onClose : handleCommit} disabled={committing}>
+          {committing ? <><span className="prm-spinner" />Saving...</> : noChanges ? 'Done' : (mode === 'update' ? 'Launch new menu' : 'Save to Menu')}
         </button>
-        <button className="prm-btn prm-btn-ghost" style={{ marginTop: 10 }}
-          onClick={() => setView('review')} disabled={committing || dishes.length === 0}>
-          ← Back to review
-        </button>
+        {dishes.length > 0 && (
+          <button className="prm-btn prm-btn-ghost" style={{ marginTop: 10 }}
+            onClick={() => setView('review')} disabled={committing}>
+            ← Back to review
+          </button>
+        )}
       </div>
     );
   }
@@ -1579,11 +1615,18 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
             <div className="prm-logo">Parse Review</div>
             <div>
               <div className="prm-topbar-meta">
-                <strong>{confirmedCount}</strong> of <strong>{dishes.length}</strong> dishes confirmed
+                {dishes.length
+                  ? <><strong>{confirmedCount}</strong> of <strong>{dishes.length}</strong> dishes confirmed</>
+                  : 'Nothing to review'}
               </div>
               <div className="prm-prog-wrap">
                 <div className="prm-prog-fill" style={{ width: `${pct}%` }} />
               </div>
+              {view === 'review' && dishes.length > 0 && confirmedCount < dishes.length && (
+                <button type="button" className="prm-confirm-all" onClick={confirmAllRemaining}>
+                  Confirm all {dishes.length - confirmedCount} remaining
+                </button>
+              )}
             </div>
             <button className="prm-discard-btn" onClick={onClose}>✕ Discard & close</button>
           </div>
