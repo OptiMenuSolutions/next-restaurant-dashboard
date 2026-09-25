@@ -183,17 +183,36 @@ export default function ProfilePage() {
   };
 
   const handleNewMenuFiles = async (files) => {
-    if (!files || !files.length || !restaurantId) return;
+    const selectedFiles = Array.from(files || []);
+
+    if (!selectedFiles.length || !restaurantId) return;
+
     setMenuError("");
     setMenuParsing(true);
+
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const parsed = await parseMenuFiles(files, restaurantId, session?.access_token);
-      const split = await splitForMenuUpdate(parsed.dishes, restaurantId);
-      setMenuUpdate({ ...split, ingredientLibrary: parsed.ingredientLibrary });
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const parsed = await parseMenuFiles(
+        selectedFiles,
+        restaurantId,
+        session?.access_token
+      );
+
+      const split = await splitForMenuUpdate(
+        parsed.dishes,
+        restaurantId
+      );
+
+      setMenuUpdate({
+        ...split,
+        ingredientLibrary: parsed.ingredientLibrary,
+      });
     } catch (err) {
       console.error("[profile] New menu parse failed:", err);
-      setMenuError(err.message);
+      setMenuError(err?.message || "Could not read the selected menu.");
     } finally {
       setMenuParsing(false);
     }
@@ -254,7 +273,11 @@ export default function ProfilePage() {
         accept=".pdf,.jpg,.jpeg,.png,.webp"
         multiple
         style={{ display: "none" }}
-        onChange={(e) => { handleNewMenuFiles(e.target.files); e.target.value = ""; }}
+        onChange={(e) => {
+          const selectedFiles = Array.from(e.target.files || []);
+          e.target.value = "";
+          handleNewMenuFiles(selectedFiles);
+        }}
       />
 
       {menuParsing && (
