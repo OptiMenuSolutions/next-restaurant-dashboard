@@ -1439,6 +1439,27 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                 </div>
                 <div className="prm-summary-row"><span className="lbl">Archived</span><span className={`val${archived.length ? ' warn' : ''}`}>{archived.length}</span></div>
               </div>
+              {(restored.length > 0 || renamed.length > 0) && (
+                <div className="prm-commit-summary" style={{ maxHeight: 160, overflowY: 'auto' }}>
+                  {restored.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>Brought back</div>
+                      {restored.map((m) => (
+                        <div key={m.id} style={{ fontSize: 12.5, padding: '2px 0', color: 'var(--text, #111819)' }}>{m.name}</div>
+                      ))}
+                    </>
+                  )}
+                  {renamed.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', margin: restored.length ? '10px 0 4px' : '0 0 4px' }}>Names updated</div>
+                      {renamed.map((m) => (
+                        <div key={m.id} style={{ fontSize: 12.5, padding: '2px 0', color: 'var(--text, #111819)' }}>{m.oldName} → {m.name}</div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+
               {resolvedUpdate.archiveCandidates.length > 0 && (
                 <div className="prm-commit-summary" style={{ maxHeight: 200, overflowY: 'auto' }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>
