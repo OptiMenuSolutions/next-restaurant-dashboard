@@ -477,6 +477,21 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
     return initial;
   });
 
+  // Dishes the restaurant chose to keep from the "not found on the new
+  // menu" list (the parser can miss dishes, e.g. a whole set of wing
+  // flavors). Kept dishes are sent as unchanged updates, so they are
+  // never archived.
+  const [keepFromArchive, setKeepFromArchive] = useState(() => new Set());
+
+  function toggleKeepFromArchive(id) {
+    setKeepFromArchive((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const allConfirmed = confirmed.every(Boolean);
   const sidebarCategories = [...new Set(dishes.map(d => d.category))];
 
@@ -696,10 +711,26 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
       });
     }
 
+    const archiveCandidates = (updateSummary?.toArchive || []).filter(
+      (menuItem) => !matchedSavedIds.has(menuItem.id)
+    );
+
+    // Unchecked on the launch summary: keep as-is (no name, price, or
+    // recipe change), just not archived.
+    const keptManually = archiveCandidates
+      .filter((menuItem) => keepFromArchive.has(menuItem.id))
+      .map((menuItem) => ({
+        id: menuItem.id,
+        oldName: menuItem.name,
+        name: menuItem.name,
+        keptManually: true,
+      }));
+
     return {
       matched: [
         ...exactMatches,
         ...confirmedSimilarMatches,
+        ...keptManually,
       ],
 
       newDishes: dishes.filter(
@@ -707,8 +738,10 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           !matchedDishKeys.has(dish?._menuUpdateKey)
       ),
 
-      toArchive: (updateSummary?.toArchive || []).filter(
-        (menuItem) => !matchedSavedIds.has(menuItem.id)
+      archiveCandidates,
+
+      toArchive: archiveCandidates.filter(
+        (menuItem) => !keepFromArchive.has(menuItem.id)
       ),
     };
   }
@@ -1376,12 +1409,26 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                 </div>
                 <div className="prm-summary-row"><span className="lbl">Archived</span><span className={`val${archived.length ? ' warn' : ''}`}>{archived.length}</span></div>
               </div>
-              {archived.length > 0 && (
-                <div className="prm-commit-summary" style={{ maxHeight: 150, overflowY: 'auto' }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 6 }}>Not on the new menu, so these will be archived:</div>
-                  {archived.map(a => (
-                    <div key={a.id} style={{ fontSize: 12.5, padding: '2px 0', color: 'var(--text, #111819)' }}>{a.name}</div>
-                  ))}
+              {resolvedUpdate.archiveCandidates.length > 0 && (
+                <div className="prm-commit-summary" style={{ maxHeight: 200, overflowY: 'auto' }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>
+                    Not found on the new menu
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted, #4b585b)', marginBottom: 8, lineHeight: 1.5 }}>
+                    Checked dishes will be archived. Uncheck any dish that is still on your menu.
+                  </div>
+                  {resolvedUpdate.archiveCandidates.map((a) => {
+                    const willArchive = !keepFromArchive.has(a.id);
+                    return (
+                      <label key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '3px 0', cursor: 'pointer', color: willArchive ? 'var(--text, #111819)' : 'var(--muted, #4b585b)' }}>
+                        <input type="checkbox" checked={willArchive} onChange={() => toggleKeepFromArchive(a.id)} />
+                        <span>{a.name}</span>
+                        {!willArchive && (
+                          <span style={{ marginLeft: 'auto', fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', color: '#2f8a4e' }}>KEEP</span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
               )}
             </>
