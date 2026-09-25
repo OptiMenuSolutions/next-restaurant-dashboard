@@ -51,6 +51,7 @@ export default async function handler(req, res) {
         .from('menu_items')
         .select('id, name, category, price')
         .eq('restaurant_id', restaurantId)
+        .is('archived_at', null)
         .ilike('name', like)
         .order('name')
         .limit(8),
