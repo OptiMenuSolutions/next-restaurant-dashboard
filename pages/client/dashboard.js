@@ -535,7 +535,7 @@ export default function DashboardPage() {
   const optiScoreDetail = useMemo(() => {
     if (!s) return { value: 0, label: "Needs work" };
     // No fully priced dishes yet — a margin score would be meaningless.
-    if (!s.pricedCount) return { value: 0, label: "Awaiting pricing" };
+    if (!s.pricedCount) return { value: null, label: "Awaiting pricing" };
 
     // Margin target: restaurant's own target_food_cost when set, else 70%
     // margin (30% food cost) — matches the app-wide default elsewhere.

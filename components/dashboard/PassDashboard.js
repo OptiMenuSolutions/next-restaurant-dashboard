@@ -722,7 +722,7 @@ export default function PassDashboard({
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
                 <span style={{ fontSize: "23px", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 0.86 }}>
-                  {optiScore.value}
+                  {optiScore.value == null ? "—" : optiScore.value}
                 </span>
                 <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--faint)" }}>/ {optiScore.max || 100}</span>
               </div>
@@ -730,7 +730,7 @@ export default function PassDashboard({
                 <div
                   style={{
                     height: "6px",
-                    width: (optiScore.value / (optiScore.max || 100)) * 100 + "%",
+                    width: ((optiScore.value || 0) / (optiScore.max || 100)) * 100 + "%",
                     borderRadius: "4px",
                     background: "var(--accent)",
                   }}
@@ -1295,8 +1295,8 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
             </div>
             <div style={dashRule} />
             <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-              <span style={pill}>{t.margin}</span>
-              <span style={pill}>{t.cover}</span>
+              {t.margin && <span style={pill}>{t.margin}</span>}
+              {t.cover && <span style={pill}>{t.cover}</span>}
               <span style={{ ...pill, color: t.color, border: "1px solid " + t.color }}>{t.urgency}</span>
             </div>
             <div style={{ textAlign: "center", fontSize: "8px", letterSpacing: "0.14em", color: "var(--ink-faint)", marginTop: "9px" }}>
@@ -1392,7 +1392,7 @@ function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, 
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.1em", color: "var(--faint)" }}>OPTISCORE</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: "4px", justifyContent: "flex-end" }}>
-            <span style={{ fontSize: "22px", fontWeight: 800, letterSpacing: "-0.03em" }}>{optiScore.value}</span>
+            <span style={{ fontSize: "22px", fontWeight: 800, letterSpacing: "-0.03em" }}>{optiScore.value == null ? "—" : optiScore.value}</span>
             <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--accent-deep)" }}>{optiScore.label}</span>
           </div>
         </div>
