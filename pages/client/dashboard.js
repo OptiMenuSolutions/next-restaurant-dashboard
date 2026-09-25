@@ -202,6 +202,13 @@ export default function DashboardPage() {
   // silently lingering for the rest of the session.
   const tourActive = isTourQueryActive();
 
+  // Days up to and including signup have no real sales history for this
+  // restaurant. Not applied during the tour, which borrows the sample
+  // restaurant's history.
+  const signupDay = !tourActive && restaurantCreatedAt
+    ? new Date(restaurantCreatedAt).toLocaleDateString("en-CA")
+    : null;
+
   /* ── auth ── */
   useEffect(() => {
     (async () => {
@@ -369,8 +376,10 @@ export default function DashboardPage() {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
     const start = cutoff.toISOString().split("T")[0];
-    return (weekData || []).filter((d) => d.date >= start);
-  }, [weekData]);
+    return (weekData || [])
+      .filter((d) => d.date >= start)
+      .map((d) => (signupDay && d.date <= signupDay ? { ...d, extraSold: null } : d));
+  }, [weekData, signupDay]);
 
   useEffect(() => {
     if (!restaurantId) return;
@@ -496,6 +505,13 @@ export default function DashboardPage() {
         }
       });
     });
+    if (signupDay) {
+      const dim = new Date(viewDate.year, viewDate.month + 1, 0).getDate();
+      for (let dd = 1; dd <= dim; dd++) {
+        const iso = `${viewDate.year}-${String(viewDate.month + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
+        if (iso <= signupDay) days[dd] = null;
+      }
+    }
     const viewMonthDate = new Date(viewDate.year, viewDate.month, 1);
     return {
       month: MONTHS[viewDate.month] + " " + viewDate.year,
@@ -512,7 +528,7 @@ export default function DashboardPage() {
       daysInMonth: new Date(viewDate.year, viewDate.month + 1, 0).getDate(),
       todayDay: isCurrentMonth ? now.getDate() : null,
     };
-  }, [weekData, weekExtraSold, weekWasteSaved, hitRate, viewDate, isCurrentMonth]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [weekData, weekExtraSold, weekWasteSaved, hitRate, viewDate, isCurrentMonth, signupDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s = data.stats;
   const stats = s

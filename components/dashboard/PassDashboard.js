@@ -290,16 +290,17 @@ export default function PassDashboard({
     for (let i = 0; i < lead; i++) out.push({ blank: true, key: "b" + i });
     for (let d = 1; d <= (week.daysInMonth || 31); d++) {
       const v = week.days ? week.days[d] : undefined;
-      const has = v !== undefined;
+      const noData = v === null; // on or before signup: no real history
+      const has = v !== undefined && v !== null;
       const future = week.todayDay ? d > week.todayDay : false;
       out.push({
         key: "d" + d,
         day: d,
-        sub: has ? (v > 0 ? "+" + v : String(v)) : "",
-        bg: has ? "var(--panel)" : "transparent",
-        border: openCalendarDay === d ? "var(--accent)" : has ? "var(--line)" : "transparent",
-        numColor: future ? "var(--faint)" : has ? "var(--text)" : "var(--muted)",
-        subColor: has ? (v > 0 ? "var(--green)" : "var(--red)") : "transparent",
+        sub: noData ? "—" : has ? (v > 0 ? "+" + v : String(v)) : "",
+        bg: has || noData ? "var(--panel)" : "transparent",
+        border: openCalendarDay === d ? "var(--accent)" : has || noData ? "var(--line)" : "transparent",
+        numColor: future ? "var(--faint)" : has || noData ? "var(--text)" : "var(--muted)",
+        subColor: noData ? "var(--faint)" : has ? (v > 0 ? "var(--green)" : v < 0 ? "var(--red)" : "var(--faint)") : "transparent",
         clickable: has && !future,
       });
     }
@@ -1587,7 +1588,7 @@ function MobileWeekTab({ weekData, weekExtraSold, weekWasteSaved, hitRate }) {
                   <span style={{ fontSize: "9px", color: "var(--faint)" }}>No recs</span>
                 )}
               </div>
-              <span style={{ fontFamily: SANS, fontSize: "12px", fontWeight: 700, color: extraColor, flexShrink: 0 }}>{day.extraSold > 0 ? "+" : ""}{day.extraSold}</span>
+              <span style={{ fontFamily: SANS, fontSize: "12px", fontWeight: 700, color: extraColor, flexShrink: 0 }}>{day.extraSold == null ? "—" : `${day.extraSold > 0 ? "+" : ""}${day.extraSold}`}</span>
               <span style={{ fontSize: "9px", color: "var(--faint)", flexShrink: 0 }}>{isOpen ? "▴" : "▾"}</span>
             </div>
             {isOpen && openDayData && (
