@@ -1894,8 +1894,22 @@ export default async function handler(req, res) {
       if (key) seenDishKeys.add(key);
       dedupedDishes.push(d);
     }
+    // A parent listed alongside its own variants ("Meet the Parms" plus
+    // "Meet the Parms - Chicken" / "- Meatball") is the same menu line
+    // counted twice. Keep the variants, drop the bare parent.
+    const variantParents = new Set(
+      dedupedDishes
+        .filter(d => d.name.includes(' - '))
+        .map(d => d.name.split(' - ')[0].trim().toLowerCase())
+    );
+    const withoutParents = dedupedDishes.filter(
+      d => d.name.includes(' - ') || !variantParents.has(d.name.trim().toLowerCase())
+    );
+    if (withoutParents.length !== dedupedDishes.length) {
+      console.log(`[parse-menu] Dropped ${dedupedDishes.length - withoutParents.length} parent dish(es) that also appear as variants`);
+    }
     allDishes.length = 0;
-    allDishes.push(...dedupedDishes);
+    allDishes.push(...withoutParents);
     if (beforeDedup !== allDishes.length) {
       console.log(`[parse-menu] Deduped ${beforeDedup - allDishes.length} duplicate dish(es) across files/chunks`);
     }
