@@ -199,10 +199,10 @@ export default function MenuItemsScreen({
         {chrome}
         <EmptyState
           kicker="No dishes yet"
-          title="Write a recipe once, and it prices itself forever"
-          body="Tell us what goes on the plate and how much of it. Every invoice you upload after that re-costs the dish on its own, so the margin you see is the margin you got last week."
+          title="Upload your menu to get started"
+          body="Snap a photo or upload a PDF of your menu. We'll build a recipe for every dish, and every invoice you upload after that keeps its cost current."
         >
-          <button type="button" onClick={onAddItem} style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontFamily: SANS, fontSize: 14.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>Add your first dish</button>
+          <button type="button" onClick={onAddItem} style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontFamily: SANS, fontSize: 14.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>Upload your menu</button>
         </EmptyState>
       </Shell>
     );

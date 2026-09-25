@@ -363,8 +363,7 @@ export default function MenuItemsPage() {
         onRetry={() => router.reload()}
         periodLabel={periodLabel}
         onOpenItem={(d) => router.push(`/client/menu-items/${d.id}`)}
-        onAddItem={() => router.push("/client/menu-items?new=1")}
-        onUploadMenu={() => menuFileInput.current && menuFileInput.current.click()}
+        onAddItem={() => menuFileInput.current && menuFileInput.current.click()}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}
