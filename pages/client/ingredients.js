@@ -51,7 +51,7 @@ function buildSampleIngredientRows(sample) {
           name: mi.name,
           qty: [ci.quantity, ci.unit].filter(Boolean).join(" ") || String(ci.quantity || ""),
           price: Number(mi.price) || 0,
-          cost: Number(mi.cost) || 0,
+          cost: null, // stored menu_items.cost is built from unapproved AI guesses
         });
         menuByIngredient.set(ingId, list);
       });
@@ -210,7 +210,7 @@ export default function IngredientsPage() {
         name: mi.name,
         qty: [l.quantity, l.unit].filter(Boolean).join(" ") || String(l.quantity || ""),
         price: Number(mi.price) || 0,
-        cost: Number(mi.cost) || 0,
+        cost: null, // stored menu_items.cost is built from unapproved AI guesses
       });
       menuByIngredient.set(l.ingredient_id, list);
     });
@@ -228,7 +228,7 @@ export default function IngredientsPage() {
         name: mi.name,
         qty: String(l.quantity || ""), // no unit column on this legacy table
         price: Number(mi.price) || 0,
-        cost: Number(mi.cost) || 0,
+        cost: null, // stored menu_items.cost is built from unapproved AI guesses
       });
       menuByIngredient.set(l.ingredient_id, list);
     });
@@ -242,7 +242,9 @@ export default function IngredientsPage() {
         name: g.name,
         unit: g.unit || "ea",
         estimated: !!g.is_estimated,
-        estimatedPrice: Number(g.last_price) || 0,
+        // Only invoice prices and admin-approved estimates are shown to the
+        // restaurant. A raw AI guess from the menu parse shows as no price.
+        estimatedPrice: g.is_estimated === false || g.price_approved_at ? Number(g.last_price) || 0 : null,
         supplier: lines[0]?.invoices?.supplier || null,
         lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
         history: toHistory(lines),

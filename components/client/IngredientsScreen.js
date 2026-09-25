@@ -92,7 +92,9 @@ export const DEMO_INGREDIENTS = [
 
 function decorate(g) {
   const h = g.history || [];
-  const price = h.length ? h[h.length - 1].value : g.estimatedPrice != null ? g.estimatedPrice : g.price || 0;
+  const price = h.length ? h[h.length - 1].value : g.estimatedPrice != null ? g.estimatedPrice : null;
+  // No invoice history and no approved price: nothing to show yet.
+  const awaiting = price == null;
   const prev = h.length > 1 ? h[h.length - 2].value : null;
   return {
     ...g,
@@ -100,6 +102,7 @@ function decorate(g) {
     purchases: g.purchases || [],
     menuItems: g.menuItems || [],
     price,
+    awaiting,
     pct: prev ? ((price - prev) / prev) * 100 : null,
     spanPct: h.length > 1 ? ((price - h[0].value) / h[0].value) * 100 : null,
   };
@@ -183,7 +186,7 @@ export default function IngredientsScreen({
             <div key={g.id} onClick={() => onOpenIngredient && onOpenIngredient(g)} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{g.name}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: g.estimated ? "var(--amber)" : "var(--text)" }}>{money2(g.price)}</span>
+                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>per {g.unit} · {g.lastOrdered || "never"}</span>
@@ -244,11 +247,11 @@ export default function IngredientsScreen({
                   <div key={g.id} data-tour="ing-row" className="om-row" onClick={() => select(g)} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 72px 40px 66px", gap: 14, alignItems: "center", padding: "13px 20px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}>
                     <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                      {g.estimated && (
+                      {g.estimated && !g.awaiting && (
                         <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 10, padding: "1px 5px", flexShrink: 0 }}>Est</span>
                       )}
                     </div>
-                    <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: g.estimated ? "var(--amber)" : "var(--text)" }}>{money2(g.price)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</div>
                     <div style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}>/{g.unit}</div>
                     <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, textAlign: "right", whiteSpace: "nowrap", color: pctColor(g.pct) }}>{pctLabel(g.pct)}</div>
                   </div>
@@ -359,7 +362,7 @@ function Summary({ all, risers, fallers, unpriced, override, onPick, onNeedsPric
         {unpriced.length > 0 && (
           <div style={{ flexShrink: 0, marginTop: 12, border: "1px dashed var(--amber)", borderRadius: 8, padding: "11px 13px", display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
             <span style={{ fontSize: 12.5, color: "var(--text)" }}>
-              {unpriced.length === 1 ? `${unpriced[0].name} is still priced by hand` : `${unpriced.length} ingredients are still priced by hand`}
+              {unpriced.length === 1 ? `${unpriced[0].name} is waiting on its first invoice` : `${unpriced.length} ingredients are waiting on their first invoice`}
             </span>
             <button type="button" onClick={onNeedsPrice} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--amber)", whiteSpace: "nowrap" }}>Review ›</button>
           </div>
@@ -379,12 +382,14 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
   const menuTotal = g.menuItems.length;
   const menuVisible = Math.min(3, menuTotal);
   const card = (m) => {
-    const margin = m.price ? ((m.price - m.cost) / m.price) * 100 : 0;
+    // m.cost is null for real accounts until plate costs come from
+    // invoice or approved prices; show a dash rather than a guessed margin.
+    const margin = m.price && m.cost != null ? ((m.price - m.cost) / m.price) * 100 : null;
     return {
       ...m,
       contribution: money2(g.price * (parseFloat(m.qty) || 0)),
-      marginLabel: margin.toFixed(0) + "%",
-      marginColor: margin < 60 ? "var(--amber)" : "var(--muted)",
+      marginLabel: margin == null ? "—" : margin.toFixed(0) + "%",
+      marginColor: margin == null ? "var(--faint)" : margin < 60 ? "var(--amber)" : "var(--muted)",
     };
   };
 
@@ -397,21 +402,23 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
           </button>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05 }}>{g.name}</div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {g.estimated ? "Entered by hand · no invoice yet" : `${g.supplier || "—"} · last ${g.lastOrdered || "—"}`}
+            {g.awaiting ? "No invoice yet" : g.estimated ? "Estimated price · no invoice yet" : `${g.supplier || "—"} · last ${g.lastOrdered || "—"}`}
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: g.estimated ? "var(--amber)" : "var(--text)" }}>{money2(g.price)}</div>
-          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>per {g.unit}</div>
+          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</div>
+          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>{g.awaiting ? "awaiting price" : `per ${g.unit}`}</div>
         </div>
       </div>
 
       {!hasHistory && (
         <div style={{ padding: "28px 22px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 9 }}>
-          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--amber)" }}>Estimated price</div>
+          <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: g.awaiting ? "var(--faint)" : "var(--amber)" }}>{g.awaiting ? "Awaiting price" : "Estimated price"}</div>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em" }}>{g.name} hasn’t come through on an invoice yet</div>
           <div style={{ fontSize: 13.5, lineHeight: 1.55, color: "var(--muted)", maxWidth: 320, textWrap: "pretty" }}>
-            The price you see was entered by hand, so menu costs using it are approximate. It will firm up the first time we read it off a delivery.
+            {g.awaiting
+              ? "We’ll price it the first time we read it off a delivery. Until then, dishes that use it show as awaiting pricing."
+              : "This is an estimated price, so menu costs using it are approximate. It will firm up the first time we read it off a delivery."}
           </div>
         </div>
       )}
