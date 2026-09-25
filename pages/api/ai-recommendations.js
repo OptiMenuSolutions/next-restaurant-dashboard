@@ -19,6 +19,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
 import { getShelfLife, isProtein } from '../../lib/shelfLife';
+import { calculateStandardizedCost } from '../../lib/standardizedUnits';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -126,8 +127,9 @@ async function loadRestaurantContext(restaurantId) {
           cost,
           component_ingredients (
             quantity,
+            unit,
             ingredients:ingredient_id (
-              id, name, last_price, last_ordered_at
+              id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at
             )
           )
         )
@@ -161,15 +163,26 @@ async function loadRestaurantContext(restaurantId) {
   const entreeItems = menuItems.filter(item => isEntreeCategory(item.category));
   const enriched = entreeItems.map(item => {
     const price = parseFloat(item.price || 0);
-    let cost = parseFloat(item.cost || 0);
-    if (item.menu_item_components?.length > 0) {
-      const compCost = item.menu_item_components.reduce((s, c) => s + parseFloat(c.cost || 0), 0);
-      if (compCost > 0) cost = compCost;
-    }
-    if (price === 0 || cost === 0) return null;
+    if (price === 0) return null;
 
-    const margin = ((price - cost) / price) * 100;
-    const marginDollars = price - cost;
+    // Cost only from prices the restaurant is allowed to see: invoice prices
+    // or admin-approved estimates. Stored menu_items.cost / component.cost
+    // were computed from the menu parser's AI guesses and must not be used.
+    // If any ingredient is an unapproved guess, the margin is unknown — the
+    // dish stays eligible for waste / sales / variety picks.
+    const lines = (item.menu_item_components || []).flatMap(c => c.component_ingredients || []);
+    let cost = null;
+    if (lines.length && lines.every(ci => ci.ingredients && (ci.ingredients.is_estimated === false || ci.ingredients.price_approved_at))) {
+      cost = lines.reduce((sum, ci) => {
+        const g = ci.ingredients;
+        const recipeUnit = ci.unit || g.unit || 'each';
+        return sum + calculateStandardizedCost(
+          parseFloat(ci.quantity || 0), recipeUnit, parseFloat(g.last_price || 0), g.unit || recipeUnit, g.name || ''
+        );
+      }, 0);
+    }
+    const margin = cost != null ? ((price - cost) / price) * 100 : null;
+    const marginDollars = cost != null ? price - cost : null;
 
     // Find expiring ingredients in this dish
     const expiringInThisDish = [];
@@ -203,8 +216,8 @@ async function loadRestaurantContext(restaurantId) {
     return {
       name: item.name,
       price,
-      margin: Math.round(margin * 10) / 10,
-      marginDollars: Math.round(marginDollars * 100) / 100,
+      margin: margin != null ? Math.round(margin * 10) / 10 : null,
+      marginDollars: marginDollars != null ? Math.round(marginDollars * 100) / 100 : null,
       category: item.category || 'Other',
       qty7d,
       expiringIngredients: expiringInThisDish,
@@ -244,12 +257,12 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
   const hasPOS = enriched.some(i => i.qty7d !== null);
 
   const menuLines = enriched.map(item => {
-    const parts = [
-      `${item.name} (${item.category})`,
-      `$${item.price}`,
-      `${item.margin}% margin`,
-      `$${item.marginDollars} margin/cover`,
-    ];
+    const parts = [`${item.name} (${item.category})`, `$${item.price}`];
+    if (item.margin != null) {
+      parts.push(`${item.margin}% margin`, `$${item.marginDollars} margin/cover`);
+    } else {
+      parts.push('margin not yet known');
+    }
     if (item.qty7d !== null) parts.push(`sold ${item.qty7d} last 7d`);
     else parts.push('no POS data');
 
@@ -299,12 +312,16 @@ Include the dollar value at risk in your reason_selected when available.
 RULE 2 — VARIETY
 No two selected dishes may share the same category.
 
-RULE 3 — MARGIN VALUE (not just margin %)
-After waste slots are filled, remaining picks go to dishes that are underperforming relative to their margin potential.
+RULE 3 — MARGIN VALUE (only where margin is known)
+After waste slots are filled, remaining picks go to dishes that are underperforming relative to their margin potential — but ONLY among dishes that show a margin. Dishes marked "margin not yet known" have no reliable cost yet; never rank them by margin.
 Use BOTH margin % AND margin per cover ($) when ranking. A dish at $8 margin/cover and 65% margin outranks a dish at $2 margin/cover and 72% margin. Weight dollar margin and % margin equally.
 Deprioritize dishes with strong recent sales — they are already moving. Surface dishes with good margin that are being overlooked.
+If fewer than 3 dishes show a margin, fill the remaining picks by waste urgency, then sales momentum, then variety.
 
-RULE 4 — ROTATION
+RULE 5 — PRICING HONESTY
+Never state a margin %, margin per cover, food cost, or dollar profit for a dish marked "margin not yet known", and never describe such a dish as "high margin", "top margin", "best margin", "most profitable", or similar. Explain those picks by waste, sales, rotation, or variety instead, and do not use type "margin" for them. Dollar values shown for EXPIRING ingredients come from real invoices and may be cited.
+
+RULE 6 — ROTATION
 Any dish appearing in the last 3 nights is ineligible unless forced by Rule 1. If forced, explain in reason_selected.
 
 ━━━ RECENT RECOMMENDATION HISTORY (last 5 nights) ━━━
