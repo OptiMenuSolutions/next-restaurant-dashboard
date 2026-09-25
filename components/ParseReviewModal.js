@@ -403,6 +403,16 @@ const CSS = `
   /* Never squeeze a card or list; the screen scrolls instead. */
   .prm-commit-screen > * { flex-shrink: 0; }
 
+  /* Brought back / Not found lists: side by side, or one centered */
+  .prm-lists-row {
+    display: flex; gap: 12px; width: 100%; max-width: 640px;
+    justify-content: center; align-items: flex-start; margin-bottom: 20px;
+  }
+  .prm-lists-row:empty { display: none; }
+  .prm-lists-row > .prm-commit-summary {
+    flex: 1 1 0; min-width: 0; max-width: 380px; margin-bottom: 0;
+  }
+
   /* Launch summary: compact count grid */
   .prm-stat-grid {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
@@ -1445,8 +1455,9 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   </div>
                 ))}
               </div>
+              <div className="prm-lists-row">
               {(restored.length > 0 || renamed.length > 0) && (
-                <div className="prm-commit-summary" style={{ maxHeight: 160, overflowY: 'auto' }}>
+                <div className="prm-commit-summary" style={{ maxHeight: 200, overflowY: 'auto' }}>
                   {restored.length > 0 && (
                     <>
                       <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted, #4b585b)', marginBottom: 4 }}>Brought back</div>
@@ -1494,6 +1505,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                   })}
                 </div>
               )}
+              </div>
             </>
           );
         })() : (
