@@ -759,6 +759,8 @@ The section header a dish appears under is the strongest signal for its archetyp
 - Flatbreads are archetype "Pizza" unless they are clearly open-faced sandwiches
 - Milkshakes, smoothies, juices → "Beverage"
 - Kids menu items → use the most specific archetype that fits the actual dish (pizza → "Pizza", pasta → "Pasta", burger → "Burger")
+- Ribs, pork chops, lamb chops, and other bone-in cuts → "Steak / Chop / Fillet"
+- Use a name from the list exactly as written — never invent one such as "Entree" or "Main"
 - Never assign an archetype based solely on the dish name if the section context contradicts it
 
 The archetype you assign here is used in Pass 2 to select the component structure. A wrong archetype produces a wrong recipe.
@@ -933,7 +935,7 @@ async function pass2_buildRecipes(dishManifest, ingredientLibrary, restaurantId,
   const systemPrompt = [
     {
       type: 'text',
-      text: `You are a restaurant recipe builder. Your job is to produce accurate, portion-realistic recipes for restaurant dishes using only the provided ingredient library.
+      text: `You are a restaurant recipe builder. Your job is to produce accurate, portion-realistic recipes for restaurant dishes, using the provided ingredient library wherever it has the right ingredient.
 
 You must follow every rule below exactly. A recipe that violates any rule is wrong even if it looks reasonable.`,
     },
@@ -990,12 +992,11 @@ RULES
 ════════════════════════════════════════
 
 LIBRARY FIDELITY:
-- Use ONLY ingredients from the library above
-- Copy name, unit, and estimated_unit_cost exactly — no synonyms, abbreviations, or alternate spellings
+- Prefer ingredients from the library above. When you use one, copy its name, unit, and estimated_unit_cost exactly — no synonyms, abbreviations, or alternate spellings
 - The quantity must be expressed in the library's unit for that ingredient. The portion norms below are written in oz — convert when the library unit is lb (16 oz = 1 lb): a 5.5 oz side of fries is 0.34 lb, 3 oz of greens is 0.19 lb. Never write an oz amount next to a lb unit.
-- The ingredient name in your output must match the library name character-for-character
-- If an ingredient from the dish description has no exact library match, use the closest match and add a "substitution_note" field on that ingredient explaining what was substituted and why
-- Never invent a cost — use the library cost exactly
+- If the dish needs an ingredient that is NOT in the library, add it under its correct common name (e.g. "Flour Tortilla", "Caesar Dressing") with a sensible unit and estimated_unit_cost 0. It will be priced later.
+- NEVER substitute a different food because the right one is missing: no bread in place of tortillas, no fruit in place of rice, no other dressing in place of the named one. A missing ingredient is acceptable; a wrong ingredient is not.
+- The "name" field is the ingredient name only. Never put notes, substitutions, or explanations in it.
 
 COMPONENT STRUCTURE:
 - Follow the archetype schema above exactly
@@ -1030,7 +1031,15 @@ BEVERAGE RULE:
 DRESSING RULE:
 - If this is a salad and the dish name or description implies a specific dressing, use that dressing by name
 - Never substitute a generic "House Dressing" for a named dressing unless the menu explicitly says "house dressing"
-- If the correct dressing is not in the library, use the closest available match and add a substitution_note
+- If the correct dressing is not in the library, add it by its own name with estimated_unit_cost 0 — never use a different dressing
+
+PIZZA AND FLATBREAD DOUGH:
+- The Dough component is always exactly one dough ingredient: "Pizza Dough", quantity 1, unit "each" (one dough ball per pizza). For a flatbread, use "Flatbread", quantity 1, unit "each".
+- Olive oil, sauce, and herbs are never the dough. Oil drizzled on top belongs in Finishing.
+
+PREPARATION STYLE:
+- The dish name tells you how it is prepared — follow it. "Dry Rub" means a spice blend (e.g. Paprika, Garlic Powder, Brown Sugar, Salt, Black Pepper), never a sauce. A named sauce or flavor ("Honey Habanero", "Korean BBQ", "Buffalo") means that specific sauce.
+- Two variants with different names must not end up with the same sauce.
 
 PORTION NORMS — quantities come from standard kitchen portions, never from price:
 - If the menu or description states a size or count (e.g. "12 oz", "half-pound", "10 wings"), use it exactly
@@ -1040,7 +1049,7 @@ PORTION NORMS — quantities come from standard kitchen portions, never from pri
 - Fish fillet entree: 6–8 oz. Shrimp entree: 6–8 oz. Shrimp or seafood appetizer: 3–4 oz
 - Wings: about 1 lb raw per order unless a piece count is stated
 - Dry pasta entree: 4–5 oz. Fresh or filled pasta (ravioli): 6–8 oz
-- 12-inch pizza or flatbread: dough 10–12 oz, sauce 3–4 oz, cheese 5–6 oz, toppings 2–4 oz total
+- 12-inch pizza or flatbread: 1 dough ball (Pizza Dough, 1 each), sauce 3–4 oz, cheese 5–6 oz, toppings 2–4 oz total
 - Salad greens: 2–4 oz. Salad protein: 4–5 oz
 - Starch sides: fries 5–6 oz, rice or potatoes 5–6 oz
 - Sauces and dressings: 1–3 oz. Garnishes, herbs, and spices: 0.1–0.5 oz
@@ -1083,7 +1092,7 @@ Return only the JSON object. No other prose.
       restaurantId,
     });
 
-    console.log(`[pass2] "${dish.name}" stop_reason: ${response.stop_reason} | input=${response.usage?.input_tokens} output=${response.usage?.output_tokens}`);
+    if (response.stop_reason === 'max_tokens') console.warn(`[pass2] "${dish.name}" truncated`);
     const raw = response.content[0]?.text || '{}';
 
     const parsed = safeParseJSON(raw);
@@ -1367,6 +1376,16 @@ const CHEESE_KEYWORDS = [
   'havarti', 'muenster', 'colby', 'swiss', 'bocconcini',
 ];
 
+// Pass 2 has written notes into the name field ("Fresh Cilantro
+// (substituted: Fresh Parsley)"), which then saved as an ingredient.
+// Keep the ingredient name only.
+function cleanIngredientName(name) {
+  return String(name || '')
+    .replace(/\s*\([^)]*\b(substitut|instead|replac|in place of)[^)]*\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function validateDishes(rawDishes) {
   return rawDishes
     .filter(d => d.name && typeof d.name === 'string' && d.name.trim())
@@ -1381,7 +1400,7 @@ function validateDishes(rawDishes) {
           }
           const cost = typeof i.estimated_unit_cost === 'number' ? i.estimated_unit_cost : 0;
           return {
-            name: i.name || 'Unknown',
+            name: cleanIngredientName(i.name) || 'Unknown',
             unit: i.unit || 'each',
             quantity: qty,
             estimated_unit_cost: cost,
@@ -1434,17 +1453,11 @@ function validateDishes(rawDishes) {
       // and pinned dishes at exactly 50% food cost in every run.
       const scaledComponents = components;
       const scaledCost = totalEstimatedCost;
-      if (price && totalEstimatedCost > price) {
-        console.warn(`[validate] Estimated cost exceeds price for "${d.name}": $${totalEstimatedCost.toFixed(2)} vs $${price} — flagged for review`);
-      }
 
       const estimatedMargin = price && scaledCost > 0
         ? Math.round(((price - scaledCost) / price) * 1000) / 10
         : null;
 
-      if (estimatedMargin !== null && estimatedMargin < 45) {
-        console.warn(`[validate] Low margin warning: "${d.name}" estimated margin ${estimatedMargin}%`);
-      }
 
       return {
         name: d.name.trim(),
@@ -1794,7 +1807,6 @@ export default async function handler(req, res) {
       for (const dish of filteredDishManifest) {
         const components = matchRecipe(dish.name, dish.archetype, globalRecipes, dish.section || '');
         if (components) {
-          console.log(`[recipes] Hit: "${dish.name}"`);
           matchedRaw.push({ dish, template: components });
         } else {
           unmatchedDishes.push(dish);
