@@ -684,6 +684,10 @@ async function pass1_extractAndClassify(menuText, globalIngredients, restaurantI
     // truncated, with dishes past the cutoff silently lost. The smaller
     // chunks from chunkMenuText are the real fix; this is the backstop.
     max_tokens: 16000,
+    // Pass 1 only reads what's on the menu (dish names, prices, sections).
+    // Temperature 0 makes the dish list come out the same way run to run,
+    // which Launch a new menu depends on for matching.
+    temperature: 0,
     system: [
       {
         type: 'text',
