@@ -11,6 +11,7 @@ import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import CsvImportPreview from "../../components/CsvImportPreview";
 import { fetchSampleData } from "../../lib/seedSampleData";
+import { calculateStandardizedCost } from "../../lib/standardizedUnits";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -51,6 +52,24 @@ const labelOf = (iso) => {
   return `${parseInt(m, 10)}/${parseInt(d, 10)}`;
 };
 const dowOf = (iso) => (new Date(`${iso}T12:00:00`).getDay() + 6) % 7; // Mon = 0
+
+/* A dish's plate cost from its recipe, using only prices the restaurant is
+   allowed to see (invoice or admin-approved). Null when any ingredient is
+   still unpriced, so analytics never shows a margin built on AI guesses.
+   A dish with no recipe rows falls back to its stored cost, same as Menu Items. */
+function allowedPlateCost(m) {
+  const lines = (m.menu_item_components || []).flatMap((c) => c.component_ingredients || []);
+  if (!lines.length) return num(m.cost) || null;
+  let total = 0;
+  for (const l of lines) {
+    const g = l.ingredients;
+    if (!g) return null;
+    const allowed = g.is_estimated === false || !!g.price_approved_at;
+    if (!allowed || !(num(g.last_price) > 0)) return null;
+    total += calculateStandardizedCost(num(l.quantity), l.unit, num(g.last_price), g.unit, g.name || "");
+  }
+  return total;
+}
 
 const NavLink = ({ href, style, className, children }) => (
   <Link href={href} style={style} className={className}>{children}</Link>
@@ -127,7 +146,11 @@ export default function AnalyticsPage() {
           // sales array's own pos_system/count.
         } else {
           const [{ data: realMenu }, { data: realSessions }] = await Promise.all([
-            supabase.from("menu_items").select("name, price, cost, category").eq("restaurant_id", profile.restaurant_id).limit(500),
+            supabase
+              .from("menu_items")
+              .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
+              .eq("restaurant_id", profile.restaurant_id)
+              .limit(500),
             supabase.from("upload_sessions").select("*").eq("restaurant_id", profile.restaurant_id).order("uploaded_at", { ascending: false }).limit(1),
           ]);
           menu = realMenu || [];
@@ -139,9 +162,15 @@ export default function AnalyticsPage() {
         if (rest?.target_food_cost) setTargetFoodCost(num(rest.target_food_cost));
         setSession(sessions[0] || null);
 
+        const tourData = isTourQueryActive();
         const map = {};
         menu.forEach((m) => {
-          map[String(m.name || "").toLowerCase().trim()] = { cost: num(m.cost), price: num(m.price), category: m.category };
+          map[String(m.name || "").toLowerCase().trim()] = {
+            // null = cost not known yet (an ingredient is awaiting pricing)
+            cost: tourData ? (num(m.cost) || null) : allowedPlateCost(m),
+            price: num(m.price),
+            category: m.category,
+          };
         });
         setCosts(map);
 
@@ -173,16 +202,20 @@ export default function AnalyticsPage() {
       const menu = costs[key] || {};
       const qty = num(s.quantity_sold);
       const revenue = s.revenue != null ? num(s.revenue) : qty * num(s.unit_price || menu.price);
+      const known = menu.cost != null;
       const line = night.items.get(name) || {
         name,
         category: s.category || menu.category || "",
         price: num(s.unit_price) || menu.price || (qty ? revenue / qty : 0),
-        cost: menu.cost || 0,
-        qty: 0, rev: 0, cogs: 0,
+        cost: known ? menu.cost : null,
+        qty: 0, rev: 0, cogs: 0, costedRev: 0,
       };
       line.qty += qty;
       line.rev += revenue;
-      line.cogs += qty * (menu.cost || 0);
+      if (known) {
+        line.cogs += qty * menu.cost;
+        line.costedRev += revenue; // food cost % is measured against costed sales only
+      }
       night.items.set(name, line);
       byDate.set(iso, night);
     });

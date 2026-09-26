@@ -77,9 +77,14 @@ function normalise(days) {
       ...x,
       qty: Number(x.qty) || 0,
       price: Number(x.price) || 0,
-      cost: Number(x.cost) || 0,
+      cost: x.cost == null ? null : Number(x.cost),
       rev: x.rev != null ? Number(x.rev) : (Number(x.qty) || 0) * (Number(x.price) || 0),
       cogs: x.cogs != null ? Number(x.cogs) : (Number(x.qty) || 0) * (Number(x.cost) || 0),
+    })).map((x) => ({
+      ...x,
+      // Revenue from dishes whose cost is known. Food cost % uses only this,
+      // so sales of not-yet-priced dishes don't make it look artificially low.
+      costedRev: x.costedRev != null ? Number(x.costedRev) : x.cost != null ? x.rev : 0,
     }));
     const date = d.date instanceof Date ? d.date : new Date(d.date);
     const dow = d.dow != null ? d.dow : (date.getDay() + 6) % 7;
@@ -93,6 +98,7 @@ function normalise(days) {
       qty: items.reduce((a, x) => a + x.qty, 0),
       rev: items.reduce((a, x) => a + x.rev, 0),
       cogs: items.reduce((a, x) => a + x.cogs, 0),
+      costedRev: items.reduce((a, x) => a + x.costedRev, 0),
     };
   });
 }
@@ -173,8 +179,15 @@ export default function AnalyticsScreen({
   const sum = (arr, k) => arr.reduce((a, x) => a + x[k], 0);
   const rev = sum(win, "rev"), cogs = sum(win, "cogs"), qty = sum(win, "qty");
   const pRev = sum(prior, "rev"), pQty = sum(prior, "qty");
-  const contribution = rev - cogs;
-  const foodCost = rev ? (cogs / rev) * 100 : 0;
+  const costedRev = sum(win, "costedRev");
+  // Food cost and margin cover only sales of dishes with a known cost.
+  // With none costed, both show a dash rather than a number built on guesses.
+  const contribution = costedRev ? costedRev - cogs : null;
+  const foodCost = costedRev ? (cogs / costedRev) * 100 : null;
+  const costedShare = rev ? costedRev / rev : 0;
+  const coverageNote = !costedRev
+    ? "awaiting pricing"
+    : costedShare < 0.995 ? `${Math.round(costedShare * 100)}% of sales costed` : "";
 
   const deltaLabel = (now, was) => (was ? (now >= was ? "+" : "−") + Math.abs(((now - was) / was) * 100).toFixed(1) + "%" : "—");
   const deltaColor = (now, was) => (!was ? "var(--faint)" : now > was * 1.01 ? "var(--green)" : now < was * 0.99 ? "var(--red)" : "var(--faint)");
@@ -182,8 +195,8 @@ export default function AnalyticsScreen({
   const kpis = [
     { label: "Net sales", value: moneyK1(rev), color: "var(--text)", delta: deltaLabel(rev, pRev), deltaColor: deltaColor(rev, pRev) },
     { label: "Plates sold", value: num(qty), color: "var(--text)", delta: deltaLabel(qty, pQty), deltaColor: deltaColor(qty, pQty) },
-    { label: "Food cost", value: pct1(foodCost), color: foodCost > targetFoodCost ? "var(--red)" : "var(--text)", delta: "", deltaColor: "var(--faint)" },
-    { label: "Gross margin", value: moneyK1(contribution), color: "var(--accent-deep)", delta: "", deltaColor: "var(--faint)" },
+    { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: foodCost == null ? "var(--faint)" : foodCost > targetFoodCost ? "var(--red)" : "var(--text)", delta: coverageNote, deltaColor: "var(--faint)" },
+    { label: "Gross margin", value: contribution == null ? "—" : moneyK1(contribution), color: contribution == null ? "var(--faint)" : "var(--accent-deep)", delta: coverageNote, deltaColor: "var(--faint)" },
     { label: "Nights read", value: num(span), color: "var(--text)", delta: "", deltaColor: "var(--faint)" },
   ];
 
@@ -239,29 +252,36 @@ export default function AnalyticsScreen({
     win.forEach((d) => d.items.forEach((x) => {
       const e = map.get(x.name) || { name: x.name, cat: x.category || x.cat || "", price: x.price, cost: x.cost, qty: 0, rev: 0, cogs: 0 };
       e.qty += x.qty; e.rev += x.rev; e.cogs += x.cogs;
-      e.price = x.price || e.price; e.cost = x.cost || e.cost;
+      e.price = x.price || e.price;
+      if (x.cost != null) e.cost = x.cost;
       map.set(x.name, e);
     }));
-    return [...map.values()].map((d) => ({
-      ...d,
-      contribPer: d.price - d.cost,
-      contribTotal: d.qty * (d.price - d.cost),
-      marginPct: d.price ? ((d.price - d.cost) / d.price) * 100 : 0,
-    }));
+    return [...map.values()].map((d) => {
+      const known = d.cost != null;
+      return {
+        ...d,
+        contribPer: known ? d.price - d.cost : null,
+        contribTotal: known ? d.qty * (d.price - d.cost) : null,
+        marginPct: known && d.price ? ((d.price - d.cost) / d.price) * 100 : null,
+      };
+    });
   })();
+  // The matrix plots margin, so it only includes dishes with a known cost.
+  const matrixDishes = perDish.filter((d) => d.contribPer != null);
 
   const medOf = (arr) => {
     const s = arr.slice().sort((a, b) => a - b);
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   };
-  const medQty = medOf(perDish.map((d) => d.qty));
-  const medContrib = medOf(perDish.map((d) => d.contribPer));
-  const qMin = Math.min(...perDish.map((d) => d.qty)), qMax = Math.max(...perDish.map((d) => d.qty));
-  const cMin = Math.min(...perDish.map((d) => d.contribPer)), cMax = Math.max(...perDish.map((d) => d.contribPer));
+  const hasMatrix = matrixDishes.length > 0;
+  const medQty = hasMatrix ? medOf(matrixDishes.map((d) => d.qty)) : 0;
+  const medContrib = hasMatrix ? medOf(matrixDishes.map((d) => d.contribPer)) : 0;
+  const qMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.qty)) : 0, qMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.qty)) : 1;
+  const cMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.contribPer)) : 0, cMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.contribPer)) : 1;
   const xOf = (q) => 11 + ((q - qMin) / (qMax - qMin || 1)) * 76;
   const yOf = (c) => 87 - ((c - cMin) / (cMax - cMin || 1)) * 74;
-  perDish.forEach((d) => {
+  matrixDishes.forEach((d) => {
     d.quad = d.qty >= medQty ? (d.contribPer >= medContrib ? "Star" : "Plowhorse") : d.contribPer >= medContrib ? "Puzzle" : "Dog";
   });
 
@@ -273,6 +293,7 @@ export default function AnalyticsScreen({
     Plowhorse: `Popular and thin. A dollar on the price is ${money0(sel.qty / weeks)} a week at this volume, and nobody counts a dollar on a plate they already order.`,
     Puzzle: `Earns ${money2(sel.contribPer)} a plate and only sells ${num(sel.qty / weeks)} a week. Worth a push from the pass tonight.`,
     Dog: `Low volume, low earn — ${money0(sel.contribTotal / weeks)} a week of margin for a line on the menu and space in the walk-in.`,
+    undefined: "Margin not known yet — some of this dish's ingredients are still awaiting pricing from an invoice.",
   };
 
   /* ── movers ────────────────────────────────────────────────────────── */
@@ -288,7 +309,7 @@ export default function AnalyticsScreen({
     const sorted = perDish.slice().sort((a, b) => (moversMetric === "qty" ? b.qty - a.qty : b.rev - a.rev));
     const top = sorted.length ? (moversMetric === "qty" ? sorted[0].qty : sorted[0].rev) : 1;
     moverRows = sorted.map((d, i) => ({
-      key: d.name, rank: String(i + 1), name: d.name, sub: [d.cat, money2(d.contribPer) + " margin"].filter(Boolean).join(" · "),
+      key: d.name, rank: String(i + 1), name: d.name, sub: [d.cat, d.contribPer == null ? "awaiting pricing" : money2(d.contribPer) + " margin"].filter(Boolean).join(" · "),
       barWidth: (((moversMetric === "qty" ? d.qty : d.rev) / (top || 1)) * 100).toFixed(1) + "%",
       barColor: "var(--accent)",
       value: moversMetric === "qty" ? num(d.qty) : money0(d.rev),
@@ -307,7 +328,7 @@ export default function AnalyticsScreen({
       dish: perDish.find((d) => d.name === c.name),
     }));
   }
-  const puzzles = perDish.filter((d) => d.quad === "Puzzle");
+  const puzzles = matrixDishes.filter((d) => d.quad === "Puzzle");
   const footNote = moversTab === "top" ? `Ranked over ${span} nights` : "Last 7 nights vs the 7 before";
   const footValue = moversTab === "top"
     ? (puzzles.length ? `${puzzles.length} puzzles to push` : "No puzzles on the menu")
@@ -319,8 +340,8 @@ export default function AnalyticsScreen({
     const mobileKpis = [
       { label: "Net sales", value: money0(rev), color: "var(--text)" },
       { label: "Plates", value: num(qty), color: "var(--text)" },
-      { label: "Food cost", value: pct1(foodCost), color: foodCost > targetFoodCost ? "var(--red)" : "var(--text)" },
-      { label: "Margin", value: money0(contribution), color: "var(--accent-deep)" },
+      { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: foodCost == null ? "var(--faint)" : foodCost > targetFoodCost ? "var(--red)" : "var(--text)" },
+      { label: "Margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--accent-deep)" },
     ];
     return (
       <Shell theme={theme}>
@@ -443,7 +464,7 @@ export default function AnalyticsScreen({
                         {trendMetric === "rev" ? money0(hDay.rev) : num(hDay.qty) + " plates"}
                       </div>
                       <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.06em", color: "var(--faint)", marginTop: 3 }}>
-                        {hDay.label} · {DAY_FULL[hDay.dow]}{hDay.weekend ? " · service night" : ""}{hDay.rev ? " · " + pct1((hDay.cogs / hDay.rev) * 100) + " food cost" : ""}
+                        {hDay.label} · {DAY_FULL[hDay.dow]}{hDay.weekend ? " · service night" : ""}{hDay.costedRev ? " · " + pct1((hDay.cogs / hDay.costedRev) * 100) + " food cost" : ""}
                       </div>
                     </div>
                   )}
@@ -531,8 +552,16 @@ export default function AnalyticsScreen({
 
               <div style={{ flex: 1, minHeight: 0, padding: "16px 22px 26px 40px" }}>
                 <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 0, borderLeft: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
-                  <div style={{ position: "absolute", left: xOf(medQty).toFixed(2) + "%", top: 0, bottom: 0, width: 1, borderLeft: "1px dashed var(--line)" }} />
-                  <div style={{ position: "absolute", top: yOf(medContrib).toFixed(2) + "%", left: 0, right: 0, height: 1, borderTop: "1px dashed var(--line)" }} />
+                  {hasMatrix ? (
+                    <>
+                      <div style={{ position: "absolute", left: xOf(medQty).toFixed(2) + "%", top: 0, bottom: 0, width: 1, borderLeft: "1px dashed var(--line)" }} />
+                      <div style={{ position: "absolute", top: yOf(medContrib).toFixed(2) + "%", left: 0, right: 0, height: 1, borderTop: "1px dashed var(--line)" }} />
+                    </>
+                  ) : (
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, textAlign: "center", fontSize: 12.5, lineHeight: 1.5, color: "var(--faint)" }}>
+                      Margins appear here once dishes are priced from invoices.
+                    </div>
+                  )}
                   {[
                     { label: "Puzzles", left: "4%", top: "5%", shift: "0,0" },
                     { label: "Stars", left: "96%", top: "5%", shift: "-100%,0" },
@@ -541,7 +570,7 @@ export default function AnalyticsScreen({
                   ].map((q) => (
                     <span key={q.label} style={{ position: "absolute", left: q.left, top: q.top, transform: `translate(${q.shift})`, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", opacity: 0.75, whiteSpace: "nowrap" }}>{q.label}</span>
                   ))}
-                  {perDish.map((d) => {
+                  {matrixDishes.map((d) => {
                     const on = hasSelection && d.name === sel.name;
                     const lit = on || matrixHover === d.name;
                     const right = xOf(d.qty) > 62;
@@ -563,14 +592,14 @@ export default function AnalyticsScreen({
                 <div style={{ flexShrink: 0, borderTop: "1px solid var(--line)", background: "var(--panel)", padding: "12px 18px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
                   <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel.name}</span>
-                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 12, flexShrink: 0, color: QUAD_COLOR[sel.quad], border: `1px solid ${QUAD_COLOR[sel.quad]}` }}>{sel.quad}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 12, flexShrink: 0, color: sel.quad ? QUAD_COLOR[sel.quad] : "var(--faint)", border: `1px solid ${sel.quad ? QUAD_COLOR[sel.quad] : "var(--line)"}` }}>{sel.quad || "Awaiting pricing"}</span>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
                     {[
                       { label: "Plates sold", value: num(sel.qty), color: "var(--text)" },
                       { label: "Net sales", value: money0(sel.rev), color: "var(--text)" },
-                      { label: "Margin / plate", value: money2(sel.contribPer), color: "var(--accent-deep)" },
-                      { label: "Total margin", value: money0(sel.contribTotal), color: "var(--text)" },
+                      { label: "Margin / plate", value: sel.contribPer == null ? "—" : money2(sel.contribPer), color: sel.contribPer == null ? "var(--faint)" : "var(--accent-deep)" },
+                      { label: "Total margin", value: sel.contribTotal == null ? "—" : money0(sel.contribTotal), color: sel.contribTotal == null ? "var(--faint)" : "var(--text)" },
                     ].map((s) => (
                       <div key={s.label} style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
