@@ -1042,7 +1042,7 @@ PIZZA AND FLATBREAD DOUGH:
 PREPARATION STYLE:
 - The dish name tells you how it is prepared — follow it. "Dry Rub" means a spice blend (e.g. Paprika, Garlic Powder, Brown Sugar, Salt, Black Pepper), never a sauce. A named sauce or flavor ("Honey Habanero", "Korean BBQ", "Buffalo") means that specific sauce.
 - Two variants with different names must not end up with the same sauce.
-- Sides: a burger or sandwich that comes with fries gets regular "French Fries" unless its own description names a different side. A specialty side named in one dish's description (e.g. "Spaghetti Fries") belongs only to that dish — never give it to other dishes.
+  - Sides: give a dish the side the menu states for that dish or its section. A specialty side named in one dish's description (e.g. "Spaghetti Fries") belongs only to that dish — never copy it to other dishes. If the menu states no side, do not add one.
 
 PORTION NORMS — quantities come from standard kitchen portions, never from price:
 - If the menu or description states a size or count (e.g. "12 oz", "half-pound", "10 wings"), use it exactly
