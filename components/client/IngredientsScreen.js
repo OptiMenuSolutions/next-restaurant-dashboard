@@ -92,10 +92,17 @@ export const DEMO_INGREDIENTS = [
 
 function decorate(g) {
   const h = g.history || [];
-  const price = h.length ? h[h.length - 1].value : g.estimatedPrice != null ? g.estimatedPrice : null;
+  // Purchases arrive newest first, each already in the ingredient's unit.
+  const buys = (g.purchases || []).filter((p) => Number(p.unitCost) > 0);
+  const price = buys.length
+    ? Number(buys[0].unitCost)
+    : h.length ? h[h.length - 1].value : g.estimatedPrice != null ? g.estimatedPrice : null;
   // No invoice history and no approved price: nothing to show yet.
   const awaiting = price == null;
-  const prev = h.length > 1 ? h[h.length - 2].value : null;
+  // Change since the previous delivery. History is averaged by month, so two
+  // deliveries in the same month (a $2.15 -> $2.19 chicken increase) would
+  // otherwise show no change at all.
+  const prev = buys.length > 1 ? Number(buys[1].unitCost) : h.length > 1 ? h[h.length - 2].value : null;
   return {
     ...g,
     history: h,
@@ -377,6 +384,9 @@ function Summary({ all, risers, fallers, unpriced, override, onPick, onNeedsPric
 function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpen, onOpenMenuItem, onOpenInvoice }) {
   const h = g.history;
   const hasHistory = h.length > 1;
+  // Any invoice at all means real purchase data to show. The "no invoice yet"
+  // message is only for ingredients that truly have none.
+  const hasPurchases = g.purchases.length > 0;
   const chart = useMemo(() => buildChart(h), [h]);
 
   const menuTotal = g.menuItems.length;
@@ -411,7 +421,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
         </div>
       </div>
 
-      {!hasHistory && (
+      {!hasPurchases && (
         <div style={{ padding: "28px 22px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 9 }}>
           <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: g.awaiting ? "var(--faint)" : "var(--amber)" }}>{g.awaiting ? "Awaiting price" : "Estimated price"}</div>
           <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em" }}>{g.name} hasn’t come through on an invoice yet</div>
@@ -423,7 +433,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
         </div>
       )}
 
-      {hasHistory && !menuOpen && !invoicesOpen && (
+      {hasPurchases && !menuOpen && !invoicesOpen && (
         <div style={{ display: "flex", alignItems: "stretch", flexWrap: "wrap", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
           <div style={{ flex: "1 1 150px", minWidth: 0, padding: "16px 18px 10px", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
@@ -486,7 +496,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
         </div>
       )}
 
-      {hasHistory && menuOpen && (
+      {hasPurchases && menuOpen && (
         <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", background: "var(--panel)", padding: "16px 22px 20px" }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
             <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>
@@ -514,7 +524,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
         </div>
       )}
 
-      {hasHistory && !menuOpen && (
+      {hasPurchases && !menuOpen && (
         <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", background: "var(--panel)", padding: "16px 22px 18px" }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
             <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>Purchase history</span>
