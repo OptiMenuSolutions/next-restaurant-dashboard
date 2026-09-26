@@ -25,8 +25,15 @@ function resolveUnitCost(item) {
     let unitCost, unit;
 
     if (item.catch_weight && item.actual_weight) {
-      unitCost = item.invoice_price;
-      unit     = item.size_unit || 'lb';
+      // Catch-weight lines are priced per pound of the weight actually
+      // shipped (the printed Weight column), whatever the Size column says
+      // about portions ("22 x 7 oz" steaks billed at $14.50/lb). The old
+      // code took the unit from size_unit and labeled a per-lb price as
+      // per-oz, 16x too high. actual_weight is the line's total weight, so
+      // total / weight is the true per-lb price.
+      const lineTotal = Number(item.line_total);
+      unitCost = lineTotal > 0 ? lineTotal / item.actual_weight : item.invoice_price;
+      unit     = 'lb';
     } else if (item.pack && item.size && item.size_unit) {
       // Suppliers print either a per-case or a per-lb/per-unit price on
       // case-packed lines, and invoice_price can't tell us which. The line
@@ -244,6 +251,7 @@ export default async function handler(req, res) {
           ingredientUpdates[ingId] = {
             last_price:      stdPrice,
             unit:            stdUnit,
+            standard_unit:   stdUnit,
             last_ordered_at: invoiceDate,
             is_estimated:    false,
           };
@@ -277,7 +285,7 @@ export default async function handler(req, res) {
 
       let totalQty;
       if (item.catch_weight && item.actual_weight) {
-        totalQty = item.pack ? item.pack * item.actual_weight : item.actual_weight;
+        totalQty = item.actual_weight; // already the line's total shipped weight, in lb
       } else if (item.pack && item.size) {
         const shippedCases = item.quantity_shipped ?? item.quantity_ordered ?? 1;
         totalQty = shippedCases * item.pack * item.size;
