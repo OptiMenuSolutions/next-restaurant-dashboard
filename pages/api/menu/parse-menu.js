@@ -459,6 +459,7 @@ const EXCLUDED_NAME_PATTERNS = [
   /^add\s+/i,           // "Add Beef", "Add Salmon"
   /\s[-–]\s*add\s+/i,   // "Pineapple Stir-Fry - Add Beef"
   /combo\s+of\s+/i,     // "Combo of Two", "Combo of Three"
+  /^(sour|spicy|hot|mild|extra|sides?)$/i, // lone-word fragments, never a dish
 ];
 
 function filterDishManifest(dishes) {
@@ -770,6 +771,7 @@ DISH NAMES:
 - Title case: "GRILLED CHICKEN" → "Grilled Chicken"
 - Preserve acronyms: BLT, BBQ, GF, NYC
 - Keep the menu's own name — do not rename or standardize
+- A dish name is a complete menu item. Never output a fragment or a lone word such as "Sour" or "Spicy". Dips, sauces, and condiments sold as extras (sour cream, salsa, extra dressing) are add-ons, not dishes.
 
 DISH NAME INTEGRITY:
 The dish name must match the menu exactly as printed — never incorporate description text.
@@ -1040,6 +1042,7 @@ PIZZA AND FLATBREAD DOUGH:
 PREPARATION STYLE:
 - The dish name tells you how it is prepared — follow it. "Dry Rub" means a spice blend (e.g. Paprika, Garlic Powder, Brown Sugar, Salt, Black Pepper), never a sauce. A named sauce or flavor ("Honey Habanero", "Korean BBQ", "Buffalo") means that specific sauce.
 - Two variants with different names must not end up with the same sauce.
+- Sides: a burger or sandwich that comes with fries gets regular "French Fries" unless its own description names a different side. A specialty side named in one dish's description (e.g. "Spaghetti Fries") belongs only to that dish — never give it to other dishes.
 
 PORTION NORMS — quantities come from standard kitchen portions, never from price:
 - If the menu or description states a size or count (e.g. "12 oz", "half-pound", "10 wings"), use it exactly
