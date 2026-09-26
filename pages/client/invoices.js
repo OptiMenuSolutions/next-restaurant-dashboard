@@ -97,7 +97,10 @@ function toLine(row) {
     qty: [row.quantity, unit].filter(Boolean).join(" ") || "1",
     unitCost: Number(row.unit_cost != null ? row.unit_cost : row.amount) || 0,
     amount: Number(row.amount) || 0,
-    link: row.ingredients ? row.ingredients.name : (row.ingredient_name_normalized || null),
+    // Only a real ingredient link counts. Falling back to the invoice's own
+    // name made unlinked lines look linked (in green) and hid them from the
+    // unmatched count and the Link items button.
+    link: row.ingredients ? row.ingredients.name : null,
   };
 }
 
