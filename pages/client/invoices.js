@@ -74,6 +74,9 @@ function toInvoice(row) {
     year: yearOf(row.date),
     isoDate: row.date || null,
     amount: row.amount == null ? null : Math.round(parseFloat(row.amount) * 100) / 100,
+    nonFoodTotal: row.non_food_total ?? null,
+    taxAmount: row.tax_amount ?? null,
+    feesAmount: row.fees_amount ?? null,
     status: flagged ? "review" : processed ? "processed" : "pending",
     // Real line count for the LINES column, WITHOUT ever putting fake
     // entries into items — those get rendered/summed by the Receipt panel

@@ -301,7 +301,14 @@ function Receipt({ invoice, onOpen, onFlag }) {
   const meta = STATUS[s.status] || STATUS.processed;
   const items = s.items || [];
   const itemsTotal = sumItems(items);
-  const diff = s.amount == null ? 0 : Math.abs(itemsTotal - s.amount);
+  // Money on the invoice that is intentionally not tracked as ingredients.
+  const extras = [
+    { label: "NON-FOOD ITEMS", value: Number(s.nonFoodTotal) || 0 },
+    { label: "FEES", value: Number(s.feesAmount) || 0 },
+    { label: "TAX", value: Number(s.taxAmount) || 0 },
+  ].filter((e) => e.value > 0);
+  const extrasTotal = extras.reduce((a, e) => a + e.value, 0);
+  const diff = s.amount == null ? 0 : Math.abs(itemsTotal + extrasTotal - s.amount);
   const unmatched = items.filter((i) => !i.link).length;
   const year = s.year || new Date().getFullYear();
 
@@ -370,6 +377,11 @@ function Receipt({ invoice, onOpen, onFlag }) {
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: "var(--ink-soft)" }}>
               <span>ITEMS TOTAL</span><span>{items.length ? money(itemsTotal) : "—"}</span>
             </div>
+            {extras.map((e) => (
+              <div key={e.label} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: "var(--ink-soft)" }}>
+                <span>{e.label}</span><span>{money(e.value)}</span>
+              </div>
+            ))}
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500, color: "var(--ink)" }}>
               <span style={{ letterSpacing: "0.08em" }}>INVOICE TOTAL</span><span>{s.amount == null ? "PENDING" : money(s.amount)}</span>
             </div>

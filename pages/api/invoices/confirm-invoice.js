@@ -155,6 +155,9 @@ export default async function handler(req, res) {
           number:     invoice.invoice_number || null,
           date:       invoice.invoice_date   || null,
           amount:     invoice.total_amount   || null,
+          non_food_total: invoice.non_food_total ?? null,
+          tax_amount:     invoice.tax_amount     ?? null,
+          fees_amount:    invoice.fees_amount    ?? null,
           file_url:   allFileUrls[0]         || null, // keep for backwards compat
           ocr_text:   ocr_text               || null,
           reviewed:   false,

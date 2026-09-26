@@ -171,7 +171,7 @@ ROW CLASSIFICATION — classify each row before extracting:
 - "line_item": has a product description and at least one price/qty value → extract
 - "subtotal": SUBTOTAL / DRY TOTAL / CLR TOTAL / FRZ TOTAL / COOLER → SKIP entirely
 - "total": INVOICE TOTAL / AMOUNT DUE / TOTAL INVOICE DUE → extract as total_amount only
-- "tax_fee": TAX / FUEL SURCHARGE / HANDLING → extract value only
+- "tax_fee": sales TAX → add to tax_amount; FUEL SURCHARGE / DELIVERY / HANDLING and similar charges → add to fees_amount. Never output these as line items.
 - "header": column labels → skip
 - "blank": empty → skip
 
@@ -266,7 +266,7 @@ CONFIDENCE DEFINITION:
 IGNORE: handwritten annotations, circled numbers, crossed-out values, watermarks, signatures.
 
 FOOD vs NON-FOOD:
-is_food=false: cleaning supplies, paper goods, foil, bags, gloves, equipment, fees, taxes
+is_food=false: cleaning supplies, paper goods, foil, bags, gloves, equipment (taxes and fees are never line items — they go in tax_amount and fees_amount)
 is_food=true: all food, oils, condiments, beverages, dairy, produce, meat, seafood, spices
 
 INGREDIENT NAME NORMALIZATION:
@@ -289,6 +289,8 @@ OUTPUT FORMAT
   "invoice_number": "string or null",
   "invoice_date": "YYYY-MM-DD or null",
   "total_amount": number or null,
+  "tax_amount": number or null,
+  "fees_amount": number or null,
   "format_notes": "brief description of format and any issues",
   "columns": [
     { "key": "item_name_normalized", "label": "Item", "editable": true, "type": "text" },
@@ -826,6 +828,9 @@ export default async function handler(req, res) {
           invoice_number: normalizeInvoiceNumber(extracted.invoice_number),
           invoice_date:   extracted.invoice_date,
           total_amount:   extracted.total_amount,
+          tax_amount:     extracted.tax_amount ?? null,
+          fees_amount:    extracted.fees_amount ?? null,
+          non_food_total: Math.round(nonFoodItems.reduce((s, i) => s + (Number(i.line_total) || 0), 0) * 100) / 100,
           format_notes:   extracted.format_notes || null,
           columns:        extracted.columns || [],
           confidence:     extracted.confidence || {},
