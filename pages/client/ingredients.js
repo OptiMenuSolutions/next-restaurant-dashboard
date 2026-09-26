@@ -10,6 +10,7 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import { fetchSampleData } from "../../lib/seedSampleData";
+import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from "../../lib/standardizedUnits";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -71,14 +72,14 @@ function buildSampleIngredientRows(sample) {
       estimatedPrice: Number(g.last_price) || 0,
       supplier: lines[0]?.invoices?.supplier || null,
       lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
-      history: toHistory(lines),
+      history: toHistory(lines, g.unit || "ea", g.name),
       purchases: lines.map((r) => ({
         date: shortDate(r.invoices.date),
         supplier: r.invoices.supplier || "Supplier",
         invoice: r.invoices.number || "No number",
         invoiceId: r.invoices.id,
         qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
-        unitCost: Number(r.unit_cost) || 0,
+        unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
       })),
       menuItems: menuByIngredient.get(g.id) || [],
     };
@@ -102,11 +103,25 @@ const monthLabel = (iso) => MONTHS[Number(String(iso).slice(5, 7)) - 1];
 const shortDate = (iso) => `${monthLabel(iso)} ${Number(String(iso).slice(8, 10))}`;
 
 /** invoice_items rows for one ingredient -> monthly average price series. */
-function toHistory(rows) {
+/* Invoice lines store the price per the INVOICE's unit ($2.15/lb for a
+   40 lb case). The ingredient is priced and labeled per its own unit (oz),
+   so convert first — otherwise $2.15/lb displays as "$2.15/oz". Uses the
+   same conversion confirm-invoice uses when it saves last_price, so the
+   page and the saved price always agree. Null when the units don't line up. */
+function toIngredientUnitCost(r, ingUnit, ingName) {
+  const cost = Number(r.unit_cost);
+  if (!isFinite(cost) || cost <= 0) return null;
+  const from = r.unit || ingUnit;
+  if (!from || from === ingUnit) return cost;
+  if (getStandardUnitForIngredient(from, ingName || "") !== ingUnit) return null;
+  return convertInvoiceCostToStandardUnit(cost, from, ingName || "");
+}
+
+function toHistory(rows, ingUnit, ingName) {
   const byMonth = new Map();
   rows.forEach((r) => {
     const iso = r.invoices?.date;
-    const unitCost = Number(r.unit_cost);
+    const unitCost = toIngredientUnitCost(r, ingUnit, ingName);
     if (!iso || !isFinite(unitCost) || unitCost <= 0) return;
     const key = monthKey(iso);
     const bucket = byMonth.get(key) || { label: monthLabel(iso), sum: 0, n: 0 };
@@ -247,14 +262,14 @@ export default function IngredientsPage() {
         estimatedPrice: g.is_estimated === false || g.price_approved_at ? Number(g.last_price) || 0 : null,
         supplier: lines[0]?.invoices?.supplier || null,
         lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
-        history: toHistory(lines),
+        history: toHistory(lines, g.unit || "ea", g.name),
         purchases: lines.map((r) => ({
           date: shortDate(r.invoices.date),
           supplier: r.invoices.supplier || "Supplier",
           invoice: r.invoices.number || "No number",
           invoiceId: r.invoices.id,
           qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
-          unitCost: Number(r.unit_cost) || 0,
+          unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
         })),
         menuItems: menuByIngredient.get(g.id) || [],
       };
