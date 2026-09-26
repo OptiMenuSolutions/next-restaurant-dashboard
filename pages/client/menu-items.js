@@ -26,6 +26,8 @@ function isTourQueryActive() {
   }
 }
 import ParseReviewModal from "../../components/ParseReviewModal";
+import LeaveGuardModal from "../../components/LeaveGuardModal";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 
 /**
  * pages/client/menu-items.js — menu items screen, v5 shell.
@@ -180,29 +182,7 @@ export default function MenuItemsPage() {
   // whole review-modal period, since nothing's saved until it's committed.
   const menuFlowActive = menuParsing || !!reviewData;
 
-  useEffect(() => {
-    if (!menuFlowActive) return;
-
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    const handleRouteChangeStart = () => {
-      if (!window.confirm("Your menu is still being processed and hasn't been saved yet. Leave anyway?")) {
-        router.events.emit("routeChangeError");
-        // eslint-disable-next-line no-throw-literal
-        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change from a routeChangeStart handler
-      }
-    };
-    router.events.on("routeChangeStart", handleRouteChangeStart);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      router.events.off("routeChangeStart", handleRouteChangeStart);
-    };
-  }, [menuFlowActive, router.events]);
+  const leaveGuard = useLeaveGuard(menuFlowActive);
 
   async function handleMenuFiles(fileList) {
     if (!fileList || !fileList.length || !restaurantId) return;
@@ -410,6 +390,13 @@ export default function MenuItemsPage() {
         NavLink={NavLink}
       />
       {tour.active && <TourOverlay tour={tour} />}
+      <LeaveGuardModal
+        open={!!leaveGuard.pendingUrl}
+        title="Your menu is still being processed"
+        body="It hasn't been saved yet. If you leave now, this upload will be lost and you'll need to upload it again."
+        onStay={leaveGuard.stay}
+        onLeave={leaveGuard.leave}
+      />
 
       <UniversalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
 

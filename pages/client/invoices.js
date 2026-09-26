@@ -10,6 +10,8 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
+import LeaveGuardModal from "../../components/LeaveGuardModal";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { fetchSampleData } from "../../lib/seedSampleData";
 
 // Matches SAMPLE_RESTAURANT_ID in lib/seedSampleData.js exactly.
@@ -209,9 +211,7 @@ export default function InvoicesPage() {
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const lastUpload = invoices[0]?.isoDate
-    ? "Last invoice " + new Date(invoices[0].isoDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-    : "";
+  const lastUpload = invoices[0]?.isoDate ? "Last invoice " + invoices[0].date : "";
 
   const initials = (userName || "Chef")
     .split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
@@ -227,30 +227,7 @@ export default function InvoicesPage() {
   // nothing saved (or, for a non-duplicate, it saved with no confirmation
   // on screen). Warn before closing the tab and ask before in-app navigation.
   const invoiceFlowActive = uploading || !!duplicateModal;
-
-  useEffect(() => {
-    if (!invoiceFlowActive) return;
-
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    const handleRouteChangeStart = () => {
-      if (!window.confirm("Your invoice is still being processed and hasn't been saved yet. Leave anyway?")) {
-        router.events.emit("routeChangeError");
-        // eslint-disable-next-line no-throw-literal
-        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change
-      }
-    };
-    router.events.on("routeChangeStart", handleRouteChangeStart);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      router.events.off("routeChangeStart", handleRouteChangeStart);
-    };
-  }, [invoiceFlowActive, router.events]);
+  const leaveGuard = useLeaveGuard(invoiceFlowActive);
 
   // Promise-based stand-in for what window.confirm() used to do
   // synchronously — resolves once the person clicks a button on the real
@@ -402,6 +379,13 @@ export default function InvoicesPage() {
         NavLink={NavLink}
       />
       {tour.active && <TourOverlay tour={tour} />}
+      <LeaveGuardModal
+        open={!!leaveGuard.pendingUrl}
+        title="Your invoice is still being processed"
+        body="It hasn't been saved yet. If you leave now, this upload will be lost and you'll need to upload it again."
+        onStay={leaveGuard.stay}
+        onLeave={leaveGuard.leave}
+      />
 
       <UniversalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>

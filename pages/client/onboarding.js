@@ -8,6 +8,8 @@ import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
 import { parseMenuFiles } from "../../lib/parseMenu";
 import ParseReviewModal from "../../components/ParseReviewModal";
+import LeaveGuardModal from "../../components/LeaveGuardModal";
+import { useLeaveGuard } from "../../lib/useLeaveGuard";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -54,29 +56,7 @@ export default function OnboardingPage() {
   // via the menuFlowActive prop below.
   const menuFlowActive = menuParsing || !!menuReviewData;
 
-  useEffect(() => {
-    if (!menuFlowActive) return;
-
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    const handleRouteChangeStart = () => {
-      if (!window.confirm("Your menu is still being processed and hasn't been saved yet. Leave anyway?")) {
-        router.events.emit("routeChangeError");
-        // eslint-disable-next-line no-throw-literal
-        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change from a routeChangeStart handler
-      }
-    };
-    router.events.on("routeChangeStart", handleRouteChangeStart);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      router.events.off("routeChangeStart", handleRouteChangeStart);
-    };
-  }, [menuFlowActive, router.events]);
+  
 
   // Returns a promise that only resolves once the review is actually done
   // (committed or discarded) — this is what OnboardingScreen's continueStep
@@ -151,27 +131,7 @@ export default function OnboardingPage() {
   // The menu step is already guarded above; the invoice step needs the same
   // protection while parsing or while the duplicate prompt is open.
   const invoiceFlowActive = parsingInvoices || !!duplicateModal;
-
-  useEffect(() => {
-    if (!invoiceFlowActive) return;
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    const handleRouteChangeStart = () => {
-      if (!window.confirm("Your invoice is still being processed and hasn't been saved yet. Leave anyway?")) {
-        router.events.emit("routeChangeError");
-        // eslint-disable-next-line no-throw-literal
-        throw "routeChange aborted.";
-      }
-    };
-    router.events.on("routeChangeStart", handleRouteChangeStart);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      router.events.off("routeChangeStart", handleRouteChangeStart);
-    };
-  }, [invoiceFlowActive, router.events]);
+  const leaveGuard = useLeaveGuard(menuFlowActive || invoiceFlowActive);
 
   function askDuplicateConfirm(fileName, existing) {
     return new Promise((resolve) => {
@@ -462,6 +422,13 @@ export default function OnboardingPage() {
           onClose={() => { menuReviewData.resolve?.(); setMenuReviewData(null); setMenuReviewChoice(null); }}
         />
       )}
+      <LeaveGuardModal
+        open={!!leaveGuard.pendingUrl}
+        title="Your upload is still being processed"
+        body="It hasn't been saved yet. If you leave now, you'll need to upload it again."
+        onStay={leaveGuard.stay}
+        onLeave={leaveGuard.leave}
+      />
       {menuParseError && (
         <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
           <div style={{ fontWeight: 700 }}>{menuParseError}</div>

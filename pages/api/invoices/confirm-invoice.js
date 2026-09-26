@@ -32,7 +32,7 @@ function resolveUnitCost(item) {
       // per-oz, 16x too high. actual_weight is the line's total weight, so
       // total / weight is the true per-lb price.
       const lineTotal = Number(item.line_total);
-      unitCost = lineTotal > 0 ? lineTotal / item.actual_weight : item.invoice_price;
+      unitCost = lineTotal > 0 ? Math.round((lineTotal / item.actual_weight) * 1e6) / 1e6 : item.invoice_price;
       unit     = 'lb';
     } else if (item.pack && item.size && item.size_unit) {
       // Suppliers print either a per-case or a per-lb/per-unit price on
