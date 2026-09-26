@@ -148,6 +148,31 @@ export default function OnboardingPage() {
   const [uploadError, setUploadError] = useState("");
   const [parsingInvoices, setParsingInvoices] = useState(false);
 
+  // The menu step is already guarded above; the invoice step needs the same
+  // protection while parsing or while the duplicate prompt is open.
+  const invoiceFlowActive = parsingInvoices || !!duplicateModal;
+
+  useEffect(() => {
+    if (!invoiceFlowActive) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    const handleRouteChangeStart = () => {
+      if (!window.confirm("Your invoice is still being processed and hasn't been saved yet. Leave anyway?")) {
+        router.events.emit("routeChangeError");
+        // eslint-disable-next-line no-throw-literal
+        throw "routeChange aborted.";
+      }
+    };
+    router.events.on("routeChangeStart", handleRouteChangeStart);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      router.events.off("routeChangeStart", handleRouteChangeStart);
+    };
+  }, [invoiceFlowActive, router.events]);
+
   function askDuplicateConfirm(fileName, existing) {
     return new Promise((resolve) => {
       setDuplicateModal({
@@ -272,7 +297,7 @@ export default function OnboardingPage() {
         doneHref="/client/dashboard?justOnboarded=true"
         onParseMenu={parseMenuAndWaitForReview}
         parsingMenu={menuParsing}
-        blockNavigation={menuFlowActive}
+        blockNavigation={menuFlowActive || invoiceFlowActive}
         onSelectPos={async (key) => {
           if (key === "upload") return; // "I'll upload manually" — no OAuth, just continue the wizard
           if (!restaurantId) return;

@@ -220,6 +220,37 @@ export default function InvoicesPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [duplicateModal, setDuplicateModal] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  // Same guard as Menu Items: the upload runs inside this page. Navigating
+  // away mid-parse left the duplicate prompt with no page to show on, so
+  // nothing saved (or, for a non-duplicate, it saved with no confirmation
+  // on screen). Warn before closing the tab and ask before in-app navigation.
+  const invoiceFlowActive = uploading || !!duplicateModal;
+
+  useEffect(() => {
+    if (!invoiceFlowActive) return;
+
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    const handleRouteChangeStart = () => {
+      if (!window.confirm("Your invoice is still being processed and hasn't been saved yet. Leave anyway?")) {
+        router.events.emit("routeChangeError");
+        // eslint-disable-next-line no-throw-literal
+        throw "routeChange aborted."; // Next.js's own idiom for cancelling a route change
+      }
+    };
+    router.events.on("routeChangeStart", handleRouteChangeStart);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      router.events.off("routeChangeStart", handleRouteChangeStart);
+    };
+  }, [invoiceFlowActive, router.events]);
 
   // Promise-based stand-in for what window.confirm() used to do
   // synchronously — resolves once the person clicks a button on the real
@@ -236,6 +267,15 @@ export default function InvoicesPage() {
   }
 
   async function handleFiles(fileList) {
+    setUploading(true);
+    try {
+      await runUpload(fileList);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function runUpload(fileList) {
     if (!fileList || !fileList.length || !restaurantId) return;
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
@@ -308,7 +348,13 @@ export default function InvoicesPage() {
         accept=".pdf,.jpg,.jpeg,.png,.heic"
         multiple
         style={{ display: "none" }}
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => {
+          // Copy first (clearing empties the live FileList), then clear so
+          // choosing the same file again still triggers an upload.
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          handleFiles(files);
+        }}
       />
       {(uploadStatus || uploadError) && (
         <div
