@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
@@ -115,6 +115,8 @@ export default function InvoicesScreen({
   onOpen,
   onFlag,
   onSelect,
+  ingredientOptions = [],
+  onLinkLine,
   onSearch,
   onSignOut,
   restaurantName = "Trattoria Lume",
@@ -288,14 +290,16 @@ export default function InvoicesScreen({
             </div>
           </div>
 
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} />
         </div>
       </div>
     </Shell>
   );
 }
 
-function Receipt({ invoice, onOpen, onFlag }) {
+function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }) {
+  const [linkMode, setLinkMode] = useState(false);
+  useEffect(() => { setLinkMode(false); }, [invoice && invoice.id]);
   if (!invoice) return null;
   const s = invoice;
   const meta = STATUS[s.status] || STATUS.processed;
@@ -319,8 +323,9 @@ function Receipt({ invoice, onOpen, onFlag }) {
     { label: "STATUS", value: meta.label, color: meta.color },
   ];
 
-  const primaryAction =
-    s.status === "processed"
+  const primaryAction = linkMode
+    ? "· · · DONE LINKING · · ·"
+    : s.status === "processed"
       ? unmatched
         ? `· · · LINK ${unmatched} ITEMS · · ·`
         : "· · · OPEN FULL INVOICE · · ·"
@@ -356,7 +361,21 @@ function Receipt({ invoice, onOpen, onFlag }) {
             <span>{items.length ? `${items.length} LINES · ${unmatched} UNMATCHED` : "NOT READ YET"}</span>
           </div>
           <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", marginTop: 9 }}>
-            {items.map((i, n) => (
+            {linkMode && (
+              <>
+                <style>{".om-link-opt:hover{background:var(--accent-tint)}"}</style>
+                <div style={{ fontSize: 9, color: "var(--ink-soft)", lineHeight: 1.5, marginBottom: 6 }}>
+                  Link each line to the ingredient it is. Its price updates from this invoice.
+                </div>
+                {items.filter((i) => !i.link).map((i) => (
+                  <LinkRow key={i.id || i.name} line={i} options={ingredientOptions} onLink={(line, choice) => onLinkLine(s, line, choice)} />
+                ))}
+                {!items.some((i) => !i.link) && (
+                  <div style={{ fontSize: 10, color: "var(--green)", padding: "6px 0" }}>✓ Every line is linked</div>
+                )}
+              </>
+            )}
+            {!linkMode && items.map((i, n) => (
               <div key={n} style={{ padding: "5px 0" }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
                   <span style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
@@ -392,10 +411,93 @@ function Receipt({ invoice, onOpen, onFlag }) {
             )}
           </div>
           <div style={{ display: "flex", gap: 7, marginTop: 12, flexShrink: 0 }}>
-            <button type="button" onClick={() => onOpen && onOpen(s)} className="om-hover-accent" style={{ ...btn, flex: 1 }}>{primaryAction}</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (linkMode) { setLinkMode(false); return; }
+                if (s.status === "processed" && unmatched && onLinkLine) { setLinkMode(true); return; }
+                onOpen && onOpen(s);
+              }}
+              className="om-hover-accent"
+              style={{ ...btn, flex: 1 }}
+            >
+              {primaryAction}
+            </button>
             <button type="button" onClick={() => onFlag && onFlag(s)} className="om-hover-accent" style={{ ...btn, padding: "9px 12px" }}>FLAG</button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* One unlinked invoice line in linking mode: the line on the left, a
+   type-to-find ingredient field on the right, styled like the receipt. */
+function LinkRow({ line, options, onLink }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const words = String(line.name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+  const query = q.trim().toLowerCase();
+  const results = (query
+    ? options.filter((o) => o.name.toLowerCase().includes(query))
+    : options
+        .map((o) => ({ o, score: words.filter((w) => o.name.toLowerCase().includes(w)).length }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.o)
+  ).slice(0, 8);
+  const newName = q.trim() || line.name;
+
+  async function choose(choice) {
+    setOpen(false);
+    setSaving(true);
+    setErr("");
+    try {
+      await onLink(line, choice);
+    } catch (e) {
+      setErr(e.message || "Could not link that line.");
+      setSaving(false);
+    }
+  }
+
+  const opt = { display: "flex", justifyContent: "space-between", gap: 8, padding: "6px 9px", fontSize: 10.5, color: "var(--ink)", cursor: "pointer", borderBottom: "1px dotted var(--paper-line)" };
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1.1fr)", gap: 12, alignItems: "start", padding: "7px 0", borderBottom: "1px dashed var(--paper-line)" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.name}</div>
+        <div style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 2, whiteSpace: "nowrap" }}>{line.qty} @ {money(line.unitCost)}</div>
+      </div>
+      <div style={{ position: "relative", minWidth: 0 }}>
+        <input
+          value={saving ? "linking…" : q}
+          disabled={saving}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          placeholder="type to find ingredient"
+          style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px dashed var(--ink-faint)", outline: "none", padding: "2px 0 3px", fontFamily: MONO, fontSize: 10.5, color: "var(--ink)" }}
+        />
+        {open && !saving && (
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 20, background: "var(--paper)", border: "1px solid var(--paper-line)", borderRadius: 4, boxShadow: "var(--shadow-lg)", maxHeight: 190, overflowY: "auto", fontFamily: MONO }}>
+            {results.map((o) => (
+              <div key={o.id} className="om-link-opt" onMouseDown={(e) => { e.preventDefault(); choose({ ingredientId: o.id }); }} style={opt}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
+                <span style={{ fontSize: 9, color: "var(--ink-faint)", flexShrink: 0 }}>{o.unit}</span>
+              </div>
+            ))}
+            {!results.length && query && (
+              <div style={{ padding: "6px 9px", fontSize: 9.5, color: "var(--ink-faint)" }}>No matching ingredient</div>
+            )}
+            <div className="om-link-opt" onMouseDown={(e) => { e.preventDefault(); choose({ newName }); }} style={{ ...opt, borderBottom: "none", color: "var(--accent-deep)" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>+ New ingredient “{newName}”</span>
+            </div>
+          </div>
+        )}
+        {err && <div style={{ fontSize: 9, color: "var(--red)", marginTop: 3 }}>{err}</div>}
       </div>
     </div>
   );

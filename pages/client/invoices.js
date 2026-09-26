@@ -93,6 +93,8 @@ function toInvoice(row) {
 function toLine(row) {
   const unit = row.unit || (row.ingredients && row.ingredients.unit) || "";
   return {
+    id: row.id,
+    ingredientId: row.ingredient_id || null,
     name: row.item_name || row.name || "Item",
     qty: [row.quantity, unit].filter(Boolean).join(" ") || "1",
     unitCost: Number(row.unit_cost != null ? row.unit_cost : row.amount) || 0,
@@ -125,6 +127,7 @@ export default function InvoicesPage() {
   const [userName, setUserName] = useState("");
   const [invoices, setInvoices] = useState([]);
   const [lines, setLines] = useState({}); // invoiceId -> line items
+  const [ingredientOptions, setIngredientOptions] = useState([]); // for linking lines
 
   const loadInvoices = useCallback(async (restId) => {
     if (isTourQueryActive()) {
@@ -148,6 +151,13 @@ export default function InvoicesPage() {
       .limit(1000);
     if (qErr) throw qErr;
     setInvoices((data || []).map(toInvoice));
+    const { data: ings } = await supabase
+      .from("ingredients")
+      .select("id, name, unit")
+      .eq("restaurant_id", restId)
+      .order("name")
+      .limit(2000);
+    setIngredientOptions(ings || []);
   }, []);
 
   useEffect(() => {
@@ -204,6 +214,33 @@ export default function InvoicesPage() {
       .order("item_name");
     setLines((prev) => ({ ...prev, [invoice.id]: (data || []).map(toLine) }));
   }, [lines]);
+
+  /* Link one invoice line to an ingredient (or a new one), then refresh that
+     invoice's lines so the receipt updates. */
+  const handleLinkLine = useCallback(async (invoice, line, choice) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/invoices/link-item", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({
+        restaurant_id: restaurantId,
+        invoice_item_id: line.id,
+        ingredient_id: choice.ingredientId || null,
+        new_ingredient_name: choice.newName || null,
+      }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Could not link that line.");
+    const { data } = await supabase
+      .from("invoice_items")
+      .select("*, ingredients(name, unit)")
+      .eq("invoice_id", invoice.id)
+      .order("item_name");
+    setLines((prev) => ({ ...prev, [invoice.id]: (data || []).map(toLine) }));
+    if (choice.newName && json.ingredient) {
+      setIngredientOptions((prev) => [...prev, json.ingredient].sort((a, b) => a.name.localeCompare(b.name)));
+    }
+  }, [restaurantId]);
 
   /* Pre-load the first invoice's lines so the receipt is never blank. */
   useEffect(() => {
@@ -374,6 +411,8 @@ export default function InvoicesPage() {
         onRetry={() => router.reload()}
         onUpload={() => fileInput.current && fileInput.current.click()}
         onSelect={handleSelect}
+        ingredientOptions={ingredientOptions}
+        onLinkLine={handleLinkLine}
         onOpen={(v) => router.push(`/client/invoices/${v.id}`)}
         onFlag={(v) => router.push(`/client/invoices/${v.id}?flag=1`)}
         onSearch={() => setSearchOpen(true)}
