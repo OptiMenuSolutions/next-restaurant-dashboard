@@ -497,8 +497,7 @@ export default function DashboardPage() {
       const dDate = new Date(d.date + "T12:00:00");
       if (dDate.getFullYear() !== viewDate.year || dDate.getMonth() !== viewDate.month) return;
       const day = dDate.getDate();
-      const extra = d.extraSold != null ? d.extraSold : 0;
-      days[day] = extra;
+      days[day] = d.extraSold; // null = no sales for that night yet, shown as a dash
       (d.dishes || []).forEach((dish) => {
         if (dish.diff !== null && dish.diff !== undefined && (!top || dish.diff > top.delta)) {
           top = { name: dish.name || "—", date: d.dayLabel || "", delta: dish.diff };
