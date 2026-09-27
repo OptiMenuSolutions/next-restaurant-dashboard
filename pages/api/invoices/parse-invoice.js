@@ -227,7 +227,10 @@ If no QTY_UNIT column exists, default to "lb" for meat/poultry/seafood, "each" f
 
 CATCH-WEIGHT ITEMS:
 Catch-weight means the item is priced by actual weight, not by case.
-Indicators: a non-empty WEIGHT column, or qty_unit="LB" where price×weight≈line_total.
+Indicators: a non-empty WEIGHT or LBS column value on the line, or qty_unit="LB" where price×weight≈line_total.
+
+RULE — applies to every product, including portioned items sold by the case (burger patties, steaks, chops): if a line has a value in a WEIGHT or LBS column, and invoice_price × that weight ≈ line_total while quantity_shipped × invoice_price does NOT ≈ line_total, the line is priced per lb → catch_weight=true and actual_weight = that weight. A UOM of CS or EA does not change this.
+Example: 9 CS 7OZ ANGUS BURGERS, LBS=90.00, PRICE=4.50, AMOUNT=405.00 → 9 × 4.50 = 40.50 ✗, 90 × 4.50 = 405.00 ✓ → catch_weight=true, quantity_shipped=9, actual_weight=90, invoice_price=4.50 (per lb).
 
 When catch_weight=true:
   - actual_weight = the value in the WEIGHT column exactly as printed
