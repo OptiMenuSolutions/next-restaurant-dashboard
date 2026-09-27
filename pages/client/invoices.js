@@ -414,7 +414,6 @@ export default function InvoicesPage() {
         ingredientOptions={ingredientOptions}
         onLinkLine={handleLinkLine}
         onOpen={(v) => router.push(`/client/invoices/${v.id}`)}
-        onFlag={(v) => router.push(`/client/invoices/${v.id}?flag=1`)}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}

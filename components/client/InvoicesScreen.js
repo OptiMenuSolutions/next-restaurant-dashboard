@@ -268,7 +268,6 @@ export default function InvoicesScreen({
                     data-tour="inv-row"
                     className="om-row"
                     onClick={() => pick(v)}
-                    onDoubleClick={() => onOpen && onOpen(v)}
                     style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, alignItems: "center", padding: "11px 16px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}
                   >
                     <div style={{ minWidth: 0 }}>
@@ -410,21 +409,13 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
               </div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 7, marginTop: 12, flexShrink: 0 }}>
-            <button
-              type="button"
-              onClick={() => {
-                if (linkMode) { setLinkMode(false); return; }
-                if (s.status === "processed" && unmatched && onLinkLine) { setLinkMode(true); return; }
-                onOpen && onOpen(s);
-              }}
-              className="om-hover-accent"
-              style={{ ...btn, flex: 1 }}
-            >
-              {primaryAction}
-            </button>
-            <button type="button" onClick={() => onFlag && onFlag(s)} className="om-hover-accent" style={{ ...btn, padding: "9px 12px" }}>FLAG</button>
-          </div>
+          {(linkMode || (s.status === "processed" && unmatched > 0 && onLinkLine)) && (
+            <div style={{ display: "flex", gap: 7, marginTop: 12, flexShrink: 0 }}>
+              <button type="button" onClick={() => setLinkMode(!linkMode)} className="om-hover-accent" style={{ ...btn, flex: 1 }}>
+                {linkMode ? "· · · DONE LINKING · · ·" : `· · · LINK ${unmatched} ITEM${unmatched === 1 ? "" : "S"} · · ·`}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
