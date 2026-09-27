@@ -148,6 +148,7 @@ export default function InvoicesPage() {
       .select("*, invoice_items(count)")
       .eq("restaurant_id", restId)
       .order("date", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
       .limit(1000);
     if (qErr) throw qErr;
     setInvoices((data || []).map(toInvoice));
