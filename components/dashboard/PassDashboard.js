@@ -232,6 +232,8 @@ export default function PassDashboard({
   optiScore = { value: 78, max: 100, label: "Good" },
   stats = DEMO_STATS,
   tickets = DEMO_TICKETS,
+  ticketsStatus = "ready",
+  onRetryTickets,
   waste = DEMO_WASTE,
   week = DEMO_WEEK,
   weekData = [],
@@ -807,10 +809,16 @@ export default function PassDashboard({
                 }}
               >
                 Good evening, {user.firstName}.{" "}
-                <span style={{ color: "var(--faint)", fontWeight: 700 }}>Tonight&rsquo;s pass is set.</span>
+                <span style={{ color: "var(--faint)", fontWeight: 700 }}>
+                  {tickets.length
+                    ? "Tonight\u2019s pass is set."
+                    : ticketsStatus === "loading"
+                      ? "Printing tonight\u2019s tickets\u2026"
+                      : "Tonight\u2019s pass is waiting."}
+                </span>
               </div>
               <div style={{ ...kicker, fontSize: "10.5px", letterSpacing: "0.1em", whiteSpace: "nowrap" }}>
-                {tickets.length ? tickets.length + " dishes on the rail" : "Rail is empty"}
+                {tickets.length ? tickets.length + " dishes on the rail" : ticketsStatus === "loading" ? "Printing\u2026" : "Rail is empty"}
               </div>
             </div>
 
@@ -851,7 +859,18 @@ export default function PassDashboard({
                     justifySelf: "center",
                   }}
                 >
-                  No tickets on the rail yet — tonight&rsquo;s dishes print here once the day&rsquo;s sales and invoices are in.
+                  {ticketsStatus === "loading" ? (
+                    <>Printing tonight&rsquo;s tickets&hellip; the first look each day can take up to a minute.</>
+                  ) : ticketsStatus === "error" ? (
+                    <>
+                      Tonight&rsquo;s tickets didn&rsquo;t load.{" "}
+                      <button type="button" onClick={onRetryTickets} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, color: "var(--accent-deep)", textDecoration: "underline" }}>
+                        Try again
+                      </button>
+                    </>
+                  ) : (
+                    <>No tickets on the rail yet — tonight&rsquo;s dishes print here once the day&rsquo;s sales and invoices are in.</>
+                  )}
                 </div>
               )}
               {tickets.map((t, i) => (

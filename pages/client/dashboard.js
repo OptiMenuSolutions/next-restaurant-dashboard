@@ -181,6 +181,7 @@ export default function DashboardPage() {
   const [pendingConfirmations, setPendingConfirmations] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
+  const [recsStatus, setRecsStatus] = useState("loading"); // loading | ready | error
   const [data, setData] = useState({ ingredients: [], menuItems: [], wasteRisk: [], stats: null });
   const [reloadKey, setReloadKey] = useState(0);
   const [showTourPrompt, setShowTourPrompt] = useState(false);
@@ -408,6 +409,7 @@ export default function DashboardPage() {
       }
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        setRecsStatus("loading");
         const res = await fetch("/api/ai-recommendations", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
@@ -426,9 +428,11 @@ export default function DashboardPage() {
             urgency: r.urgency || null,
           }))
         );
+        setRecsStatus("ready");
       } catch (err) {
         console.error("[fetchAIRecommendations]", err);
         setRecommendations([]);
+        setRecsStatus("error");
       }
     })();
   }, [restaurantId, reloadKey, tourActive]);
@@ -627,6 +631,8 @@ export default function DashboardPage() {
         optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label }}
         stats={stats}
         tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive)}
+        ticketsStatus={recsStatus}
+        onRetryTickets={() => setReloadKey((k) => k + 1)}
         waste={toWaste(data.wasteRisk)}
         week={week}
         weekData={last7WeekData}
