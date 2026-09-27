@@ -265,7 +265,7 @@ export default function DashboardPage() {
             const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
             const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
             const ytdSpend = (sample.invoices || [])
-              .filter((iv) => new Date(iv.date).getFullYear() === new Date().getFullYear())
+              .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
               .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
 
             setData({
@@ -289,7 +289,7 @@ export default function DashboardPage() {
         }
 
         const from = new Date(); from.setDate(from.getDate() - 90);
-        const fromDate = from.toISOString().split("T")[0];
+        const fromDate = from.toLocaleDateString("en-CA"); // local date; toISOString is UTC and shifts a day in the evening
         const [{ data: invoices }, { data: ingredients }, { data: menuItems }, { data: invoiceItems }, { data: posSales }] =
           await Promise.all([
             supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
@@ -313,7 +313,7 @@ export default function DashboardPage() {
         const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
         const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
         const ytdSpend = (invoices || [])
-          .filter((iv) => new Date(iv.date).getFullYear() === new Date().getFullYear())
+          .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
           .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
 
         setData({
@@ -347,8 +347,8 @@ export default function DashboardPage() {
     return { year: d.getFullYear(), month: d.getMonth() };
   });
   const isCurrentMonth = viewDate.year === new Date().getFullYear() && viewDate.month === new Date().getMonth();
-  const monthRangeFrom = new Date(viewDate.year, viewDate.month, 1).toISOString().split("T")[0];
-  const monthRangeTo = new Date(viewDate.year, viewDate.month + 1, 0).toISOString().split("T")[0];
+  const monthRangeFrom = new Date(viewDate.year, viewDate.month, 1).toLocaleDateString("en-CA");
+  const monthRangeTo = new Date(viewDate.year, viewDate.month + 1, 0).toLocaleDateString("en-CA");
 
   const goToPrevMonth = () => {
     setViewDate((v) => (v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 }));
@@ -375,7 +375,7 @@ export default function DashboardPage() {
   const last7WeekData = useMemo(() => {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 6);
-    const start = cutoff.toISOString().split("T")[0];
+    const start = cutoff.toLocaleDateString("en-CA"); // local date, so evenings don't drop the oldest night
     return (weekData || [])
       .filter((d) => d.date >= start)
       .map((d) => (signupDay && d.date <= signupDay ? { ...d, extraSold: null } : d));
