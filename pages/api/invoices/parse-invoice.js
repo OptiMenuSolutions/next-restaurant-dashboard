@@ -501,6 +501,7 @@ RULES:
 - Be liberal with "auto" — "Chicken Breast BNLS SKNLS" → "Chicken Breast" is auto.
 - Synonyms count: "Canola Oil" → "Frying Oil" is ambiguous, not new.
 - Size/pack noise is irrelevant: "Mozzarella 5lb" → "Mozzarella" is auto.
+- A specific cut, grade, or style of a product matches the general ingredient when the library has no more specific entry: "Baby Back Ribs" → "Pork Ribs" and "Ribeye Choice 12oz" → "Ribeye Steak" are auto.
 - Only use ingredient IDs from the library above.
 - Return ONLY raw JSON. No markdown, no explanation.
 
@@ -543,6 +544,38 @@ OUTPUT FORMAT:
 
     return { status: result.status, matches: enriched };
   });
+}
+
+// ─── Remembered links ─────────────────────────────────────────────────────────
+// Once an owner links an invoice line to an ingredient, the same product on
+// later invoices should link the same way automatically: no AI guess, and no
+// asking again. Keyed by the normalized item name; skipped when earlier links
+// for that name disagree.
+
+async function loadRememberedLinks(restaurantId) {
+  const { data, error } = await supabase
+    .from('invoice_items')
+    .select('ingredient_name_normalized, ingredient_id, invoices!inner(restaurant_id)')
+    .eq('invoices.restaurant_id', restaurantId)
+    .not('ingredient_id', 'is', null)
+    .limit(5000);
+  if (error) {
+    console.warn('[parse-invoice] Could not load remembered links:', error.message);
+    return new Map();
+  }
+  const byName = new Map();
+  for (const row of data || []) {
+    const key = row.ingredient_name_normalized;
+    if (!key) continue;
+    const ids = byName.get(key) || new Set();
+    ids.add(row.ingredient_id);
+    byName.set(key, ids);
+  }
+  const remembered = new Map();
+  for (const [key, ids] of byName) {
+    if (ids.size === 1) remembered.set(key, [...ids][0]);
+  }
+  return remembered;
 }
 
 // ─── Load restaurant ingredients ─────────────────────────────────────────────
@@ -683,6 +716,17 @@ export default async function handler(req, res) {
 
   try {
     streamStatus(res, `Downloading ${fileName}...`, null);
+    // Only fetch this restaurant's own files from our Supabase Storage. The
+    // URL comes from the client, so an unchecked fetch would let anyone make
+    // this server request arbitrary addresses (server-side request forgery).
+    let u;
+    try { u = new URL(fileUrl); } catch { u = null; }
+    const allowedHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host;
+    const allowedPrefix = `/storage/v1/object/public/invoices/${restaurantId}/`;
+    if (!u || u.protocol !== 'https:' || u.host !== allowedHost || !u.pathname.startsWith(allowedPrefix)) {
+      streamEvent(res, { type: 'error', error: 'That file is not from this restaurant\'s uploads.' });
+      return res.end();
+    }
     const fileRes = await fetch(fileUrl);
     if (!fileRes.ok) {
       streamEvent(res, { type: 'error', error: `Could not download the uploaded file (${fileRes.status}).` });
@@ -752,7 +796,24 @@ export default async function handler(req, res) {
     // ── Pass 3: Claude ingredient matching (batched) ──────────────────────────
     streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
 
-    const matchResults = await matchWithClaude(foodItems, restaurantIngredients, restaurantId);
+    // Lines this restaurant has linked before match the same way again; only
+    // the rest go to the AI matcher.
+    const remembered = await loadRememberedLinks(restaurantId);
+    const ingById = new Map(restaurantIngredients.map(i => [i.id, i]));
+    const memoryHits = foodItems.map(item => {
+      const id = remembered.get(normalizeName(item.item_name_normalized || item.item_name_raw));
+      return id && ingById.has(id) ? ingById.get(id) : null;
+    });
+    const toMatch = foodItems.filter((_, i) => !memoryHits[i]);
+    const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId) : [];
+    let aiIdx = 0;
+    const matchResults = foodItems.map((_, i) =>
+      memoryHits[i]
+        ? { status: 'auto', matches: [{ ...memoryHits[i], score: 1 }] }
+        : (aiResults[aiIdx++] || { status: 'new', matches: [] })
+    );
+    const memoryCount = memoryHits.filter(Boolean).length;
+    if (memoryCount) console.log(`[parse-invoice] ${memoryCount} line(s) matched from earlier links`);
 
     const sanityFlags    = await sanityCheckCosts(foodItems, restaurantId);
     const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
