@@ -279,8 +279,10 @@ export default function AnalyticsScreen({
   const medContrib = hasMatrix ? medOf(matrixDishes.map((d) => d.contribPer)) : 0;
   const qMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.qty)) : 0, qMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.qty)) : 1;
   const cMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.contribPer)) : 0, cMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.contribPer)) : 1;
-  const xOf = (q) => 11 + ((q - qMin) / (qMax - qMin || 1)) * 76;
-  const yOf = (c) => 87 - ((c - cMin) / (cMax - cMin || 1)) * 74;
+  // When every plotted dish shares a value on an axis (e.g. only one dish is
+  // priced so far), center it instead of pinning it to the Dogs corner.
+  const xOf = (q) => (qMax === qMin ? 49 : 11 + ((q - qMin) / (qMax - qMin)) * 76);
+  const yOf = (c) => (cMax === cMin ? 50 : 87 - ((c - cMin) / (cMax - cMin)) * 74);
   matrixDishes.forEach((d) => {
     d.quad = d.qty >= medQty ? (d.contribPer >= medContrib ? "Star" : "Plowhorse") : d.contribPer >= medContrib ? "Puzzle" : "Dog";
   });
