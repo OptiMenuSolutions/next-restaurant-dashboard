@@ -152,6 +152,7 @@ async function parseWithClaude(ocrText, restaurantId, res) {
   const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 16000,
+    temperature: 0, // reading printed numbers: the same invoice should parse the same way every time
     messages: [{
       role: 'user',
       content: `You are an expert at parsing food service supplier invoice data. Mistral OCR has extracted the following text from an invoice image. Parse it into structured JSON.
@@ -369,6 +370,7 @@ async function sanityCheckCosts(foodItems, restaurantId) {
   const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 2000,
+    temperature: 0,
     messages: [{
       role: 'user',
       content: `You are a food service cost expert reviewing parsed invoice line items for errors.
@@ -479,6 +481,7 @@ async function matchWithClaude(foodItems, restaurantIngredients, restaurantId) {
   const response = await withRetry(() => anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 4000,
+    temperature: 0, // the same line and ingredient list should always match the same way
     messages: [{
       role: 'user',
       content: `You are matching invoice line items to a restaurant's ingredient library.
