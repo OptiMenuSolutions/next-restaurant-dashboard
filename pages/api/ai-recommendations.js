@@ -377,7 +377,7 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 1000,
+    max_tokens: 4000, // 1000 truncated larger menus mid-JSON (Echo Tap failed the cron on several days)
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -388,6 +388,9 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     restaurantId,
   });
 
+  if (message.stop_reason === 'max_tokens') {
+    console.warn(`[ai-recommendations] Response hit max_tokens for ${restaurantId}, output truncated`);
+  }
   const raw = message.content[0]?.text || '{}';
   const cleaned = raw.replace(/```json|```/g, '').trim();
   let aiResponse;

@@ -417,6 +417,7 @@ export default function DashboardPage() {
         });
         if (!res.ok) throw new Error(`API ${res.status}`);
         const json = await res.json();
+        if (json.error) throw new Error(json.error); // the route reports failures inside a 200 response
         setRecommendations(
           (json.recommendations || []).map((r) => ({
             title: r.title,

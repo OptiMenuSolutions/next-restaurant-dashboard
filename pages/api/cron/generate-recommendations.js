@@ -58,13 +58,26 @@ export default async function handler(req, res) {
       continue;
     }
 
-    try {
-      await generateForRestaurant(restaurant.id, currentDate, dayOfWeek);
+    // Up to three attempts: one bad AI response should not leave a
+    // restaurant's staff without tonight's tickets.
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await generateForRestaurant(restaurant.id, currentDate, dayOfWeek);
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`[cron] ${restaurant.name} attempt ${attempt}/3 failed:`, err.message);
+        if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * attempt));
+      }
+    }
+    if (lastErr) {
+      results.failed.push({ name: restaurant.name, error: lastErr.message });
+      console.error(`[cron] ✗ ${restaurant.name}:`, lastErr.message);
+    } else {
       results.success.push(restaurant.name);
       console.log(`[cron] ✓ ${restaurant.name}`);
-    } catch (err) {
-      results.failed.push({ name: restaurant.name, error: err.message });
-      console.error(`[cron] ✗ ${restaurant.name}:`, err.message);
     }
 
     // Small delay between restaurants to avoid hammering the API

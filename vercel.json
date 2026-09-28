@@ -5,6 +5,9 @@
     },
     "pages/api/cron/generate-recommendations.js": {
       "maxDuration": 300
+    },
+    "pages/api/ai-recommendations.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
