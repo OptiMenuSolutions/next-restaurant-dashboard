@@ -5,6 +5,7 @@
 // show what Claude parsed vs what was manually corrected.
 
 import { createClient } from '@supabase/supabase-js';
+import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import {
   convertInvoiceCostToStandardUnit,
   getStandardUnitForIngredient,
@@ -417,6 +418,13 @@ export default async function handler(req, res) {
 
         await Promise.all(costUpdatePromises);
       }
+    }
+
+    // A new delivery changes on-hand inventory now, not tonight.
+    try {
+      await rebuildCurrentInventory(supabase, restaurant_id);
+    } catch (err) {
+      console.error('[confirm-invoice] current_inventory rebuild failed:', err.message);
     }
 
     return res.status(200).json({

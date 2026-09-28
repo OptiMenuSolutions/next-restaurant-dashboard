@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from '../../../lib/standardizedUnits';
+import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -90,6 +91,13 @@ export default async function handler(req, res) {
       .eq('id', ingredient.id)
       .eq('restaurant_id', restaurant_id);
     if (priceErr) return res.status(500).json({ error: 'Linked, but could not update the price: ' + priceErr.message });
+  }
+
+  // Linking changes which ingredient this delivery counts toward.
+  try {
+    await rebuildCurrentInventory(supabase, restaurant_id);
+  } catch (err) {
+    console.error('[link-item] current_inventory rebuild failed:', err.message);
   }
 
   return res.status(200).json({

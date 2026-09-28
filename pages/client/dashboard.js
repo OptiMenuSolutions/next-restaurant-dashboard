@@ -3,7 +3,8 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
-import { computeWasteRisk } from "../../lib/computeWasteRisk";
+import { computeWasteRisk } from "../../lib/computeWasteRisk"; // tour sample data only
+import { loadCurrentInventory } from "../../lib/currentInventory";
 import { computeWasteResolution } from "../../lib/computeWasteResolution";
 import { useWeekInReview } from "../../lib/useWeekInReview";
 import PassDashboard from "../../components/dashboard/PassDashboard";
@@ -290,23 +291,17 @@ export default function DashboardPage() {
           // to the real query path below rather than leave the tour blank.
         }
 
-        const from = new Date(); from.setDate(from.getDate() - 90);
-        const fromDate = from.toLocaleDateString("en-CA"); // local date; toISOString is UTC and shifts a day in the evening
-        const [{ data: invoices }, { data: ingredients }, { data: menuItems }, { data: invoiceItems }, { data: posSales }] =
+        // Waste risk comes from current_inventory, the same rows Tonight's Dish
+        // reads, rebuilt overnight and whenever an invoice is saved or linked.
+        const [{ data: invoices }, { data: ingredients }, { data: menuItems }, wasteRisk] =
           await Promise.all([
             supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
             supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
             supabase.from("menu_items")
               .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
               .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
-            supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id),ingredients(name)")
-              .eq("invoices.restaurant_id", restaurantId).gte("invoices.date", fromDate)
-              .order("invoices(date)", { ascending: true }),
-            supabase.from("pos_sales").select("item_name,quantity_sold,sale_date")
-              .eq("restaurant_id", restaurantId).gte("sale_date", fromDate),
+            loadCurrentInventory(supabase, restaurantId),
           ]);
-
-        const wasteRisk = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || [], new Date(), freezeSettings);
         // Only dishes whose every ingredient has an invoice or approved price.
         const margins = (menuItems || [])
           .map((m) => ({ price: Number(m.price) || 0, cost: pricedCost(m) }))

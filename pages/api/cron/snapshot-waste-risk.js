@@ -19,6 +19,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { computeWasteRisk } from '../../../lib/computeWasteRisk';
+import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -66,7 +67,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         .lte('date', snapshotDate),
       supabase
         .from('invoice_items')
-        .select('*,invoices!inner(id,date,restaurant_id),ingredients(name)')
+        .select('*,invoices!inner(id,date,restaurant_id),ingredients(id,name,unit)')
         .eq('invoices.restaurant_id', restaurantId)
         .gte('invoices.date', fromDate)
         .lte('invoices.date', snapshotDate),
@@ -221,6 +222,15 @@ export default async function handler(req, res) {
   const results = { success: [], skipped: [], failed: [] };
 
   for (const restaurant of restaurants) {
+    // Rebuild current_inventory first: after the overnight POS sync, so it
+    // reflects yesterday's sales. Runs even when the snapshot below is skipped.
+    try {
+      const invCount = await rebuildCurrentInventory(supabase, restaurant.id);
+      console.log(`[cron:waste-snapshot] inventory ${restaurant.name}: ${invCount} rows`);
+    } catch (err) {
+      console.error(`[cron:waste-snapshot] inventory ${restaurant.name} failed:`, err.message);
+    }
+
     // Skip if already snapshotted for this day (idempotent reruns).
     const { data: existing } = await supabase
       .from('waste_risk_snapshots')

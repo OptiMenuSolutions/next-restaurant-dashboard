@@ -19,7 +19,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
 import { getShelfLife, isProtein } from '../../lib/shelfLife';
-import { computeWasteRisk } from '../../lib/computeWasteRisk';
+import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateStandardizedCost } from '../../lib/standardizedUnits';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -51,48 +51,12 @@ function isEntreeCategory(category) {
 // "flour wraps expiring, $67 at risk" while the dashboard showed nothing at
 // risk. It now runs computeWasteRisk on the dashboard's exact inputs and only
 // passes along what is actually close to expiring and still on hand.
+// ─── Expiring ingredients: read from current_inventory ───────────────────────
+// Same rows the dashboard Waste Risk panel reads, so tickets only ever cite
+// risk the owner can also see on the panel.
 async function getExpiringIngredients(restaurantId) {
-  const from = new Date();
-  from.setDate(from.getDate() - 90);
-  const fromDate = from.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-  const [
-    { data: rest },
-    { data: invoices },
-    { data: invoiceItems },
-    { data: posSales },
-    { data: menuItems },
-  ] = await Promise.all([
-    supabase.from('restaurants')
-      .select('freezes_beef, freezes_poultry, freezes_pork, freezes_seafood, freezes_bakery')
-      .eq('id', restaurantId).single(),
-    supabase.from('invoices').select('id, date').eq('restaurant_id', restaurantId),
-    supabase.from('invoice_items')
-      .select('*, invoices!inner(id, date, restaurant_id), ingredients(name)')
-      .eq('invoices.restaurant_id', restaurantId)
-      .gte('invoices.date', fromDate),
-    supabase.from('pos_sales')
-      .select('item_name, quantity_sold, sale_date')
-      .eq('restaurant_id', restaurantId)
-      .gte('sale_date', fromDate),
-    supabase.from('menu_items')
-      .select('name, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit)))')
-      .eq('restaurant_id', restaurantId)
-      .is('archived_at', null)
-      .limit(500),
-  ]);
-
-  const freezeSettings = {
-    beef: !!rest?.freezes_beef,
-    poultry: !!rest?.freezes_poultry,
-    pork: !!rest?.freezes_pork,
-    seafood: !!rest?.freezes_seafood,
-    bakery: !!rest?.freezes_bakery,
-  };
-
-  const risks = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || [], new Date(), freezeSettings);
-
-  return risks
+  const inventory = await loadCurrentInventory(supabase, restaurantId);
+  return inventory
     .filter((r) => r.remainingQty > 0 && r.daysLeft <= 5 && r.daysLeft >= -2)
     .map((r) => ({
       name: r.name,
