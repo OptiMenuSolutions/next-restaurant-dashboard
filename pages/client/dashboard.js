@@ -69,7 +69,8 @@ function firstWeekdayIndex(date) {
 function toTickets(recs, wasteRisk, menuItems, trust = false) {
   const atRisk = new Set((wasteRisk || []).map((w) => String(w.name || "").toLowerCase().trim()));
   return (recs || []).slice(0, 3).map((r, i) => {
-    const key = (r.title || "").toLowerCase().trim();
+    // Ignore anything the AI appended in parentheses, e.g. "(South of the Border)".
+    const key = (r.title || "").replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().trim();
     const item = key
       ? (menuItems || []).find((m) => (m.name || "").toLowerCase().trim() === key) ||
         (menuItems || []).find((m) => (m.name || "").toLowerCase().includes(key))

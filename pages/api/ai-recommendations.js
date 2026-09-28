@@ -258,7 +258,7 @@ function buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentD
   const hasPOS = enriched.some(i => i.qty7d !== null);
 
   const menuLines = enriched.map(item => {
-    const parts = [`${item.name} (${item.category})`, `$${item.price}`];
+    const parts = [`${item.name} · category: ${item.category}`, `$${item.price}`];
     if (item.margin != null) {
       parts.push(`${item.margin}% margin`, `$${item.marginDollars} margin/cover`);
     } else {
@@ -326,6 +326,9 @@ A dish marked "no POS data" has UNKNOWN sales. Never say it is unsold, has zero 
 RULE 6 — ROTATION
 Any dish appearing in the last 3 nights is ineligible unless forced by Rule 1. If forced, explain in reason_selected.
 
+RULE 7 — ONE DISH PER TICKET
+Each recommendation's description and talking_point are about that recommendation's own dish only. Never mention or describe another selected dish in them.
+
 ━━━ RECENT RECOMMENDATION HISTORY (last 5 nights) ━━━
 ${historyLines}
 ${streakWarnings ? `\n⚠ STREAK ALERTS:\n${streakWarnings}` : ''}
@@ -343,7 +346,7 @@ Return ONLY valid JSON, no markdown, no commentary:
 {
   "recommendations": [
     {
-      "title": "Exact dish name as listed above",
+      "title": "The dish name exactly as listed above, name only — never add the category or anything in parentheses",
       "reason_selected": "Specific plain-English explanation for the operator — name the expiring ingredient and days left, dollar value at risk, or explain the margin/rotation logic. Be specific.",
       "description": "One sentence for the staff ticket — what makes this dish worth pushing tonight, max 90 chars",
       "talking_point": "What a server says to a guest — warm and natural, no jargon, no mention of margins or expiry, max 120 chars",
@@ -401,7 +404,24 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     aiResponse = match ? JSON.parse(match[0]) : { recommendations: [] };
   }
 
-  const recommendations = (aiResponse.recommendations || []).slice(0, 3);
+  // Titles must be exact dish names so the dashboard can find each dish's
+  // recipe. Strip anything appended ("Vegan Tacos (South of the Border)")
+  // and snap to the real menu name when one matches.
+  const exactNames = new Map((enriched || []).map((e) => [String(e.name || '').toLowerCase().trim(), e.name]));
+  const recommendations = (aiResponse.recommendations || []).slice(0, 3).map((rec) => {
+    const raw = String(rec.title || '').trim();
+    const stripped = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const title = exactNames.get(raw.toLowerCase()) || exactNames.get(stripped.toLowerCase()) || stripped || raw;
+    return { ...rec, title };
+  });
+  // A talking point that names another selected dish, and not its own, was
+  // written for the wrong ticket. Drop it so the ticket uses its description.
+  for (const rec of recommendations) {
+    const own = rec.title.toLowerCase();
+    const others = recommendations.filter((r) => r !== rec).map((r) => r.title.toLowerCase());
+    const tp = String(rec.talking_point || '').toLowerCase();
+    if (tp && !tp.includes(own) && others.some((o) => o && tp.includes(o))) rec.talking_point = null;
+  }
 
   // Cache the result
   try {
