@@ -359,7 +359,7 @@ type: "inventory" = expiring ingredient drove selection · "margin" = underselli
 }
 
 // ─── Core generation logic (shared with cron) ─────────────────────────────────
-export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek, retryNote = '') {
+export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek) {
   let enriched = [];
   let expiringIngredients = [];
   let history = [];
@@ -373,8 +373,7 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     console.error(`[ai-recommendations] Context load error for ${restaurantId}:`, ctxErr.message);
   }
 
-  const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate)
-    + (retryNote ? `\n\n${retryNote}` : '');
+  const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate);
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -419,22 +418,6 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     const others = recommendations.filter((r) => r !== rec).map((r) => r.title.toLowerCase());
     const tp = String(rec.talking_point || '').toLowerCase();
     if (tp && !tp.includes(own) && others.some((o) => o && tp.includes(o))) rec.talking_point = null;
-  }
-
-  // Rule 2 (no two picks from one category) is otherwise only a prompt
-  // instruction. If the answer repeats a category and the menu has at least
-  // three categories, ask once more with the specific problem named. A second
-  // repeat is kept — Rule 1 (expiring ingredients) can legitimately force it.
-  const categoryOf = new Map((enriched || []).map((e) => [String(e.name || '').toLowerCase().trim(), e.category]));
-  const pickedCats = recommendations.map((r) => categoryOf.get(String(r.title || '').toLowerCase().trim())).filter(Boolean);
-  const repeatedCat = pickedCats.find((c, i) => pickedCats.indexOf(c) !== i);
-  const menuCatCount = new Set((enriched || []).map((e) => e.category)).size;
-  if (repeatedCat && !retryNote && menuCatCount >= 3) {
-    console.warn(`[ai-recommendations] Two picks share category "${repeatedCat}" for ${restaurantId}, retrying once`);
-    return generateForRestaurant(
-      restaurantId, currentDate, dayOfWeek,
-      `IMPORTANT: a previous answer picked two dishes from the same category ("${repeatedCat}"). Rule 2 is strict unless Rule 1 forces it: pick 3 dishes from 3 different categories.`
-    );
   }
 
   // Cache the result
