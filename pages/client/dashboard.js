@@ -155,8 +155,12 @@ function flattenSampleInvoiceItems(sampleInvoices) {
 function toWaste(wasteRisk) {
   return (wasteRisk || []).map((w) => {
     const dl = w.daysLeft != null ? w.daysLeft : 7;
+    // Large amounts read better in bigger units: 5,700 oz is 356 lb.
+    let n = Number(w.remainingQty), u = w.unit || "";
+    if (u === "oz" && n >= 32) { n = n / 16; u = "lb"; }
+    else if (u === "fl oz" && n >= 128) { n = n / 128; u = "gal"; }
     const qtyLabel = w.remainingQty != null
-      ? Math.round(w.remainingQty * 100) / 100 + (w.unit ? " " + w.unit : "") + " remaining"
+      ? (Math.round(n * 10) / 10).toLocaleString("en-US") + (u ? " " + u : "") + " remaining"
       : "";
     return {
       name: w.name,
