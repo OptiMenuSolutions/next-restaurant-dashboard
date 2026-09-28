@@ -51,8 +51,13 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   lookbackFrom.setDate(lookbackFrom.getDate() - LOOKBACK_DAYS);
   const fromDate = lookbackFrom.toISOString().split('T')[0];
 
-  const [{ data: invoices }, { data: invoiceItems }, { data: posSales }, { data: menuItems }] =
+  const [{ data: rest }, { data: invoices }, { data: invoiceItems }, { data: posSales }, { data: menuItems }] =
     await Promise.all([
+      supabase
+        .from('restaurants')
+        .select('freezes_beef,freezes_poultry,freezes_pork,freezes_seafood,freezes_bakery')
+        .eq('id', restaurantId)
+        .single(),
       supabase
         .from('invoices')
         .select('id,date')
@@ -61,7 +66,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         .lte('date', snapshotDate),
       supabase
         .from('invoice_items')
-        .select('*,invoices!inner(id,date,restaurant_id)')
+        .select('*,invoices!inner(id,date,restaurant_id),ingredients(name)')
         .eq('invoices.restaurant_id', restaurantId)
         .gte('invoices.date', fromDate)
         .lte('invoices.date', snapshotDate),
@@ -73,17 +78,29 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         .lte('sale_date', snapshotDate),
       supabase
         .from('menu_items')
-        .select('id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,last_price,is_estimated)))')
+        .select('id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated)))')
         .eq('restaurant_id', restaurantId)
         .limit(500),
     ]);
+
+  // Same freezer settings the dashboard uses. Without them, frozen proteins
+  // got fresh shelf lives here, aged out early, and triggered false
+  // "did you throw this out?" prompts.
+  const freezeSettings = {
+    beef: !!rest?.freezes_beef,
+    poultry: !!rest?.freezes_poultry,
+    pork: !!rest?.freezes_pork,
+    seafood: !!rest?.freezes_seafood,
+    bakery: !!rest?.freezes_bakery,
+  };
 
   const wasteRisk = computeWasteRisk(
     invoiceItems || [],
     invoices || [],
     posSales || [],
     menuItems || [],
-    asOfDate
+    asOfDate,
+    freezeSettings
   );
 
   const rows = wasteRisk
