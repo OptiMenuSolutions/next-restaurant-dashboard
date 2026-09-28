@@ -282,7 +282,7 @@ export default function DashboardPage() {
               stats: {
                 avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
                 lowMargin: margins.filter((m) => m < 50).length,
-                expiring: wasteRisk.length,
+                expiring: wasteRisk.filter((w) => w.daysLeft <= 3).length,
                 ytdSpend,
                 pctAbove50,
                 pctBelow25,
