@@ -19,7 +19,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { computeWasteRisk } from '../../../lib/computeWasteRisk';
-import { rebuildCurrentInventory } from '../../../lib/currentInventory';
+import { rebuildCurrentInventory, loadLearnedShelfLives } from '../../../lib/currentInventory';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -95,13 +95,19 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
     bakery: !!rest?.freezes_bakery,
   };
 
+  // The snapshot decides when a waste prompt is due, so it must use the same
+  // learned shelf lives as current_inventory, or prompts would fire early.
+  const learnedShelfLives = await loadLearnedShelfLives(supabase, restaurantId);
+
   const wasteRisk = computeWasteRisk(
     invoiceItems || [],
     invoices || [],
     posSales || [],
     menuItems || [],
     asOfDate,
-    freezeSettings
+    freezeSettings,
+    new Set(),
+    learnedShelfLives
   );
 
   const rows = wasteRisk
