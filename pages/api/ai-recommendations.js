@@ -311,7 +311,7 @@ If no alternative exists, repeat and explain in reason_selected.
 Include the dollar value at risk in your reason_selected when available.
 
 RULE 2 — VARIETY
-No two selected dishes may share the same category.
+The three picks should give servers three genuinely different things to talk about. Avoid two versions of the same dish or format (two tacos, two burgers, two wing flavors) unless Rule 1 forces it. Picks may come from the same menu category when the dishes themselves are clearly different (for example a steak, a salmon, and a pasta from Entrees).
 
 RULE 3 — MARGIN VALUE (only where margin is known)
 After waste slots are filled, remaining picks go to dishes that are underperforming relative to their margin potential — but ONLY among dishes that show a margin. Dishes marked "margin not yet known" have no reliable cost yet; never rank them by margin.
