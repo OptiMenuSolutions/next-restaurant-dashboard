@@ -27,6 +27,13 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
   if (!items || items.length === 0) return null;
 
   const money = (n) => "$" + Number(n || 0).toFixed(2);
+  // Same readable units as the Waste Risk panel: 400 lb, not 6,400 oz.
+  const qtyWithUnit = (q, u) => {
+    let n = Number(q) || 0, unit = u || "";
+    if (unit === "oz" && n >= 32) { n = n / 16; unit = "lb"; }
+    else if (unit === "fl oz" && n >= 128) { n = n / 128; unit = "gal"; }
+    return (Math.round(n * 10) / 10).toLocaleString("en-US") + (unit ? " " + unit : "");
+  };
 
   async function handleRespond(id, status) {
     setSubmitting(id);
@@ -78,8 +85,9 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
             Did these actually get thrown away?
           </div>
           <div style={{ fontSize: 12.5, color: "var(--faint,#78868a)", marginTop: 4, lineHeight: 1.5 }}>
-            These items aged past our estimate without a matching sale. Confirming helps us get
-            better at flagging what's really at risk.
+            These items passed our estimated shelf life without a matching sale. If you're still
+            using something, tell us and we'll check again tomorrow. It teaches OptiMenu how long
+            your kitchen really keeps things.
           </div>
         </div>
 
@@ -101,7 +109,7 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
                     {item.ingredientName}
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--faint,#78868a)", whiteSpace: "nowrap" }}>
-                    {Math.round(item.presumedQty * 100) / 100} left · {money(item.presumedValue)}
+                    {qtyWithUnit(item.presumedQty, item.unit)} left · {money(item.presumedValue)}
                   </div>
                 </div>
 
@@ -113,7 +121,9 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
 
                 {done ? (
                   <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent-deep,#03808f)" }}>
-                    {done === "confirmed_wasted" ? "Marked as thrown away" : "Marked as used"}
+                    {done === "confirmed_wasted" ? "Marked as thrown away"
+                      : done === "kept" ? "Got it. We'll check again tomorrow."
+                      : "Marked as used up"}
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -132,14 +142,26 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
                     <button
                       type="button"
                       disabled={isSubmitting}
-                      onClick={() => handleRespond(item.id, "confirmed_used")}
+                      onClick={() => handleRespond(item.id, "kept")}
                       style={{
                         flex: "1 1 auto", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--green,#3f9c56)",
                         background: "rgba(63,156,86,0.08)", color: "var(--green,#3f9c56)", fontSize: 12.5, fontWeight: 700,
                         cursor: isSubmitting ? "default" : "pointer", opacity: isSubmitting ? 0.6 : 1,
                       }}
                     >
-                      No, it got used
+                      No, still using it
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => handleRespond(item.id, "confirmed_used")}
+                      style={{
+                        flexBasis: "100%", padding: "2px 0 0", border: "none", background: "none",
+                        color: "var(--faint,#78868a)", fontSize: 12, fontWeight: 600, textDecoration: "underline",
+                        cursor: isSubmitting ? "default" : "pointer",
+                      }}
+                    >
+                      It's all used up
                     </button>
                   </div>
                 )}

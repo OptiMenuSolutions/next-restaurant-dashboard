@@ -141,7 +141,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
 
   const { data: prevRows } = await supabase
     .from('waste_risk_snapshots')
-    .select('invoice_item_id,ingredient_name,remaining_qty,unit_cost,days_left')
+    .select('invoice_item_id,ingredient_name,remaining_qty,unit_cost,days_left,delivery_date')
     .eq('restaurant_id', restaurantId)
     .eq('snapshot_date', prevDateStr);
 
@@ -164,6 +164,8 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         presumed_qty:    p.remaining_qty,
         presumed_value:  Number(p.remaining_qty) * Number(p.unit_cost),
         status:          'pending',
+        delivery_date:   p.delivery_date || null,
+        last_asked_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
       }));
       // onConflict + ignoreDuplicates: if a confirmation for this delivery
       // already exists (e.g. cron reran), don't reset/recreate it.
@@ -177,15 +179,32 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   return rows.length;
 }
 
+// Items the kitchen said it is still using go back to pending, so they are
+// asked again today. The trigger records today's date as last_asked_date.
+async function reaskKeptConfirmations() {
+  const { error, count } = await supabase
+    .from('waste_confirmations')
+    .update({ status: 'pending' }, { count: 'exact' })
+    .eq('status', 'kept');
+  if (error) {
+    console.error('[cron:waste-snapshot] Failed to re-ask kept items:', error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
 async function expireStaleConfirmations() {
+  // Measured from when it was last asked, not created, so an item the
+  // kitchen has been keeping for a week is not expired the day it is re-asked.
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - EXPIRY_WINDOW_DAYS);
+  const cutoffDate = cutoff.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
   const { error, count } = await supabase
     .from('waste_confirmations')
     .update({ status: 'expired_unconfirmed' }, { count: 'exact' })
     .eq('status', 'pending')
-    .lt('created_at', cutoff.toISOString());
+    .or(`last_asked_date.lt.${cutoffDate},and(last_asked_date.is.null,created_at.lt.${cutoff.toISOString()})`);
 
   if (error) {
     console.error('[cron:waste-snapshot] Failed to expire stale confirmations:', error.message);
@@ -255,7 +274,9 @@ export default async function handler(req, res) {
     }
   }
 
+  const reaskedCount = await reaskKeptConfirmations();
   const expiredCount = await expireStaleConfirmations();
+  console.log(`[cron:waste-snapshot] ${reaskedCount} kept item(s) re-asked`);
 
   console.log(`[cron:waste-snapshot] Done — ${results.success.length} snapshotted, ${results.skipped.length} skipped, ${results.failed.length} failed, ${expiredCount} confirmations expired`);
   return res.status(200).json({ date: snapshotDate, expiredConfirmations: expiredCount, ...results });

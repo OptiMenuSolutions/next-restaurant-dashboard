@@ -460,7 +460,7 @@ export default function DashboardPage() {
     (async () => {
       const { data, error: confirmError } = await supabase
         .from("waste_confirmations")
-        .select("id,ingredient_name,presumed_qty,presumed_value,last_seen_date")
+        .select("id,ingredient_name,presumed_qty,presumed_value,last_seen_date,invoice_items(unit,ingredients(unit))")
         .eq("restaurant_id", restaurantId)
         .eq("status", "pending")
         .order("presumed_value", { ascending: false });
@@ -475,6 +475,8 @@ export default function DashboardPage() {
           presumedQty: r.presumed_qty,
           presumedValue: r.presumed_value,
           lastSeenDate: r.last_seen_date,
+          // presumed_qty is in the linked ingredient's unit when there is one
+          unit: r.invoice_items?.ingredients?.unit || r.invoice_items?.unit || "",
         }))
       );
     })();
