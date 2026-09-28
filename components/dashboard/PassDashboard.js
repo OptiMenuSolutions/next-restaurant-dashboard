@@ -808,7 +808,7 @@ export default function PassDashboard({
                   minWidth: 0,
                 }}
               >
-                Good evening, {user.firstName}.{" "}
+                {(() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; })()}, {user.firstName}.{" "}
                 <span style={{ color: "var(--faint)", fontWeight: 700 }}>
                   {tickets.length
                     ? "Tonight\u2019s pass is set."
