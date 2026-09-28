@@ -299,7 +299,7 @@ export default function DashboardPage() {
             supabase.from("menu_items")
               .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
               .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
-            supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id)")
+            supabase.from("invoice_items").select("*,invoices!inner(id,date,restaurant_id),ingredients(name)")
               .eq("invoices.restaurant_id", restaurantId).gte("invoices.date", fromDate)
               .order("invoices(date)", { ascending: true }),
             supabase.from("pos_sales").select("item_name,quantity_sold,sale_date")

@@ -19,6 +19,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
 import { getShelfLife, isProtein } from '../../lib/shelfLife';
+import { computeWasteRisk } from '../../lib/computeWasteRisk';
 import { calculateStandardizedCost } from '../../lib/standardizedUnits';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -44,68 +45,64 @@ function isEntreeCategory(category) {
   return !EXCLUDED_CATEGORY_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-// ─── Compute expiring ingredients from invoice_items ──────────────────────────
+// ─── Expiring ingredients: same source as the dashboard Waste Risk panel ─────
+// This used to be its own calculation (latest delivery only, six months of
+// invoices, no sales subtracted, no freezer settings), so tickets could cite
+// "flour wraps expiring, $67 at risk" while the dashboard showed nothing at
+// risk. It now runs computeWasteRisk on the dashboard's exact inputs and only
+// passes along what is actually close to expiring and still on hand.
 async function getExpiringIngredients(restaurantId) {
-  const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  const fromDate = sixMonthsAgo.toISOString().split('T')[0];
+  const from = new Date();
+  from.setDate(from.getDate() - 90);
+  const fromDate = from.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
-  const { data: invoices } = await supabase
-    .from('invoices')
-    .select('id, date')
-    .eq('restaurant_id', restaurantId)
-    .gte('date', fromDate);
+  const [
+    { data: rest },
+    { data: invoices },
+    { data: invoiceItems },
+    { data: posSales },
+    { data: menuItems },
+  ] = await Promise.all([
+    supabase.from('restaurants')
+      .select('freezes_beef, freezes_poultry, freezes_pork, freezes_seafood, freezes_bakery')
+      .eq('id', restaurantId).single(),
+    supabase.from('invoices').select('id, date').eq('restaurant_id', restaurantId),
+    supabase.from('invoice_items')
+      .select('*, invoices!inner(id, date, restaurant_id), ingredients(name)')
+      .eq('invoices.restaurant_id', restaurantId)
+      .gte('invoices.date', fromDate),
+    supabase.from('pos_sales')
+      .select('item_name, quantity_sold, sale_date')
+      .eq('restaurant_id', restaurantId)
+      .gte('sale_date', fromDate),
+    supabase.from('menu_items')
+      .select('name, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit)))')
+      .eq('restaurant_id', restaurantId)
+      .is('archived_at', null)
+      .limit(500),
+  ]);
 
-  if (!invoices?.length) return [];
+  const freezeSettings = {
+    beef: !!rest?.freezes_beef,
+    poultry: !!rest?.freezes_poultry,
+    pork: !!rest?.freezes_pork,
+    seafood: !!rest?.freezes_seafood,
+    bakery: !!rest?.freezes_bakery,
+  };
 
-  const { data: invoiceItems } = await supabase
-    .from('invoice_items')
-    .select('invoice_id, item_name, ingredient_name_normalized, quantity, unit, unit_cost')
-    .in('invoice_id', invoices.map(i => i.id));
+  const risks = computeWasteRisk(invoiceItems || [], invoices || [], posSales || [], menuItems || [], new Date(), freezeSettings);
 
-  const invoiceDateMap = {};
-  invoices.forEach(inv => { invoiceDateMap[inv.id] = inv.date; });
-
-  const latestByIngredient = {};
-  (invoiceItems || []).forEach(item => {
-    const name = (item.ingredient_name_normalized || item.item_name || '').trim();
-    if (!name) return;
-    const dateStr = invoiceDateMap[item.invoice_id];
-    if (!dateStr) return;
-    const date = new Date(dateStr);
-    if (!latestByIngredient[name] || date > latestByIngredient[name].date) {
-      latestByIngredient[name] = {
-        date, dateStr,
-        quantity: parseFloat(item.quantity || 0),
-        unit: item.unit,
-        unitCost: parseFloat(item.unit_cost || 0),
-      };
-    }
-  });
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiring = [];
-  Object.entries(latestByIngredient).forEach(([name, info]) => {
-    const shelfLife = getShelfLife(name);
-    const delivery = new Date(info.date);
-    delivery.setHours(0, 0, 0, 0);
-    const daysSince = Math.floor((today - delivery) / 86400000);
-    const daysLeft = shelfLife - daysSince;
-    if (daysLeft <= 5 && daysLeft >= -2) {
-      expiring.push({
-        name,
-        daysLeft,
-        unit: info.unit,
-        quantity: info.quantity,
-        totalValue: info.quantity * info.unitCost,
-        isProtein: isProtein(name),
-      });
-    }
-  });
-
-  return expiring.sort((a, b) => a.daysLeft - b.daysLeft);
+  return risks
+    .filter((r) => r.remainingQty > 0 && r.daysLeft <= 5 && r.daysLeft >= -2)
+    .map((r) => ({
+      name: r.name,
+      daysLeft: r.daysLeft,
+      unit: r.unit,
+      quantity: Math.round(r.remainingQty * 100) / 100,
+      totalValue: r.totalValue,
+      isProtein: r.protein,
+    }))
+    .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
 // ─── Load restaurant context ──────────────────────────────────────────────────
