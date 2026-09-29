@@ -195,22 +195,82 @@ export function Header({
   );
 }
 
-export function MobileHeader({ theme, onToggleTheme, user = { initials: "MR" }, logoSrc = "/landing/logo.png", logoDarkSrc = "/landing/logo-knockout.png" }) {
+export function MobileHeader({ theme, onToggleTheme, onSearch, onSignOut, restaurantName = "", NavLink, user = { initials: "MR" }, logoSrc = "/landing/logo.png", logoDarkSrc = "/landing/logo-knockout.png" }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const dark = theme === "dark";
   return (
-    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: 16, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       {/* Fills the strip behind the phone clock and battery so the list does
           not show through as it scrolls. Zero height when there is no safe area. */}
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
-      <span style={{ display: "flex", alignItems: "center" }}>
-        <img className="om-logo-light" src={logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
-        <img className="om-logo-dark" src={logoDarkSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
-      </span>
+      {/* One image picked by theme, so this header also works outside the
+          shared shell (the dashboard has its own stylesheet). */}
+      <img src={dark ? logoDarkSrc : logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={onToggleTheme} style={{ background: "none", border: "1px solid var(--line)", borderRadius: 20, padding: "6px 11px", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", color: "var(--muted)", cursor: "pointer" }}>{theme === "dark" ? "LIGHT" : "DARK"}</button>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700 }}>{user.initials}</div>
+        <button type="button" aria-label="Search" onClick={onSearch} style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid var(--line)", borderRadius: "50%", cursor: "pointer", padding: 0 }}>
+          <SearchIcon size={15} />
+        </button>
+        <div style={{ position: "relative" }}>
+          <button type="button" aria-label="Account menu" onClick={() => setMenuOpen((v) => !v)} style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--accent)", color: "#fff", border: "none", boxShadow: menuOpen ? "0 0 0 2px var(--shell), 0 0 0 4px var(--accent)" : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+            {user.initials}
+          </button>
+          {menuOpen && (
+            <ProfileMenu user={user} restaurantName={restaurantName} dark={dark} onToggleTheme={onToggleTheme} onSignOut={onSignOut} NavLink={NavLink} onClose={() => setMenuOpen(false)} />
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+/* Account menu opened from the initials: same items as the desktop menu. */
+export function ProfileMenu({ user = {}, restaurantName = "", dark, onToggleTheme, onSignOut, NavLink, onClose }) {
+  const row = { display: "flex", alignItems: "center", gap: 10, padding: "11px 10px", borderRadius: 7, color: "var(--text)", fontSize: 14, fontWeight: 500, textDecoration: "none" };
+  const ic = { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "var(--faint)", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" };
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
+      <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 250, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", boxShadow: "var(--shadow-lg)", zIndex: 200 }}>
+        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line-soft)" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{user.firstName || user.initials}</div>
+          {restaurantName && <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{restaurantName}</div>}
+        </div>
+        <div style={{ padding: 6 }}>
+          <A NavLink={NavLink} href="/client/profile" style={row}>
+            <svg {...ic}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+            Profile &amp; settings
+          </A>
+          <div style={row}>
+            <svg {...ic}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
+            <span style={{ flex: 1 }}>{dark ? "Light mode" : "Dark mode"}</span>
+            <button type="button" aria-label="Toggle dark mode" onClick={onToggleTheme} style={{ width: 38, height: 22, borderRadius: 11, border: "1px solid var(--line)", position: "relative", cursor: "pointer", flexShrink: 0, padding: 0, background: dark ? "var(--accent)" : "var(--line)" }}>
+              <span style={{ position: "absolute", top: 2, left: dark ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+            </button>
+          </div>
+          <A NavLink={NavLink} href="/client/profile?tab=support" style={row}>
+            <svg {...ic}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
+            Support &amp; feedback
+          </A>
+          <div style={{ height: 1, background: "var(--line-soft)", margin: "4px 0" }} />
+          <div onClick={() => { onClose(); if (onSignOut) onSignOut(); }} style={{ ...row, color: "var(--red)", cursor: "pointer" }}>
+            <svg {...ic} stroke="var(--red)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+            Sign out
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* Bottom-nav icons, keyed by NAV key. Shared with the dashboard nav. */
+export function NavIcon({ name, color = "currentColor", size = 20 }) {
+  const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  if (name === "dashboard") return <svg {...p}><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></svg>;
+  if (name === "invoices") return <svg {...p}><path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4-2 1.4z" /><path d="M9 8h6M9 12h6M9 16h4" /></svg>;
+  if (name === "ingredients") return <svg {...p}><path d="M3.5 11.5h17" /><path d="M4.5 11.5a7.5 7 0 0 0 15 0" /><path d="M9 21h6M12 18.5V21" /><path d="M13.5 10.5l6-7" /></svg>;
+  if (name === "menu-items") return <svg {...p}><path d="M12 6.5C10.5 5 8 4.5 4 4.5v14c4 0 6.5.5 8 2 1.5-1.5 4-2 8-2v-14c-4 0-6.5.5-8 2z" /><path d="M12 6.5v14" /></svg>;
+  if (name === "analytics") return <svg {...p}><path d="M4 20h16" /><rect x="6" y="11" width="3" height="7" rx="0.5" /><rect x="10.5" y="6" width="3" height="12" rx="0.5" /><rect x="15" y="13" width="3" height="5" rx="0.5" /></svg>;
+  return <svg {...p}><rect x="4" y="4" width="16" height="16" rx="3" /></svg>;
 }
 
 export function MobileNav({ active, NavLink }) {
@@ -220,7 +280,7 @@ export function MobileNav({ active, NavLink }) {
         const color = n.key === active ? "var(--accent)" : "var(--faint)";
         return (
           <A key={n.key} NavLink={NavLink} href={n.href} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "11px 0 16px", color }}>
-            <span style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${color}` }} />
+            <NavIcon name={n.key} color={color} />
             <span style={{ fontSize: 9.5, fontWeight: 600, color }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
           </A>
         );

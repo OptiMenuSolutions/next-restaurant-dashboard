@@ -214,7 +214,7 @@ export default function MenuItemsScreen({
   if (isMobile) {
     return (
       <Shell theme={theme}>
-        <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+        <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
           <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em" }}>Menu items</div>
           <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>{countLabel}</div>

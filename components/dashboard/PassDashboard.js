@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { MobileHeader, NavIcon } from "../client/ClientChrome";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -654,8 +655,85 @@ export default function PassDashboard({
       </div>
     );
   } else if (isMobile) {
+    // Phones get the same month calendar as desktop, with the stats stacked below it.
+    const monthBtn = (enabled) => ({ width: "30px", height: "30px", border: "1px solid var(--line)", borderRadius: "8px", background: "none", color: enabled ? "var(--muted)" : "var(--faint)", opacity: enabled ? 1 : 0.4, cursor: enabled ? "pointer" : "default", fontSize: "15px", lineHeight: 1 });
+    const mobileWeek = (
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "12px", padding: "14px 12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+            <button type="button" onClick={onPrevMonth} style={monthBtn(true)}>&lsaquo;</button>
+            <span style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "-0.01em" }}>{week.month}</span>
+            <button type="button" onClick={onNextMonth} disabled={!canGoNextMonth} style={monthBtn(canGoNextMonth)}>&rsaquo;</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "5px" }}>
+            {DOWS.map((d) => (
+              <span key={d} style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--faint)", textAlign: "center" }}>{d}</span>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "46px", gap: "4px" }}>
+            {cells.map((c) =>
+              c.blank ? (
+                <span key={c.key} />
+              ) : (
+                <div key={c.key} onClick={() => c.clickable && setOpenCalendarDay((prev) => (prev === c.day ? null : c.day))} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px", borderRadius: "8px", border: "1px solid " + c.border, background: c.bg, cursor: c.clickable ? "pointer" : "default" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: c.numColor, lineHeight: 1 }}>{c.day}</span>
+                  <span style={{ fontFamily: MONO, fontSize: "9.5px", fontWeight: 500, lineHeight: 1, color: c.subColor }}>{c.sub}</span>
+                </div>
+              )
+            )}
+          </div>
+          {openCalendarDayEntry && (
+            <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                <span style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)" }}>{openCalendarDayEntry.dayLabel} · dish performance</span>
+                <button type="button" onClick={() => setOpenCalendarDay(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "var(--faint)", padding: 0 }}>Close ✕</button>
+              </div>
+              {openCalendarDayEntry.dishes.length === 0 && (
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>No recommendations for this day.</div>
+              )}
+              {openCalendarDayEntry.dishes.map((dish, i) => {
+                const diffColor = dish.diff != null ? (dish.diff > 0 ? "var(--green)" : dish.diff < 0 ? "var(--red)" : "var(--muted)") : "var(--muted)";
+                return (
+                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "6px 0" }}>
+                    <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dish.name}</span>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: diffColor, flexShrink: 0 }}>
+                      {dish.diff != null ? `${dish.diff > 0 ? "+" : ""}${dish.diff.toFixed(1)}` : "—"} sold
+                      <span style={{ color: "var(--faint)", fontWeight: 500 }}> vs avg</span>
+                    </span>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed var(--line-soft)" }}>
+                <span style={{ fontSize: "11px", color: "var(--faint)" }}>Est. waste prevented</span>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--green)" }}>${Math.round(openCalendarDayEntry.wasteSaved)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+        {week.stats.map((k) => (
+          <div key={k.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "10px", padding: "12px 14px" }}>
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>{k.label}</div>
+              <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.06em", color: "var(--faint)", marginTop: "3px" }}>{k.sub}</div>
+            </div>
+            <div style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: k.tone === "green" ? "var(--green)" : k.tone === "red" ? "var(--red)" : "var(--accent-deep)" }}>{k.value}</div>
+          </div>
+        ))}
+        <div style={{ background: "var(--accent-tint)", borderRadius: "10px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
+            <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Top performer</div>
+            <div style={{ fontFamily: MONO, fontSize: "10px", color: "var(--accent-deep)" }}>{week.top.date}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
+            <div style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text)" }}>{week.top.name}</div>
+            <div style={{ fontSize: "17px", fontWeight: 800, color: "var(--green)" }}>{week.top.delta}</div>
+          </div>
+        </div>
+      </div>
+    );
     body = (
       <MobileView
+        weekView={mobileWeek}
         restaurantName={restaurantName}
         dateLabel={dateLabel}
         timeLabel={timeLabel}
@@ -1220,19 +1298,10 @@ export default function PassDashboard({
     );
   }
 
-  // Phones get the same compact header as the other client pages (logo,
-  // theme toggle, initials), pinned while the page scrolls. The full
-  // desktop header does not fit on a phone.
+  // Phones use the same pinned header as the other client pages: logo,
+  // search, and the account menu under the initials.
   const mobileHeader = (
-    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: 16, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      {/* Fills the strip behind the phone clock and battery. Zero height when there is no safe area. */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
-      <img src={dark ? logoDarkSrc : logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={toggleTheme} style={{ background: "none", border: "1px solid var(--line)", borderRadius: 20, padding: "6px 11px", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", color: "var(--muted)", cursor: "pointer" }}>{dark ? "LIGHT" : "DARK"}</button>
-        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700 }}>{user.initials}</div>
-      </div>
-    </div>
+    <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={Link} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
 
   return (
@@ -1403,7 +1472,7 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
 
 const MOBILE_TABS = ["Tonight's picks", "Metrics", "Waste risk", "Week review", "Prices"];
 
-function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, waste, stats, weekData, weekExtraSold, weekWasteSaved, hitRate, activeNav, Link }) {
+function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, waste, stats, weekData, weekExtraSold, weekWasteSaved, hitRate, activeNav, Link, weekView }) {
   const [tab, setTab] = useState(MOBILE_TABS[0]);
   return (
     <div style={{ background: "var(--panel)", flex: 1, display: "flex", flexDirection: "column" }}>
@@ -1505,7 +1574,7 @@ function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, 
 
       {tab === "Week review" && (
         <div style={{ padding: "16px" }}>
-          <MobileWeekTab weekData={weekData} weekExtraSold={weekExtraSold} weekWasteSaved={weekWasteSaved} hitRate={hitRate} />
+          {weekView}
         </div>
       )}
 
@@ -1533,7 +1602,7 @@ function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, 
                 color: on ? "var(--accent)" : "var(--faint)",
               }}
             >
-              <span style={{ width: "16px", height: "16px", borderRadius: "4px", border: "1.5px solid currentColor" }} />
+              <NavIcon name={n.key} />
               <span style={{ fontSize: "9.5px", fontWeight: 600 }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
             </Link>
           );

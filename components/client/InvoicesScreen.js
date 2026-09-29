@@ -210,7 +210,7 @@ export default function InvoicesScreen({
   if (isMobile && mobileDetail && selected) {
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
           <button type="button" onClick={() => setMobileDetail(false)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", cursor: "pointer" }}>
             ← All invoices
@@ -227,7 +227,7 @@ export default function InvoicesScreen({
   if (isMobile) {
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+        <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.03em" }}>Invoices</div>
