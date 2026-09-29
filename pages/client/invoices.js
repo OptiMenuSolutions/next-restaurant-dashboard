@@ -237,10 +237,15 @@ export default function InvoicesPage() {
       .select("*, ingredients(name, unit)")
       .eq("invoice_id", invoice.id)
       .order("item_name");
-    setLines((prev) => ({ ...prev, [invoice.id]: (data || []).map(toLine) }));
+    const fresh = (data || []).map(toLine);
+    // A relink can also move same-name lines on other invoices. The API does
+    // not say which invoices, so drop every other cached invoice; handleSelect
+    // refetches them when they are opened.
+    setLines((prev) => (json.moved > 1 ? { [invoice.id]: fresh } : { ...prev, [invoice.id]: fresh }));
     if (choice.newName && json.ingredient) {
       setIngredientOptions((prev) => [...prev, json.ingredient].sort((a, b) => a.name.localeCompare(b.name)));
     }
+    return json;
   }, [restaurantId]);
 
   /* Pre-load the first invoice's lines so the receipt is never blank. */
