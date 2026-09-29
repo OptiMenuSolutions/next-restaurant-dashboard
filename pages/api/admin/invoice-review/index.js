@@ -44,11 +44,30 @@ export default withAdminAuth(async function handler(req, res) {
       .in('invoice_id', invoiceIds)
       .order('page_number');
 
+    // Invoice files are in a private bucket: sign every stored path in one
+    // batch (links valid one hour). Full URLs are passed through unchanged.
+    const isUrl = (v) => /^https?:\/\//.test(v || '');
+    const pathsToSign = [...new Set([
+      ...(invoiceFiles || []).map(f => f.file_url),
+      ...invoices.map(i => i.file_url),
+    ].filter(p => p && !isUrl(p)))];
+    const signedByPath = {};
+    if (pathsToSign.length) {
+      const { data: signed, error: signErr } = await supabase.storage
+        .from('invoices')
+        .createSignedUrls(pathsToSign, 3600);
+      if (signErr) console.error('[invoice-review GET] signing failed:', signErr.message);
+      for (const s of (signed || [])) {
+        if (s.signedUrl) signedByPath[s.path] = s.signedUrl;
+      }
+    }
+    const fileLink = (v) => (!v ? null : isUrl(v) ? v : signedByPath[v] || null);
+
     // Map: invoiceId → file[]
     const filesByInvoice = {};
     for (const f of (invoiceFiles || [])) {
       if (!filesByInvoice[f.invoice_id]) filesByInvoice[f.invoice_id] = [];
-      filesByInvoice[f.invoice_id].push({ file_url: f.file_url, page_number: f.page_number });
+      filesByInvoice[f.invoice_id].push({ file_url: fileLink(f.file_url), page_number: f.page_number });
     }
 
     // ── 3. Fetch restaurant names ─────────────────────────────────────────────
@@ -118,6 +137,7 @@ export default withAdminAuth(async function handler(req, res) {
       }
       groupMap[rid].invoices.push({
         ...inv,
+        file_url:   fileLink(inv.file_url),
         files:      filesByInvoice[inv.id] || [],
         line_items: itemsByInvoice[inv.id] || [],
       });
