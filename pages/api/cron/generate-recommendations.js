@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { generateForRestaurant } from '../ai-recommendations';
+import { sendCronAlert } from '../../../lib/cronAlert';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -37,6 +38,7 @@ export default async function handler(req, res) {
 
   if (error || !restaurants?.length) {
     console.error('[cron] Failed to fetch restaurants:', error?.message);
+    await sendCronAlert("Tonight's Dish cron", 'Could not load the restaurant list, so no tickets were generated.', [error?.message || 'No restaurants returned']);
     return res.status(500).json({ error: 'Failed to fetch restaurants' });
   }
 
@@ -85,5 +87,12 @@ export default async function handler(req, res) {
   }
 
   console.log(`[cron] Done — ${results.success.length} generated, ${results.skipped.length} skipped, ${results.failed.length} failed`);
+  if (results.failed.length) {
+    await sendCronAlert(
+      "Tonight's Dish cron",
+      `${results.failed.length} of ${restaurants.length} restaurants got no tickets for ${currentDate} after 3 attempts each.`,
+      results.failed.map(f => `${f.name}: ${f.error}`)
+    );
+  }
   return res.status(200).json({ date: currentDate, ...results });
 }
