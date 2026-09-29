@@ -8,7 +8,11 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
-import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import useSWR from "swr";
+import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
+
+const EMPTY_LIST = [];
+const AFFECTED_BY_INVOICES = ["ingredients", "dashboard", "menu-items", "analytics"];
 import DuplicateInvoiceModal from "../../components/DuplicateInvoiceModal";
 import LeaveGuardModal from "../../components/LeaveGuardModal";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
@@ -120,22 +124,22 @@ export default function InvoicesPage() {
     router.push("/client/login");
   };
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [restaurantName, setRestaurantName] = useState("");
-  const [userName, setUserName] = useState("");
-  const [invoices, setInvoices] = useState([]);
   const [lines, setLines] = useState({}); // invoiceId -> line items
   const [fileLinks, setFileLinks] = useState({}); // invoiceId -> signed file link
-  const [ingredientOptions, setIngredientOptions] = useState([]); // for linking lines
+  const [, setTourEndedTick] = useState(0);
 
-  const loadInvoices = useCallback(async (restId) => {
-    if (isTourQueryActive()) {
+  // Account from the shared cache (same account checks as before).
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const restaurantId = account?.profile?.restaurant_id || null;
+  const restaurantName = account?.restaurant?.name || "";
+  const userName = account?.profile?.full_name || "";
+
+  // Returns { invoices, ingredientOptions } for the shared cache.
+  const loadInvoices = useCallback(async (restId, tourMode) => {
+    if (tourMode) {
       const sample = await fetchSampleData();
       if (sample) {
-        setInvoices((sample.invoices || []).map(toInvoice));
-        return;
+        return { invoices: (sample.invoices || []).map(toInvoice), ingredientOptions: [] };
       }
       // fetchSampleData() failed — fall through to the real query rather
       // than leave the tour on a blank invoices page.
@@ -152,50 +156,33 @@ export default function InvoicesPage() {
       .order("created_at", { ascending: false })
       .limit(1000);
     if (qErr) throw qErr;
-    setInvoices((data || []).map(toInvoice));
     const { data: ings } = await supabase
       .from("ingredients")
       .select("id, name, unit")
       .eq("restaurant_id", restId)
       .order("name")
       .limit(2000);
-    setIngredientOptions(ings || []);
+    return { invoices: (data || []).map(toInvoice), ingredientOptions: ings || [] };
   }, []);
 
+  // Invoice list kept between visits: coming back shows it at once while a
+  // fresh copy loads in the background.
+  const tourMode = isTourQueryActive();
+  const { data: invData, error: invError, mutate: reloadInvoices } = useSWR(
+    restaurantId ? ["invoices", restaurantId, tourMode] : null,
+    () => loadInvoices(restaurantId, tourMode)
+  );
+  const invoices = invData?.invoices || EMPTY_LIST;
+  const ingredientOptions = invData?.ingredientOptions || EMPTY_LIST;
+  const loading = accountLoading || (!!restaurantId && !invData && !invError);
+  const error = accountError || (invError ? invError.message || "Could not load your invoices" : null);
+
+  // When the tour finishes, re-render so tourMode flips and real data loads.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push("/client/login"); return; }
-
-        const { data: profile } = await supabase
-          .from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
-        if (!profile?.restaurant_id) { setLoading(false); return; }
-        if (cancelled) return;
-
-        setRestaurantId(profile.restaurant_id);
-        setUserName(profile.full_name || "");
-
-        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
-        if (!rest) return;
-        if (!cancelled) setRestaurantName(rest?.name || "");
-
-        await loadInvoices(profile.restaurant_id);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Could not load your invoices");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [router, loadInvoices]);
-
-  useEffect(() => {
-    const handler = () => { if (restaurantId) loadInvoices(restaurantId); };
-    window.addEventListener('optimenu-tour-ended', handler);
-    return () => window.removeEventListener('optimenu-tour-ended', handler);
-  }, [restaurantId, loadInvoices]);
+    const handler = () => setTourEndedTick((n) => n + 1);
+    window.addEventListener("optimenu-tour-ended", handler);
+    return () => window.removeEventListener("optimenu-tour-ended", handler);
+  }, []);
 
   /* Invoice files live in a private bucket. When an invoice is selected, its
      stored path is swapped for a signed link valid for one hour. Full URLs
@@ -257,10 +244,15 @@ export default function InvoicesPage() {
     // refetches them when they are opened.
     setLines((prev) => (json.moved > 1 ? { [invoice.id]: fresh } : { ...prev, [invoice.id]: fresh }));
     if (choice.newName && json.ingredient) {
-      setIngredientOptions((prev) => [...prev, json.ingredient].sort((a, b) => a.name.localeCompare(b.name)));
+      reloadInvoices(
+        (prev) => prev && { ...prev, ingredientOptions: [...prev.ingredientOptions, json.ingredient].sort((a, b) => a.name.localeCompare(b.name)) },
+        { revalidate: false }
+      );
     }
+    // Prices and inventory changed: those pages load fresh on their next visit.
+    clearCachedPages(AFFECTED_BY_INVOICES);
     return json;
-  }, [restaurantId]);
+  }, [restaurantId, reloadInvoices]);
 
   /* Pre-load the first invoice's lines so the receipt is never blank. */
   useEffect(() => {
@@ -377,7 +369,8 @@ export default function InvoicesPage() {
     }
 
     setUploadStatus(null);
-    await loadInvoices(restaurantId);
+    await reloadInvoices();
+    clearCachedPages(AFFECTED_BY_INVOICES);
   }
 
   return (

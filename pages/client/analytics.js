@@ -8,7 +8,11 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
-import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import useSWR from "swr";
+import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
+
+const EMPTY_LIST = [];
+const EMPTY_COSTS = {};
 import CsvImportPreview from "../../components/CsvImportPreview";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { calculateStandardizedCost } from "../../lib/standardizedUnits";
@@ -85,110 +89,85 @@ export default function AnalyticsPage() {
     router.push("/client/login");
   };
 
-  const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [error, setError] = useState(null);
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [restaurantName, setRestaurantName] = useState("");
-  const [userName, setUserName] = useState("");
-  const [targetFoodCost, setTargetFoodCost] = useState(30);
-  const [sales, setSales] = useState([]);
-  const [costs, setCosts] = useState({});   // lowercased item name -> plate cost
-  const [session, setSession] = useState(null);
+  const [, setTourEndedTick] = useState(0);
 
-  const loadSales = useCallback(async (restId) => {
-    if (isTourQueryActive()) {
-      const sample = await fetchSampleData();
-      if (sample) {
-        setSales(sample.posSales || []);
-        return;
+  // Account from the shared cache (same account checks as before).
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const restaurantId = account?.profile?.restaurant_id || null;
+  const restaurantName = account?.restaurant?.name || "";
+  const userName = account?.profile?.full_name || "";
+  const targetFoodCost = account?.restaurant?.target_food_cost ? num(account.restaurant.target_food_cost) : 30;
+
+  // Sales, plate costs and the last upload, kept between visits.
+  const tourMode = isTourQueryActive();
+  const { data: anData, error: anError, mutate: reloadAnalytics } = useSWR(
+    restaurantId ? ["analytics", restaurantId, tourMode] : null,
+    async () => {
+      let menu = [];
+      let sessions = [];
+      let sales = null;
+      if (tourMode) {
+        const sample = await fetchSampleData();
+        menu = sample?.menuItems || [];
+        // Sample data has no upload_sessions row; syncStamp below falls back
+        // to the sales rows' own pos_system and count.
+        if (sample) sales = sample.posSales || [];
+        // fetchSampleData() failed: sales stays null and the real query runs.
+      } else {
+        const [{ data: realMenu }, { data: realSessions }] = await Promise.all([
+          supabase
+            .from("menu_items")
+            .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
+            .eq("restaurant_id", restaurantId)
+            .limit(500),
+          supabase.from("upload_sessions").select("*").eq("restaurant_id", restaurantId).order("uploaded_at", { ascending: false }).limit(1),
+        ]);
+        menu = realMenu || [];
+        sessions = realSessions || [];
       }
-      // fetchSampleData() failed — fall through to the real query below.
-    }
-    let rows = [];
-    for (let page = 0, from = 0; page < MAX_PAGES; page++, from += PAGE_SIZE) {
-      const { data, error: qErr } = await supabase
-        .from("pos_sales")
-        .select("*")
-        .eq("restaurant_id", restId)
-        .order("sale_date", { ascending: false })
-        .range(from, from + PAGE_SIZE - 1);
-      if (qErr || !data?.length) break;
-      rows = rows.concat(data);
-      if (data.length < PAGE_SIZE) break;
-    }
-    setSales(rows);
-  }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push("/client/login"); return; }
-        const { data: profile } = await supabase
-          .from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
-        if (!profile?.restaurant_id) { setLoading(false); return; }
-        if (cancelled) return;
-        setRestaurantId(profile.restaurant_id);
-        setUserName(profile.full_name || "");
-
-        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
-        if (!rest) return;
-
-        let menu = [];
-        let sessions = [];
-        if (isTourQueryActive()) {
-          const sample = await fetchSampleData();
-          menu = sample?.menuItems || [];
-          // Sample data has no upload_sessions row — sessions stays empty,
-          // syncStamp below already handles that by falling back to the
-          // sales array's own pos_system/count.
-        } else {
-          const [{ data: realMenu }, { data: realSessions }] = await Promise.all([
-            supabase
-              .from("menu_items")
-              .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
-              .eq("restaurant_id", profile.restaurant_id)
-              .limit(500),
-            supabase.from("upload_sessions").select("*").eq("restaurant_id", profile.restaurant_id).order("uploaded_at", { ascending: false }).limit(1),
-          ]);
-          menu = realMenu || [];
-          sessions = realSessions || [];
+      if (!sales) {
+        let rows = [];
+        for (let page = 0, from = 0; page < MAX_PAGES; page++, from += PAGE_SIZE) {
+          const { data, error: qErr } = await supabase
+            .from("pos_sales")
+            .select("*")
+            .eq("restaurant_id", restaurantId)
+            .order("sale_date", { ascending: false })
+            .range(from, from + PAGE_SIZE - 1);
+          if (qErr || !data?.length) break;
+          rows = rows.concat(data);
+          if (data.length < PAGE_SIZE) break;
         }
-        if (cancelled) return;
-
-        setRestaurantName(rest?.name || "");
-        if (rest?.target_food_cost) setTargetFoodCost(num(rest.target_food_cost));
-        setSession(sessions[0] || null);
-
-        const tourData = isTourQueryActive();
-        const map = {};
-        menu.forEach((m) => {
-          map[String(m.name || "").toLowerCase().trim()] = {
-            // null = cost not known yet (an ingredient is awaiting pricing)
-            cost: tourData ? (num(m.cost) || null) : allowedPlateCost(m),
-            price: num(m.price),
-            category: m.category,
-          };
-        });
-        setCosts(map);
-
-        await loadSales(profile.restaurant_id);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Could not load your sales");
-      } finally {
-        if (!cancelled) setLoading(false);
+        sales = rows;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [router, loadSales]);
 
+      const costs = {};
+      menu.forEach((m) => {
+        costs[String(m.name || "").toLowerCase().trim()] = {
+          // null = cost not known yet (an ingredient is awaiting pricing)
+          cost: tourMode ? (num(m.cost) || null) : allowedPlateCost(m),
+          price: num(m.price),
+          category: m.category,
+        };
+      });
+
+      return { sales, costs, session: sessions[0] || null };
+    }
+  );
+  const sales = anData?.sales || EMPTY_LIST;
+  const costs = anData?.costs || EMPTY_COSTS;
+  const session = anData?.session || null;
+  const loading = accountLoading || (!!restaurantId && !anData && !anError);
+  const error = accountError || (anError ? anError.message || "Could not load your sales" : null);
+
+  // When the tour finishes, re-render so tourMode flips and real data loads.
   useEffect(() => {
-    const handler = () => { if (restaurantId) loadSales(restaurantId); };
-    window.addEventListener('optimenu-tour-ended', handler);
-    return () => window.removeEventListener('optimenu-tour-ended', handler);
-  }, [restaurantId, loadSales]);
+    const handler = () => setTourEndedTick((n) => n + 1);
+    window.addEventListener("optimenu-tour-ended", handler);
+    return () => window.removeEventListener("optimenu-tour-ended", handler);
+  }, []);
 
   /* pos_sales rows -> one night per date, with per-dish lines. */
   const days = useMemo(() => {
@@ -286,7 +265,9 @@ export default function AnalyticsPage() {
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Import failed.");
     setCsvAnalysis(null);
-    await loadSales(restaurantId);
+    await reloadAnalytics();
+    // New sales change covers on Menu and the dashboard calendar.
+    clearCachedPages(["menu-items", "dashboard", "week"]);
   }
 
   return (

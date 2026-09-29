@@ -8,7 +8,10 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
-import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import useSWR from "swr";
+import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
+
+const EMPTY_LIST = [];
 import { parseMenuFiles } from "../../lib/parseMenu";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { calculateStandardizedCost, getUnitCategory, hasUnitMismatch } from "../../lib/standardizedUnits";
@@ -159,14 +162,15 @@ export default function MenuItemsPage() {
     router.push("/client/login");
   };
 
-  const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [error, setError] = useState(null);
-  const [restaurantName, setRestaurantName] = useState("");
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [userName, setUserName] = useState("");
-  const [targetMargin, setTargetMargin] = useState(70);
-  const [items, setItems] = useState([]);
+  const [, setTourEndedTick] = useState(0);
+
+  // Account from the shared cache (same account checks as before).
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const restaurantId = account?.profile?.restaurant_id || null;
+  const restaurantName = account?.restaurant?.name || "";
+  const userName = account?.profile?.full_name || "";
+  const targetMargin = account?.restaurant?.target_food_cost ? 100 - num(account.restaurant.target_food_cost) : 70;
 
   const menuFileInput = useRef(null);
   const [menuParsing, setMenuParsing] = useState(false);
@@ -233,11 +237,11 @@ export default function MenuItemsPage() {
   async function finishTeamHandoff() {
     setReviewData(null);
     setReviewChoice(null);
-    await load(restaurantId);
+    await reloadMenu();
   }
 
-  const load = useCallback(async (restaurantId) => {
-    if (isTourQueryActive()) {
+  const load = useCallback(async (restaurantId, tourMode) => {
+    if (tourMode) {
       const sample = await fetchSampleData();
       if (sample) {
         const coverMap = new Map();
@@ -250,12 +254,9 @@ export default function MenuItemsPage() {
         // ticket recipe flip-side), so toDish() renders these dishes with
         // an empty recipe and no margin trend — real name/price/cost/
         // category and real cover counts still come through correctly.
-        setItems(
-          (sample.menuItems || []).map((m) =>
-            toDish(m, [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0, { trustPrices: true })
-          )
+        return (sample.menuItems || []).map((m) =>
+          toDish(m, [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0, { trustPrices: true })
         );
-        return;
       }
       // fetchSampleData() failed — fall through to the real query below.
     }
@@ -315,48 +316,35 @@ export default function MenuItemsPage() {
       historyById.set(h.menu_item_id, list);
     });
 
-    setItems(
-      (menuItems || []).map((m) =>
-        toDish(m, historyById.get(m.id) || [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0)
-      )
+    return (menuItems || []).map((m) =>
+      toDish(m, historyById.get(m.id) || [], coverMap.get(String(m.name || "").toLowerCase().trim()) || 0)
     );
   }, []);
 
+  // Menu kept between visits: coming back shows it at once while a fresh
+  // copy loads in the background.
+  const tourMode = isTourQueryActive();
+  const { data: menuData, error: menuError, mutate: mutateMenu } = useSWR(
+    restaurantId ? ["menu-items", restaurantId, tourMode] : null,
+    () => load(restaurantId, tourMode)
+  );
+  const items = menuData || EMPTY_LIST;
+  const loading = accountLoading || (!!restaurantId && !menuData && !menuError);
+  const error = accountError || (menuError ? menuError.message || "Could not load your menu" : null);
+
+  // After a menu is committed: reload this page, and let the pages that use
+  // the menu load fresh on their next visit.
+  const reloadMenu = async () => {
+    await mutateMenu();
+    clearCachedPages(["dashboard", "ingredients", "analytics"]);
+  };
+
+  // When the tour finishes, re-render so tourMode flips and real data loads.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push("/client/login"); return; }
-        const { data: profile } = await supabase
-          .from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
-        if (!profile?.restaurant_id) { setLoading(false); return; }
-        if (cancelled) return;
-        setUserName(profile.full_name || "");
-
-        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
-        if (!rest) return;
-        if (!cancelled) {
-          setRestaurantId(profile.restaurant_id);
-          setRestaurantName(rest?.name || "");
-          if (rest?.target_food_cost) setTargetMargin(100 - num(rest.target_food_cost));
-        }
-
-        await load(profile.restaurant_id);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Could not load your menu");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [router, load]);
-
-  useEffect(() => {
-    const handler = () => { if (restaurantId) load(restaurantId); };
-    window.addEventListener('optimenu-tour-ended', handler);
-    return () => window.removeEventListener('optimenu-tour-ended', handler);
-  }, [restaurantId, load]);
+    const handler = () => setTourEndedTick((n) => n + 1);
+    window.addEventListener("optimenu-tour-ended", handler);
+    return () => window.removeEventListener("optimenu-tour-ended", handler);
+  }, []);
 
   const periodLabel = useMemo(
     () => {
@@ -495,7 +483,7 @@ export default function MenuItemsPage() {
           onCommitted={async () => {
             setReviewData(null);
             setReviewChoice(null);
-            await load(restaurantId);
+            await reloadMenu();
           }}
           onClose={() => { setReviewData(null); setReviewChoice(null); }}
         />
