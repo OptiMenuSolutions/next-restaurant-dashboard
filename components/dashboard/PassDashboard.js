@@ -1220,6 +1220,21 @@ export default function PassDashboard({
     );
   }
 
+  // Phones get the same compact header as the other client pages (logo,
+  // theme toggle, initials), pinned while the page scrolls. The full
+  // desktop header does not fit on a phone.
+  const mobileHeader = (
+    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: 16, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* Fills the strip behind the phone clock and battery. Zero height when there is no safe area. */}
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
+      <img src={dark ? logoDarkSrc : logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button type="button" onClick={toggleTheme} style={{ background: "none", border: "1px solid var(--line)", borderRadius: 20, padding: "6px 11px", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", color: "var(--muted)", cursor: "pointer" }}>{dark ? "LIGHT" : "DARK"}</button>
+        <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11.5, fontWeight: 700 }}>{user.initials}</div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <style>{CSS}</style>
@@ -1228,7 +1243,7 @@ export default function PassDashboard({
         data-theme={theme}
         style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
       >
-        {header}
+        {isMobile ? mobileHeader : header}
         {body}
       </div>
     </>
@@ -1519,7 +1534,7 @@ function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, 
               }}
             >
               <span style={{ width: "16px", height: "16px", borderRadius: "4px", border: "1.5px solid currentColor" }} />
-              <span style={{ fontSize: "9.5px", fontWeight: 600 }}>{n.label}</span>
+              <span style={{ fontSize: "9.5px", fontWeight: 600 }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
             </Link>
           );
         })}
