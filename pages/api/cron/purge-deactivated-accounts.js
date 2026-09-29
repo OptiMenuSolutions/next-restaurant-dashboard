@@ -112,6 +112,14 @@ export default async function handler(req, res) {
     }
   }
 
+  if (results.purged.length) {
+    await sendCronAlert(
+      'Account purge',
+      `${results.purged.length} restaurant(s) deactivated over ${RETENTION_DAYS} days ago were permanently deleted, including their files and login.`,
+      results.purged,
+      { notice: true }
+    );
+  }
   if (results.failed.length) {
     await sendCronAlert(
       'Account purge cron',
