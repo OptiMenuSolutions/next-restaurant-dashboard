@@ -341,7 +341,7 @@ export default function IngredientsPage() {
         onRetry={() => router.reload()}
         summary={summary}
         onOpenMenuItem={(m) => m.id && router.push(`/client/menu-items/${m.id}`)}
-        onOpenInvoice={(p) => p.invoiceId && router.push(`/client/invoices/${p.invoiceId}`)}
+        onOpenInvoice={(p) => p.invoiceId && router.push(`/client/invoices?invoice=${p.invoiceId}`)}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         onUploadInvoice={() => router.push("/client/invoices")}

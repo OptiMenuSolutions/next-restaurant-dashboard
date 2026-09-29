@@ -437,7 +437,7 @@ export default function InvoicesPage() {
         onSelect={handleSelect}
         ingredientOptions={ingredientOptions}
         onLinkLine={handleLinkLine}
-        onOpen={(v) => router.push(`/client/invoices/${v.id}`)}
+        openInvoiceId={router.query.invoice || null}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
         restaurantName={restaurantName || "Your restaurant"}

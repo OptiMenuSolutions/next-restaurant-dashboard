@@ -115,6 +115,7 @@ export default function InvoicesScreen({
   onOpen,
   onFlag,
   onSelect,
+  openInvoiceId = null,
   ingredientOptions = [],
   onLinkLine,
   onSearch,
@@ -157,6 +158,18 @@ export default function InvoicesScreen({
     setSelectedId(v.id);
     if (onSelect) onSelect(v);
   };
+
+  // Opened from a link elsewhere (/client/invoices?invoice=ID): select that
+  // invoice once the list has it, and on phones show its receipt. Runs once per ID.
+  const [openedFromLink, setOpenedFromLink] = useState(null);
+  useEffect(() => {
+    if (!openInvoiceId || openedFromLink === openInvoiceId) return;
+    const target = rows.find((v) => String(v.id) === String(openInvoiceId));
+    if (!target) return;
+    setOpenedFromLink(openInvoiceId);
+    pick(target);
+    setMobileDetail(true);
+  }, [openInvoiceId, rows, openedFromLink]);
 
   const chrome = (
     <Header

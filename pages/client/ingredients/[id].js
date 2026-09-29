@@ -660,7 +660,7 @@ export default function IngredientDetail() {
                     return (
                       <tr 
                         key={purchase.id}
-                        onClick={() => router.push(`/client/invoices/${purchase.invoice_id}`)}
+                        onClick={() => router.push(`/client/invoices?invoice=${purchase.invoice_id}`)}
                         className="hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="py-4 px-6 text-gray-900">

@@ -96,7 +96,7 @@ export default function UniversalSearch({ open, onClose }) {
             <div>
               <div style={{ padding: '10px 18px 4px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint,#78868a)' }}>Invoices</div>
               {results.invoices.map((v) => (
-                <div key={v.id} onClick={() => go(`/client/invoices/${v.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div key={v.id} onClick={() => go(`/client/invoices?invoice=${v.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{v.supplier || 'Unknown supplier'} {v.number ? `· #${v.number}` : ''}</span>
                   <span style={{ fontSize: 12, color: 'var(--faint,#78868a)' }}>{v.amount != null ? money(v.amount) : ''}</span>
                 </div>
