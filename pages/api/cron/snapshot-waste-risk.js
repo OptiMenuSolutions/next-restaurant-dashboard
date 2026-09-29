@@ -20,6 +20,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { computeWasteRisk } from '../../../lib/computeWasteRisk';
 import { rebuildCurrentInventory, loadLearnedShelfLives } from '../../../lib/currentInventory';
+import { sendCronAlert } from '../../../lib/cronAlert';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -239,12 +240,13 @@ export default async function handler(req, res) {
 
   if (error || !restaurants?.length) {
     console.error('[cron:waste-snapshot] Failed to fetch restaurants:', error?.message);
+    await sendCronAlert('Waste snapshot cron', 'Could not load the restaurant list, so no inventory rebuild or waste snapshot ran.', [error?.message || 'No restaurants returned']);
     return res.status(500).json({ error: 'Failed to fetch restaurants' });
   }
 
   console.log(`[cron:waste-snapshot] Snapshotting ${restaurants.length} restaurants — ${snapshotDate}`);
 
-  const results = { success: [], skipped: [], failed: [] };
+  const results = { success: [], skipped: [], failed: [], inventoryFailed: [] };
 
   for (const restaurant of restaurants) {
     // Rebuild current_inventory first: after the overnight POS sync, so it
@@ -254,6 +256,7 @@ export default async function handler(req, res) {
       console.log(`[cron:waste-snapshot] inventory ${restaurant.name}: ${invCount} rows`);
     } catch (err) {
       console.error(`[cron:waste-snapshot] inventory ${restaurant.name} failed:`, err.message);
+      results.inventoryFailed.push({ name: restaurant.name, error: err.message });
     }
 
     // Skip if already snapshotted for this day (idempotent reruns).
@@ -285,5 +288,15 @@ export default async function handler(req, res) {
   console.log(`[cron:waste-snapshot] ${reaskedCount} kept item(s) re-asked`);
 
   console.log(`[cron:waste-snapshot] Done — ${results.success.length} snapshotted, ${results.skipped.length} skipped, ${results.failed.length} failed, ${expiredCount} confirmations expired`);
+  if (results.failed.length || results.inventoryFailed.length) {
+    await sendCronAlert(
+      'Waste snapshot cron',
+      `${results.inventoryFailed.length} inventory rebuild(s) and ${results.failed.length} waste snapshot(s) failed for ${snapshotDate}.`,
+      [
+        ...results.inventoryFailed.map(f => `Inventory, ${f.name}: ${f.error}`),
+        ...results.failed.map(f => `Snapshot, ${f.name}: ${f.error}`),
+      ]
+    );
+  }
   return res.status(200).json({ date: snapshotDate, expiredConfirmations: expiredCount, ...results });
 }

@@ -20,6 +20,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
+import { sendCronAlert } from '../../../lib/cronAlert';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -113,6 +114,7 @@ export default async function handler(req, res) {
 
   if (error) {
     console.error('[cron:sync-all-pos] Failed to fetch connections:', error.message);
+    await sendCronAlert('POS sync cron', 'Could not load POS connections, so no sales were synced.', [error.message]);
     return res.status(500).json({ error: error.message });
   }
   if (!connections?.length) return res.status(200).json({ synced: 0 });
@@ -136,5 +138,12 @@ export default async function handler(req, res) {
   }
 
   console.log(`[cron:sync-all-pos] Done — ${results.success.length} synced, ${results.failed.length} failed`);
+  if (results.failed.length) {
+    await sendCronAlert(
+      'POS sync cron',
+      `${results.failed.length} of ${connections.length} POS connections failed to sync. They are marked error and will not sync again until reconnected.`,
+      results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}: ${f.error}`)
+    );
+  }
   return res.status(200).json({ synced: results.success.length, failed: results.failed.length, results });
 }

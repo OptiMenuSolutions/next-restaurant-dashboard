@@ -18,6 +18,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import stripe from '../../../lib/stripeServer';
+import { sendCronAlert } from '../../../lib/cronAlert';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -118,6 +119,7 @@ export default async function handler(req, res) {
 
   if (error) {
     console.error('[purge-deactivated-accounts] Failed to query deactivated restaurants:', error.message);
+    await sendCronAlert('Account purge cron', 'Could not query deactivated restaurants, so nothing was purged.', [error.message]);
     return res.status(500).json({ error: error.message });
   }
 
@@ -137,5 +139,12 @@ export default async function handler(req, res) {
     }
   }
 
+  if (results.failed.length) {
+    await sendCronAlert(
+      'Account purge cron',
+      `${results.failed.length} deactivated restaurant(s) could not be purged and may be partly deleted.`,
+      results.failed.map(f => `${f.name || f.id}: ${f.error}`)
+    );
+  }
   return res.status(200).json({ purged: results.purged.length, failed: results.failed, names: results.purged });
 }
