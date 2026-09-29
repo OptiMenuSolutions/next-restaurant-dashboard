@@ -8,7 +8,8 @@ import { FONT_LINKS } from "../../components/client/ClientChrome";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
-import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import useSWR from "swr";
+import { useGuardedAccount } from "../../lib/useAccount";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from "../../lib/standardizedUnits";
 
@@ -147,32 +148,25 @@ export default function IngredientsPage() {
     router.push("/client/login");
   };
 
-  const [loading, setLoading] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [error, setError] = useState(null);
-  const [restaurantName, setRestaurantName] = useState("");
-  const [userName, setUserName] = useState("");
-  const [ingredients, setIngredients] = useState([]);
-  const [spend, setSpend] = useState(null);
-  const [restaurantId, setRestaurantId] = useState(null);
+  const [, setTourEndedTick] = useState(0);
 
-  const load = useCallback(async (restaurantId) => {
-    if (isTourQueryActive()) {
+  // Returns { rows, spend } instead of setting state, so the result can be
+  // kept in the shared cache and shown instantly on the next visit.
+  const load = useCallback(async (restaurantId, tourMode) => {
+    if (tourMode) {
       const sample = await fetchSampleData();
       if (sample) {
         const rows = buildSampleIngredientRows(sample);
-        setIngredients(rows);
         const thisMonth = monthKey(new Date().toISOString());
         const flatItems = [];
         (sample.invoices || []).forEach((inv) => {
           (inv.invoice_items || []).forEach((item) => flatItems.push({ ...item, invoices: { date: inv.date } }));
         });
-        setSpend(
-          flatItems
-            .filter((r) => monthKey(r.invoices.date) === thisMonth)
-            .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0)
-        );
-        return;
+        const spend = flatItems
+          .filter((r) => monthKey(r.invoices.date) === thisMonth)
+          .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0);
+        return { rows, spend };
       }
       // fetchSampleData() failed — fall through to the real query below.
     }
@@ -275,47 +269,39 @@ export default function IngredientsPage() {
       };
     });
 
-    setIngredients(rows);
-
     /* Summary spend: this month's invoiced line items. */
     const thisMonth = monthKey(new Date().toISOString());
-    setSpend(
-      history
-        .filter((r) => monthKey(r.invoices.date) === thisMonth)
-        .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0)
-    );
+    const spend = history
+      .filter((r) => monthKey(r.invoices.date) === thisMonth)
+      .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0);
+    return { rows, spend };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { router.push("/client/login"); return; }
-        const { data: profile } = await supabase
-          .from("profiles").select("restaurant_id, full_name").eq("id", user.id).single();
-        if (!profile?.restaurant_id) { setLoading(false); return; }
-        if (cancelled) return;
-        setUserName(profile.full_name || "");
-        setRestaurantId(profile.restaurant_id);
-        const rest = await enforceAccountGuard(supabase, router, profile.restaurant_id);
-        if (!rest) return;
-        if (!cancelled) setRestaurantName(rest?.name || "");
-        await load(profile.restaurant_id);
-      } catch (e) {
-        if (!cancelled) setError(e.message || "Could not load your ingredients");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [router, load]);
+  // Account (login, profile, restaurant) comes from the shared cache: loaded
+  // once per session, with the account checks applied on every page.
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const restaurantId = account?.profile?.restaurant_id || null;
+  const restaurantName = account?.restaurant?.name || "";
+  const userName = account?.profile?.full_name || "";
 
+  // Ingredient data is kept after the first visit: coming back shows it at
+  // once while a fresh copy loads in the background.
+  const tourMode = isTourQueryActive();
+  const { data: ingData, error: ingError } = useSWR(
+    restaurantId ? ["ingredients", restaurantId, tourMode] : null,
+    () => load(restaurantId, tourMode)
+  );
+  const ingredients = ingData?.rows || [];
+  const spend = ingData ? ingData.spend : null;
+  const loading = accountLoading || (!!restaurantId && !ingData && !ingError);
+  const error = accountError || (ingError ? ingError.message || "Could not load your ingredients" : null);
+
+  // When the tour finishes, re-render so tourMode flips and real data loads.
   useEffect(() => {
-    const handler = () => { if (restaurantId) load(restaurantId); };
-    window.addEventListener('optimenu-tour-ended', handler);
-    return () => window.removeEventListener('optimenu-tour-ended', handler);
-  }, [restaurantId, load]);
+    const handler = () => setTourEndedTick((n) => n + 1);
+    window.addEventListener("optimenu-tour-ended", handler);
+    return () => window.removeEventListener("optimenu-tour-ended", handler);
+  }, []);
 
   const summary = useMemo(() => {
     const now = new Date();

@@ -7,6 +7,8 @@ import { ThemeProvider } from '../lib/ThemeContext';
 import { THEMES } from '../lib/theme';
 import Head from 'next/head';
 import { Analytics } from '@vercel/analytics/react';
+import { mutate } from 'swr';
+import supabase from '../lib/supabaseClient';
 
 const ANTI_FLASH_SCRIPT = `
 (function() {
@@ -27,6 +29,18 @@ const ANTI_FLASH_SCRIPT = `
 export default function App({ Component, pageProps }) {
   useEffect(() => {
     registerServiceWorker();
+  }, []);
+
+  // Kept page data belongs to whoever is signed in. Signing out (from any
+  // page, or a session ending) wipes all of it, so the next person on a
+  // shared device never sees the previous account. Signing in reloads the
+  // account.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') mutate(() => true, undefined, { revalidate: false });
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') mutate('account');
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   return (
