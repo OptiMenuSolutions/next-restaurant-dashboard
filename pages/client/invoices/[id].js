@@ -69,7 +69,14 @@ export default function InvoiceDetail() {
         return;
       }
 
-      setInvoice(invoiceData);
+      // Invoice files are in a private bucket: swap the stored path for a
+      // signed link (valid one hour) before rendering.
+      let fileLink = invoiceData.file_url;
+      if (fileLink && !/^https?:\/\//.test(fileLink)) {
+        const { data: signed } = await supabase.storage.from("invoices").createSignedUrl(fileLink, 3600);
+        fileLink = signed?.signedUrl || null;
+      }
+      setInvoice({ ...invoiceData, file_url: fileLink });
 
       // Fetch restaurant info
       const { data: restaurantData, error: restaurantError } = await supabase

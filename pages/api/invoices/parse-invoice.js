@@ -688,14 +688,21 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-cache');
   res.flushHeaders();
 
-  const { restaurant_id: restaurantId, file_url: fileUrl, file_name: fileNameInput } = req.body || {};
+  const { restaurant_id: restaurantId, file_path: filePath, file_name: fileNameInput } = req.body || {};
 
   if (!restaurantId) {
     streamEvent(res, { type: 'error', error: 'restaurant_id is required' });
     return res.end();
   }
-  if (!fileUrl) {
-    streamEvent(res, { type: 'error', error: 'file_url is required' });
+  if (!filePath) {
+    streamEvent(res, { type: 'error', error: 'file_path is required' });
+    return res.end();
+  }
+
+  const { error: authError } = await import('../../../lib/withRestaurantAuth')
+    .then(m => m.verifyRestaurantAccess(req, restaurantId));
+  if (authError) {
+    streamEvent(res, { type: 'error', error: authError });
     return res.end();
   }
 
@@ -716,23 +723,18 @@ export default async function handler(req, res) {
 
   try {
     streamStatus(res, `Downloading ${fileName}...`, null);
-    // Only fetch this restaurant's own files from our Supabase Storage. The
-    // URL comes from the client, so an unchecked fetch would let anyone make
-    // this server request arbitrary addresses (server-side request forgery).
-    let u;
-    try { u = new URL(fileUrl); } catch { u = null; }
-    const allowedHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).host;
-    const allowedPrefix = `/storage/v1/object/public/invoices/${restaurantId}/`;
-    if (!u || u.protocol !== 'https:' || u.host !== allowedHost || !u.pathname.startsWith(allowedPrefix)) {
+    // Only this restaurant's own folder in the private invoices bucket,
+    // read with the service role. No URL is fetched, so no request forgery.
+    if (!filePath.startsWith(`${restaurantId}/`) || filePath.includes('..')) {
       streamEvent(res, { type: 'error', error: 'That file is not from this restaurant\'s uploads.' });
       return res.end();
     }
-    const fileRes = await fetch(fileUrl);
-    if (!fileRes.ok) {
-      streamEvent(res, { type: 'error', error: `Could not download the uploaded file (${fileRes.status}).` });
+    const { data: fileBlob, error: dlError } = await supabase.storage.from('invoices').download(filePath);
+    if (dlError || !fileBlob) {
+      streamEvent(res, { type: 'error', error: `Could not download the uploaded file (${dlError?.message || 'not found'}).` });
       return res.end();
     }
-    const fileBuffer = Buffer.from(await fileRes.arrayBuffer());
+    const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
     // ── Pass 1: Mistral OCR ───────────────────────────────────────────────────
     streamStatus(res, `Reading ${fileName}...`, 'Extracting text with Mistral OCR');
@@ -887,7 +889,7 @@ export default async function handler(req, res) {
       type: 'result',
       data: {
         success:   true,
-        file_url:  fileUrl || null,
+        file_url:  filePath || null,
         ocr_text:  ocrText || null,
         duplicate: duplicateCheck || false,
         invoice: {

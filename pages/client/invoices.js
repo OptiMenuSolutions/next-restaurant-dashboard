@@ -127,6 +127,7 @@ export default function InvoicesPage() {
   const [userName, setUserName] = useState("");
   const [invoices, setInvoices] = useState([]);
   const [lines, setLines] = useState({}); // invoiceId -> line items
+  const [fileLinks, setFileLinks] = useState({}); // invoiceId -> signed file link
   const [ingredientOptions, setIngredientOptions] = useState([]); // for linking lines
 
   const loadInvoices = useCallback(async (restId) => {
@@ -196,9 +197,20 @@ export default function InvoicesPage() {
     return () => window.removeEventListener('optimenu-tour-ended', handler);
   }, [restaurantId, loadInvoices]);
 
+  /* Invoice files live in a private bucket. When an invoice is selected, its
+     stored path is swapped for a signed link valid for one hour. Full URLs
+     (tour sample data) are used as they are. */
+  const signFile = useCallback(async (invoice) => {
+    const path = invoice?.fileUrl;
+    if (!path || /^https?:\/\//.test(path) || fileLinks[invoice.id]) return;
+    const { data } = await supabase.storage.from("invoices").createSignedUrl(path, 3600);
+    if (data?.signedUrl) setFileLinks((prev) => ({ ...prev, [invoice.id]: data.signedUrl }));
+  }, [fileLinks]);
+
   /* Line items are fetched lazily when a row is selected — same two queries the
      old detail page ran, minus the ocr_text fetch (not shown in this design). */
   const handleSelect = useCallback(async (invoice) => {
+    if (invoice) signFile(invoice);
     if (!invoice || lines[invoice.id]) return;
     if (isTourQueryActive()) {
       const sample = await fetchSampleData();
@@ -214,7 +226,7 @@ export default function InvoicesPage() {
       .eq("invoice_id", invoice.id)
       .order("item_name");
     setLines((prev) => ({ ...prev, [invoice.id]: (data || []).map(toLine) }));
-  }, [lines]);
+  }, [lines, signFile]);
 
   /* Link one invoice line to an ingredient (or a new one), then refresh that
      invoice's lines so the receipt updates. */
@@ -254,8 +266,12 @@ export default function InvoicesPage() {
   }, [invoices, handleSelect]);
 
   const withLines = useMemo(
-    () => invoices.map((v) => ({ ...v, items: lines[v.id] || v.items })),
-    [invoices, lines]
+    () => invoices.map((v) => ({
+      ...v,
+      items: lines[v.id] || v.items,
+      fileUrl: fileLinks[v.id] || (/^https?:\/\//.test(v.fileUrl || "") ? v.fileUrl : null),
+    })),
+    [invoices, lines, fileLinks]
   );
 
   const now = new Date();
