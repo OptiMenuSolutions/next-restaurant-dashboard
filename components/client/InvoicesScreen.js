@@ -357,7 +357,14 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
           <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "11px 0" }} />
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", flexShrink: 0 }}>
             <span>LINE ITEMS</span>
-            <span>{items.length ? `${items.length} LINES · ${unmatched} UNMATCHED` : "NOT READ YET"}</span>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span>{items.length ? `${items.length} LINES · ${unmatched} UNMATCHED` : "NOT READ YET"}</span>
+              {!linkMode && s.status === "processed" && items.length > 0 && unmatched === 0 && onLinkLine && (
+                <button type="button" onClick={() => setLinkMode(true)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", color: "var(--accent-deep)", cursor: "pointer" }}>
+                  CHANGE LINKS
+                </button>
+              )}
+            </span>
           </div>
           <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", marginTop: 9 }}>
             {linkMode && (
@@ -372,6 +379,14 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
                 {!items.some((i) => !i.link) && (
                   <div style={{ fontSize: 10, color: "var(--green)", padding: "6px 0" }}>✓ Every line is linked</div>
                 )}
+                {items.some((i) => i.link) && (
+                  <div style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-faint)", margin: "12px 0 2px" }}>
+                    LINKED · PICK ANOTHER INGREDIENT TO CHANGE
+                  </div>
+                )}
+                {items.filter((i) => i.link).map((i) => (
+                  <LinkRow key={"linked-" + (i.id || i.name)} line={i} current={i.link} options={ingredientOptions} onLink={(line, choice) => onLinkLine(s, line, choice)} />
+                ))}
                 {items.some((i) => i.link) && (
                   <div style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", margin: "12px 0 2px" }}>
                     LINKED · PICK ANOTHER INGREDIENT TO CHANGE
@@ -438,6 +453,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
    type-to-find ingredient field on the right, styled like the receipt. */
 function LinkRow({ line, options, onLink, current = null }) {
   const [q, setQ] = useState("");
+  const [note, setNote] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -459,10 +475,15 @@ function LinkRow({ line, options, onLink, current = null }) {
     setOpen(false);
     setSaving(true);
     setErr("");
+    setNote("");
     try {
-      await onLink(line, choice);
+      const result = await onLink(line, choice);
       setSaving(false);
       setQ("");
+      const others = (result && result.moved ? result.moved : 1) - 1;
+      if (current && others > 0) {
+        setNote(`Also updated ${others} other line${others === 1 ? "" : "s"} with this name`);
+      }
     } catch (e) {
       setErr(e.message || "Could not link that line.");
       setSaving(false);
@@ -507,6 +528,7 @@ function LinkRow({ line, options, onLink, current = null }) {
           </div>
         )}
         {err && <div style={{ fontSize: 9, color: "var(--red)", marginTop: 3 }}>{err}</div>}
+        {note && <div style={{ fontSize: 9, color: "var(--green)", marginTop: 3 }}>{note}</div>}
       </div>
     </div>
   );

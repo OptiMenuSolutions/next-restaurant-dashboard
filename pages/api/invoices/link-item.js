@@ -175,7 +175,7 @@ async function repriceFromInvoices(restaurant_id, ingredientId) {
       is_estimated: false,
     };
   } else if (ing.last_ordered_at) {
-    updates = { last_price: null, last_ordered_at: null, is_estimated: true };
+    updates = { last_price: null, last_ordered_at: null, is_estimated: true, price_approved_at: null };
   } else {
     return; // price never came from an invoice; leave it alone
   }
