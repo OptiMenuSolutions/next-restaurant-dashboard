@@ -6,6 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
+import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import {
   convertInvoiceCostToStandardUnit,
   getStandardUnitForIngredient,
@@ -191,14 +192,47 @@ export default async function handler(req, res) {
 
     // ── Step 2: Batch-create new ingredients ──────────────────────────────────
     // Auto-save: create all new ingredients without requiring confirm_new flag.
-    const newIngredientItems = activeItems.filter(
+    const candidateNewItems = activeItems.filter(
       i => !i.selected_ingredient_id && i.match_status === 'new'
     );
 
     const newIngredientIdMap = {};
+    const ingNameOf = (item) => item.confirmed_name || item.item_name_normalized || item.item_name;
+    const nameKey = (n) => (n || '').toLowerCase().trim();
 
-    if (newIngredientItems.length > 0) {
-      const toInsert = newIngredientItems.map(item => {
+    // An ingredient with this exact name (any case) may already exist: link
+    // to it instead of creating a lookalike. Step 3 then prices it, with the
+    // same older-invoice guard as any matched line.
+    let newIngredientItems = candidateNewItems;
+    if (candidateNewItems.length > 0) {
+      const { data: existingIngs } = await supabase
+        .from('ingredients')
+        .select('id, name')
+        .eq('restaurant_id', restaurant_id)
+        .limit(5000);
+      const existingByName = new Map((existingIngs || []).map(g => [nameKey(g.name), g]));
+      newIngredientItems = [];
+      for (const item of candidateNewItems) {
+        const hit = existingByName.get(nameKey(ingNameOf(item)));
+        if (hit) {
+          item.selected_ingredient_id = hit.id;
+          item.selected_ingredient_name = hit.name;
+        } else {
+          newIngredientItems.push(item);
+        }
+      }
+    }
+
+    // Two lines on one invoice naming the same new ingredient create it once.
+    const firstByName = new Map();
+    for (const item of newIngredientItems) {
+      const k = nameKey(ingNameOf(item));
+      if (!firstByName.has(k)) firstByName.set(k, item);
+    }
+    const uniqueNewItems = [...firstByName.values()];
+
+    if (uniqueNewItems.length > 0) {
+      const toInsert = uniqueNewItems.map(item => {
         const { unit_cost, unit } = resolveUnitCost(item);
         const ingName  = item.confirmed_name || item.item_name_normalized || item.item_name;
         const stdUnit  = getStandardUnitForIngredient(unit, ingName);
@@ -229,15 +263,10 @@ export default async function handler(req, res) {
         results.errors.push('Failed to batch-create ingredients: ' + createError.message);
       } else {
         for (const item of newIngredientItems) {
-          const targetName = (item.confirmed_name || item.item_name_normalized || item.item_name || '').toLowerCase().trim();
-          const match = createdIngredients.find(
-            c => c.name.toLowerCase().trim() === targetName
-          );
-          if (match) {
-            newIngredientIdMap[item._id] = match.id;
-            results.ingredients_created++;
-          }
+          const match = createdIngredients.find(c => nameKey(c.name) === nameKey(ingNameOf(item)));
+          if (match) newIngredientIdMap[item._id] = match.id;
         }
+        results.ingredients_created += createdIngredients.length;
       }
     }
 
@@ -259,6 +288,22 @@ export default async function handler(req, res) {
             last_ordered_at: invoiceDate,
             is_estimated:    false,
           };
+        }
+      }
+    }
+
+    // Never replace a newer price with this invoice's: an older invoice
+    // uploaded late adds its lines and history, but does not roll prices back.
+    const updateIds = Object.keys(ingredientUpdates);
+    if (updateIds.length) {
+      const { data: current } = await supabase
+        .from('ingredients')
+        .select('id, last_ordered_at')
+        .in('id', updateIds)
+        .eq('restaurant_id', restaurant_id);
+      for (const g of current || []) {
+        if (g.last_ordered_at && String(g.last_ordered_at).slice(0, 10) > String(invoiceDate).slice(0, 10)) {
+          delete ingredientUpdates[g.id];
         }
       }
     }
@@ -323,101 +368,17 @@ export default async function handler(req, res) {
       results.items_saved = invoiceItemsToInsert.length;
     }
 
-    // ── Step 5: Recompute menu item costs for affected ingredients ────────────
-    const updatedIngredientIds = [
-      ...Object.keys(ingredientUpdates),
-      ...Object.values(newIngredientIdMap),
-    ];
-
-    if (updatedIngredientIds.length > 0) {
-      const { data: affectedComponents } = await supabase
-        .from('component_ingredients')
-        .select('ingredient_id, menu_item_components(menu_item_id)')
-        .in('ingredient_id', updatedIngredientIds);
-
-      const affectedMenuItemIds = [
-        ...new Set(
-          (affectedComponents || [])
-            .map(ci => ci.menu_item_components?.menu_item_id)
-            .filter(Boolean)
-        )
-      ];
-
-      if (affectedMenuItemIds.length > 0) {
-        const { data: menuItemRecords } = await supabase
-          .from('menu_items')
-          .select('id, name, cost')
-          .in('id', affectedMenuItemIds);
-
-        const oldCostMap = {};
-        const nameMap    = {};
-        for (const mi of (menuItemRecords || [])) {
-          oldCostMap[mi.id] = parseFloat(mi.cost || 0);
-          nameMap[mi.id]    = mi.name;
-        }
-
-        const { data: allComps } = await supabase
-          .from('menu_item_components')
-          .select(`
-            menu_item_id,
-            component_ingredients (
-              quantity,
-              unit,
-              ingredients:ingredient_id (
-                id,
-                name,
-                last_price,
-                unit
-              )
-            )
-          `)
-          .in('menu_item_id', affectedMenuItemIds);
-
-        const newCostMap = {};
-        for (const comp of (allComps || [])) {
-          const mid = comp.menu_item_id;
-          if (!newCostMap[mid]) newCostMap[mid] = 0;
-
-          for (const ci of (comp.component_ingredients || [])) {
-            const unitCost   = parseFloat(ci.ingredients?.last_price || 0);
-            const qty        = parseFloat(ci.quantity || 0);
-            const recipeUnit = ci.unit || ci.ingredients?.unit || 'oz';
-            const ingUnit    = ci.ingredients?.unit || 'oz';
-
-            if (unitCost > 0 && qty > 0) {
-              newCostMap[mid] += calculateStandardizedCost(qty, recipeUnit, unitCost, ingUnit, ci.ingredients?.name || '')
-            }
-          }
-        }
-
-        const costUpdatePromises = Object.entries(newCostMap)
-          .filter(([mid, newCost]) => {
-            const rounded = Math.round(newCost * 100) / 100;
-            return rounded > 0 && Math.abs(rounded - (oldCostMap[mid] || 0)) > 0.001;
-          })
-          .flatMap(([mid, newCost]) => {
-            const rounded = Math.round(newCost * 100) / 100;
-            return [
-              supabase
-                .from('menu_items')
-                .update({ cost: rounded })
-                .eq('id', mid)
-                .eq('restaurant_id', restaurant_id),
-              supabase
-                .from('menu_item_cost_history')
-                .insert({
-                  menu_item_id:   mid,
-                  menu_item_name: nameMap[mid],
-                  old_cost:       oldCostMap[mid] || 0,
-                  new_cost:       rounded,
-                  change_reason:  'invoice_update',
-                  restaurant_id,
-                }),
-            ];
-          });
-
-        await Promise.all(costUpdatePromises);
-      }
+    // ── Step 5: Recompute dish costs (shared with link-item) ─────────────────
+    // History rows are dated to this invoice, not the upload time.
+    try {
+      await recomputeMenuCosts(
+        supabase,
+        restaurant_id,
+        [...Object.keys(ingredientUpdates), ...Object.values(newIngredientIdMap)],
+        { effectiveDate: invoiceDate }
+      );
+    } catch (err) {
+      results.errors.push('Could not recompute dish costs: ' + err.message);
     }
 
     // A new delivery changes on-hand inventory now, not tonight.

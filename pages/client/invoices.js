@@ -245,7 +245,7 @@ export default function InvoicesPage() {
     setLines((prev) => (json.moved > 1 ? { [invoice.id]: fresh } : { ...prev, [invoice.id]: fresh }));
     if (choice.newName && json.ingredient) {
       reloadInvoices(
-        (prev) => prev && { ...prev, ingredientOptions: [...prev.ingredientOptions, json.ingredient].sort((a, b) => a.name.localeCompare(b.name)) },
+        (prev) => prev && { ...prev, ingredientOptions: [...prev.ingredientOptions.filter((o) => o.id !== json.ingredient.id), json.ingredient].sort((a, b) => a.name.localeCompare(b.name)) },
         { revalidate: false }
       );
     }

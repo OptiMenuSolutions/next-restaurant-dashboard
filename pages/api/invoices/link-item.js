@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from '../../../lib/standardizedUnits';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
+import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,6 +49,16 @@ export default async function handler(req, res) {
     ingredient = data;
   } else {
     const name = new_ingredient_name.trim();
+    // Reuse an ingredient that already has this exact name (any case).
+    const { data: sameName } = await supabase
+      .from('ingredients')
+      .select('id, name, unit, last_ordered_at')
+      .eq('restaurant_id', restaurant_id)
+      .limit(5000);
+    const existing = (sameName || []).find((g) => g.name.trim().toLowerCase() === name.toLowerCase());
+  if (existing) {
+    ingredient = existing;
+  } else {
     const stdUnit = getStandardUnitForIngredient(line.unit || 'each', name);
     const { data, error } = await supabase
       .from('ingredients')
@@ -65,6 +76,7 @@ export default async function handler(req, res) {
       .single();
     if (error) return res.status(500).json({ error: 'Could not create ingredient: ' + error.message });
     ingredient = data;
+  }
   }
 
   const oldIngredientId = line.ingredient_id || null;
@@ -120,6 +132,16 @@ export default async function handler(req, res) {
       .eq('id', ingredient.id)
       .eq('restaurant_id', restaurant_id);
     if (priceErr) return res.status(500).json({ error: 'Linked, but could not update the price: ' + priceErr.message });
+  }
+
+  // Dish costs follow the new price (and, on a relink, the old ingredient's).
+  try {
+    await recomputeMenuCosts(supabase, restaurant_id, [ingredient.id, oldIngredientId], {
+      effectiveDate: invoiceDate,
+      reason: 'invoice_link',
+    });
+  } catch (err) {
+    console.error('[link-item] dish cost recompute failed:', err.message);
   }
 
   // Linking changes which ingredient this delivery counts toward.

@@ -465,14 +465,22 @@ function normalizeName(name) {
 
 // ─── Pass 3: Claude-powered ingredient matching ───────────────────────────────
 
-async function matchWithClaude(foodItems, restaurantIngredients, restaurantId) {
-  if (!restaurantIngredients.length) {
-    return foodItems.map(item => ({ status: 'new', matches: [] }));
+async function matchWithClaude(foodItems, restaurantIngredients, restaurantId, globalIngredients = []) {
+  if (!restaurantIngredients.length && !globalIngredients.length) {
+    return foodItems.map(() => ({ status: 'new', matches: [] }));
   }
 
-  const libraryList = restaurantIngredients
-    .map(ing => `- id:${ing.id} | "${ing.name}" | unit:${ing.unit}`)
-    .join('\n');
+  const libraryList = restaurantIngredients.length
+    ? restaurantIngredients.map(ing => `- id:${ing.id} | "${ing.name}" | unit:${ing.unit}`).join('\n')
+    : '(empty: this restaurant has no ingredients yet)';
+
+  // Standard product names with the other names they go by. A line that is
+  // new to this restaurant but is one of these products takes the standard
+  // name, so one product is never saved under two spellings.
+  const knownList = globalIngredients
+    .map(g => (g.aliases.length ? `${g.name} (also: ${g.aliases.join(', ')})` : g.name))
+    .join('; ');
+  const globalByKey = new Map(globalIngredients.map(g => [g.name.toLowerCase().trim(), g.name]));
 
   const itemList = foodItems
     .map((item, idx) => `${idx}: "${item.item_name_normalized || item.item_name_raw}"`)
@@ -492,6 +500,9 @@ ${libraryList}
 INVOICE ITEMS TO MATCH (index: name):
 ${itemList}
 
+KNOWN PRODUCT NAMES (standard name, with other names it goes by):
+${knownList || '(none)'}
+
 For each invoice item, decide:
 - "auto": clearly the same ingredient (same thing, just different phrasing, abbreviation, or brand noise). Pick exactly 1 match.
 - "ambiguous": plausibly matches 2–5 library ingredients but you're not certain. List up to 5 candidates by confidence order.
@@ -503,6 +514,8 @@ RULES:
 - Size/pack noise is irrelevant: "Mozzarella 5lb" → "Mozzarella" is auto.
 - A specific cut, grade, or style of a product matches the general ingredient when the library has no more specific entry: "Baby Back Ribs" → "Pork Ribs" and "Ribeye Choice 12oz" → "Ribeye Steak" are auto.
 - Only use ingredient IDs from the library above.
+- Use the known product names to recognize items: "Sugar Granulated Fine" is Sugar. If the library has an ingredient with that standard name or one of its other names, that is an "auto" match.
+- For every "new" item that is one of the known products, set "canonical" to its standard name exactly as written in the list. Otherwise set "canonical" to null.
 - Return ONLY raw JSON. No markdown, no explanation.
 
 OUTPUT FORMAT:
@@ -511,6 +524,7 @@ OUTPUT FORMAT:
     {
       "index": 0,
       "status": "auto" | "ambiguous" | "new",
+      "canonical": "<standard name>" | null,
       "candidates": [
         { "id": "<ingredient_id>", "name": "<ingredient_name>", "score": 0.0–1.0 }
       ]
@@ -542,7 +556,10 @@ OUTPUT FORMAT:
       return libIng ? { ...libIng, score: c.score } : null;
     }).filter(Boolean);
 
-    return { status: result.status, matches: enriched };
+    const canonical = result.status === 'new' && typeof result.canonical === 'string'
+      ? globalByKey.get(result.canonical.toLowerCase().trim()) || null
+      : null;
+    return { status: result.status, matches: enriched, canonical };
   });
 }
 
@@ -576,6 +593,22 @@ async function loadRememberedLinks(restaurantId) {
     if (ids.size === 1) remembered.set(key, [...ids][0]);
   }
   return remembered;
+}
+
+// ─── Global product names ─────────────────────────────────────────────────────
+
+async function loadGlobalIngredients() {
+  const { data, error } = await supabase
+    .from('global_ingredients')
+    .select('name, aliases')
+    .limit(5000);
+  if (error) {
+    console.warn('[parse-invoice] Could not load global ingredients:', error.message);
+    return [];
+  }
+  return (data || [])
+    .filter(g => g.name)
+    .map(g => ({ name: g.name, aliases: Array.isArray(g.aliases) ? g.aliases : [] }));
 }
 
 // ─── Load restaurant ingredients ─────────────────────────────────────────────
@@ -807,7 +840,8 @@ export default async function handler(req, res) {
       return id && ingById.has(id) ? ingById.get(id) : null;
     });
     const toMatch = foodItems.filter((_, i) => !memoryHits[i]);
-    const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId) : [];
+    const globalIngredients = toMatch.length ? await loadGlobalIngredients() : [];
+    const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId, globalIngredients) : [];
     let aiIdx = 0;
     const matchResults = foodItems.map((_, i) =>
       memoryHits[i]
@@ -846,6 +880,7 @@ export default async function handler(req, res) {
         match_candidates:         matchResult.matches,
         selected_ingredient_id:   matchResult.status === 'auto' ? matchResult.matches[0]?.id   : null,
         selected_ingredient_name: matchResult.status === 'auto' ? matchResult.matches[0]?.name : null,
+        ...(matchResult.canonical ? { confirmed_name: matchResult.canonical } : {}),
         sanity_flagged:           isSanityFlagged,
         sanity_reason:            sanityReasonMap[idx] || null,
         needs_cost_input:         needsCostInput,

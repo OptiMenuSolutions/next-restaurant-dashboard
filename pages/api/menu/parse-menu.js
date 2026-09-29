@@ -1488,15 +1488,24 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
 
   const ingredientIdMap = {};
 
+  // One read of the restaurant's ingredients, matched by exact name (any
+  // case), instead of a per-name ilike (wildcards, and nothing returned when
+  // two rows matched, which created another duplicate).
+  const { data: existingIngs } = await supabase
+    .from('ingredients')
+    .select('id, name, last_price')
+    .eq('restaurant_id', restaurantId)
+    .limit(5000);
+  const existingIngByName = new Map();
+  for (const g of existingIngs || []) {
+    const k = (g.name || '').trim().toLowerCase();
+    if (!existingIngByName.has(k)) existingIngByName.set(k, g);
+  }
+
   for (const ing of ingredientLibrary) {
     const normalizedName = ing.name.trim().toLowerCase();
 
-    const { data: existing } = await supabase
-      .from('ingredients')
-      .select('id, last_price')
-      .eq('restaurant_id', restaurantId)
-      .ilike('name', ing.name.trim())
-      .maybeSingle();
+    const existing = existingIngByName.get(normalizedName) || null;
 
     if (existing) {
       ingredientIdMap[normalizedName] = existing.id;
@@ -1524,6 +1533,7 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
       }
 
       ingredientIdMap[normalizedName] = created.id;
+      existingIngByName.set(normalizedName, { id: created.id });
       results.ingredients_created++;
     }
   }
@@ -1531,13 +1541,18 @@ async function saveToSupabase(restaurantId, parsedDishes, ingredientLibrary) {
   const categoryIdMap = {};
   const uniqueCategories = [...new Set(parsedDishes.map(d => d.category).filter(Boolean))];
 
+  const { data: existingCats } = await supabase
+    .from('menu_categories')
+    .select('id, name')
+    .eq('restaurant_id', restaurantId);
+  const existingCatByName = new Map();
+  for (const c of existingCats || []) {
+    const k = (c.name || '').trim().toLowerCase();
+    if (!existingCatByName.has(k)) existingCatByName.set(k, c);
+  }
+
   for (const catName of uniqueCategories) {
-    const { data: existingCat } = await supabase
-      .from('menu_categories')
-      .select('id')
-      .eq('restaurant_id', restaurantId)
-      .ilike('name', catName)
-      .maybeSingle();
+    const existingCat = existingCatByName.get(catName.trim().toLowerCase()) || null;
 
     if (existingCat) {
       categoryIdMap[catName] = existingCat.id;

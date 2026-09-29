@@ -90,14 +90,22 @@ export default async function handler(req, res) {
   }
   const fullLibrary = [...libraryByKey.values()];
 
-  const ingredientLookups = await Promise.all(fullLibrary.map(async (ing) => {
-    const { data: existing } = await supabase
-      .from('ingredients')
-      .select('id')
-      .eq('restaurant_id', restaurant_id)
-      .ilike('name', ing.name.trim())
-      .maybeSingle();
-    return { ing, existing };
+  // One read of the restaurant's ingredients, matched by exact name (any
+  // case). The old per-name ilike lookup treated % and _ as wildcards, and
+  // when two rows matched it returned nothing, so another duplicate was made.
+  const { data: existingIngs } = await supabase
+    .from('ingredients')
+    .select('id, name')
+    .eq('restaurant_id', restaurant_id)
+    .limit(5000);
+  const existingIngByName = new Map();
+  for (const g of existingIngs || []) {
+    const k = (g.name || '').trim().toLowerCase();
+    if (!existingIngByName.has(k)) existingIngByName.set(k, g);
+  }
+  const ingredientLookups = fullLibrary.map((ing) => ({
+    ing,
+    existing: existingIngByName.get(ing.name.trim().toLowerCase()) || null,
   }));
 
   const newIngredients = [];
@@ -180,14 +188,18 @@ export default async function handler(req, res) {
     [...dishes, ...(isUpdate && Array.isArray(updates) ? updates : [])].map(d => d.category).filter(Boolean)
   )];
 
-  const categoryLookups = await Promise.all(uniqueCategories.map(async (catName) => {
-    const { data: existingCat } = await supabase
-      .from('menu_categories')
-      .select('id')
-      .eq('restaurant_id', restaurant_id)
-      .ilike('name', catName)
-      .maybeSingle();
-    return { catName, existingCat };
+  const { data: existingCats } = await supabase
+    .from('menu_categories')
+    .select('id, name')
+    .eq('restaurant_id', restaurant_id);
+  const existingCatByName = new Map();
+  for (const c of existingCats || []) {
+    const k = (c.name || '').trim().toLowerCase();
+    if (!existingCatByName.has(k)) existingCatByName.set(k, c);
+  }
+  const categoryLookups = uniqueCategories.map((catName) => ({
+    catName,
+    existingCat: existingCatByName.get(catName.trim().toLowerCase()) || null,
   }));
 
   const newCategories = [];
