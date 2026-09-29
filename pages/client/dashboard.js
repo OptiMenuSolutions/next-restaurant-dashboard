@@ -13,7 +13,10 @@ import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import { fetchSampleData, SAMPLE_AI_RECOMMENDATIONS } from "../../lib/seedSampleData";
 import UniversalSearch from "../../components/UniversalSearch";
-import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import useSWR from "swr";
+import { useGuardedAccount } from "../../lib/useAccount";
+
+const EMPTY_DASH = { ingredients: [], menuItems: [], wasteRisk: [], stats: null };
 import { calculateStandardizedCost } from "../../lib/standardizedUnits";
 
 /**
@@ -175,22 +178,19 @@ function toWaste(wasteRisk) {
 export default function DashboardPage() {
   const router = useRouter();
   const tour = useTour("dashboard");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [restaurantId, setRestaurantId] = useState(null);
-  const [userName, setUserName] = useState("");
-  const [restaurantName, setRestaurantName] = useState("Your Restaurant");
-  const [restaurantCreatedAt, setRestaurantCreatedAt] = useState(null);
-  const [targetFoodCost, setTargetFoodCost] = useState(null);
-  const [freezeSettings, setFreezeSettings] = useState({});
-  const [wasteResolution, setWasteResolution] = useState(null);
-  const [pendingConfirmations, setPendingConfirmations] = useState([]);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [recommendations, setRecommendations] = useState([]);
-  const [recsStatus, setRecsStatus] = useState("loading"); // loading | ready | error
-  const [data, setData] = useState({ ingredients: [], menuItems: [], wasteRisk: [], stats: null });
-  const [reloadKey, setReloadKey] = useState(0);
+  const [confirmationsDismissed, setConfirmationsDismissed] = useState(false);
   const [showTourPrompt, setShowTourPrompt] = useState(false);
+
+  // Account (login, profile, restaurant) from the shared cache, with the
+  // same account checks as enforceAccountGuard.
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const restaurantId = account?.profile?.restaurant_id || null;
+  const rd = account?.restaurant || null;
+  const userName = account?.profile?.full_name || "";
+  const restaurantName = rd?.name || "Your Restaurant";
+  const restaurantCreatedAt = rd?.created_at || null;
+  const targetFoodCost = rd?.target_food_cost != null ? Number(rd.target_food_cost) : null;
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -216,128 +216,86 @@ export default function DashboardPage() {
     ? new Date(restaurantCreatedAt).toLocaleDateString("en-CA")
     : null;
 
-  /* ── auth ── */
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError || !user) { router.push("/client/login"); return; }
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles").select("restaurant_id,full_name").eq("id", user.id).single();
-        if (profileError || !profile?.restaurant_id) {
-          setError("Could not determine restaurant access"); setLoading(false); return;
+  /* ── data ── kept in the shared cache: a return visit shows the last copy
+     at once while a fresh one loads in the background. ── */
+  const { data: dashData, error: dashError, mutate: reloadDash } = useSWR(
+    restaurantId ? ["dashboard", restaurantId, tourActive] : null,
+    async () => {
+      if (tourActive) {
+        const sample = await fetchSampleData();
+        if (sample) {
+          const sampleInvoiceItems = flattenSampleInvoiceItems(sample.invoices);
+          const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sample.posSales || [], sample.menuItems || []);
+          const priced = (sample.menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
+          const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
+          const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
+          const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+          const ytdSpend = (sample.invoices || [])
+            .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
+            .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
+          return {
+            ingredients: sample.ingredients || [],
+            menuItems: sample.menuItems || [],
+            wasteRisk,
+            stats: {
+              avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
+              lowMargin: margins.filter((m) => m < 50).length,
+              expiring: wasteRisk.filter((w) => w.daysLeft <= 3).length,
+              ytdSpend,
+              pctAbove50,
+              pctBelow25,
+            },
+          };
         }
-        setUserName(profile.full_name || "");
-
-        const rd = await enforceAccountGuard(supabase, router, profile.restaurant_id);
-        if (!rd) return; // already redirected — deactivated, unpaid, or onboarding incomplete
-
-        if (rd?.name) setRestaurantName(rd.name);
-        if (rd?.created_at) setRestaurantCreatedAt(rd.created_at);
-        if (rd?.target_food_cost != null) setTargetFoodCost(Number(rd.target_food_cost));
-        setFreezeSettings({
-          beef: !!rd?.freezes_beef,
-          poultry: !!rd?.freezes_poultry,
-          pork: !!rd?.freezes_pork,
-          seafood: !!rd?.freezes_seafood,
-          bakery: !!rd?.freezes_bakery,
-        });
-        // Set last — this is what the data-loading effect (below) keys off
-        // of, so it must not fire until freezeSettings above is already
-        // populated. React batches state updates from the same synchronous
-        // block together, so setting this last guarantees both land in the
-        // same render rather than restaurantId triggering the data effect
-        // one render early, before freezeSettings has real values.
-        setRestaurantId(profile.restaurant_id);
-      } catch {
-        setError("An unexpected error occurred"); setLoading(false);
+        // fetchSampleData() failed: fall through to the real data below
+        // rather than leave the tour blank.
       }
-    })();
-  }, [reloadKey]);
 
-  /* ── data ── */
-  useEffect(() => {
-    if (!restaurantId) return;
-    (async () => {
-      try {
-        setLoading(true);
+      // Waste risk comes from current_inventory, the same rows Tonight's Dish
+      // reads, rebuilt overnight and whenever an invoice is saved or linked.
+      const [{ data: invoices }, { data: ingredients }, { data: menuItems }, wasteRisk] =
+        await Promise.all([
+          supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
+          supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
+          supabase.from("menu_items")
+            .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
+            .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
+          loadCurrentInventory(supabase, restaurantId),
+        ]);
+      // Only dishes whose every ingredient has an invoice or approved price.
+      const margins = (menuItems || [])
+        .map((m) => ({ price: Number(m.price) || 0, cost: pricedCost(m) }))
+        .filter((m) => m.price > 0 && m.cost != null)
+        .map((m) => ((m.price - m.cost) / m.price) * 100);
+      const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
+      const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+      const ytdSpend = (invoices || [])
+        .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
+        .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
 
-        if (tourActive) {
-          const sample = await fetchSampleData();
-          if (sample) {
-            const sampleInvoiceItems = flattenSampleInvoiceItems(sample.invoices);
-            const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sample.posSales || [], sample.menuItems || []);
-            const priced = (sample.menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
-            const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
-            const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
-            const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
-            const ytdSpend = (sample.invoices || [])
-              .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
-              .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
-
-            setData({
-              ingredients: sample.ingredients || [],
-              menuItems: sample.menuItems || [],
-              wasteRisk,
-              stats: {
-                avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
-                lowMargin: margins.filter((m) => m < 50).length,
-                expiring: wasteRisk.filter((w) => w.daysLeft <= 3).length,
-                ytdSpend,
-                pctAbove50,
-                pctBelow25,
-              },
-            });
-            setLoading(false);
-            return;
-          }
-          // fetchSampleData() returned null (a fetch error) — fall through
-          // to the real query path below rather than leave the tour blank.
-        }
-
-        // Waste risk comes from current_inventory, the same rows Tonight's Dish
-        // reads, rebuilt overnight and whenever an invoice is saved or linked.
-        const [{ data: invoices }, { data: ingredients }, { data: menuItems }, wasteRisk] =
-          await Promise.all([
-            supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
-            supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
-            supabase.from("menu_items")
-              .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
-              .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
-            loadCurrentInventory(supabase, restaurantId),
-          ]);
-        // Only dishes whose every ingredient has an invoice or approved price.
-        const margins = (menuItems || [])
-          .map((m) => ({ price: Number(m.price) || 0, cost: pricedCost(m) }))
-          .filter((m) => m.price > 0 && m.cost != null)
-          .map((m) => ((m.price - m.cost) / m.price) * 100);
-        const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
-        const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
-        const ytdSpend = (invoices || [])
-          .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
-          .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
-
-        setData({
-          ingredients: ingredients || [],
-          menuItems: menuItems || [],
-          wasteRisk,
-          stats: {
-            avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
-            lowMargin: margins.filter((m) => m < 50).length,
-            expiring: wasteRisk.length,
-            ytdSpend,
-            pctAbove50,
-            pctBelow25,
-            pricedCount: margins.length,
-          },
-        });
-        setLoading(false);
-      } catch (err) {
-        setError("Failed to fetch dashboard data: " + err.message);
-        setLoading(false);
-      }
-    })();
-  }, [restaurantId, reloadKey, tourActive, freezeSettings]);
+      return {
+        ingredients: ingredients || [],
+        menuItems: menuItems || [],
+        wasteRisk,
+        stats: {
+          avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
+          lowMargin: margins.filter((m) => m < 50).length,
+          expiring: wasteRisk.length,
+          ytdSpend,
+          pctAbove50,
+          pctBelow25,
+          pricedCount: margins.length,
+        },
+      };
+    }
+  );
+  const data = dashData || EMPTY_DASH;
+  const noRestaurant = !!account && !restaurantId;
+  const loading = accountLoading || (!!restaurantId && !dashData && !dashError);
+  const error =
+    accountError ||
+    (noRestaurant ? "Could not determine restaurant access" : "") ||
+    (dashError ? "Failed to fetch dashboard data: " + dashError.message : "");
 
   // Which month the desktop calendar is currently browsing. Defaults to the
   // current month; useWeekInReview always fetches the trailing 7 days too
@@ -382,105 +340,76 @@ export default function DashboardPage() {
       .map((d) => (signupDay && d.date <= signupDay ? { ...d, extraSold: null } : d));
   }, [weekData, signupDay]);
 
-  useEffect(() => {
-    if (!restaurantId) return;
-    (async () => {
-      if (tourActive) {
-        // Hardcoded specifically so the tour doesn't wait on (or pay for) a
-        // real Claude API call. Note: these titles are headline-style
-        // ("Push Waffle Fries at Lunch"), not exact dish names — unlike
-        // SAMPLE_DISH_RECS in the same file, which does use real dish
-        // names. That mismatch means toTickets()'s fuzzy match against
-        // menu items won't find a dish for these, so sample tickets show
-        // title+description but no recipe on flip. Pre-existing in the
-        // sample content itself, not something introduced here.
-        setRecommendations(
-          SAMPLE_AI_RECOMMENDATIONS.map((r) => ({
-            title: r.title,
-            description: r.description,
-            talkingPoint: r.talking_point || null,
-            type: r.type || null,
-            margin: r.margin || null,
-            confidence: r.confidence || null,
-            urgency: r.urgency || null,
-          }))
-        );
-        return;
-      }
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setRecsStatus("loading");
-        const res = await fetch("/api/ai-recommendations", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ restaurantId }),
-        });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        const json = await res.json();
-        if (json.error) throw new Error(json.error); // the route reports failures inside a 200 response
-        setRecommendations(
-          (json.recommendations || []).map((r) => ({
-            title: r.title,
-            description: r.description,
-            talkingPoint: r.talking_point || null,
-            type: r.type,
-            margin: r.margin || null,
-            confidence: r.confidence || null,
-            urgency: r.urgency || null,
-          }))
-        );
-        setRecsStatus("ready");
-      } catch (err) {
-        console.error("[fetchAIRecommendations]", err);
-        setRecommendations([]);
-        setRecsStatus("error");
-      }
-    })();
-  }, [restaurantId, reloadKey, tourActive]);
+  /* ── tonight's recommendations ── kept between visits; rechecked at most
+     every 5 minutes ── */
+  const mapRec = (r) => ({
+    title: r.title,
+    description: r.description,
+    talkingPoint: r.talking_point || null,
+    type: r.type || null,
+    margin: r.margin || null,
+    confidence: r.confidence || null,
+    urgency: r.urgency || null,
+  });
+  const { data: recData, error: recError, mutate: reloadRecs } = useSWR(
+    restaurantId ? ["recs", restaurantId, tourActive] : null,
+    async () => {
+      // The tour uses hardcoded sample recs so it never waits on (or pays
+      // for) a real Claude call.
+      if (tourActive) return SAMPLE_AI_RECOMMENDATIONS.map(mapRec);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/ai-recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ restaurantId }),
+      });
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const json = await res.json();
+      if (json.error) throw new Error(json.error); // the route reports failures inside a 200 response
+      return (json.recommendations || []).map(mapRec);
+    },
+    { dedupingInterval: 300000 }
+  );
+  const recommendations = recData || [];
+  const recsStatus = recError ? "error" : recData ? "ready" : "loading";
 
-  useEffect(() => {
-    if (!restaurantId) return;
-    (async () => {
+  /* ── waste resolution (OptiScore input) ── */
+  const { data: wasteResolution, mutate: reloadResolution } = useSWR(
+    restaurantId ? ["waste-resolution", restaurantId] : null,
+    async () => {
       try {
-        const result = await computeWasteResolution(supabase, restaurantId, 30);
-        setWasteResolution(result);
+        return await computeWasteResolution(supabase, restaurantId, 30);
       } catch (err) {
         console.error("Failed to compute waste resolution:", err);
-        setWasteResolution({ resolvedViaRecommendation: 0, wasted: 0, resolutionRate: null });
+        return { resolvedViaRecommendation: 0, wasted: 0, resolutionRate: null };
       }
-    })();
-  }, [restaurantId, reloadKey]);
+    }
+  );
 
-  useEffect(() => {
-    // Skip entirely during a tour — the sample restaurant has no
-    // waste_confirmations rows (a real cron artifact, not seed data), and
-    // even if it did, a "did you throw this away?" popup interrupting a
-    // guided walkthrough would be a confusing, unrelated distraction.
-    if (!restaurantId || tourActive) return;
-    (async () => {
-      const { data, error: confirmError } = await supabase
+  /* ── pending "did you throw this away?" prompts ── not during a tour: the
+     sample restaurant has none, and a popup would interrupt the walkthrough ── */
+  const { data: confirmationRows, mutate: reloadConfirmations } = useSWR(
+    restaurantId && !tourActive ? ["waste-confirmations", restaurantId] : null,
+    async () => {
+      const { data: rows, error: confirmError } = await supabase
         .from("waste_confirmations")
         .select("id,ingredient_name,presumed_qty,presumed_value,last_seen_date,invoice_items(unit,ingredients(unit))")
         .eq("restaurant_id", restaurantId)
         .eq("status", "pending")
         .order("presumed_value", { ascending: false });
-      if (confirmError) {
-        console.error("Failed to fetch waste confirmations:", confirmError.message);
-        return;
-      }
-      setPendingConfirmations(
-        (data || []).map((r) => ({
-          id: r.id,
-          ingredientName: r.ingredient_name,
-          presumedQty: r.presumed_qty,
-          presumedValue: r.presumed_value,
-          lastSeenDate: r.last_seen_date,
-          // presumed_qty is in the linked ingredient's unit when there is one
-          unit: r.invoice_items?.ingredients?.unit || r.invoice_items?.unit || "",
-        }))
-      );
-    })();
-  }, [restaurantId, reloadKey, tourActive]);
+      if (confirmError) throw confirmError;
+      return (rows || []).map((r) => ({
+        id: r.id,
+        ingredientName: r.ingredient_name,
+        presumedQty: r.presumed_qty,
+        presumedValue: r.presumed_value,
+        lastSeenDate: r.last_seen_date,
+        // presumed_qty is in the linked ingredient's unit when there is one
+        unit: r.invoice_items?.ingredients?.unit || r.invoice_items?.unit || "",
+      }));
+    }
+  );
+  const pendingConfirmations = confirmationsDismissed ? [] : confirmationRows || [];
 
   async function handleWasteConfirmationRespond(id, status) {
     // The waste_confirmations table only grants authenticated users UPDATE
@@ -488,6 +417,7 @@ export default function DashboardPage() {
     // server-side by a trigger regardless of what's sent here.
     const { error } = await supabase.from("waste_confirmations").update({ status }).eq("id", id);
     if (error) throw error;
+    reloadConfirmations();
   }
 
   const now = new Date();
@@ -622,7 +552,7 @@ export default function DashboardPage() {
       <PassDashboard
         loading={loading}
         error={error || null}
-        onRetry={() => { setError(""); setReloadKey((k) => k + 1); }}
+        onRetry={() => { reloadDash(); reloadRecs(); reloadResolution(); }}
         activeNav="dashboard"
         NavLink={({ href, children, style, className }) => (
           <Link href={href} style={style} className={className}>{children}</Link>
@@ -635,7 +565,7 @@ export default function DashboardPage() {
         stats={stats}
         tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive)}
         ticketsStatus={recsStatus}
-        onRetryTickets={() => setReloadKey((k) => k + 1)}
+        onRetryTickets={() => reloadRecs()}
         waste={toWaste(data.wasteRisk)}
         week={week}
         weekData={last7WeekData}
@@ -658,7 +588,7 @@ export default function DashboardPage() {
         <WasteConfirmationModal
           items={pendingConfirmations}
           onRespond={handleWasteConfirmationRespond}
-          onClose={() => setPendingConfirmations([])}
+          onClose={() => setConfirmationsDismissed(true)}
         />
       )}
 
