@@ -180,6 +180,29 @@ export default function IngredientsScreen({
 
   const countLabel = `Showing ${shown.length} of ${all.length} ingredients`;
 
+  if (isMobile && selected) {
+    return (
+      <Shell theme={theme} style={{ height: "100dvh", overflow: "hidden" }}>
+        <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+        <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)" }}>
+            <Detail
+              g={selected}
+              onBack={clear}
+              menuOpen={menuOpen}
+              setMenuOpen={(v) => { setMenuOpen(v); setInvoicesOpen(false); }}
+              invoicesOpen={invoicesOpen}
+              setInvoicesOpen={(v) => { setInvoicesOpen(v); setMenuOpen(false); }}
+              onOpenMenuItem={onOpenMenuItem}
+              onOpenInvoice={onOpenInvoice}
+            />
+          </div>
+        </div>
+        <MobileNav active="ingredients" NavLink={NavLink} />
+      </Shell>
+    );
+  }
+
   if (isMobile) {
     return (
       <Shell theme={theme}>
@@ -190,7 +213,7 @@ export default function IngredientsScreen({
         </div>
         <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
           {shown.map((g) => (
-            <div key={g.id} onClick={() => onOpenIngredient && onOpenIngredient(g)} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+            <div key={g.id} onClick={() => select(g)} style={{ background: "var(--shell)", cursor: "pointer", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{g.name}</span>
                 <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</span>
