@@ -133,6 +133,7 @@ export default function InvoicesScreen({
   const [theme, toggleTheme] = useTheme(themeProp, defaultTheme, onThemeChange);
   const isMobile = useIsMobile(900);
   const [selectedId, setSelectedId] = useState(null);
+  const [mobileDetail, setMobileDetail] = useState(false); // phones: receipt shown full screen
 
   const list = invoicesProp || DEMO_INVOICES;
   const rows = useMemo(
@@ -193,6 +194,23 @@ export default function InvoicesScreen({
     );
   }
 
+  if (isMobile && mobileDetail && selected) {
+    return (
+      <Shell theme={theme} style={{ height: "100dvh", overflow: "hidden" }}>
+        <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+          <button type="button" onClick={() => setMobileDetail(false)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", cursor: "pointer" }}>
+            ← All invoices
+          </button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} />
+        </div>
+        <MobileNav active="invoices" NavLink={NavLink} />
+      </Shell>
+    );
+  }
+
   if (isMobile) {
     return (
       <Shell theme={theme}>
@@ -208,7 +226,7 @@ export default function InvoicesScreen({
           {rows.map((v) => {
             const m = STATUS[v.status] || STATUS.processed;
             return (
-              <div key={v.id} onClick={() => (onOpen ? onOpen(v) : pick(v))} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }}>
+              <div key={v.id} onClick={() => { pick(v); setMobileDetail(true); }} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                   <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>{v.supplier}</span>
                   <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
@@ -333,7 +351,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
   const btn = { background: "none", border: "1px dashed var(--ink-faint)", borderRadius: 4, padding: 9, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--ink-soft)", cursor: "pointer" };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div data-tour="inv-detail" style={{ flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: 4, padding: "14px 16px 16px", boxShadow: "var(--shadow-lg)", overflowY: "auto", overflowX: "hidden" }}>
           {s.fileUrl ? (
@@ -381,14 +399,6 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
                 )}
                 {items.some((i) => i.link) && (
                   <div style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--ink-faint)", margin: "12px 0 2px" }}>
-                    LINKED · PICK ANOTHER INGREDIENT TO CHANGE
-                  </div>
-                )}
-                {items.filter((i) => i.link).map((i) => (
-                  <LinkRow key={"linked-" + (i.id || i.name)} line={i} current={i.link} options={ingredientOptions} onLink={(line, choice) => onLinkLine(s, line, choice)} />
-                ))}
-                {items.some((i) => i.link) && (
-                  <div style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", margin: "12px 0 2px" }}>
                     LINKED · PICK ANOTHER INGREDIENT TO CHANGE
                   </div>
                 )}
