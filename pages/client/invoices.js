@@ -201,11 +201,13 @@ export default function InvoicesPage() {
      stored path is swapped for a signed link valid for one hour. Full URLs
      (tour sample data) are used as they are. */
   const signFile = useCallback(async (invoice) => {
-    const path = invoice?.fileUrl;
+    // Read the stored path from the loaded list: the object the receipt
+    // passes back has fileUrl already swapped for the (possibly missing) link.
+    const path = invoices.find((v) => v.id === invoice?.id)?.fileUrl;
     if (!path || /^https?:\/\//.test(path) || fileLinks[invoice.id]) return;
     const { data } = await supabase.storage.from("invoices").createSignedUrl(path, 3600);
     if (data?.signedUrl) setFileLinks((prev) => ({ ...prev, [invoice.id]: data.signedUrl }));
-  }, [fileLinks]);
+  }, [invoices, fileLinks]);
 
   /* Line items are fetched lazily when a row is selected — same two queries the
      old detail page ran, minus the ocr_text fetch (not shown in this design). */
