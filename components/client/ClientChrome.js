@@ -197,7 +197,10 @@ export function Header({
 
 export function MobileHeader({ theme, onToggleTheme, user = { initials: "MR" }, logoSrc = "/landing/logo.png", logoDarkSrc = "/landing/logo-knockout.png" }) {
   return (
-    <div style={{ padding: 16, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: 16, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* Fills the strip behind the phone clock and battery so the list does
+          not show through as it scrolls. Zero height when there is no safe area. */}
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
       <span style={{ display: "flex", alignItems: "center" }}>
         <img className="om-logo-light" src={logoSrc} alt="optiMenu" style={{ display: "block", height: 22, width: "auto" }} />
         <img className="om-logo-dark" src={logoDarkSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
