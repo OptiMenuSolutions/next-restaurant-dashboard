@@ -620,7 +620,7 @@ export default function DashboardPage() {
       </Head>
 
       <PassDashboard
-        loading={loading || weekLoading}
+        loading={loading}
         error={error || null}
         onRetry={() => { setError(""); setReloadKey((k) => k + 1); }}
         activeNav="dashboard"
