@@ -27,77 +27,50 @@ const supabase = createClient(
 
 const RETENTION_DAYS = 60;
 
+// Deletes every file under a restaurant's folder in a Storage bucket,
+// including nested folders. Uses the Storage API: deleting storage rows in
+// SQL would leave the actual files behind.
+async function removeStorageFolder(bucket, prefix) {
+  let removed = 0;
+  for (;;) {
+    const { data, error } = await supabase.storage.from(bucket).list(prefix, { limit: 1000 });
+    if (error) throw new Error(`${bucket} list failed: ${error.message}`);
+    if (!data?.length) break;
+    const files = data.filter(o => o.id).map(o => `${prefix}/${o.name}`);
+    const folders = data.filter(o => !o.id).map(o => `${prefix}/${o.name}`);
+    for (const folder of folders) removed += await removeStorageFolder(bucket, folder);
+    if (!files.length) break;
+    const { error: rmError } = await supabase.storage.from(bucket).remove(files);
+    if (rmError) throw new Error(`${bucket} remove failed: ${rmError.message}`);
+    removed += files.length;
+  }
+  return removed;
+}
+
 async function purgeRestaurant(restaurant) {
   const restaurantId = restaurant.id;
 
-  // ── Menu tree: component_ingredients -> menu_item_components, then
-  // menu_item_ingredients (the legacy flat table) -> menu_items ────────────
-  const { data: menuItems } = await supabase
-    .from('menu_items').select('id').eq('restaurant_id', restaurantId);
-  const menuItemIds = (menuItems || []).map((m) => m.id);
+  // 1. Files first: if the database purge below fails, the restaurant row
+  // still exists and tomorrow's run retries everything. Done the other way,
+  // a failed file cleanup would leave files no row points to.
+  const invoiceFiles = await removeStorageFolder('invoices', restaurantId);
+  const menuFiles = await removeStorageFolder('menus', restaurantId);
+  console.log(`[purge-deactivated-accounts] ${restaurant.name || restaurantId}: removed ${invoiceFiles} invoice and ${menuFiles} menu files`);
 
-  if (menuItemIds.length) {
-    const { data: components } = await supabase
-      .from('menu_item_components').select('id').in('menu_item_id', menuItemIds);
-    const componentIds = (components || []).map((c) => c.id);
-    if (componentIds.length) {
-      await supabase.from('component_ingredients').delete().in('component_id', componentIds);
-    }
-    await supabase.from('menu_item_components').delete().in('menu_item_id', menuItemIds);
-    await supabase.from('menu_item_ingredients').delete().in('menu_item_id', menuItemIds);
-  }
-  await supabase.from('menu_item_cost_history').delete().eq('restaurant_id', restaurantId);
-  await supabase.from('menu_items').delete().eq('restaurant_id', restaurantId);
-
-  // ── Invoice tree: invoice_items + invoice_files -> invoices ─────────────
-  const { data: invoices } = await supabase
-    .from('invoices').select('id').eq('restaurant_id', restaurantId);
-  const invoiceIds = (invoices || []).map((i) => i.id);
-  if (invoiceIds.length) {
-    await supabase.from('invoice_items').delete().in('invoice_id', invoiceIds);
-    await supabase.from('invoice_files').delete().in('invoice_id', invoiceIds);
-  }
-  await supabase.from('invoices').delete().eq('restaurant_id', restaurantId);
-
-  // ── Everything else with a direct restaurant_id column ──────────────────
-  const directTables = [
-    'pos_sales',
-    'pos_connections',
-    'ai_recommendations',
-    'waste_risk_snapshots',
-    'waste_confirmations',
-    'upload_sessions',
-    'activity_logs',
-    'ingredients',
-  ];
-  for (const table of directTables) {
-    await supabase.from(table).delete().eq('restaurant_id', restaurantId);
-  }
-
-  // feedback.restaurant_id is ON DELETE SET NULL per the schema — no
-  // explicit delete needed, those rows survive with restaurant_id cleared
-  // once the restaurant row itself is deleted below.
-
-  // ── Cancel any lingering Stripe subscription (should already be canceled
-  // from deactivate.js, this is a safety net) ─────────────────────────────
+  // 2. Cancel any lingering Stripe subscription (should already be canceled
+  // by deactivate.js; this is a safety net).
   if (restaurant.stripe_subscription_id) {
     try {
       await stripe.subscriptions.cancel(restaurant.stripe_subscription_id);
     } catch {
-      // Already canceled or doesn't exist — fine, continue.
+      // Already canceled or does not exist: fine, continue.
     }
   }
 
-  // ── Delete the restaurant row — cascades to profiles (confirmed FK) ─────
-  await supabase.from('restaurants').delete().eq('id', restaurantId);
-
-  // ── Finally, delete the actual auth user ─────────────────────────────────
-  if (restaurant.user_id) {
-    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(restaurant.user_id);
-    if (authDeleteError) {
-      console.error(`[purge-deactivated-accounts] Failed to delete auth user ${restaurant.user_id}:`, authDeleteError.message);
-    }
-  }
+  // 3. All database rows and the auth user, in one transaction: any error
+  // rolls the whole purge back and throws, so the alert fires.
+  const { error } = await supabase.rpc('purge_restaurant', { target: restaurantId });
+  if (error) throw new Error(`purge_restaurant failed: ${error.message}`);
 }
 
 export default async function handler(req, res) {
