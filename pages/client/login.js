@@ -44,14 +44,16 @@ export default function LoginPage() {
   }
 
   const handleForgotPassword = async (email) => {
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    if (!email?.trim()) throw new Error("Please enter your email.");
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/client/reset-password`,
     });
     if (error) throw error;
   };
 
   const handleSubmit = async ({ email, password }) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!email?.trim() || !password) throw new Error("Please enter your email and password.");
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) throw error;
 
     const { data: existing } = await supabase
@@ -90,7 +92,7 @@ export default function LoginPage() {
 
     const { data: restaurant } = await supabase
       .from("restaurants")
-      .select("deactivated_at, stripe_subscription_id, onboarding_completed_at")
+      .select("deactivated_at, stripe_subscription_id, subscription_status, onboarding_completed_at")
       .eq("id", restaurantId)
       .single();
 
