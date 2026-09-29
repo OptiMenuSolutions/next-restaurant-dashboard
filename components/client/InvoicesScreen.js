@@ -372,6 +372,14 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
                 {!items.some((i) => !i.link) && (
                   <div style={{ fontSize: 10, color: "var(--green)", padding: "6px 0" }}>✓ Every line is linked</div>
                 )}
+                {items.some((i) => i.link) && (
+                  <div style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", margin: "12px 0 2px" }}>
+                    LINKED · PICK ANOTHER INGREDIENT TO CHANGE
+                  </div>
+                )}
+                {items.filter((i) => i.link).map((i) => (
+                  <LinkRow key={"linked-" + (i.id || i.name)} line={i} current={i.link} options={ingredientOptions} onLink={(line, choice) => onLinkLine(s, line, choice)} />
+                ))}
               </>
             )}
             {!linkMode && items.map((i, n) => (
@@ -409,10 +417,14 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
               </div>
             )}
           </div>
-          {(linkMode || (s.status === "processed" && unmatched > 0 && onLinkLine)) && (
+          {(linkMode || (s.status === "processed" && items.length > 0 && onLinkLine)) && (
             <div style={{ display: "flex", gap: 7, marginTop: 12, flexShrink: 0 }}>
               <button type="button" onClick={() => setLinkMode(!linkMode)} className="om-hover-accent" style={{ ...btn, flex: 1 }}>
-                {linkMode ? "· · · DONE LINKING · · ·" : `· · · LINK ${unmatched} ITEM${unmatched === 1 ? "" : "S"} · · ·`}
+                {linkMode
+                  ? "· · · DONE LINKING · · ·"
+                  : unmatched
+                    ? `· · · LINK ${unmatched} ITEM${unmatched === 1 ? "" : "S"} · · ·`
+                    : "· · · CHANGE LINKS · · ·"}
               </button>
             </div>
           )}
@@ -424,7 +436,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
 
 /* One unlinked invoice line in linking mode: the line on the left, a
    type-to-find ingredient field on the right, styled like the receipt. */
-function LinkRow({ line, options, onLink }) {
+function LinkRow({ line, options, onLink, current = null }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -432,9 +444,10 @@ function LinkRow({ line, options, onLink }) {
 
   const words = String(line.name || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
   const query = q.trim().toLowerCase();
+  const pool = current ? options.filter((o) => o.name !== current) : options;
   const results = (query
-    ? options.filter((o) => o.name.toLowerCase().includes(query))
-    : options
+    ? pool.filter((o) => o.name.toLowerCase().includes(query))
+    : pool
         .map((o) => ({ o, score: words.filter((w) => o.name.toLowerCase().includes(w)).length }))
         .filter((x) => x.score > 0)
         .sort((a, b) => b.score - a.score)
@@ -448,6 +461,8 @@ function LinkRow({ line, options, onLink }) {
     setErr("");
     try {
       await onLink(line, choice);
+      setSaving(false);
+      setQ("");
     } catch (e) {
       setErr(e.message || "Could not link that line.");
       setSaving(false);
@@ -461,6 +476,9 @@ function LinkRow({ line, options, onLink }) {
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line.name}</div>
         <div style={{ fontSize: 9, color: "var(--ink-faint)", marginTop: 2, whiteSpace: "nowrap" }}>{line.qty} @ {money(line.unitCost)}</div>
+        {current && (
+          <div style={{ fontSize: 9, letterSpacing: "0.06em", color: "var(--green)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>→ {current}</div>
+        )}
       </div>
       <div style={{ position: "relative", minWidth: 0 }}>
         <input
@@ -469,7 +487,7 @@ function LinkRow({ line, options, onLink }) {
           onChange={(e) => { setQ(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 120)}
-          placeholder="type to find ingredient"
+          placeholder={current ? "change link" : "type to find ingredient"}
           style={{ width: "100%", background: "transparent", border: "none", borderBottom: "1px dashed var(--ink-faint)", outline: "none", padding: "2px 0 3px", fontFamily: MONO, fontSize: 10.5, color: "var(--ink)" }}
         />
         {open && !saving && (
