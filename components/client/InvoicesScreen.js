@@ -226,7 +226,7 @@ export default function InvoicesScreen({
 
   if (isMobile) {
     return (
-      <Shell theme={theme}>
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
           <div>
@@ -235,7 +235,7 @@ export default function InvoicesScreen({
           </div>
           <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "9px 16px", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>↑ Upload</button>
         </div>
-        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
           {rows.map((v) => {
             const m = STATUS[v.status] || STATUS.processed;
             return (

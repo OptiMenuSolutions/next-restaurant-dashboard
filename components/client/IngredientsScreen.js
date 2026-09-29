@@ -195,6 +195,7 @@ export default function IngredientsScreen({
               setInvoicesOpen={(v) => { setInvoicesOpen(v); setMenuOpen(false); }}
               onOpenMenuItem={onOpenMenuItem}
               onOpenInvoice={onOpenInvoice}
+              stacked
             />
           </div>
         </div>
@@ -404,7 +405,7 @@ function Summary({ all, risers, fallers, unpriced, override, onPick, onNeedsPric
 
 /* ── right pane: one ingredient ─────────────────────────────────────── */
 
-function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpen, onOpenMenuItem, onOpenInvoice }) {
+function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpen, onOpenMenuItem, onOpenInvoice, stacked = false }) {
   const h = g.history;
   const hasHistory = h.length > 1;
   // Any invoice at all means real purchase data to show. The "no invoice yet"
@@ -458,7 +459,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
 
       {hasPurchases && !menuOpen && !invoicesOpen && (
         <div style={{ display: "flex", alignItems: "stretch", flexWrap: "wrap", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-          <div style={{ flex: "1 1 150px", minWidth: 0, padding: "16px 18px 10px", display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: stacked ? "1 1 100%" : "1 1 150px", minWidth: 0, padding: "16px 18px 10px", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap" }}>
                 <span style={{ width: 7, height: 7, background: "var(--accent)", flexShrink: 0 }} />
@@ -488,7 +489,7 @@ function Detail({ g, onBack, menuOpen, setMenuOpen, invoicesOpen, setInvoicesOpe
             </div>
           </div>
 
-          <div style={{ flex: "0 0 236px", minWidth: 0, padding: "16px 18px 18px", borderLeft: "1px solid var(--line)" }}>
+          <div style={{ flex: stacked ? "1 1 100%" : "0 0 236px", minWidth: 0, padding: "16px 18px 18px", borderLeft: stacked ? "none" : "1px solid var(--line)", borderTop: stacked ? "1px solid var(--line)" : "none" }}>
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>
                 <span style={{ width: 7, height: 7, border: "1.5px solid var(--accent)", borderRadius: "50%" }} />On the menu

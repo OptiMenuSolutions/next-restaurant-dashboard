@@ -124,7 +124,7 @@ export function Header({
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, padding: `9px ${PAGE_PAD}`, borderBottom: "1px solid var(--line)", flexWrap: "wrap", flexShrink: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0, flexShrink: 1 }}>
-        <img className="om-logo-light" src={logoSrc} alt="optiMenu Solutions" style={{ display: "block", height: 22, width: "auto", flexShrink: 0 }} />
+        <img className="om-logo-light" src={logoSrc} alt="optiMenu Solutions" style={{ height: 22, width: "auto", flexShrink: 0 }} />
         <img className="om-logo-dark" src={logoDarkSrc} alt="optiMenu Solutions" style={{ height: 22, width: "auto", flexShrink: 0 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, overflow: "hidden" }}>
           {NAV.map((n) =>
@@ -202,7 +202,7 @@ export function MobileHeader({ theme, onToggleTheme, user = { initials: "MR" }, 
           not show through as it scrolls. Zero height when there is no safe area. */}
       <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
       <span style={{ display: "flex", alignItems: "center" }}>
-        <img className="om-logo-light" src={logoSrc} alt="optiMenu" style={{ display: "block", height: 22, width: "auto" }} />
+        <img className="om-logo-light" src={logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
         <img className="om-logo-dark" src={logoDarkSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
