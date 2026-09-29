@@ -182,7 +182,7 @@ export default function IngredientsScreen({
 
   if (isMobile && selected) {
     return (
-      <Shell theme={theme} style={{ height: "100dvh", overflow: "hidden" }}>
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)" }}>
