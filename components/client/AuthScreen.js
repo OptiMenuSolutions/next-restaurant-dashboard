@@ -237,8 +237,12 @@ export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword,
         .om-auth button:focus-visible,.om-auth a:focus-visible{outline:2px solid #02a4ba;outline-offset:2px}
         @keyframes au-spin{to{transform:rotate(360deg)}}
         @media (max-width:900px){
-          .om-auth .au-grid{grid-template-columns:1fr}
+          .om-auth{height:auto !important;min-height:100dvh;padding:12px !important}
+          .om-auth > div{height:auto !important}
+          .om-auth .au-grid{grid-template-columns:1fr !important;height:auto !important}
           .om-auth .au-grid > div:first-child{display:none}
+          .om-auth .au-form{padding:32px 22px !important}
+          .om-auth input{font-size:16px !important}
         }
       `}</style>
     </div>
