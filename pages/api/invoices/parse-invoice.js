@@ -690,12 +690,18 @@ async function checkDuplicateInvoice(restaurantId, supplier, invoiceNumber) {
 
   const normalizedNumber = normalizeInvoiceNumber(invoiceNumber);
 
-  const { data } = await supabase
+  // Saved numbers are the number as printed, so match either form.
+  // limit(1) instead of maybeSingle(): with two copies already on file,
+  // maybeSingle() errored and the duplicate went unflagged.
+  const candidates = [...new Set([String(invoiceNumber).trim(), normalizedNumber])];
+  const { data: rows } = await supabase
     .from('invoices')
     .select('id, date, supplier, number')
     .eq('restaurant_id', restaurantId)
-    .eq('number', normalizedNumber)
-    .maybeSingle();
+    .in('number', candidates)
+    .order('created_at', { ascending: false })
+    .limit(1);
+  const data = rows?.[0];
 
   if (data) {
     console.warn(`[parse-invoice] Duplicate detected: ${normalizedNumber} (id: ${data.id})`);
