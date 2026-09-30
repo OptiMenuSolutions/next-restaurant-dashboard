@@ -244,6 +244,7 @@ export default function DashboardPage() {
               ytdSpend,
               pctAbove50,
               pctBelow25,
+              pricedCount: margins.length,
             },
           };
         }
@@ -458,7 +459,7 @@ export default function DashboardPage() {
         { label: "Waste saved", sub: "ESTIMATED, LAST 7 NIGHTS", value: money(weekWasteSaved), tone: "green" },
         { label: "Hit rate", sub: "NIGHTS ABOVE AVERAGE", value: Math.round((hitRate || 0) * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
       ],
-      top: top ? { name: top.name, date: top.date, delta: (top.delta > 0 ? "+" : "") + top.delta } : { name: "—", date: "", delta: "0" },
+      top: top ? { name: top.name, date: top.date, delta: (top.delta > 0 ? "+" : "") + (Math.round(top.delta * 10) / 10) } : { name: "—", date: "", delta: "0" },
       days,
       firstWeekdayIndex: firstWeekdayIndex(viewMonthDate),
       daysInMonth: new Date(viewDate.year, viewDate.month + 1, 0).getDate(),
