@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import WalkInShelf from "./WalkInShelf";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -311,15 +312,7 @@ export default function IngredientsScreen({
                 onOpenInvoice={onOpenInvoice}
               />
             ) : (
-              <Summary
-                all={all}
-                risers={risers}
-                fallers={fallers}
-                unpriced={unpriced}
-                override={summaryProp}
-                onPick={(g) => { setFilter("All"); select(g); }}
-                onNeedsPrice={() => { setFilter("Needs price"); clear(); }}
-              />
+              <WalkInShelf all={all} onPick={(g) => { setFilter("All"); select(g); }} />
             )}
           </div>
         </div>

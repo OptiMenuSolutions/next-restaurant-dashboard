@@ -12,6 +12,9 @@ import useSWR from "swr";
 import { useGuardedAccount } from "../../lib/useAccount";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from "../../lib/standardizedUnits";
+import { loadCurrentInventory } from "../../lib/currentInventory";
+import { computeWasteRisk, convertQuantity } from "../../lib/computeWasteRisk";
+import { getShelfLife, isProtein } from "../../lib/shelfLife";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -24,6 +27,41 @@ function isTourQueryActive() {
   } catch {
     return true;
   }
+}
+
+/* Walk-in shelf numbers for one ingredient, from its invoice lines (newest
+   first) and its on-hand inventory rows (loadCurrentInventory's shape).
+   Fill = on hand / the newest delivery's size, capped at 100%: FIFO uses
+   older stock first, so anything on hand includes the newest delivery. */
+const DAY_MS = 86400000;
+function shelfFields(name, unit, lines, invRows) {
+  const now = Date.now();
+  let bought28 = 0;
+  let spend30 = 0;
+  for (const r of lines) {
+    const age = (now - Date.parse(`${String(r.invoices?.date).slice(0, 10)}T12:00:00`)) / DAY_MS;
+    if (!(age >= 0)) continue;
+    const qty = Number(r.quantity) || 0;
+    if (age <= 30) spend30 += Number(r.amount) || qty * (Number(r.unit_cost) || 0);
+    if (age <= 28 && qty > 0) {
+      const q = !r.unit || r.unit === unit ? qty : convertQuantity(qty, r.unit, unit, name);
+      if (q != null) bought28 += q;
+    }
+  }
+  const onHand = invRows.reduce((a, r) => a + (Number(r.remainingQty) || 0), 0);
+  const newest = invRows.reduce((best, r) => (!best || String(r.deliveryDate) > String(best.deliveryDate) ? r : best), null);
+  const lastSize = newest ? Number(newest.invoicedQty) || 0 : 0;
+  const days = invRows.filter((r) => Number(r.remainingQty) > 0).map((r) => r.daysLeft);
+  const life = getShelfLife(name, {}, lines[0]?.unit || "");
+  return {
+    onHand,
+    fillPct: lastSize > 0 ? Math.min(100, Math.round((onHand / lastSize) * 100)) : 0,
+    daysLeft: days.length ? Math.min(...days) : null,
+    boughtPerWeek: bought28 / 4,
+    spend30,
+    shelf: isProtein(name) ? "protein" : life >= 60 ? "dry" : "fresh",
+    delivered: lines.length > 0,
+  };
 }
 
 /* Sample invoice_items have no ingredient_id set (unlike real invoice
@@ -60,6 +98,16 @@ function buildSampleIngredientRows(sample) {
     });
   });
 
+  // On-hand estimate for the sample, the same way the tour dashboard does it.
+  // Sample lines are unlinked, so rows are keyed by product name.
+  const sampleInv = new Map();
+  computeWasteRisk(flatItems, sample.invoices || [], sample.posSales || [], sample.menuItems || [])
+    .filter((r) => r.remainingQty > 0)
+    .forEach((r) => {
+      const k = String(r.name || "").toLowerCase().trim();
+      sampleInv.set(k, [...(sampleInv.get(k) || []), r]);
+    });
+
   return (sample.ingredients || []).map((g) => {
     const lines = flatItems
       .filter((r) => (r.ingredient_name_normalized || r.item_name || "").toLowerCase().trim() === (g.name || "").toLowerCase().trim())
@@ -83,6 +131,7 @@ function buildSampleIngredientRows(sample) {
         unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
       })),
       menuItems: menuByIngredient.get(g.id) || [],
+      ...shelfFields(g.name, g.unit || "ea", lines, sampleInv.get((g.name || "").toLowerCase().trim()) || []),
     };
   });
 }
@@ -170,7 +219,7 @@ export default function IngredientsPage() {
       }
       // fetchSampleData() failed — fall through to the real query below.
     }
-    const [{ data: ings }, { data: items }, { data: flatLinks }, { data: componentLinks }] = await Promise.all([
+    const [{ data: ings }, { data: items }, { data: flatLinks }, { data: componentLinks }, inventory] = await Promise.all([
       supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).order("name").limit(1000),
       supabase
         .from("invoice_items")
@@ -196,7 +245,17 @@ export default function IngredientsPage() {
           )
         `)
         .eq("menu_item_components.menu_items.restaurant_id", restaurantId),
+      // On-hand estimate (same rows as Waste Risk). The shelf still renders if it fails.
+      loadCurrentInventory(supabase, restaurantId).catch(() => []),
     ]);
+
+    const invById = new Map();
+    const invByName = new Map();
+    for (const r of inventory || []) {
+      if (r.ingredientId) invById.set(r.ingredientId, [...(invById.get(r.ingredientId) || []), r]);
+      const k = String(r.name || "").toLowerCase().trim();
+      invByName.set(k, [...(invByName.get(k) || []), r]);
+    }
 
     const history = (items || []).filter((i) => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
 
@@ -266,6 +325,12 @@ export default function IngredientsPage() {
           unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
         })),
         menuItems: menuByIngredient.get(g.id) || [],
+        ...shelfFields(
+          g.name,
+          g.unit || "ea",
+          lines,
+          invById.get(g.id) || invByName.get((g.name || "").toLowerCase().trim()) || []
+        ),
       };
     });
 
