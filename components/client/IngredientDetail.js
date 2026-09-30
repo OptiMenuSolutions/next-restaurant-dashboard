@@ -42,6 +42,18 @@ function qtyLabel(n, unit) {
   const r = v >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
   return `${r.toLocaleString("en-US")}${u ? " " + u : ""}`;
 }
+// Recipe portions read the way a cook says them: under a pound in ounces,
+// under a gallon in fluid ounces, rounded to at most one decimal.
+function portionLabel(qty, unit, fallback) {
+  let q = Number(qty);
+  let u = (unit || "").trim();
+  if (!(q > 0) || !u) return fallback || "—";
+  if (u === "lb" && q < 1) { q *= 16; u = "oz"; }
+  else if ((u === "gal" || u === "gallon") && q < 1) { q *= 128; u = "fl oz"; }
+  const r = q >= 10 ? Math.round(q) : Math.round(q * 10) / 10;
+  return `${r} ${u}`;
+}
+
 function useByLabel(daysLeft) {
   const d = new Date();
   d.setDate(d.getDate() + daysLeft);
@@ -181,7 +193,7 @@ export default function IngredientDetail({ g, onBack, onOpenMenuItem, onOpenInvo
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: stacked ? "repeat(2, minmax(0, 1fr))" : "repeat(4, minmax(0, 1fr))", gap: stacked ? "18px 10px" : 10, marginTop: 4 }}>
-            <Tile label="On hand" tilt="-2deg" value={tile.onHand} sub={g.delivered ? `${g.fillPct || 0}% of last delivery` : "never invoiced"} />
+            <Tile label="On hand" tilt="-2deg" value={tile.onHand} sub={g.delivered ? `${g.fillPct || 0}% full` : "never invoiced"} />
             <Tile
               label="Use within"
               tilt="1.5deg"
@@ -258,7 +270,7 @@ export default function IngredientDetail({ g, onBack, onOpenMenuItem, onOpenInvo
                     <span style={{ fontSize: 13.5, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{m.name}</span>
                     <span style={{ borderTop: "1px dashed var(--line)", marginTop: 2 }} />
                     <span style={{ display: "flex", justifyContent: "space-between", gap: 8, fontFamily: MONO, fontSize: 10.5, color: "var(--muted)" }}>
-                      <span>{m.qty || "—"}</span>
+                      <span style={{ whiteSpace: "nowrap" }}>{portionLabel(m.quantity, m.recipeUnit, m.qty)}</span>
                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{m.plateText}</span>
                     </span>
                   </button>
