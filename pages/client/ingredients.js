@@ -328,6 +328,7 @@ export default function IngredientsPage() {
         history: toHistory(lines, g.unit || "ea", g.name),
         purchases: lines.map((r) => ({
           date: shortDate(r.invoices.date),
+          iso: String(r.invoices.date).slice(0, 10),
           supplier: r.invoices.supplier || "Supplier",
           invoice: r.invoices.number || "No number",
           invoiceId: r.invoices.id,
