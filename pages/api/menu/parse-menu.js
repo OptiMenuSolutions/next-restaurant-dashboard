@@ -436,17 +436,16 @@ function matchRecipe(dishName, dishArchetype, globalRecipes, section = '') {
 // Removes dishes that should never enter the recommendation engine:
 //   1. Add-on / upcharge variants (e.g. "Pineapple Stir-Fry - Add Beef")
 //   2. Combo pricing tiers (e.g. "Sizzling Fajitas - Combo of Two")
-//   3. Sides, kids menu, desserts, and beverages (low/no recommendation value)
+//   3. Kids menu items and beverages. Sides and desserts are kept and costed
+//      like any dish (decided Sep 29); Tonight's Dish still never recommends
+//      them (see EXCLUDED_CATEGORY_KEYWORDS in ai-recommendations.js).
 //
 // Detection is by section/category name and dish name patterns.
 // All removals are logged for auditability.
 
 const EXCLUDED_SECTION_PATTERNS = [
-  /\bsides?\b/i,
   /\bkids?\b/i,
   /\bchildren\b/i,
-  /\bdesserts?\b/i,
-  /\bsweets?\b/i,
   /\bbeverages?\b/i,
   /\bdrinks?\b/i,
   /\bcocktails?\b/i,
@@ -1805,7 +1804,7 @@ export default async function handler(req, res) {
         Object.assign({}, dish, { section: sectionName })
       );
 
-      // Filter out add-ons, combo tiers, sides, kids, desserts, beverages
+      // Filter out add-ons, combo tiers, kids items and beverages
       const filteredDishManifest = filterDishManifest(stampedDishManifest);
 
       if (!filteredDishManifest?.length) {
