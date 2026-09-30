@@ -107,6 +107,7 @@ function toLine(row) {
     // name made unlinked lines look linked (in green) and hid them from the
     // unmatched count and the Link items button.
     link: row.ingredients ? row.ingredients.name : null,
+    candidates: Array.isArray(row.match_candidates) ? row.match_candidates : [],
   };
 }
 

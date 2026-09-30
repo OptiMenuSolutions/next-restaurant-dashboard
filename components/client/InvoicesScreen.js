@@ -493,6 +493,10 @@ function LinkRow({ line, options, onLink, current = null }) {
         .map((x) => x.o)
   ).slice(0, 8);
   const newName = q.trim() || line.name;
+  // Matcher candidates still in the ingredient list (one may have been deleted).
+  const suggestions = (line.candidates || [])
+    .filter((c) => options.some((o) => o.id === c.id))
+    .slice(0, 3);
 
   async function choose(choice) {
     setOpen(false);
@@ -552,6 +556,15 @@ function LinkRow({ line, options, onLink, current = null }) {
         )}
         {err && <div style={{ fontSize: 9, color: "var(--red)", marginTop: 3 }}>{err}</div>}
         {note && <div style={{ fontSize: 9, color: "var(--green)", marginTop: 3 }}>{note}</div>}
+        {!current && !saving && suggestions.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+            {suggestions.map((c) => (
+              <button key={c.id} type="button" onClick={() => choose({ ingredientId: c.id })} style={{ background: "none", border: "1px dashed var(--accent-deep)", borderRadius: 4, padding: "3px 8px", fontFamily: MONO, fontSize: 9.5, color: "var(--accent-deep)", cursor: "pointer" }}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -355,6 +355,11 @@ export default async function handler(req, res) {
         reviewed:                   false,
         original_quantity:          totalQty,
         original_price:             unit_cost,
+        // The matcher's best guesses for a line it was unsure about, shown as
+        // one-tap choices when linking. Only kept on lines left unlinked.
+        match_candidates: !ingredientId && Array.isArray(item.match_candidates) && item.match_candidates.length
+          ? item.match_candidates.slice(0, 3).map((c) => ({ id: c.id, name: c.name }))
+          : null,
       };
     });
 
