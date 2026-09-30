@@ -32,9 +32,15 @@ export default async function handler(req, res) {
   const dayOfWeek = estDate.toLocaleDateString('en-US', { weekday: 'long' });
 
   // Fetch all restaurants
+  // Only accounts someone can open: onboarding finished, not deactivated.
+  // The tour sample is skipped: its recommendation history is fixed demo
+  // data kept current by refresh_sample_dates() in the waste snapshot cron.
   const { data: restaurants, error } = await supabase
     .from('restaurants')
-    .select('id, name');
+    .select('id, name')
+    .is('deactivated_at', null)
+    .not('onboarding_completed_at', 'is', null)
+    .neq('id', SAMPLE_RESTAURANT_ID);
 
   if (error || !restaurants?.length) {
     console.error('[cron] Failed to fetch restaurants:', error?.message);

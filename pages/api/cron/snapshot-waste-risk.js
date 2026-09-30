@@ -228,6 +228,12 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // The tour's sample restaurant is a fixed demo: slide its dates forward so
+  // its newest sales day is always yesterday. Self-correcting if a night is missed.
+  const { data: shiftedDays, error: shiftError } = await supabase.rpc('refresh_sample_dates');
+  if (shiftError) console.error('[cron:waste-snapshot] Sample date shift failed:', shiftError.message);
+  else if (shiftedDays) console.log(`[cron:waste-snapshot] Sample data moved forward ${shiftedDays} day(s)`);
+
   // Snapshot *yesterday* (ET) — the most recently fully-completed service day.
   const now = new Date();
   const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
