@@ -486,6 +486,28 @@ const CSS = `
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
+// Units the dropdowns offer. A unit written another way ("fl oz", "slices",
+// "lbs") maps onto one of these, so the dropdown shows it instead of
+// silently falling back to its first option, "oz".
+const KNOWN_UNITS = new Set(['oz', 'lb', 'g', 'kg', 'fl_oz', 'cup', 'ml', 'l', 'each', 'bunch', 'slice', 'sprig', 'sheet']);
+const UNIT_ALIASES = {
+  'fl oz': 'fl_oz', floz: 'fl_oz', 'fl. oz': 'fl_oz', 'fluid ounce': 'fl_oz', 'fluid ounces': 'fl_oz',
+  slices: 'slice', lbs: 'lb', pound: 'lb', pounds: 'lb', ounce: 'oz', ounces: 'oz',
+  ea: 'each', pc: 'each', pcs: 'each', piece: 'each', pieces: 'each',
+  cups: 'cup', bunches: 'bunch', sprigs: 'sprig', sheets: 'sheet', liter: 'l', liters: 'l',
+};
+function unitOption(u) {
+  const x = String(u || '').toLowerCase().trim();
+  return UNIT_ALIASES[x] || x;
+}
+
+// A dish name with a comma or more than seven words usually has description
+// text in it; review flags it so it can be corrected to the printed name.
+function nameLooksLikeDescription(name) {
+  const n = String(name || '').trim();
+  return n.includes(',') || n.split(/\s+/).length > 7;
+}
+
 function margin(dish) {
   if (!dish.price || !dish.total_estimated_cost) return null;
   return ((dish.price - dish.total_estimated_cost) / dish.price * 100);
@@ -502,8 +524,8 @@ const UNIT_TO_BASE_FLOZ = { 'fl_oz': 1, oz: 1, cup: 8, ml: 0.033814, l: 33.814 }
 
 function convertUnitCost(oldUnit, newUnit, oldCost) {
   if (!oldUnit || !newUnit || oldUnit === newUnit) return { newCost: oldCost, converted: true };
-  const ou = oldUnit.toLowerCase().trim();
-  const nu = newUnit.toLowerCase().trim();
+  const ou = unitOption(oldUnit);
+  const nu = unitOption(newUnit);
 
   // Weight family
   if (UNIT_TO_BASE_OZ[ou] !== undefined && UNIT_TO_BASE_OZ[nu] !== undefined) {
@@ -822,6 +844,11 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
         (menuItem) => !keepFromArchive.has(menuItem.id)
       ),
     };
+  }
+
+  function updateDishName(val) {
+    setDishes(prev => { const d = deepClone(prev); d[current].name = val; return d; });
+    unconfirm(current);
   }
 
   function updateCategory(val) {
@@ -1291,7 +1318,23 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           )}
 
         <div className="prm-dish-hd">
-          <div className="prm-dish-title">{dish.name}</div>
+          <input
+            className="prm-dish-title"
+            aria-label="Dish name"
+            value={dish.name}
+            onChange={e => updateDishName(e.target.value)}
+            style={{ display: 'block', width: '100%', background: 'transparent', border: 'none', borderBottom: '1px dashed var(--line, #d8dfe0)', outline: 'none', padding: '0 0 4px' }}
+          />
+          {nameLooksLikeDescription(dish.name) && (
+            <div style={{ fontSize: 11.5, color: '#b8860b', margin: '-4px 0 10px' }}>
+              This looks like description text. Edit it to the dish name as printed on the menu.
+            </div>
+          )}
+          {dishes.filter(x => (x.name || '').trim().toLowerCase() === (dish.name || '').trim().toLowerCase()).length > 1 && (
+            <div style={{ fontSize: 11.5, color: '#b8860b', margin: '-4px 0 10px' }}>
+              Another dish has this same name. Rename one (for example add "Pizza") so sales match the right dish.
+            </div>
+          )}
           <div className="prm-dish-meta">
             <input
               className="prm-cat-input"
@@ -1324,9 +1367,12 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                     <select
                       className="prm-unit-select"
                       style={{ background: '#fff', border: '1px solid #f0e0b8', borderRadius: 4, padding: '5px 20px 5px 8px', width: 80, color: 'var(--muted, #4b585b)' }}
-                      value={purchasedIng.unit}
+                      value={unitOption(purchasedIng.unit)}
                       onChange={e => updateIng(ci, 0, 'unit', e.target.value)}
                     >
+                      {!KNOWN_UNITS.has(unitOption(purchasedIng.unit)) && (
+                        <option value={unitOption(purchasedIng.unit)}>{purchasedIng.unit}</option>
+                      )}
                       <optgroup label="Weight">
                         <option value="oz">oz</option>
                         <option value="lb">lb</option>
@@ -1398,9 +1444,12 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
                           <select
                             className="prm-unit-select"
-                            value={ing.unit}
+                            value={unitOption(ing.unit)}
                             onChange={e => updateIng(ci, ii, 'unit', e.target.value)}
                           >
+                            {!KNOWN_UNITS.has(unitOption(ing.unit)) && (
+                              <option value={unitOption(ing.unit)}>{ing.unit}</option>
+                            )}
                             <optgroup label="Weight">
                               <option value="oz">oz</option>
                               <option value="lb">lb</option>

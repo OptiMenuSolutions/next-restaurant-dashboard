@@ -38,6 +38,16 @@ export default async function handler(req, res) {
     .then(m => m.verifyRestaurantAccess(req, restaurant_id));
   if (authError) return res.status(authStatus).json({ error: authError });
 
+  // The review dropdown's "fl_oz" is saved as "fl oz", the form invoices and
+  // the rest of the app use, so one unit is never stored two ways.
+  const fixUnit = (u) => (u === 'fl_oz' ? 'fl oz' : u);
+  for (const ing of ingredient_library) if (ing) ing.unit = fixUnit(ing.unit);
+  for (const dish of dishes) {
+    for (const comp of dish.components || []) {
+      for (const ing of comp.ingredients || []) if (ing) ing.unit = fixUnit(ing.unit);
+    }
+  }
+
   const results = {
     menu_items_created: 0,
     ingredients_created: 0,

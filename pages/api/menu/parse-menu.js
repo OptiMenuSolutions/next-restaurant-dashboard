@@ -1898,7 +1898,11 @@ export default async function handler(req, res) {
     // menu (or straddling a chunk boundary) was coming through twice as
     // two separate entries — "Penne Vodka" showed up from both pages of a
     // real upload. First occurrence wins.
-    const seenDishKeys = new Set();
+    // The same name is only the same dish when it is also the same kind of
+    // dish (archetype) or in the same section: a Penne Vodka pizza and a
+    // Penne Vodka pasta are two dishes, and both are kept.
+    const seenByName = new Map(); // name key -> [{ archetype, category }]
+    const low = (s) => String(s || '').toLowerCase().trim();
     const beforeDedup = allDishes.length;
     const dedupedDishes = [];
     for (const d of allDishes) {
@@ -1907,8 +1911,16 @@ export default async function handler(req, res) {
       // templates, wrong for dedupe: "Wings - Boneless" and "Wings -
       // Traditional" both became "wings" and one was dropped.
       const key = (d.name || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (key && seenDishKeys.has(key)) continue;
-      if (key) seenDishKeys.add(key);
+      if (key) {
+        const seen = seenByName.get(key) || [];
+        const sameDish = seen.some(s =>
+          (s.archetype && s.archetype === low(d.archetype)) ||
+          (s.category && s.category === low(d.category))
+        );
+        if (sameDish) continue;
+        seen.push({ archetype: low(d.archetype), category: low(d.category) });
+        seenByName.set(key, seen);
+      }
       dedupedDishes.push(d);
     }
     // A parent listed alongside its own variants ("Meet the Parms" plus
