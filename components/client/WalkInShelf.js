@@ -40,7 +40,7 @@ function qtyLabel(n, unit) {
   return `${r.toLocaleString("en-US")}${u ? " " + u : ""}`;
 }
 const money0 = (n) => (n > 0 ? "$" + Math.round(n).toLocaleString("en-US") : "—");
-const daysLabel = (d) => (d <= 0 ? "Today" : d === 1 ? "1 day" : `${d} days`);
+const daysLabel = (d) => (d < 0 ? "Past date" : d === 0 ? "Today" : d === 1 ? "1 day" : `${d} days`);
 const byName = (a, b) => (a.name || "").localeCompare(b.name || "");
 const bySpend = (a, b) => (b.spend30 || 0) - (a.spend30 || 0) || byName(a, b);
 
@@ -170,8 +170,8 @@ export default function WalkInShelf({ all = [], onPick }) {
         {/* The rack: the two uprights are the scroll area's side borders. */}
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, borderLeft: "9px solid var(--line)", borderRight: "9px solid var(--line)", borderRadius: 5 }}>
           {rows.map((s, si) => (
-            <div key={`${s.label}-${si}`} style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
-              <div style={{ display: "grid", gridTemplateColumns: `repeat(${PER_SHELF}, minmax(0, 1fr))`, gap: 14, padding: "16px 16px 0", alignItems: "end" }}>
+            <div key={`${s.label}-${si}`} style={{ display: "flex", flexDirection: "column", flex: focused ? "0 0 auto" : "1 0 auto" }}>
+              <div style={{ flex: 1, display: "grid", gridTemplateColumns: `repeat(${PER_SHELF}, minmax(0, 1fr))`, gap: 14, padding: "16px 16px 0", alignItems: "end", alignContent: "end" }}>
                 {s.items.length === 0 && (
                   <div style={{ gridColumn: "1 / -1", height: 60, display: "flex", alignItems: "center", fontFamily: MONO, fontSize: 11, letterSpacing: "0.06em", color: "var(--faint)" }}>
                     {s.empty}
