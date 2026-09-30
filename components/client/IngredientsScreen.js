@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import WalkInShelf from "./WalkInShelf";
+import IngredientDetail from "./IngredientDetail";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -187,17 +188,7 @@ export default function IngredientsScreen({
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)" }}>
-            <Detail
-              g={selected}
-              onBack={clear}
-              menuOpen={menuOpen}
-              setMenuOpen={(v) => { setMenuOpen(v); setInvoicesOpen(false); }}
-              invoicesOpen={invoicesOpen}
-              setInvoicesOpen={(v) => { setInvoicesOpen(v); setMenuOpen(false); }}
-              onOpenMenuItem={onOpenMenuItem}
-              onOpenInvoice={onOpenInvoice}
-              stacked
-            />
+            <IngredientDetail g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} stacked />
           </div>
         </div>
         <MobileNav active="ingredients" NavLink={NavLink} />
@@ -301,16 +292,7 @@ export default function IngredientsScreen({
 
           <div data-tour="ing-detail" style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", animation: "om-rise .4s cubic-bezier(.25,.8,.35,1) both" }}>
             {selected ? (
-              <Detail
-                g={selected}
-                onBack={clear}
-                menuOpen={menuOpen}
-                setMenuOpen={(v) => { setMenuOpen(v); setInvoicesOpen(false); }}
-                invoicesOpen={invoicesOpen}
-                setInvoicesOpen={(v) => { setInvoicesOpen(v); setMenuOpen(false); }}
-                onOpenMenuItem={onOpenMenuItem}
-                onOpenInvoice={onOpenInvoice}
-              />
+              <IngredientDetail g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
             ) : (
               <WalkInShelf all={all} onPick={(g) => { setFilter("All"); select(g); }} />
             )}

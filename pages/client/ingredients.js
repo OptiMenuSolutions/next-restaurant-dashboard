@@ -90,6 +90,9 @@ function buildSampleIngredientRows(sample) {
           id: mi.id,
           name: mi.name,
           qty: [ci.quantity, ci.unit].filter(Boolean).join(" ") || String(ci.quantity || ""),
+          quantity: Number(ci.quantity) || 0,
+          recipeUnit: ci.unit || null,
+          category: mi.category || null,
           price: Number(mi.price) || 0,
           cost: null, // stored menu_items.cost is built from unapproved AI guesses
         });
@@ -123,7 +126,8 @@ function buildSampleIngredientRows(sample) {
       lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
       history: toHistory(lines, g.unit || "ea", g.name),
       purchases: lines.map((r) => ({
-        date: shortDate(r.invoices.date),
+      date: shortDate(r.invoices.date),
+        iso: String(r.invoices.date).slice(0, 10),
         supplier: r.invoices.supplier || "Supplier",
         invoice: r.invoices.number || "No number",
         invoiceId: r.invoices.id,
@@ -230,7 +234,7 @@ export default function IngredientsPage() {
       // any dish only ever recorded this way (not through components).
       supabase
         .from("menu_item_ingredients")
-        .select("quantity, ingredient_id, menu_items!inner(id, name, price, cost, restaurant_id)")
+        .select("quantity, ingredient_id, menu_items!inner(id, name, price, cost, category, restaurant_id)")
         .eq("menu_items.restaurant_id", restaurantId),
       // Real recipe structure — component_ingredients DOES have a unit
       // column (confirmed against the schema), unlike the flat table above.
@@ -241,7 +245,7 @@ export default function IngredientsPage() {
           quantity, unit, ingredient_id,
           menu_item_components!inner(
             menu_item_id,
-            menu_items!inner(id, name, price, cost, restaurant_id)
+            menu_items!inner(id, name, price, cost, category, restaurant_id)
           )
         `)
         .eq("menu_item_components.menu_items.restaurant_id", restaurantId),
@@ -277,6 +281,9 @@ export default function IngredientsPage() {
         id: mi.id,
         name: mi.name,
         qty: [l.quantity, l.unit].filter(Boolean).join(" ") || String(l.quantity || ""),
+        quantity: Number(l.quantity) || 0,
+        recipeUnit: l.unit || null,
+        category: mi.category || null,
         price: Number(mi.price) || 0,
         cost: null, // stored menu_items.cost is built from unapproved AI guesses
       });
@@ -295,6 +302,9 @@ export default function IngredientsPage() {
         id: mi.id,
         name: mi.name,
         qty: String(l.quantity || ""), // no unit column on this legacy table
+        quantity: Number(l.quantity) || 0,
+        recipeUnit: null,
+        category: mi.category || null,
         price: Number(mi.price) || 0,
         cost: null, // stored menu_items.cost is built from unapproved AI guesses
       });
