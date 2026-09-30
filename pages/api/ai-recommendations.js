@@ -31,7 +31,7 @@ const supabase = createClient(
 
 const EXCLUDED_CATEGORY_KEYWORDS = [
   'appetizer', 'starter', 'small plate', 'shareables', 'snack',
-  'dessert', 'sweet', 'cake', 'ice cream',
+  'dessert', 'sweet', 'cake', 'ice cream', 'treat', 'pastr',
   'drink', 'beverage', 'cocktail', 'beer', 'wine', 'soda', 'juice',
   'side', 'add on', 'add-on', 'extra',
   'soup', 'salad',
