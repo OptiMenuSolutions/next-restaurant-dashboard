@@ -326,7 +326,7 @@ export default function IngredientsPage() {
         error={error}
         onRetry={() => router.reload()}
         summary={summary}
-        onOpenMenuItem={(m) => m.id && router.push(`/client/menu-items/${m.id}`)}
+        onOpenMenuItem={(m) => m.id && router.push(`/client/menu-items?item=${m.id}`)}
         onOpenInvoice={(p) => p.invoiceId && router.push(`/client/invoices?invoice=${p.invoiceId}`)}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}

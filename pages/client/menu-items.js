@@ -369,7 +369,7 @@ export default function MenuItemsPage() {
         error={error}
         onRetry={() => router.reload()}
         periodLabel={periodLabel}
-        onOpenItem={(d) => router.push(`/client/menu-items/${d.id}`)}
+        openItemId={router.query.item || null}
         onAddItem={() => menuFileInput.current && menuFileInput.current.click()}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}

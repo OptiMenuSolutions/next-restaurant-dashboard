@@ -148,6 +148,7 @@ export default function MenuItemsScreen({
   error = null,
   onRetry,
   onOpenItem,
+  openItemId = null,
   onAddItem,
   onUploadMenu,
   onSearch,
@@ -186,6 +187,18 @@ export default function MenuItemsScreen({
 
   const selected = shown.find((d) => d.id === selectedId) || null;
 
+  // Opened from a link elsewhere (/client/menu-items?item=ID): select that
+  // dish once the menu has it. Runs once per ID.
+  const [openedFromLink, setOpenedFromLink] = useState(null);
+  useEffect(() => {
+    if (!openItemId || openedFromLink === openItemId) return;
+    const target = data.find((d) => String(d.id) === String(openItemId));
+    if (!target) return;
+    setOpenedFromLink(openItemId);
+    setFilter("All");
+    setSelectedId(target.id);
+  }, [openItemId, data, openedFromLink]);
+
   const chrome = (
     <Header active="menu-items" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
@@ -211,17 +224,29 @@ export default function MenuItemsScreen({
   const countLabel = `Showing ${shown.length} of ${data.length} dishes`;
   const avgMargin = priced.length ? priced.reduce((a, d) => a + d.margin, 0) / priced.length : 0;
 
+  if (isMobile && selected) {
+    return (
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
+        <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
+        <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
+          <DishDetail d={selected} tgt={tgt} open={open} setOpen={setOpen} onBack={() => setSelectedId(null)} />
+        </div>
+        <MobileNav active="menu-items" NavLink={NavLink} />
+      </Shell>
+    );
+  }
+
   if (isMobile) {
     return (
-      <Shell theme={theme}>
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
           <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em" }}>Menu items</div>
           <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>{countLabel}</div>
         </div>
-        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
           {shown.map((d) => (
-            <div key={d.id} onClick={() => onOpenItem && onOpenItem(d)} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+            <div key={d.id} onClick={() => setSelectedId(d.id)} style={{ cursor: "pointer", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
               <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{d.name}</span>
                 {d.awaiting ? (

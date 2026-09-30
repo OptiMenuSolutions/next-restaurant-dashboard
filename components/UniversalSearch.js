@@ -120,7 +120,7 @@ export default function UniversalSearch({ open, onClose }) {
             <div>
               <div style={{ padding: '10px 18px 4px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint,#78868a)' }}>Menu items</div>
               {results.menuItems.map((m) => (
-                <div key={m.id} onClick={() => go(`/client/menu-items/${m.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div key={m.id} onClick={() => go(`/client/menu-items?item=${m.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{m.name}</span>
                   <span style={{ fontSize: 12, color: 'var(--faint,#78868a)' }}>{m.price != null ? money(m.price) : ''}</span>
                 </div>
