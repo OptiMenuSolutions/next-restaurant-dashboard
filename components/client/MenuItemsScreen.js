@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import MenuSheet from "./MenuSheet";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -150,8 +149,6 @@ export default function MenuItemsScreen({
   onRetry,
   onOpenItem,
   openItemId = null,
-  menuSections = null,
-  menuStyle = null,
   onAddItem,
   onUploadMenu,
   onSearch,
@@ -400,12 +397,15 @@ export default function MenuItemsScreen({
                 onBack={() => setSelectedId(null)}
               />
             ) : (
-              <MenuSheet
-                dishes={data}
-                sections={menuSections}
-                menuStyle={menuStyle}
-                restaurantName={restaurantName}
-                onOpenDish={(d) => { setFilter("All"); setSelectedId(d.id); }}
+              <MenuSummary
+                data={priced}
+                tgt={tgt}
+                belowTarget={belowTarget}
+                estimated={estimated}
+                periodLabel={periodLabel}
+                onPick={(d) => { setFilter("All"); setSelectedId(d.id); }}
+                onEstimated={() => { setFilter("Part-estimated"); setSelectedId(null); }}
+                onUploadMenu={onUploadMenu}
               />
             )}
           </div>

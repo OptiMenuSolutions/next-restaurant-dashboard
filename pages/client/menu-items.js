@@ -171,9 +171,6 @@ export default function MenuItemsPage() {
   const restaurantName = account?.restaurant?.name || "";
   const userName = account?.profile?.full_name || "";
   const targetMargin = account?.restaurant?.target_food_cost ? 100 - num(account.restaurant.target_food_cost) : 70;
-  // How the printed menu is laid out, saved by the parser: section notes,
-  // boxed sections, header font feel, accent, and each dish's place.
-  const menuStyle = account?.restaurant?.menu_style || null;
 
   const menuFileInput = useRef(null);
   const [menuParsing, setMenuParsing] = useState(false);
@@ -332,21 +329,6 @@ export default function MenuItemsPage() {
     () => load(restaurantId, tourMode)
   );
   const items = menuData || EMPTY_LIST;
-  const placedItems = useMemo(() => {
-    const positions = Array.isArray(menuStyle?.positions) ? menuStyle.positions : [];
-    if (!positions.length) return items;
-    const key = (s) => String(s || "").toLowerCase().trim();
-    const byNameCat = new Map();
-    const byName = new Map();
-    for (const p of positions) {
-      byNameCat.set(`${key(p.name)}|${key(p.category)}`, p);
-      if (!byName.has(key(p.name))) byName.set(key(p.name), p);
-    }
-    return items.map((d) => {
-      const p = byNameCat.get(`${key(d.name)}|${key(d.category)}`) || byName.get(key(d.name));
-      return p ? { ...d, sortOrder: p.side * 100000 + p.order, menuSide: p.side } : d;
-    });
-  }, [items, menuStyle]);
   const loading = accountLoading || (!!restaurantId && !menuData && !menuError);
   const error = accountError || (menuError ? menuError.message || "Could not load your menu" : null);
 
@@ -381,9 +363,7 @@ export default function MenuItemsPage() {
         {FONT_LINKS}
       </Head>
       <MenuItemsScreen
-        items={placedItems}
-        menuSections={Array.isArray(menuStyle?.sections) ? menuStyle.sections : null}
-        menuStyle={menuStyle}
+        items={items}
         targetMargin={targetMargin}
         loading={loading}
         error={error}

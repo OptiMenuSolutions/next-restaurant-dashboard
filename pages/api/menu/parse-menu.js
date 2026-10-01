@@ -672,62 +672,6 @@ function safeParseJSON(text) {
 
 // ─── Pass 1: Ingredient library + dish manifest ───────────────────────────────
 
-// ─── Printed menu layout ──────────────────────────────────────────────────────
-// One small vision call per uploaded file reads how the menu LOOKS: the feel of
-// its section headers, their accent color, any short note printed under a
-// header, and which sections are boxed. The sheet on the Menu page uses this
-// to look like the restaurant's own menu. Never blocks the parse.
-
-const MENU_STYLE_PROMPT = `Look at this restaurant menu and describe its printed layout. Return ONLY JSON, no prose:
-{
-  "font": "typewriter" | "serif" | "sans" | "script",
-  "accent": "#rrggbb",
-  "sections": [ { "name": "<section header exactly as printed>", "note": "<short line printed directly under the header, or null>", "boxed": true | false } ]
-}
-Rules:
-- "font" is the feel of the SECTION HEADERS: typewriter (monospaced, like Courier), serif, sans, or script.
-- "accent" is the main color of the section headers, as a hex color. Use "#1d1d1b" if they are black.
-- List every section header in reading order. "boxed" is true only when the whole section sits inside a printed box or border.
-- "note" is a short instruction or add-on line under the header (e.g. "Served with fries or salad", "Add chicken 8.95"), never a dish or its description.`;
-
-async function detectMenuStyle(file) {
-  const isPDF = file.mimetype === 'application/pdf';
-  const data = fs.readFileSync(file.filepath).toString('base64');
-  const media = isPDF
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } }
-    : { type: 'image', source: { type: 'base64', media_type: file.mimetype || 'image/jpeg', data } };
-  const response = await withRetry(() => anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
-    temperature: 0,
-    messages: [{ role: 'user', content: [media, { type: 'text', text: MENU_STYLE_PROMPT }] }],
-  }), 'menu-style');
-  const text = (response.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  return safeParseJSON(text);
-}
-
-function buildMenuLayout(styles, positions, fileRefs) {
-  const first = (styles || []).find(Boolean) || {};
-  const sections = [];
-  (styles || []).forEach((s, i) => (s?.sections || []).forEach((sec) => {
-    if (!sec || !sec.name) return;
-    sections.push({
-      name: String(sec.name).trim(),
-      side: i + 1,
-      note: sec.note ? String(sec.note).trim().slice(0, 200) : null,
-      boxed: !!sec.boxed,
-    });
-  }));
-  return {
-    font: ['typewriter', 'serif', 'sans', 'script'].includes(first.font) ? first.font : null,
-    accent: /^#[0-9a-f]{6}$/i.test(first.accent || '') ? first.accent : null,
-    files: (fileRefs || []).map((f) => f.file_url).filter(Boolean),
-    sections,
-    positions,
-    captured_at: new Date().toISOString(),
-  };
-}
-
 async function pass1_extractAndClassify(menuText, globalIngredients, restaurantId) {
   const globalList = globalIngredients.map(i => `${i.name} (${i.unit})`).join('\n');
 
@@ -1805,14 +1749,6 @@ export default async function handler(req, res) {
     // Files used to be processed strictly one after another, and each file's
     // sections one after another too. Now all OCR runs at once, and every
     // section from every file goes through one bounded pool below.
-    // Read the printed look while OCR runs. A failure just means no style.
-    const stylePromise = Promise.all(fileList.map((file) =>
-      detectMenuStyle(file).catch((err) => {
-        console.warn(`[menu-style] ${file.originalFilename}: ${err.message}`);
-        return null;
-      })
-    ));
-
     const ocrResults = await Promise.all(fileList.map(async (file, i) => {
       const fileLabel = `[file ${i + 1}/${fileList.length}: ${file.originalFilename}]`;
       console.log(`[parse-menu] ${fileLabel} Running OCR...`);
@@ -1820,17 +1756,15 @@ export default async function handler(req, res) {
       try {
         const menuText = await fileToText(file);
         console.log(`[parse-menu] ${fileLabel} OCR done in ${Date.now() - t0}ms`);
-        return { fileLabel, menuText, fileIndex: i };
+        return { fileLabel, menuText };
       } catch (err) {
         console.error(`[parse-menu] ${fileLabel} OCR failed:`, err.message);
-        return { fileLabel, menuText: null, fileIndex: i };
+        return { fileLabel, menuText: null };
       }
     }));
 
     const workItems = [];
-    // Where each dish sits on the printed menu: side (file) and reading order.
-    const layoutPositions = [];
-    for (const { fileLabel, menuText, fileIndex } of ocrResults) {
+    for (const { fileLabel, menuText } of ocrResults) {
       if (!menuText) {
         console.warn(`[parse-menu] ${fileLabel} No text extracted, skipping`);
         continue;
@@ -1841,8 +1775,6 @@ export default async function handler(req, res) {
         workItems.push({
           chunk,
           fileLabel,
-          fileIndex,
-          chunkIndex: c,
           chunkLabel: chunks.length > 1 ? ` chunk ${c + 1}/${chunks.length}` : '',
         });
       });
@@ -1853,7 +1785,7 @@ export default async function handler(req, res) {
     // matched dishes. ingredientMap / allDishes are plain shared objects —
     // safe to mutate from concurrent async work here since JS is
     // single-threaded and mutations happen between awaits, never mid-write.
-    const processChunk = async ({ chunk, fileLabel, chunkLabel, fileIndex = 0, chunkIndex = 0 }) => {
+    const processChunk = async ({ chunk, fileLabel, chunkLabel }) => {
       const sectionName = stripMarkdown(chunk.split('\n')[0]);
 
       console.log(`[parse-menu] ${fileLabel}${chunkLabel} Pass 1...`);
@@ -1879,16 +1811,6 @@ export default async function handler(req, res) {
         console.warn(`[parse-menu] ${fileLabel}${chunkLabel} No dishes remaining after filter, skipping`);
         return;
       }
-
-      // Printed order: side, then chunk, then position within the chunk.
-      filteredDishManifest.forEach((dish, i) => {
-        layoutPositions.push({
-          name: dish.name,
-          category: dish.category || dish.section || '',
-          side: fileIndex + 1,
-          order: chunkIndex * 1000 + i,
-        });
-      });
 
       for (const ing of chunkIngredients) {
         const key = ing.name.trim().toLowerCase();
@@ -1964,8 +1886,6 @@ export default async function handler(req, res) {
       }
     });
 
-    const menuStyles = await stylePromise;
-
     for (const file of fileList) {
       try { fs.unlinkSync(file.filepath); } catch {}
     }
@@ -2031,21 +1951,6 @@ export default async function handler(req, res) {
     const mergedIngredientLibrary = normalizeToGlobalNames(Object.values(canonicalMap), allDishes, globalIngredients);
 
     console.log(`[parse-menu] Total: ${allDishes.length} dishes, ${mergedIngredientLibrary.length} unique ingredients (${rawIngredientLibrary.length} raw)`);
-    // Save the printed layout on the restaurant for the Menu page's sheet.
-    // Saved at read time so every save path (review, hand-off, Launch a new
-    // menu) gets it; dishes are matched to it by name.
-    try {
-      const layout = buildMenuLayout(menuStyles, layoutPositions, fileRefs);
-      const { error: styleErr } = await supabase
-        .from('restaurants')
-        .update({ menu_style: layout })
-        .eq('id', restaurantId);
-      if (styleErr) console.warn('[menu-style] save failed:', styleErr.message);
-      else console.log(`[menu-style] saved: font ${layout.font || 'default'}, ${layout.sections.length} sections, ${layout.positions.length} positions`);
-    } catch (err) {
-      console.warn('[menu-style] save failed:', err.message);
-    }
-
     const reviewMode = req.query.review === 'true';
     const withMargin = allDishes.filter(d => d.estimated_margin !== null);
 
