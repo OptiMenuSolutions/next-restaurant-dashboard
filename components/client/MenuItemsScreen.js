@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import MenuAnalysis from "./MenuAnalysis";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -397,15 +398,11 @@ export default function MenuItemsScreen({
                 onBack={() => setSelectedId(null)}
               />
             ) : (
-              <MenuSummary
+              <MenuAnalysis
                 data={priced}
                 tgt={tgt}
-                belowTarget={belowTarget}
-                estimated={estimated}
-                periodLabel={periodLabel}
+                restaurantName={restaurantName}
                 onPick={(d) => { setFilter("All"); setSelectedId(d.id); }}
-                onEstimated={() => { setFilter("Part-estimated"); setSelectedId(null); }}
-                onUploadMenu={onUploadMenu}
               />
             )}
           </div>
