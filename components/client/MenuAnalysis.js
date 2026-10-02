@@ -1,6 +1,6 @@
 import React from "react";
 import Head from "next/head";
-import { MONO } from "./ClientChrome";
+import { MONO, SANS } from "./ClientChrome";
 
 /**
  * MenuAnalysis — the Menu Items page's right-hand card when no dish is
@@ -13,24 +13,32 @@ import { MONO } from "./ClientChrome";
  *                          reaches target (rounded up to the next $0.25)
  *   Hidden gems            target margin or better, below-median sales
  *
- * Expects MenuItemsScreen's decorated, priced dishes (price, cost, costThen,
- * margin, drift, covers = sold in the last 30 days, category, components).
- * tgt is the target margin %.
+ * Every quadrant always shows 3 dishes, and no dish appears twice on the
+ * sheet. When there are not enough dishes with the numbers a quadrant needs
+ * (no prices or no POS sales yet), the rest are filled with other dishes from
+ * the menu, spread across sections, shown with their menu price and what they
+ * are waiting on. Marks and handwritten notes only go on real, measured rows.
+ *
+ * Expects MenuItemsScreen's decorated dishes (all of them, priced or not):
+ * id, name, category, price, cost, margin, drift, covers (sold, last 30
+ * days), awaiting, components. tgt is the target margin %.
  */
 
-const PAPER = "#fffdf8";
-const INK = "#1f2426";
+const PER = 3;
+const PAPER = "#fffefa";
+const INK = "#141a1b";
+const TEXT = "#1f2426";
 const SOFT = "#6b7275";
-const FADED = "#c9c4bb";
+const FAINT = "#a3aaac";
 const RED = "#c4473e";
-const HAND_RED = "#b8433b";
-const HAND_TEAL = "#2c8c99";
-const SERIF = "Georgia, 'Times New Roman', serif";
+const NOTE_RED = "#b8433b";
+const NOTE_AMBER = "#b07a1a";
+const NOTE_TEAL = "#2c8c99";
 const HAND = "'Caveat', cursive";
 const HIGHLIGHT = {
-  yellow: "linear-gradient(transparent 55%, rgba(255,214,0,0.55) 55%, rgba(255,214,0,0.55) 92%, transparent 92%)",
-  teal: "linear-gradient(transparent 55%, rgba(2,164,186,0.30) 55%, rgba(2,164,186,0.30) 92%, transparent 92%)",
-  pink: "linear-gradient(transparent 55%, rgba(236,120,140,0.38) 55%, rgba(236,120,140,0.38) 92%, transparent 92%)",
+  teal: "linear-gradient(transparent 58%, rgba(2,164,186,0.32) 58%, rgba(2,164,186,0.32) 94%, transparent 94%)",
+  yellow: "linear-gradient(transparent 58%, rgba(255,214,0,0.55) 58%, rgba(255,214,0,0.55) 94%, transparent 94%)",
+  pink: "linear-gradient(transparent 58%, rgba(236,120,140,0.40) 58%, rgba(236,120,140,0.40) 94%, transparent 94%)",
 };
 
 const money0 = (n) => "$" + Math.round(n).toLocaleString("en-US");
@@ -46,10 +54,13 @@ function median(values) {
 
 // The ingredient behind most of a dish's cost increase, if one stands out.
 function costDriver(d) {
-  const ings = (d.components || []).flatMap((c) => c.ingredients || []);
-  const moves = ings
-    .map((i) => ({ name: i.name, cost: Number(i.cost) || 0, then: Number(i.costThen != null ? i.costThen : i.cost) || 0 }))
-    .map((m) => ({ ...m, up: m.cost - m.then }))
+  const moves = (d.components || [])
+    .flatMap((c) => c.ingredients || [])
+    .map((i) => {
+      const cost = Number(i.cost) || 0;
+      const then = Number(i.costThen != null ? i.costThen : i.cost) || 0;
+      return { name: i.name, then, up: cost - then };
+    })
     .filter((m) => m.up > 0);
   const total = moves.reduce((a, m) => a + m.up, 0);
   if (!total) return null;
@@ -59,8 +70,8 @@ function costDriver(d) {
   return { label: `${short} cost up ${pct1((top.up / top.then) * 100)}`, ingredient: short.toLowerCase() };
 }
 
-function analyze(data, tgt) {
-  const priced = data.filter((d) => d.price > 0 && !d.awaiting);
+function analyze(dishes, tgt) {
+  const priced = dishes.filter((d) => d.price > 0 && !d.awaiting);
   const hasSales = priced.some((d) => d.covers > 0);
   const popBar = median(priced.map((d) => d.covers));
 
@@ -70,90 +81,145 @@ function analyze(data, tgt) {
         .filter((x) => x.weekly > 0)
         .sort((a, b) => b.weekly - a.weekly)
     : [];
-
   const pressure = priced
     .filter((d) => d.drift <= -0.5)
     .sort((a, b) => a.drift - b.drift)
     .map((d) => ({ d, driver: costDriver(d) }));
-
-  const pricing = hasSales
+  const pricing = hasSales && tgt < 100
     ? priced
-        .filter((d) => d.covers >= popBar && d.covers > 0 && d.margin < tgt && tgt < 100)
-        .map((d) => {
-          const needed = d.cost / (1 - tgt / 100);
-          return { d, raise: Math.max(0.25, Math.ceil((needed - d.price) * 4) / 4) };
-        })
+        .filter((d) => d.covers > 0 && d.covers >= popBar && d.margin < tgt)
+        .map((d) => ({ d, raise: Math.max(0.25, Math.ceil((d.cost / (1 - tgt / 100) - d.price) * 4) / 4) }))
         .sort((a, b) => b.d.covers - a.d.covers)
     : [];
-
   const gems = hasSales
-    ? priced
-        .filter((d) => d.margin >= tgt && d.covers < popBar)
-        .sort((a, b) => b.margin - a.margin)
+    ? priced.filter((d) => d.margin >= tgt && d.covers < popBar).sort((a, b) => b.margin - a.margin)
     : [];
 
-  const flagged = new Set([...pressure.map((x) => x.d.id), ...pricing.map((x) => x.d.id), ...gems.map((d) => d.id)]);
-  return { hasSales, drivers, pressure, pricing, gems, flagged: flagged.size };
+  const flagged = new Set([...pressure.map((x) => x.d.id), ...pricing.map((x) => x.d.id), ...gems.map((d) => d.id)]).size;
+  return { drivers, pressure, pricing, gems, flagged };
 }
 
-function Quadrant({ title, sub, empty, children, isEmpty }) {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div style={{ fontFamily: SERIF, fontSize: 15, letterSpacing: "0.12em", textTransform: "uppercase", color: FADED, paddingBottom: 6, borderBottom: `1px solid ${FADED}` }}>{title}</div>
-      <div style={{ fontFamily: MONO, fontSize: 10.5, color: SOFT, margin: "9px 0 6px" }}>{sub}</div>
-      {isEmpty ? (
-        <div style={{ fontFamily: MONO, fontSize: 10.5, color: FADED, padding: "8px 0" }}>{empty}</div>
-      ) : (
-        children
-      )}
-    </div>
-  );
+// Keeps every dish to one appearance on the sheet, and hands out filler
+// dishes round-robin across menu sections so the sheet shows a spread.
+function makePicker(dishes) {
+  const bySection = new Map();
+  for (const d of dishes) {
+    const k = d.category || "Menu";
+    bySection.set(k, [...(bySection.get(k) || []), d]);
+  }
+  const queues = [...bySection.values()];
+  const used = new Set();
+  return {
+    // Up to PER measured rows from a ranked list, skipping dishes already shown.
+    real(list, getDish) {
+      const out = [];
+      for (const x of list) {
+        if (out.length === PER) break;
+        const d = getDish(x);
+        if (used.has(d.id)) continue;
+        used.add(d.id);
+        out.push(x);
+      }
+      return out;
+    },
+    // Unused dishes to bring a quadrant up to PER rows.
+    fill(have) {
+      const out = [];
+      while (out.length < PER - have) {
+        let found = null;
+        for (let pass = 0; pass < queues.length && !found; pass++) {
+          const q = queues.shift();
+          queues.push(q);
+          const d = q.find((x) => !used.has(x.id));
+          if (d) found = d;
+        }
+        if (!found) break;
+        used.add(found.id);
+        out.push(found);
+      }
+      return out;
+    },
+  };
 }
 
-function Row({ d, mark, right, rightStyle, meta, onPick, circled, underline }) {
+function Row({ d, mark, right, rightColor, meta, circled, underline, onPick }) {
   return (
     <button
       type="button"
       onClick={() => onPick && onPick(d)}
-      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "6px 0 7px", cursor: "pointer", color: INK }}
+      style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", padding: "5px 0 6px", cursor: "pointer", color: TEXT, fontFamily: SANS }}
     >
       <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-        <span style={{ fontFamily: SERIF, fontSize: 15, lineHeight: 1.25, padding: "0 2px", margin: "0 -2px", background: mark ? HIGHLIGHT[mark] : "none", minWidth: 0 }}>{d.name}</span>
-        <span style={{ position: "relative", flexShrink: 0, fontFamily: MONO, fontSize: 11.5, whiteSpace: "nowrap", ...(rightStyle || {}) }}>
+        <span style={{ fontSize: 14.5, fontWeight: 600, letterSpacing: "-0.01em", lineHeight: 1.3, padding: "0 2px", margin: "0 -2px", background: mark ? HIGHLIGHT[mark] : "none", minWidth: 0 }}>{d.name}</span>
+        <span style={{ position: "relative", flexShrink: 0, fontFamily: MONO, fontSize: 12, whiteSpace: "nowrap", color: rightColor || TEXT, padding: circled ? "0 4px" : 0 }}>
           {right}
-          {circled && <span style={{ position: "absolute", left: -8, right: -8, top: -5, bottom: -5, border: `1.8px solid ${RED}`, borderRadius: "50%", transform: "rotate(-3deg)", pointerEvents: "none" }} />}
-          {underline && <span style={{ position: "absolute", left: -2, right: -2, bottom: -3, borderTop: `1.8px solid ${RED}`, transform: "rotate(-1.5deg)" }} />}
+          {circled && <span style={{ position: "absolute", left: -9, right: -9, top: -7, bottom: -6, border: `1.8px solid ${RED}`, borderRadius: "50%", transform: "rotate(-3deg)", pointerEvents: "none" }} />}
+          {underline && <span style={{ position: "absolute", left: -16, right: -3, bottom: -4, borderTop: `1.8px solid ${RED}`, transform: "rotate(-1deg)", pointerEvents: "none" }} />}
         </span>
       </span>
-      <span style={{ display: "block", fontFamily: MONO, fontSize: 10.5, color: SOFT, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{meta}</span>
+      <span style={{ display: "block", fontFamily: MONO, fontSize: 11, color: SOFT, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{meta}</span>
     </button>
   );
 }
 
-function Hand({ children, color, style }) {
+function FillerRow({ d, why, onPick }) {
   return (
-    <span style={{ position: "absolute", fontFamily: HAND, fontSize: 17, fontWeight: 600, lineHeight: 1, color, pointerEvents: "none", whiteSpace: "nowrap", ...style }}>
-      {children}
-    </span>
+    <Row
+      d={d}
+      right={d.price > 0 ? money2(d.price) : "—"}
+      rightColor={FAINT}
+      meta={`${d.category || "Menu"} · ${d.awaiting ? "waiting on prices" : why}`}
+      onPick={onPick}
+    />
   );
 }
 
-export default function MenuAnalysis({ data = [], tgt = 70, restaurantName = "", onPick }) {
-  if (!data.length) {
+function Quadrant({ title, sub, children }) {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontFamily: SANS, fontSize: 12.5, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: INK, paddingBottom: 8, borderBottom: `1.5px solid ${INK}` }}>{title}</div>
+      <div style={{ fontFamily: MONO, fontSize: 11, color: SOFT, margin: "10px 0 6px" }}>{sub}</div>
+      {children}
+    </div>
+  );
+}
+
+function Note({ color, align = "left", tilt, children }) {
+  return (
+    <div style={{ fontFamily: HAND, fontSize: 18, fontWeight: 600, lineHeight: 1.1, color, textAlign: align, margin: align === "right" ? "2px 6px 0 0" : "2px 0 0 4px", transform: `rotate(${tilt})`, pointerEvents: "none" }}>
+      {children}
+    </div>
+  );
+}
+
+export default function MenuAnalysis({ dishes = [], tgt = 70, restaurantName = "", onPick }) {
+  if (!dishes.length) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 28px", gap: 10 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em" }}>Your recipes are in</div>
+        <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em" }}>Your menu analysis lives here</div>
         <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, maxWidth: 420 }}>
-          The menu analysis appears here as soon as your ingredient prices come in from your invoices.
+          Upload your menu and it fills in, then sharpens as invoice prices and POS sales come in.
         </div>
       </div>
     );
   }
 
-  const a = analyze(data, tgt);
-  const noSales = "Needs POS sales";
-  const topPricing = a.pricing[0];
-  const watch = topPricing ? costDriver(topPricing.d)?.ingredient : null;
+  const a = analyze(dishes, tgt);
+  const pick = makePicker(dishes);
+
+  // Measured rows first, in this order, so each dish lands in the quadrant it
+  // matters most to; fillers come after, from whatever is left.
+  const pressure = pick.real(a.pressure, (x) => x.d);
+  const pricing = pick.real(a.pricing, (x) => x.d);
+  const drivers = pick.real(a.drivers, (x) => x.d);
+  const gems = pick.real(a.gems, (d) => d);
+  const driverFill = pick.fill(drivers.length);
+  const pressureFill = pick.fill(pressure.length);
+  const pricingFill = pick.fill(pricing.length);
+  const gemFill = pick.fill(gems.length);
+
+  const watch = pricing[0] ? costDriver(pricing[0].d)?.ingredient : null;
+  const showPricingGap = pressure.length > 1 && pricing.length > 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
@@ -161,100 +227,70 @@ export default function MenuAnalysis({ data = [], tgt = 70, restaurantName = "",
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap" />
       </Head>
 
-      <div style={{ padding: "16px 22px 12px", flexShrink: 0 }}>
+      <div style={{ padding: "18px 26px 14px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
         <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent-deep)", marginBottom: 5 }}>The menu</div>
         <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.03em" }}>Menu analysis</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>Tonight's costs and the last 30 days of sales.</div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", background: "var(--panel)", padding: "30px 46px 34px", borderTop: "1px solid var(--line)" }}>
-        <div style={{ position: "relative", maxWidth: 660, margin: "0 auto", background: PAPER, border: "1px solid #e1ddd4", boxShadow: "0 2px 4px rgba(17,24,25,0.05), 0 14px 30px rgba(17,24,25,0.10)", padding: "42px 42px 40px", color: INK }}>
-          <div style={{ position: "absolute", left: "50%", top: -12, transform: "translateX(-50%)", width: 92, height: 24, background: "#2f3a3d", borderRadius: 4 }}>
-            <div style={{ position: "absolute", left: "50%", top: 10, transform: "translateX(-50%)", width: 46, height: 3, background: "#8e9a9d", borderRadius: 2 }} />
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", backgroundColor: "var(--panel)", backgroundImage: "radial-gradient(rgba(17,24,25,0.035) 1px, transparent 1px)", backgroundSize: "6px 6px", padding: "34px 24px 30px" }}>
+        <div style={{ position: "relative", maxWidth: 640, margin: "0 auto", background: PAPER, border: "1px solid #e4e0d6", boxShadow: "0 1px 2px rgba(17,24,25,0.06), 0 12px 28px rgba(17,24,25,0.12)", padding: "54px 42px 56px", color: TEXT, fontFamily: SANS }}>
+          <div style={{ position: "absolute", left: "50%", top: -12, transform: "translateX(-50%)", width: 92, height: 26, background: "#323c3f", borderRadius: 4, boxShadow: "0 2px 4px rgba(17,24,25,0.25)" }}>
+            <div style={{ position: "absolute", left: "50%", top: 11, transform: "translateX(-50%)", width: 50, height: 3, background: "#8d999c", borderRadius: 2 }} />
           </div>
 
           <div style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: SERIF, fontSize: 21, letterSpacing: "0.2em", textTransform: "uppercase" }}>{restaurantName}</div>
-            <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: SOFT, marginTop: 9 }}>Menu analysis · manager's copy</div>
+            <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: INK }}>{restaurantName}</div>
+            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.2em", textTransform: "uppercase", color: SOFT, marginTop: 10 }}>Menu analysis · manager's copy</div>
           </div>
-          <div style={{ borderTop: `1.5px solid ${INK}`, margin: "16px 0 22px" }} />
+          <div style={{ borderTop: "1.5px solid #2a2f31", margin: "18px 0 26px" }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "26px 38px" }}>
-            <Quadrant title="Profit drivers" sub="Highest weekly contribution" isEmpty={!a.drivers.length} empty={a.hasSales ? "Nothing yet" : noSales}>
-              {a.drivers.slice(0, 3).map((x, i) => (
-                <Row
-                  key={x.d.id}
-                  d={x.d}
-                  mark={i === 1 ? "teal" : null}
-                  right={`${money0(x.weekly)}/wk`}
-                  meta={`${x.d.category || "Menu"} · ${pct1(x.d.margin)} margin · ${x.d.covers} sold`}
-                  onPick={onPick}
-                />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "30px 38px" }}>
+            <Quadrant title="Profit drivers" sub="Highest weekly contribution">
+              {drivers.map((x, i) => (
+                <Row key={x.d.id} d={x.d} mark={i === 1 ? "teal" : null} right={`${money0(x.weekly)}/wk`}
+                  meta={`${x.d.category || "Menu"} · ${pct1(x.d.margin)} margin · ${x.d.covers} sold`} onPick={onPick} />
               ))}
+              {driverFill.map((d) => <FillerRow key={d.id} d={d} why="waiting on sales" onPick={onPick} />)}
             </Quadrant>
 
-            <div style={{ position: "relative" }}>
-              <Quadrant title="Cost pressure" sub="Largest plate-cost increases" isEmpty={!a.pressure.length} empty="No margin drops this month">
-                {a.pressure.slice(0, 3).map((x, i) => (
-                  <Row
-                    key={x.d.id}
-                    d={x.d}
-                    mark={i === 0 ? "yellow" : null}
-                    underline={i === 0}
-                    right={`↓ ${Math.abs(x.d.drift).toFixed(1)} pts`}
-                    rightStyle={{ color: RED }}
-                    meta={x.driver ? x.driver.label : "Plate cost rising"}
-                    onPick={onPick}
-                  />
-                ))}
-              </Quadrant>
-              {a.pressure.length > 1 && a.pricing.length > 0 && (
-                <Hand color={HAND_RED} style={{ right: -40, top: 150, transform: "rotate(-6deg)" }}>pricing gap</Hand>
-              )}
-            </div>
+            <Quadrant title="Cost pressure" sub="Largest plate-cost increases">
+              {pressure.map((x, i) => (
+                <Row key={x.d.id} d={x.d} mark={i === 0 ? "yellow" : null} underline={i === 0}
+                  right={`↓ ${Math.abs(x.d.drift).toFixed(1)} pts`} rightColor={RED}
+                  meta={x.driver ? x.driver.label : "Plate cost rising"} onPick={onPick} />
+              ))}
+              {pressureFill.map((d) => <FillerRow key={d.id} d={d} why="no cost change yet" onPick={onPick} />)}
+              {showPricingGap && <Note color={NOTE_RED} align="right" tilt="-4deg">pricing gap</Note>}
+            </Quadrant>
 
-            <div style={{ position: "relative" }}>
-              <Quadrant title="Pricing opportunities" sub="Popular dishes below target" isEmpty={!a.pricing.length} empty={a.hasSales ? "Every popular dish is on target" : noSales}>
-                {a.pricing.slice(0, 3).map((x, i) => (
-                  <Row
-                    key={x.d.id}
-                    d={x.d}
-                    mark={i === 0 ? "pink" : null}
-                    circled={i === 0}
-                    right={`+${money2(x.raise)}`}
-                    rightStyle={{ color: i === 0 ? RED : INK }}
-                    meta={`${pct1(x.d.margin)} margin · ${x.d.covers} sold`}
-                    onPick={onPick}
-                  />
-                ))}
-              </Quadrant>
-              {watch && (
-                <Hand color="#b07a1a" style={{ left: -72, top: 78, transform: "rotate(-8deg)", whiteSpace: "normal", width: 70 }}>watch {watch}</Hand>
-              )}
-            </div>
+            <Quadrant title="Pricing opportunities" sub="Popular dishes below target">
+              {pricing.map((x, i) => (
+                <Row key={x.d.id} d={x.d} mark={i === 0 ? "pink" : null} circled={i === 0}
+                  right={`+${money2(x.raise)}`} rightColor={i === 0 ? RED : TEXT}
+                  meta={`${pct1(x.d.margin)} margin · ${x.d.covers} sold`} onPick={onPick} />
+              ))}
+              {pricingFill.map((d) => <FillerRow key={d.id} d={d} why="waiting on sales" onPick={onPick} />)}
+              {watch && <Note color={NOTE_AMBER} tilt="-3deg">watch {watch}</Note>}
+            </Quadrant>
 
-            <div style={{ position: "relative" }}>
-              <Quadrant title="Hidden gems" sub="Strong margin, lower sales" isEmpty={!a.gems.length} empty={a.hasSales ? "Nothing hiding" : noSales}>
-                {a.gems.slice(0, 3).map((d, i) => (
-                  <Row
-                    key={d.id}
-                    d={d}
-                    mark={i === 1 ? "teal" : null}
-                    right={pct1(d.margin)}
-                    meta={`${d.covers} sold · ${d.category || "Menu"}`}
-                    onPick={onPick}
-                  />
-                ))}
-              </Quadrant>
-            </div>
+            <Quadrant title="Hidden gems" sub="Strong margin, lower sales">
+              {gems.map((d, i) => (
+                <Row key={d.id} d={d} mark={i === 1 ? "teal" : null} right={pct1(d.margin)}
+                  meta={`${d.covers} sold · ${d.category || "Menu"}`} onPick={onPick} />
+              ))}
+              {gemFill.map((d) => <FillerRow key={d.id} d={d} why="waiting on sales" onPick={onPick} />)}
+            </Quadrant>
           </div>
 
           {a.flagged > 0 && (
-            <div style={{ position: "absolute", right: 30, bottom: 18, transform: "rotate(-3deg)" }}>
-              <div style={{ padding: "6px 12px", border: `1.5px solid ${HAND_TEAL}`, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.14em", color: HAND_TEAL, background: "rgba(255,253,248,0.85)" }}>
+            <div style={{ position: "absolute", right: 26, bottom: 16, transform: "rotate(-3deg)" }}>
+              {gems.length > 0 && (
+                <span style={{ position: "absolute", right: 2, top: -24, fontFamily: HAND, fontSize: 18, fontWeight: 600, color: NOTE_TEAL, transform: "rotate(3deg)", whiteSpace: "nowrap" }}>promote this</span>
+              )}
+              <div style={{ padding: "6px 13px", border: `1.5px solid ${NOTE_TEAL}`, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.16em", color: NOTE_TEAL, background: "rgba(255,254,250,0.9)" }}>
                 {a.flagged} DISH{a.flagged === 1 ? "" : "ES"} FLAGGED
               </div>
-              {a.gems.length > 0 && <Hand color={HAND_TEAL} style={{ right: 4, top: -22, transform: "rotate(4deg)" }}>promote this</Hand>}
             </div>
           )}
         </div>

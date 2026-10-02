@@ -399,7 +399,7 @@ export default function MenuItemsScreen({
               />
             ) : (
               <MenuAnalysis
-                data={priced}
+                dishes={data}
                 tgt={tgt}
                 restaurantName={restaurantName}
                 onPick={(d) => { setFilter("All"); setSelectedId(d.id); }}
