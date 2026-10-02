@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import { MONO, SANS } from "./ClientChrome";
 
@@ -25,6 +25,8 @@ import { MONO, SANS } from "./ClientChrome";
  */
 
 const PER = 3;
+// The sheet is laid out at this width, then scaled to fit the card exactly.
+const SHEET_W = 700;
 const PAPER = "#fffefa";
 const INK = "#141a1b";
 const TEXT = "#1f2426";
@@ -193,6 +195,24 @@ function Note({ color, align = "left", tilt, children }) {
 }
 
 export default function MenuAnalysis({ dishes = [], tgt = 70, restaurantName = "", onPick }) {
+  // Scale the whole sheet so it always fits the card: no scrolling, any screen.
+  const fitRef = useRef(null);
+  const sheetRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const box = fitRef.current;
+    const sheet = sheetRef.current;
+    if (!box || !sheet) return;
+    const fit = () => {
+      const s = Math.min(box.clientWidth / sheet.offsetWidth, box.clientHeight / sheet.offsetHeight);
+      if (isFinite(s) && s > 0) setScale(Math.min(1.15, s));
+    };
+    fit();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    if (ro) { ro.observe(box); ro.observe(sheet); }
+    return () => ro && ro.disconnect();
+  }, [dishes]);
+
   if (!dishes.length) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px 28px", gap: 10 }}>
@@ -227,17 +247,11 @@ export default function MenuAnalysis({ dishes = [], tgt = 70, restaurantName = "
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap" />
       </Head>
 
-      <div style={{ padding: "18px 26px 14px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent-deep)", marginBottom: 5 }}>The menu</div>
-        <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.03em" }}>Menu analysis</div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>Tonight's costs and the last 30 days of sales.</div>
-      </div>
-
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", backgroundColor: "var(--panel)", backgroundImage: "radial-gradient(rgba(17,24,25,0.035) 1px, transparent 1px)", backgroundSize: "6px 6px", padding: "34px 24px 30px" }}>
-        <div style={{ position: "relative", maxWidth: 640, margin: "0 auto", background: PAPER, border: "1px solid #e4e0d6", boxShadow: "0 1px 2px rgba(17,24,25,0.06), 0 12px 28px rgba(17,24,25,0.12)", padding: "54px 42px 56px", color: TEXT, fontFamily: SANS }}>
-          <div style={{ position: "absolute", left: "50%", top: -12, transform: "translateX(-50%)", width: 92, height: 26, background: "#323c3f", borderRadius: 4, boxShadow: "0 2px 4px rgba(17,24,25,0.25)" }}>
-            <div style={{ position: "absolute", left: "50%", top: 11, transform: "translateX(-50%)", width: 50, height: 3, background: "#8d999c", borderRadius: 2 }} />
-          </div>
+      <div ref={fitRef} style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: PAPER }}>
+        <div style={{ position: "absolute", left: "50%", top: 0, transform: "translateX(-50%)", width: 92, height: 22, background: "#323c3f", borderRadius: "0 0 5px 5px", boxShadow: "0 2px 4px rgba(17,24,25,0.25)", zIndex: 1 }}>
+          <div style={{ position: "absolute", left: "50%", top: 9, transform: "translateX(-50%)", width: 50, height: 3, background: "#8d999c", borderRadius: 2 }} />
+        </div>
+        <div ref={sheetRef} style={{ position: "absolute", top: 0, left: "50%", width: SHEET_W, boxSizing: "border-box", transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center", padding: "50px 46px 60px", color: TEXT, fontFamily: SANS }}>
 
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: INK }}>{restaurantName}</div>

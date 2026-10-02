@@ -305,10 +305,12 @@ export default function MenuItemsScreen({
           </div>
         </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
+                {/* Dish cards: 3 columns, 4 on wide screens. The menu takes the other half. */}
+                <style>{`.mi-cards{grid-template-columns:repeat(3,minmax(0,1fr))}@media (min-width:1500px){.mi-cards{grid-template-columns:repeat(4,minmax(0,1fr))}}`}</style>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="mi-grid-wrap" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             {layout === "cards" ? (
-              <div style={{ flex: 1, minHeight: 0, overflowY: "auto", margin: "8px 6px 0 0", padding: "6px 10px 14px 16px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 14, alignContent: "start", scrollbarGutter: "stable" }}>
+              <div className="mi-cards" style={{ flex: 1, minHeight: 0, overflowY: "auto", margin: "8px 6px 0 0", padding: "6px 10px 14px 16px", display: "grid", gap: 14, alignContent: "start", scrollbarGutter: "stable" }}>
                 {shown.map((d) => {
                   const active = selected && d.id === selected.id;
                   return (
