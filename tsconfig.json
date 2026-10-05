@@ -23,7 +23,7 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx"
-  ],
+, "pages/api/webhooks/shift4.js"  ],
   "exclude": [
     "node_modules"
   ]
