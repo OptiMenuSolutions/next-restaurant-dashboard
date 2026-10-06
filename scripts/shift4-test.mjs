@@ -104,7 +104,7 @@ async function testFetchTickets() {
   const toIso = `${to}T23:59:59Z`;
 
   const path = `/pos/v2/${LOCATION_ID}/tickets`;
-  const qs = `filter[dateTimeFrom]=${encodeURIComponent(fromIso)}&filter[dateTimeTo]=${encodeURIComponent(toIso)}&limit=10`;
+  const qs = `filter[dateTimeFrom]=${from}&filter[dateTimeTo]=${to}`;
   
   const headers = buildHmacHeaders({
     clientId: CLIENT_ID,
