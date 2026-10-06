@@ -1,7 +1,6 @@
 {
   "name": "restaurant-dashboard",
   "version": "0.1.0",
-  "type": "module",
   "private": true,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.60.0",
