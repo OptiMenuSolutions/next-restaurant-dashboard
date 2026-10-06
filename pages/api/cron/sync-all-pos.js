@@ -1,22 +1,7 @@
 // pages/api/cron/sync-all-pos.js
-// Runs daily. pages/api/pos/sync.js only syncs one restaurant on-demand
-// (triggered by an authenticated user, e.g. a "sync now" button) — nothing
-// calls it automatically for every connected restaurant on a schedule. This
-// is that missing piece: loop every `connected` pos_connections row and run
-// the same sync logic pos/sync.js already implements.
 //
-// Deliberately NOT refactored to share code with pos/sync.js — that file
-// was handed over already complete and working; duplicating its ~20 lines
-// of sync logic here felt lower-risk than restructuring it into a shared
-// helper this late. If you'd rather have one shared implementation, say so
-// and I'll factor it out.
-//
-// SETUP REQUIRED: same CRON_SECRET pattern as the other cron jobs. Add to
-// vercel.json's crons array — daily, after most of a restaurant's service
-// hours are over, e.g.:
-//   { "path": "/api/cron/sync-all-pos", "schedule": "0 8 * * *" }
-// (08:00 UTC — adjust to your actual restaurants' timezone/closing time;
-// this is a guess, not a confirmed-correct value.)
+// Unified daily POS sync for all providers (Square, Shift4, etc.)
+// Handles both OAuth2 (Square) and HMAC (Shift4) auth patterns.
 
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
@@ -27,9 +12,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// 3-day window, not 1 — catches any late-posting transactions from a
-// previous day that hadn't settled yet at the time of the last sync,
-// without needing to track a per-connection "last synced through" cursor.
 function defaultRange(days = 3) {
   const to = new Date();
   const from = new Date();
@@ -44,6 +26,8 @@ async function syncConnection(conn, range) {
   const provider = getProvider(conn.provider);
 
   let connection = conn;
+
+  // ─── Handle OAuth2 refresh (Square, etc.) ───────────────────────────────
   if (provider.authType === 'oauth2' && conn.expires_at) {
     const soon = new Date(Date.now() + 5 * 60 * 1000);
     if (new Date(conn.expires_at) < soon) {
@@ -62,8 +46,10 @@ async function syncConnection(conn, range) {
     }
   }
 
+  // ─── Fetch sales from provider ──────────────────────────────────────────
   const records = await provider.fetchSales(connection, range);
 
+  // ─── Delete old records in date range (except user uploads) ────────────
   await supabase
     .from('pos_sales')
     .delete()
@@ -73,6 +59,7 @@ async function syncConnection(conn, range) {
     .gte('sale_date', range.from)
     .lte('sale_date', range.to);
 
+  // ─── Insert new records ───────────────────────────────────────────────
   if (records.length) {
     const rows = records.map((r) => ({
       ...r,
@@ -86,6 +73,7 @@ async function syncConnection(conn, range) {
     }
   }
 
+  // ─── Update connection status ──────────────────────────────────────────
   await supabase
     .from('pos_connections')
     .update({

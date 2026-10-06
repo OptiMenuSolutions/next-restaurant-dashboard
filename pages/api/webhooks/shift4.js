@@ -1,17 +1,7 @@
 // pages/api/webhooks/shift4.js
 //
 // Shift4 Marketplace Installation Request webhook receiver.
-//
-// Flow:
-//   1. Shift4 POSTs marketplace.InstallationRequest.created webhook
-//   2. Verify HMAC signature (must be valid)
-//   3. Fetch full request details from Shift4 API (GET /marketplace/v2/locations/{locationId}/requests/installations/{guid})
-//   4. Create auth user in Supabase
-//   5. Insert profiles row (trigger auto-creates restaurants row)
-//   6. Create shift4_connections record linking restaurant to location_id
-//   7. Send password reset email via Resend (they set password + sign in)
-//   8. PATCH request to FULFILLED (green checkmark appears in Shift4)
-//   9. Respond 200 to acknowledge webhook
+// Writes to pos_connections (unified POS provider table).
 
 import { createClient } from "@supabase/supabase-js";
 import { verifyWebhook, buildHmacHeaders } from "../../../lib/pos/hmac-auth.js";
@@ -40,7 +30,6 @@ function err(...args) {
 }
 
 export default async function handler(req, res) {
-  // Only POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -62,7 +51,7 @@ export default async function handler(req, res) {
         clientSecret,
         signature,
         timestamp: Number(timestamp),
-        path: "/webhooks/shift4", // Your webhook path
+        path: "/webhooks/shift4",
         body: JSON.stringify(req.body),
       });
       if (!valid) {
@@ -127,13 +116,12 @@ export default async function handler(req, res) {
     log(`Creating account for: ${restaurantName} (${merchantEmail})`);
 
     // ─── 4. Create auth user ─────────────────────────────────────────────
-    // Generate a random password (user will reset it via email link)
     const tempPassword = Math.random().toString(36).slice(-16);
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: merchantEmail,
       password: tempPassword,
-      email_confirm: true, // auto-confirm so they can sign in after password reset
+      email_confirm: true,
       user_metadata: { full_name: fullName, shift4_location_id: locationId },
     });
 
@@ -154,7 +142,6 @@ export default async function handler(req, res) {
 
     if (profileError) {
       err("Failed to insert profile:", profileError);
-      // Don't fail hard here; profile might exist. Continue and try to PATCH.
     } else {
       log(`Created profile row for ${userId}`);
     }
@@ -174,21 +161,24 @@ export default async function handler(req, res) {
     const restaurantId = restaurants.id;
     log(`Restaurant created: ${restaurantId}`);
 
-    // ─── 7. Create shift4_connections record ──────────────────────────────
+    // ─── 7. Create pos_connections record for Shift4 ──────────────────────
     const { error: connectionError } = await supabaseAdmin
-      .from("shift4_connections")
+      .from("pos_connections")
       .insert({
         restaurant_id: restaurantId,
+        provider: "shift4",
         shift4_location_id: locationId,
         shift4_merchant_id: location?.merchantId || null,
+        status: "connected",
+        last_synced_at: null,
       });
 
     if (connectionError) {
-      err("Failed to create shift4_connections:", connectionError);
+      err("Failed to create pos_connections:", connectionError);
       return res.status(500).json({ error: "Failed to link Shift4 location" });
     }
 
-    log(`Created shift4_connections: restaurant ${restaurantId} <-> location ${locationId}`);
+    log(`Created pos_connections: restaurant ${restaurantId}, provider shift4, location ${locationId}`);
 
     // ─── 8. Send password reset email via Resend ─────────────────────────
     log(`Sending password reset email to ${merchantEmail}`);
@@ -220,7 +210,6 @@ export default async function handler(req, res) {
 
     if (!emailRes.data?.id) {
       err("Failed to send email:", emailRes.error);
-      // Don't fail hard — we created the account. Email might retry.
     } else {
       log(`Email sent: ${emailRes.data.id}`);
     }
@@ -247,7 +236,6 @@ export default async function handler(req, res) {
 
     if (!patchRes.ok) {
       err("Failed to PATCH request:", patchData);
-      // Still respond 200 since we did the work; Shift4 will retry if needed
     } else {
       log("Request PATCHED to FULFILLED");
     }
