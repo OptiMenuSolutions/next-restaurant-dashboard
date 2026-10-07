@@ -31,7 +31,11 @@ export default async function handler(req, res) {
   const { data: { user }, error: authError } = await supabase.auth.getUser(token);
   if (authError || !user) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { restaurantId, provider: providerId } = req.body || {};
+  const { restaurantId, provider: providerId, returnTo } = req.body || {};
+  // Where to send the user when the connect flow ends. Only our own pages.
+  const safeReturnTo = ['/client/profile', '/client/dashboard?justOnboarded=true'].includes(returnTo)
+    ? returnTo
+    : '/client/profile';
   if (!restaurantId || !providerId) {
     return res.status(400).json({ error: 'restaurantId and provider are required' });
   }
@@ -56,7 +60,7 @@ export default async function handler(req, res) {
   }
 
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/pos/oauth-callback`;
-  const state = signState({ restaurantId, provider: providerId, ts: Date.now() });
+  const state = signState({ restaurantId, provider: providerId, returnTo: safeReturnTo, ts: Date.now() });
   const url = provider.getAuthUrl({ state, redirectUri });
 
   return res.status(200).json({ url });

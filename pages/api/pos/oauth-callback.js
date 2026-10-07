@@ -27,22 +27,24 @@ function verifyState(state) {
   return JSON.parse(Buffer.from(data, 'base64url').toString());
 }
 
-function back(res, query) {
-  return res.redirect(`${APP_URL}/client/settings?${query}`);
+function back(res, query, returnTo = '/client/profile') {
+  const sep = returnTo.includes('?') ? '&' : '?';
+  return res.redirect(`${APP_URL}${returnTo}${sep}${query}`);
 }
 
 export default async function handler(req, res) {
   const { code, state, error: providerError } = req.query;
 
-  if (providerError) return back(res, `pos=denied`);
-  if (!code || !state) return back(res, `pos=error`);
-
-  let parsed;
+  let parsed = null;
   try {
     parsed = verifyState(state);
   } catch {
-    return back(res, `pos=error`);
+    // handled below
   }
+  const returnTo = parsed?.returnTo || '/client/profile';
+
+  if (providerError) return back(res, `pos=denied`, returnTo);
+  if (!code || !parsed) return back(res, `pos=error`, returnTo);
 
   const { restaurantId, provider: providerId } = parsed;
 
@@ -51,12 +53,12 @@ export default async function handler(req, res) {
     const redirectUri = `${APP_URL}/api/pos/oauth-callback`;
     const result = await provider.exchangeCode({ code, redirectUri });
 
-    await supabase
+    const { error: upsertError } = await supabase
       .from('pos_connections')
       .upsert({
         restaurant_id: restaurantId,
         provider: providerId,
-        status: 'connected',
+        status: result.pendingLocation ? 'pending' : 'connected',
         access_token: result.accessToken,
         refresh_token: result.refreshToken,
         merchant_id: result.merchantId,
@@ -65,10 +67,16 @@ export default async function handler(req, res) {
         last_error: null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'restaurant_id,provider' });
+    if (upsertError) throw new Error(upsertError.message);
 
-    return back(res, `pos=connected&provider=${providerId}`);
+    // Shift4: the merchant still has to pick which location to connect.
+    if (result.pendingLocation) {
+      return res.redirect(`${APP_URL}/client/connect-shift4?returnTo=${encodeURIComponent(returnTo)}`);
+    }
+
+    return back(res, `pos=connected&provider=${providerId}`, returnTo);
   } catch (err) {
     console.error(`[pos/oauth-callback] ${providerId} connect failed:`, err.message);
-    return back(res, `pos=error`);
+    return back(res, `pos=error`, returnTo);
   }
 }

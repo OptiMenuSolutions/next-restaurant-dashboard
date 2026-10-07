@@ -266,7 +266,7 @@ export default function OnboardingPage() {
             const res = await fetch("/api/pos/oauth-start", {
               method: "POST",
               headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
-              body: JSON.stringify({ restaurantId, provider: key }),
+              body: JSON.stringify({ restaurantId, provider: key, returnTo: "/client/dashboard?justOnboarded=true" }),
             });
             const json = await res.json();
             if (!res.ok) throw new Error(json.error || "Could not start POS connection.");
