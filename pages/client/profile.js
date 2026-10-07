@@ -37,6 +37,7 @@ export default function ProfilePage() {
   const [targetFoodCost, setTargetFoodCost] = useState(30);
   const [notifPrefs, setNotifPrefs] = useState({ weekly: true, priceAlert: true, lowMargin: false });
   const [freezeSettings, setFreezeSettings] = useState({ beef: false, poultry: false, pork: false, seafood: false, bakery: false });
+  const [posConnection, setPosConnection] = useState(null); // { status, lastSyncedAt, lastError }
 
   // Launch a new menu
   const menuFileInput = useRef(null);
@@ -91,6 +92,21 @@ export default function ProfilePage() {
     })();
     return () => { cancelled = true; };
   }, [router]);
+
+  // Shift4 connection status for the Point of sale card. Read through an API
+  // route so OAuth tokens on pos_connections never reach the browser.
+  useEffect(() => {
+    if (!restaurantId) return;
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/pos/shift4/status", { headers: { Authorization: `Bearer ${session?.access_token}` } });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (!cancelled) setPosConnection(json.connection);
+    })().catch((err) => console.error("[profile] Shift4 status failed:", err));
+    return () => { cancelled = true; };
+  }, [restaurantId]);
 
   const saveName = async (name) => {
     const { error: authError } = await supabase.auth.updateUser({ data: { full_name: name } });
@@ -218,6 +234,30 @@ export default function ProfilePage() {
     }
   };
 
+  const connectShift4 = async () => {
+    if (!restaurantId) throw new Error("No restaurant on this account yet.");
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/pos/oauth-start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ restaurantId, provider: "shift4", returnTo: "/client/profile" }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Could not start the Shift4 connection.");
+    window.location.href = json.url;
+  };
+
+  const disconnectShift4 = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/pos/shift4/disconnect", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Could not disconnect Shift4.");
+    setPosConnection((c) => (c ? { ...c, status: "disconnected" } : c));
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     router.push("/client/login");
@@ -265,6 +305,10 @@ export default function ProfilePage() {
           router.push("/client/dashboard?tour=true");
         }}
         onSignOut={signOut}
+        posConnection={posConnection}
+        posResult={typeof router.query.pos === "string" ? router.query.pos : null}
+        onConnectShift4={connectShift4}
+        onDisconnectShift4={disconnectShift4}
       />
 
       <input

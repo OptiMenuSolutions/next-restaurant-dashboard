@@ -29,6 +29,54 @@ function err(...args) {
   console.error("[shift4-webhook ERROR]", ...args);
 }
 
+// Shift4 signs the exact bytes it sends, so we need the raw body. With Next.js
+// parsing it first, re-stringifying can change spacing or key order and break
+// the signature match.
+export const config = { api: { bodyParser: false } };
+
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+// Must match the path of the webhook URL registered with Shift4.
+const WEBHOOK_PATH = "/api/webhooks/shift4";
+
+// marketplace.Location.deleted: the merchant uninstalled OptiMenu in Shift4.
+// Stop syncing that location. Safe to receive twice: a repeat finds nothing
+// left to update and still returns 200.
+async function handleLocationDeleted(payload, res) {
+  const locationId = Number(payload?.locationId);
+  if (!Number.isInteger(locationId)) {
+    log("Location.deleted without a usable locationId");
+    return res.status(400).json({ error: "Missing locationId" });
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("pos_connections")
+    .update({
+      status: "disconnected",
+      shift4_location_id: null,
+      access_token: null,
+      refresh_token: null,
+      expires_at: null,
+      last_error: "Uninstalled from the Shift4 Marketplace",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("provider", "shift4")
+    .eq("shift4_location_id", locationId)
+    .select("restaurant_id");
+
+  if (error) {
+    err("Failed to disconnect uninstalled location:", error.message);
+    return res.status(500).json({ error: "Failed to process uninstall" }); // non-2xx so Shift4 retries
+  }
+
+  log(`Location ${locationId} uninstalled, disconnected ${data?.length || 0} connection(s)`);
+  return res.status(200).json({ ok: true });
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -44,6 +92,12 @@ export default async function handler(req, res) {
       log("Missing auth headers");
       return res.status(401).json({ error: "Missing auth headers" });
     }
+    if (accessKey !== clientId) {
+      log("Webhook signed for a different client id");
+      return res.status(401).json({ error: "Invalid access key" });
+    }
+
+    const rawBody = await readRawBody(req);
 
     try {
       const valid = verifyWebhook({
@@ -51,8 +105,8 @@ export default async function handler(req, res) {
         clientSecret,
         signature,
         timestamp: Number(timestamp),
-        path: "/webhooks/shift4",
-        body: JSON.stringify(req.body),
+        path: WEBHOOK_PATH,
+        body: rawBody,
       });
       if (!valid) {
         log("Signature verification failed");
@@ -64,9 +118,22 @@ export default async function handler(req, res) {
     }
 
     // ─── 2. Parse webhook payload ────────────────────────────────────────
-    const { event, payload } = req.body;
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return res.status(400).json({ error: "Invalid JSON" });
+    }
+    const { event, payload } = body;
+
+    if (event?.name === "marketplace.Location.deleted") {
+      return handleLocationDeleted(payload, res);
+    }
+
+    // Installation Request handling below stays until Shift4 moves OptiMenu
+    // to the OAuth Token Flow, then it can be removed.
     if (event?.name !== "marketplace.InstallationRequest.created") {
-      log("Ignoring non-installation-request event:", event?.name);
+      log("Ignoring event:", event?.name);
       return res.status(200).json({ ok: true });
     }
 

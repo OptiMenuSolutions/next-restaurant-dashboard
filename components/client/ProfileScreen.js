@@ -30,6 +30,7 @@ export default function ProfileScreen({
   onSaveName, onSaveRestaurant, onSaveFoodCost, onSaveFreezeSetting, onSavePassword,
   onToggleNotif, onExportData, onDeleteAccount, onSendFeedback, onRestartTour,
   onSignOut, NavLink, initialTab = "account", onLaunchNewMenu, launchingMenu = false,
+  posConnection = null, posResult = null, onConnectShift4, onDisconnectShift4,
 }) {
   const { header, theme } = useAccountChrome({ user, NavLink, onSignOut });
 
@@ -65,6 +66,23 @@ export default function ProfileScreen({
     setMessage({ text, isError });
     setTimeout(() => setMessage(null), 3500);
   };
+
+  // Coming back from the Shift4 connect flow (?pos=...): open the Restaurant
+  // tab, where the POS card lives, and say how it went.
+  const [posBusy, setPosBusy] = useState(false);
+  useEffect(() => {
+    if (!posResult) return;
+    setActiveTab("restaurant");
+    const results = {
+      connected: ["Shift4 connected. Sales will sync tonight.", false],
+      denied: ["Shift4 connection was cancelled. You can try again anytime.", true],
+      cancelled: ["Shift4 connection was cancelled. You can try again anytime.", true],
+      error: ["Could not connect Shift4. Please try again.", true],
+    };
+    const [text, isError] = results[posResult] || results.error;
+    flash(text, isError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posResult]);
 
   const initials = (user.name || "U").split(" ").map((p) => p.charAt(0)).join("").substring(0, 2).toUpperCase();
 
@@ -310,6 +328,51 @@ export default function ProfileScreen({
                   <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2, lineHeight: 1.5 }}>Upload your updated menu. Dishes you keep hold on to their history and recipes, prices update, new dishes come to you for review, and dishes you've dropped are archived.</div>
                 </div>
                 <div style={{ color: "var(--faint)", flexShrink: 0 }}>→</div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "restaurant" && onConnectShift4 && (
+            <div style={{ ...card, marginBottom: 20 }}>
+              <div style={cardHead}>Point of sale</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>
+                    {posConnection?.status === "connected" ? "Shift4 connected" : posConnection?.status === "error" ? "Shift4 sync problem" : "Shift4 / SkyTab"}
+                  </div>
+                  <div style={{ fontSize: 12, color: posConnection?.status === "error" ? "var(--red)" : "var(--faint)", marginTop: 2, lineHeight: 1.5 }}>
+                    {posConnection?.status === "connected"
+                      ? (posConnection.lastSyncedAt ? `Last synced ${new Date(posConnection.lastSyncedAt).toLocaleString()}` : "First sync runs tonight.")
+                      : posConnection?.status === "error"
+                        ? "Your last sync failed. Reconnect Shift4 to resume syncing."
+                        : "Connect your Shift4 POS to sync sales automatically every night."}
+                  </div>
+                </div>
+                {posConnection?.status === "connected" ? (
+                  <button
+                    type="button" disabled={posBusy} style={{ ...cancelBtn, opacity: posBusy ? 0.6 : 1 }}
+                    onClick={async () => {
+                      if (!window.confirm("Disconnect Shift4? OptiMenu will stop syncing your sales. Sales already synced are kept.")) return;
+                      setPosBusy(true);
+                      try { await onDisconnectShift4?.(); flash("Shift4 disconnected"); }
+                      catch (e) { flash(e?.message || "Could not disconnect Shift4", true); }
+                      finally { setPosBusy(false); }
+                    }}
+                  >
+                    {posBusy ? "Disconnecting…" : "Disconnect"}
+                  </button>
+                ) : (
+                  <button
+                    type="button" disabled={posBusy} style={{ ...saveBtn, opacity: posBusy ? 0.6 : 1 }}
+                    onClick={async () => {
+                      setPosBusy(true);
+                      try { await onConnectShift4(); } // navigates away to Shift4 on success
+                      catch (e) { flash(e?.message || "Could not start the Shift4 connection", true); setPosBusy(false); }
+                    }}
+                  >
+                    {posBusy ? "Opening Shift4…" : posConnection?.status === "error" ? "Reconnect" : "Connect"}
+                  </button>
+                )}
               </div>
             </div>
           )}
