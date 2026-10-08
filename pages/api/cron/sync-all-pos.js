@@ -6,6 +6,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { sendCronAlert } from '../../../lib/cronAlert';
+import { saveTickets } from '../../../lib/pos/saveTickets';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -46,8 +47,16 @@ async function syncConnection(conn, range) {
     }
   }
 
-  // ─── Fetch sales from provider ──────────────────────────────────────────
-  const records = await provider.fetchSales(connection, range);
+  // ─── Fetch sales (and raw tickets, if the provider supports it) ─────────
+  let records;
+  let tickets = null;
+  if (typeof provider.fetchSalesAndTickets === 'function') {
+    const result = await provider.fetchSalesAndTickets(connection, range);
+    records = result.sales;
+    tickets = result.tickets;
+  } else {
+    records = await provider.fetchSales(connection, range);
+  }
 
   // ─── Delete old records in date range (except user uploads) ────────────
   await supabase
@@ -73,6 +82,23 @@ async function syncConnection(conn, range) {
     }
   }
 
+  // ─── Save raw tickets and lines ─────────────────────────────────────────
+  // A failure here alerts but does not fail the connection: pos_sales is
+  // already saved, and marking the connection error would stop future syncs.
+  let ticketCounts = { tickets: 0, lines: 0 };
+  if (tickets) {
+    try {
+      ticketCounts = await saveTickets(supabase, {
+        restaurantId: conn.restaurant_id,
+        posSystem: conn.provider,
+        tickets,
+      });
+    } catch (err) {
+      console.error(`[cron:sync-all-pos] ticket save failed for ${conn.restaurant_id}:`, err.message);
+      await sendCronAlert('POS sync cron', `Sales synced but raw tickets failed to save for restaurant ${conn.restaurant_id}.`, [err.message]);
+    }
+  }
+
   // ─── Update connection status ──────────────────────────────────────────
   await supabase
     .from('pos_connections')
@@ -84,7 +110,7 @@ async function syncConnection(conn, range) {
     })
     .eq('id', conn.id);
 
-  return records.length;
+  return { rows: records.length, ...ticketCounts };
 }
 
 export default async function handler(req, res) {
@@ -112,9 +138,9 @@ export default async function handler(req, res) {
 
   for (const conn of connections) {
     try {
-      const rowCount = await syncConnection(conn, range);
-      results.success.push({ restaurantId: conn.restaurant_id, provider: conn.provider, rows: rowCount });
-      console.log(`[cron:sync-all-pos] ✓ ${conn.provider} for ${conn.restaurant_id} — ${rowCount} rows`);
+      const counts = await syncConnection(conn, range);
+      results.success.push({ restaurantId: conn.restaurant_id, provider: conn.provider, ...counts });
+      console.log(`[cron:sync-all-pos] ✓ ${conn.provider} for ${conn.restaurant_id} — ${counts.rows} sales rows, ${counts.tickets} tickets, ${counts.lines} lines`);
     } catch (err) {
       results.failed.push({ restaurantId: conn.restaurant_id, provider: conn.provider, error: err.message });
       console.error(`[cron:sync-all-pos] ✗ ${conn.provider} for ${conn.restaurant_id}:`, err.message);
