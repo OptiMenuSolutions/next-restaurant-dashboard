@@ -74,7 +74,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         .lte('invoices.date', snapshotDate),
       supabase
         .from('pos_sales')
-        .select('item_name,quantity_sold,sale_date')
+        .select('item_name,quantity_sold,refunds,sale_date')
         .eq('restaurant_id', restaurantId)
         .gte('sale_date', fromDate)
         .lte('sale_date', snapshotDate),

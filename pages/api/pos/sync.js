@@ -13,6 +13,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
+import { saveTickets } from '../../../lib/pos/saveTickets';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -88,10 +89,18 @@ export default async function handler(req, res) {
     }
 
     // ── Pull + normalize ─────────────────────────────────────────────────────--
-    const records = await provider.fetchSales(connection, range);
+    let records;
+    let tickets = null;
+    if (typeof provider.fetchSalesAndTickets === 'function') {
+      const result = await provider.fetchSalesAndTickets(connection, range);
+      records = result.sales;
+      tickets = result.tickets;
+    } else {
+      records = await provider.fetchSales(connection, range);
+    }
 
     // ── Idempotent replace of this provider's API rows in the range ────────────
-    await supabase
+    const { error: deleteError } = await supabase
       .from('pos_sales')
       .delete()
       .eq('restaurant_id', restaurantId)
@@ -99,6 +108,7 @@ export default async function handler(req, res) {
       .is('upload_session_id', null)
       .gte('sale_date', range.from)
       .lte('sale_date', range.to);
+    if (deleteError) throw new Error(`pos_sales delete failed: ${deleteError.message}`);
 
     if (records.length) {
       const rows = records.map(r => ({
@@ -113,6 +123,21 @@ export default async function handler(req, res) {
       }
     }
 
+    // Raw tickets: a failure is logged but does not fail the sync, since
+    // pos_sales is already saved.
+    let ticketCounts = { tickets: 0, lines: 0 };
+    if (tickets) {
+      try {
+        ticketCounts = await saveTickets(supabase, {
+          restaurantId,
+          posSystem: conn.provider,
+          tickets,
+        });
+      } catch (err) {
+        console.error(`[pos/sync] ticket save failed for ${restaurantId}:`, err.message);
+      }
+    }
+
     await supabase
       .from('pos_connections')
       .update({
@@ -123,7 +148,7 @@ export default async function handler(req, res) {
       })
       .eq('id', conn.id);
 
-    return res.status(200).json({ synced: records.length, from: range.from, to: range.to });
+    return res.status(200).json({ synced: records.length, ...ticketCounts, from: range.from, to: range.to });
 
   } catch (err) {
     console.error(`[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`, err.message);
