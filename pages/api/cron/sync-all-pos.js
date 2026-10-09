@@ -59,7 +59,7 @@ async function syncConnection(conn, range) {
   }
 
   // ─── Delete old records in date range (except user uploads) ────────────
-  await supabase
+  const { error: deleteError } = await supabase
     .from('pos_sales')
     .delete()
     .eq('restaurant_id', conn.restaurant_id)
@@ -67,6 +67,7 @@ async function syncConnection(conn, range) {
     .is('upload_session_id', null)
     .gte('sale_date', range.from)
     .lte('sale_date', range.to);
+  if (deleteError) throw new Error(`pos_sales delete failed: ${deleteError.message}`);
 
   // ─── Insert new records ───────────────────────────────────────────────
   if (records.length) {
