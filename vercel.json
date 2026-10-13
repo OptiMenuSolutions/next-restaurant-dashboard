@@ -32,8 +32,8 @@
       "schedule": "0 7 * * *"
     },
     { 
-      "path": "/api/admin/shift4-menu?locationId=20803",
-      "schedule": "0 12 * * *"
+      "path": "/api/cron/sync-pos-menu", 
+      "schedule": "45 7 * * *" 
     }
   ]
 }
