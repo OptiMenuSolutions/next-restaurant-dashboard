@@ -8,7 +8,13 @@
 // Usage (PowerShell):
 //   curl.exe -H "Authorization: Bearer YOUR_CRON_SECRET" "https://opti-menu.com/api/admin/shift4-menu?locationId=20803" -o shift4-menu.json
 
+import { createClient } from '@supabase/supabase-js';
 import { buildHmacHeaders } from '../../../lib/pos/hmac-auth.js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 const API_BASE = process.env.SHIFT4_API_HOST || 'https://conecto-api.shift4payments.com';
 const CLIENT_ID = process.env.SHIFT4_CLIENT_ID;
@@ -51,6 +57,13 @@ export default async function handler(req, res) {
     }
 
     console.log(`[admin/shift4-menu] location ${locationId}: HTTP ${response.status}`, JSON.stringify(summary));
+
+    // Saved so a run from the Vercel Cron Jobs page can be read back in Supabase.
+    const { error: saveError } = await supabase.from('debug_payloads').insert({
+      label: `shift4-menu ${locationId} HTTP ${response.status}`,
+      payload: { shift4Status: response.status, locationId, summary, data },
+    });
+    if (saveError) console.error('[admin/shift4-menu] save failed:', saveError.message);
     return res.status(200).json({ shift4Status: response.status, locationId, summary, data });
   } catch (err) {
     console.error('[admin/shift4-menu] request failed:', err.message);
