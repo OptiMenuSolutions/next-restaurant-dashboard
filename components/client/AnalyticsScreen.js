@@ -127,14 +127,9 @@ export default function AnalyticsScreen({
 }) {
   const [theme, toggleTheme] = useTheme(themeProp, defaultTheme, onThemeChange);
   const isMobile = useIsMobile(900);
-  const [range, setRange] = useState("14d");
+  const [range, setRange] = useState("28d");
   const [trendMetric, setTrendMetric] = useState("rev");
-  const [rhythmView, setRhythmView] = useState("day");
-  const [openHour, setOpenHour] = useState(null);
-  const [moversTab, setMoversTab] = useState("top");
-  const [moversMetric, setMoversMetric] = useState("qty");
-  const [selected, setSelected] = useState(null);
-  const [matrixHover, setMatrixHover] = useState(null);
+  const [sortBy, setSortBy] = useState("margin");
   const [hoverIdx, setHoverIdx] = useState(null);
 
   const days = useMemo(() => normalise(daysProp || DEMO_DAYS), [daysProp]);
@@ -172,81 +167,73 @@ export default function AnalyticsScreen({
     );
   }
 
-  /* ── win + KPIs ─────────────────────────────────────────────────── */
-  const span = range === "7d" ? Math.min(7, days.length) : range === "14d" ? Math.min(14, days.length) : range === "30d" ? Math.min(30, days.length) : days.length;
+  /* ── window + KPIs ─────────────────────────────────────────────── */
+  const span = range === "7d" ? Math.min(7, days.length) : range === "14d" ? Math.min(14, days.length) : Math.min(28, days.length);
   const win = days.slice(-span);
   const prior = days.slice(Math.max(0, days.length - span * 2), days.length - span);
   const sum = (arr, k) => arr.reduce((a, x) => a + x[k], 0);
   const rev = sum(win, "rev"), cogs = sum(win, "cogs"), qty = sum(win, "qty");
-  const pRev = sum(prior, "rev"), pQty = sum(prior, "qty");
   const costedRev = sum(win, "costedRev");
+  const pRev = sum(prior, "rev"), pQty = sum(prior, "qty"), pCogs = sum(prior, "cogs"), pCostedRev = sum(prior, "costedRev");
   // Food cost and margin cover only sales of dishes with a known cost.
   // With none costed, both show a dash rather than a number built on guesses.
   const contribution = costedRev ? costedRev - cogs : null;
   const foodCost = costedRev ? (cogs / costedRev) * 100 : null;
+  const pContribution = pCostedRev ? pCostedRev - pCogs : null;
+  const pFoodCost = pCostedRev ? (pCogs / pCostedRev) * 100 : null;
   const costedShare = rev ? costedRev / rev : 0;
-  const coverageNote = !costedRev
-    ? "awaiting pricing"
-    : costedShare < 0.995 ? `${Math.round(costedShare * 100)}% of sales costed` : "";
+  const fcColor = (v) => (v == null ? "var(--faint)" : v > targetFoodCost ? "var(--red)" : "var(--text)");
 
-  const deltaLabel = (now, was) => (was ? (now >= was ? "+" : "−") + Math.abs(((now - was) / was) * 100).toFixed(1) + "%" : "—");
-  const deltaColor = (now, was) => (!was ? "var(--faint)" : now > was * 1.01 ? "var(--green)" : now < was * 0.99 ? "var(--red)" : "var(--faint)");
-
-  const kpis = [
-    { label: "Net sales", value: moneyK1(rev), color: "var(--text)", delta: deltaLabel(rev, pRev), deltaColor: deltaColor(rev, pRev) },
-    { label: "Plates sold", value: num(qty), color: "var(--text)", delta: deltaLabel(qty, pQty), deltaColor: deltaColor(qty, pQty) },
-    { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: foodCost == null ? "var(--faint)" : foodCost > targetFoodCost ? "var(--red)" : "var(--text)", delta: coverageNote, deltaColor: "var(--faint)" },
-    { label: "Gross margin", value: contribution == null ? "—" : moneyK1(contribution), color: contribution == null ? "var(--faint)" : "var(--accent-deep)", delta: coverageNote, deltaColor: "var(--faint)" },
-    { label: "Nights read", value: num(span), color: "var(--text)", delta: "", deltaColor: "var(--faint)" },
-  ];
-
-  /* ── trend ─────────────────────────────────────────────────────────── */
-  const vals = win.map((d) => (trendMetric === "rev" ? d.rev : d.qty));
-  const max = Math.max(...vals), min = Math.min(...vals);
-  const hi = max + (max - min) * 0.28, lo = Math.max(0, min - (max - min) * 0.35);
-  const avg = vals.reduce((a, v) => a + v, 0) / vals.length;
-  const VB_W = 120, VB_H = 50, X0 = 1.5, X1 = 118.5, Y0 = 3, Y1 = 47;
-  const px = (i) => X0 + (i / (vals.length - 1 || 1)) * (X1 - X0);
-  const py = (v) => Y1 - ((v - lo) / (hi - lo || 1)) * (Y1 - Y0);
-  const fmtV = (v) => (trendMetric === "rev" ? moneyK(v) : num(v));
-  const colW = 100 / vals.length;
-  const dotAt = (i, size) => {
-    const d = win[i];
-    const v = trendMetric === "rev" ? d.rev : d.qty;
-    return { leftPct: ((px(i) / VB_W) * 100).toFixed(3) + "%", topPct: ((py(v) / VB_H) * 100).toFixed(3) + "%", size };
+  const pctDelta = (now, was) => {
+    if (now == null || !was) return { label: "—", color: "var(--faint)" };
+    const p = ((now - was) / was) * 100;
+    return { label: (p >= 0 ? "▲ " : "▼ ") + Math.abs(p).toFixed(1) + "%", color: p > 0.5 ? "var(--green)" : p < -0.5 ? "var(--red)" : "var(--faint)" };
   };
-  const dots0 = [hoverIdx != null && win[hoverIdx] ? dotAt(hoverIdx, 11) : dotAt(vals.length - 1, 9)];
-  const stepW = (X1 - X0) / (vals.length - 1 || 1);
-  const weekends = win.map((d, i) => (d.weekend ? { x: (px(i) - stepW / 2).toFixed(2), w: stepW.toFixed(2) } : null)).filter(Boolean);
-  const linePath = win.map((d, i) => (i ? "L" : "M") + px(i).toFixed(2) + " " + py(trendMetric === "rev" ? d.rev : d.qty).toFixed(2)).join(" ");
-  const areaPath = `${linePath} L${px(vals.length - 1).toFixed(2)} ${Y1} L${px(0).toFixed(2)} ${Y1} Z`;
-  const gridLines = [0.88, 0.5, 0.12].map((f) => {
-    const v = lo + (hi - lo) * f;
-    return { y: py(v).toFixed(2), topPct: ((py(v) / VB_H) * 100).toFixed(2) + "%", label: fmtV(v) };
+  // Food cost going UP is bad, so its colors run the other way.
+  const ptsDelta = (now, was) => {
+    if (now == null || was == null) return { label: "—", color: "var(--faint)" };
+    const p = now - was;
+    return { label: (p >= 0 ? "▲ " : "▼ ") + Math.abs(p).toFixed(1) + " pts", color: p > 0.2 ? "var(--red)" : p < -0.2 ? "var(--green)" : "var(--faint)" };
+  };
+  const salesD = pctDelta(rev, pRev);
+  const qtyD = pctDelta(qty, pQty);
+  const fcD = ptsDelta(foodCost, pFoodCost);
+  const gmD = pctDelta(contribution, pContribution);
+  const priorNote = prior.length ? `vs prior ${prior.length} nights` : "no earlier nights to compare";
+
+  /* ── night by night ────────────────────────────────────────────── */
+  const nightFc = (d) => (d.costedRev ? (d.cogs / d.costedRev) * 100 : null);
+  const valOf = (d) => (trendMetric === "rev" ? d.rev : trendMetric === "qty" ? d.qty : nightFc(d) || 0);
+  const niceMax = (v) => {
+    if (!(v > 0)) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    const n = v / p;
+    return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+  };
+  const rawMax = Math.max(0, ...win.map(valOf));
+  const chartMax = trendMetric === "fc"
+    ? Math.max(40, Math.ceil(Math.max(rawMax, targetFoodCost) / 10) * 10)
+    : niceMax(rawMax);
+  const fmtAxis = (v) => (trendMetric === "rev" ? moneyK(v) : trendMetric === "fc" ? Math.round(v) + "%" : num(v));
+  const labelStep = span <= 7 ? 1 : span <= 14 ? 2 : Math.ceil(span / 7);
+  const barGap = span <= 7 ? 14 : span <= 14 ? 7 : 3;
+  const BAR_SOFT = "color-mix(in srgb, var(--accent) 45%, var(--shell))";
+  const BAR_OK = "color-mix(in srgb, var(--faint) 50%, var(--shell))";
+  const bars = win.map((d, i) => {
+    const f = nightFc(d);
+    const color = trendMetric === "fc"
+      ? (f != null && f > targetFoodCost ? "var(--red)" : BAR_OK)
+      : d.weekend ? "var(--accent)" : BAR_SOFT;
+    return { key: d.label + "-" + i, h: Math.max(1, (valOf(d) / chartMax) * 100), color, x: i % labelStep === 0 ? d.label : "" };
   });
-  const xIdxs = [0, Math.floor((vals.length - 1) / 2), vals.length - 1].filter((v, i, a) => a.indexOf(v) === i);
-  const hDay = hoverIdx != null && win[hoverIdx] ? win[hoverIdx] : null;
+  const readDay = win[hoverIdx != null && win[hoverIdx] ? hoverIdx : win.length - 1];
+  const readFc = nightFc(readDay);
+  const targetTop = Math.max(0, (1 - targetFoodCost / chartMax) * 100);
+  const legend = trendMetric === "fc"
+    ? [["var(--red)", `Over your ${targetFoodCost}% target`], [BAR_OK, "At or under target"]]
+    : [["var(--accent)", "Fri – Sun"], [BAR_SOFT, "Mon – Thu"]];
 
-  /* ── rhythm ────────────────────────────────────────────────────────── */
-  const byDow = DAY_NAMES.map((label, i) => {
-    const set = win.filter((d) => d.dow === i);
-    const nights = set.length || 1;
-    return { label, rev: sum(set, "rev") / nights, nights: set.length };
-  });
-  const dowMax = Math.max(...byDow.map((d) => d.rev), 1);
-  const peakDow = byDow.slice().sort((a, b) => b.rev - a.rev)[0];
-
-  const hourRows = (hourly || []).filter((h) => Number(h.qty) > 0);
-  const hourMax = Math.max(...hourRows.map((h) => Number(h.qty)), 1);
-  const hourLabel = (h) => (h === 12 ? "12p" : h > 12 ? h - 12 + "p" : h + "a");
-  const hourTotal = hourRows.reduce((a, h) => a + Number(h.qty), 0);
-  const openRow = hourRows.find((h) => h.hour === openHour);
-  const busiest = hourRows.slice().sort((a, b) => b.qty - a.qty)[0];
-  const hourNote = openRow
-    ? `${hourLabel(openRow.hour)} · ${num(openRow.qty / span)} plates a night · ${Math.round((openRow.qty / (hourTotal || 1)) * 100)}% of the day`
-    : busiest ? `Peak ${hourLabel(busiest.hour)} · tap an hour` : "No hour-level data in this export";
-
-  /* ── menu engineering ──────────────────────────────────────────────── */
+  /* ── dish performance ──────────────────────────────────────────── */
   const perDish = (() => {
     const map = new Map();
     win.forEach((d) => d.items.forEach((x) => {
@@ -262,81 +249,44 @@ export default function AnalyticsScreen({
         ...d,
         contribPer: known ? d.price - d.cost : null,
         contribTotal: known ? d.qty * (d.price - d.cost) : null,
-        marginPct: known && d.price ? ((d.price - d.cost) / d.price) * 100 : null,
+        foodCostPct: known && d.price ? (d.cost / d.price) * 100 : null,
       };
     });
   })();
-  // The matrix plots margin, so it only includes dishes with a known cost.
-  const matrixDishes = perDish.filter((d) => d.contribPer != null);
-
+  // Classes only for dishes with a known cost; the rest show as Unpriced.
+  const pricedDishes = perDish.filter((d) => d.contribPer != null);
   const medOf = (arr) => {
     const s = arr.slice().sort((a, b) => a - b);
     const m = Math.floor(s.length / 2);
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   };
-  const hasMatrix = matrixDishes.length > 0;
-  const medQty = hasMatrix ? medOf(matrixDishes.map((d) => d.qty)) : 0;
-  const medContrib = hasMatrix ? medOf(matrixDishes.map((d) => d.contribPer)) : 0;
-  const qMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.qty)) : 0, qMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.qty)) : 1;
-  const cMin = hasMatrix ? Math.min(...matrixDishes.map((d) => d.contribPer)) : 0, cMax = hasMatrix ? Math.max(...matrixDishes.map((d) => d.contribPer)) : 1;
-  // When every plotted dish shares a value on an axis (e.g. only one dish is
-  // priced so far), center it instead of pinning it to the Dogs corner.
-  const xOf = (q) => (qMax === qMin ? 49 : 11 + ((q - qMin) / (qMax - qMin)) * 76);
-  const yOf = (c) => (cMax === cMin ? 50 : 87 - ((c - cMin) / (cMax - cMin)) * 74);
-  matrixDishes.forEach((d) => {
-    d.quad = d.qty >= medQty ? (d.contribPer >= medContrib ? "Star" : "Plowhorse") : d.contribPer >= medContrib ? "Puzzle" : "Dog";
+  const medQty = pricedDishes.length ? medOf(pricedDishes.map((d) => d.qty)) : 0;
+  const medContrib = pricedDishes.length ? medOf(pricedDishes.map((d) => d.contribPer)) : 0;
+  perDish.forEach((d) => {
+    d.quad = d.contribPer == null ? null
+      : d.qty >= medQty ? (d.contribPer >= medContrib ? "Star" : "Plowhorse")
+      : d.contribPer >= medContrib ? "Puzzle" : "Dog";
   });
+  const sortVal = (d) =>
+    sortBy === "qty" ? d.qty
+    : sortBy === "fc" ? (d.foodCostPct == null ? -1 : d.foodCostPct)
+    : d.contribTotal == null ? -1 : d.contribTotal;
+  const dishRows = perDish.slice().sort((a, b) => sortVal(b) - sortVal(a));
 
-  const hasSelection = !!selected && perDish.some((d) => d.name === selected);
-  const sel = perDish.find((d) => d.name === selected) || perDish[0];
-  const weeks = span / 7;
-  const verdicts = sel && {
-    Star: `Sells hard and earns hard. ${money0(sel.contribTotal / weeks)} of margin a week — hold the recipe and the price where they are.`,
-    Plowhorse: `Popular and thin. A dollar on the price is ${money0(sel.qty / weeks)} a week at this volume, and nobody counts a dollar on a plate they already order.`,
-    Puzzle: `Earns ${money2(sel.contribPer)} a plate and only sells ${num(sel.qty / weeks)} a week. Worth a push from the pass tonight.`,
-    Dog: `Low volume, low earn — ${money0(sel.contribTotal / weeks)} a week of margin for a line on the menu and space in the walk-in.`,
-    undefined: "Margin not known yet — some of this dish's ingredients are still awaiting pricing from an invoice.",
-  };
-
-  /* ── movers ────────────────────────────────────────────────────────── */
-  const last7 = days.slice(-7), prev7 = days.slice(-14, -7);
-  const qtyIn = (set, name) => set.reduce((a, d) => a + (d.items.find((x) => x.name === name)?.qty || 0), 0);
-  const changes = perDish.map((d) => {
-    const c = qtyIn(last7, d.name), p = qtyIn(prev7, d.name);
-    return { name: d.name, curr: c, prev: p, change: p ? ((c - p) / p) * 100 : 0 };
-  });
-
-  let moverRows;
-  if (moversTab === "top") {
-    const sorted = perDish.slice().sort((a, b) => (moversMetric === "qty" ? b.qty - a.qty : b.rev - a.rev));
-    const top = sorted.length ? (moversMetric === "qty" ? sorted[0].qty : sorted[0].rev) : 1;
-    moverRows = sorted.map((d, i) => ({
-      key: d.name, rank: String(i + 1), name: d.name, sub: [d.cat, d.contribPer == null ? "awaiting pricing" : money2(d.contribPer) + " margin"].filter(Boolean).join(" · "),
-      barWidth: (((moversMetric === "qty" ? d.qty : d.rev) / (top || 1)) * 100).toFixed(1) + "%",
-      barColor: "var(--accent)",
-      value: moversMetric === "qty" ? num(d.qty) : money0(d.rev),
-      valColor: "var(--accent-deep)",
-      dish: d,
-    }));
-  } else {
-    const dir = moversTab === "rising" ? 1 : -1;
-    const color = moversTab === "rising" ? "var(--green)" : "var(--red)";
-    moverRows = changes.filter((c) => c.change * dir > 2).sort((a, b) => (b.change - a.change) * dir).map((c, i) => ({
-      key: c.name, rank: String(i + 1), name: c.name, sub: `${c.prev} → ${c.curr} plates`,
-      barWidth: Math.min(100, Math.abs(c.change) * 2.2).toFixed(1) + "%",
-      barColor: color,
-      value: (c.change > 0 ? "▲ " : "▼ ") + Math.abs(c.change).toFixed(0) + "%",
-      valColor: color,
-      dish: perDish.find((d) => d.name === c.name),
-    }));
-  }
-  const puzzles = matrixDishes.filter((d) => d.quad === "Puzzle");
-  const footNote = moversTab === "top" ? `Ranked over ${span} nights` : "Last 7 nights vs the 7 before";
-  const footValue = moversTab === "top"
-    ? (puzzles.length ? `${puzzles.length} puzzles to push` : "No puzzles on the menu")
-    : `${moverRows.length} item${moverRows.length === 1 ? "" : "s"}`;
-
-  const pickDish = (d) => { setSelected(d && d.name === selected ? null : d && d.name); if (d && onSelectDish) onSelectDish(d); };
+  /* ── close-out: the last service night ─────────────────────────── */
+  const zNight = days[days.length - 1];
+  // Same weekday a week earlier; falls back to the latest earlier night of
+  // that weekday when the restaurant was closed that exact date.
+  const zPrev = days.slice(0, -1).reverse().find((d) => d.dow === zNight.dow) || null;
+  const zFc = nightFc(zNight);
+  const zItems = zNight.items.filter((x) => x.qty > 0).sort((a, b) => b.rev - a.rev);
+  const zUnpriced = zNight.items.filter((x) => x.cost == null && x.qty > 0);
+  const zUnpricedRev = zUnpriced.reduce((a, x) => a + x.rev, 0);
+  const zCompare = zPrev ? [
+    { name: "Net sales", ...pctDelta(zNight.rev, zPrev.rev) },
+    { name: "Covers", ...pctDelta(zNight.qty, zPrev.qty) },
+    { name: "Food cost", ...ptsDelta(zFc, nightFc(zPrev)) },
+  ] : [];
 
   if (isMobile) {
     const mobileKpis = [
@@ -390,271 +340,237 @@ export default function AnalyticsScreen({
   });
   const group = { display: "flex", alignItems: "center", gap: 2, background: "var(--panel)", border: "1px solid var(--line-soft)", borderRadius: 16, padding: 3, flexShrink: 0 };
   const cardStyle = { background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", overflow: "hidden" };
+  const kicker = { fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)" };
+  const axisText = { fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap" };
+  const th = (align, pad = "0 8px") => ({ textAlign: align, padding: pad, height: 30, fontFamily: MONO, fontSize: 9.5, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", position: "sticky", top: 0, background: "var(--panel)", zIndex: 1, whiteSpace: "nowrap" });
+  const td = { padding: "6px 8px", textAlign: "right", fontFamily: MONO, fontSize: 12, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" };
+  const zRow = { display: "flex", justifyContent: "space-between", gap: 10 };
+  const zRule = { borderTop: "1px dashed var(--ink-faint)", flexShrink: 0 };
+  const zLabel = { fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 };
+
+  const kpiCards = [
+    { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
+    { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
+    { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, bar: true },
+    { label: "Gross margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
+  ];
 
   return (
     <Shell theme={theme} style={{ height: "100vh", overflow: "hidden" }}>
       {chrome}
       <div style={{ padding: `16px ${PAGE_PAD} 18px`, display: "flex", flexDirection: "column", gap: 13, background: "var(--panel)", flex: 1, minHeight: 0, overflow: "hidden" }}>
+
+        {/* ── title row ── */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap", flexShrink: 0 }}>
           <div>
-            <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 5 }}>{restaurantName} · POS sales</div>
+            <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 5 }}>{syncStamp || `${restaurantName} · ${posSystem}`}</div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.1 }}>
-              What sold <span style={{ color: "var(--faint)" }}>· and what it earned</span>
+              Sales &amp; food cost <span style={{ color: "var(--faint)" }}>· last {span} nights</span>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3 }}>
-              {["7d", "14d", "30d", "All"].map((r) => (
-                <button key={r} type="button" onClick={() => { setRange(r); setHoverIdx(null); }} style={{ ...pill(range === r), padding: "7px 11px", fontSize: 10.5, borderRadius: 16 }}>{r}</button>
+              {[["7d", "7 nights"], ["14d", "14 nights"], ["28d", "28 nights"]].map(([r, label]) => (
+                <button key={r} type="button" onClick={() => { setRange(r); setHoverIdx(null); }} style={{ ...pill(range === r), padding: "7px 11px", fontSize: 10.5, borderRadius: 16 }}>{label}</button>
               ))}
             </div>
             <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "8px 16px", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 8px 18px rgba(2,164,186,0.22)" }}>Upload POS export</button>
           </div>
         </div>
 
-        <div data-tour="an-kpis" style={{ flexShrink: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "grid", gridTemplateColumns: "repeat(5,1fr)", overflow: "hidden" }}>
-          {kpis.map((k) => (
-            <div key={k.label} style={{ padding: "18px 20px 19px", borderLeft: "1px solid var(--line-soft)", display: "flex", flexDirection: "column", gap: 9, minWidth: 0 }}>
-              <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{k.label}</div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
-                <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: k.color }}>{k.value}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 500, whiteSpace: "nowrap", color: k.deltaColor }}>{k.delta}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1.25fr) minmax(260px,0.8fr)", gap: 14, flex: 1, minHeight: 0 }}>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.22fr) minmax(0,1fr)", gap: 14, flex: 1, minHeight: 0 }}>
+          {/* ── left: 2 × 2 totals over the nightly chart ── */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
-            <div data-tour="an-trend" style={{ ...cardStyle, flex: "1.35 1 0", minHeight: 0, animation: "om-rise .4s cubic-bezier(.25,.8,.35,1) both" }}>
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px 0" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>{trendMetric === "rev" ? "Nightly sales" : "Plates a night"}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{span} nights · weekends shaded</div>
-                </div>
-                <div style={group}>
-                  {[["rev", "Sales"], ["qty", "Plates"]].map(([k, label]) => (
-                    <button key={k} type="button" onClick={() => setTrendMetric(k)} style={pill(trendMetric === k)}>{label}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ flex: 1, minHeight: 0, padding: "16px 20px 32px 46px", display: "flex", flexDirection: "column" }}>
-                <div onMouseLeave={() => setHoverIdx(null)} style={{ position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
-                  <svg viewBox="0 0 120 50" preserveAspectRatio="none" style={{ width: "100%", height: "100%", minHeight: 0, display: "block", overflow: "visible" }}>
-                    {weekends.map((w, i) => (<rect key={i} x={w.x} y="2" width={w.w} height="46" fill="var(--amber)" opacity="0.055" />))}
-                    {gridLines.map((g, i) => (<line key={i} x1="0" y1={g.y} x2="120" y2={g.y} stroke="var(--line-soft)" strokeWidth="1" vectorEffect="non-scaling-stroke" />))}
-                    <path d={areaPath} fill="var(--accent-tint)" stroke="none" />
-                    <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                    <line x1="0" y1={py(avg).toFixed(2)} x2="120" y2={py(avg).toFixed(2)} stroke="var(--faint)" strokeWidth="1" strokeDasharray="2 5" vectorEffect="non-scaling-stroke" />
-                  </svg>
-                  {gridLines.map((g, i) => (
-                    <div key={"g" + i} style={{ position: "absolute", right: "100%", marginRight: 9, top: g.topPct, transform: "translateY(-50%)", fontFamily: MONO, fontSize: 11, color: "var(--faint)", whiteSpace: "nowrap" }}>{g.label}</div>
-                  ))}
-                  <div style={{ position: "absolute", right: 0, top: ((py(avg) / VB_H) * 100).toFixed(2) + "%", transform: "translateY(-135%)", fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" }}>Avg {fmtV(avg)}</div>
-                  {dots0.map((p, i) => (
-                    <div key={"d" + i} style={{ position: "absolute", left: p.leftPct, top: p.topPct, width: p.size, height: p.size, marginLeft: -p.size / 2, marginTop: -p.size / 2, borderRadius: "50%", background: "var(--shell)", border: "2.2px solid var(--accent)", pointerEvents: "none" }} />
-                  ))}
-                  {win.map((d, i) => (
-                    <div key={"c" + i} onMouseEnter={() => setHoverIdx(i)} style={{ position: "absolute", left: (i * colW).toFixed(3) + "%", top: -8, bottom: -24, width: colW.toFixed(3) + "%", cursor: "crosshair" }} />
-                  ))}
-                  {xIdxs.map((i) => (
-                    <div key={"x" + i} style={{ position: "absolute", top: "100%", marginTop: 7, left: ((px(i) / VB_W) * 100).toFixed(3) + "%", transform: "translateX(-50%)", fontFamily: MONO, fontSize: 10.5, whiteSpace: "nowrap", color: "var(--faint)" }}>{win[i].label}</div>
-                  ))}
-                  {hDay && (
-                    <div style={{ position: "absolute", left: ((px(hoverIdx) / VB_W) * 100).toFixed(3) + "%", top: ((py(trendMetric === "rev" ? hDay.rev : hDay.qty) / VB_H) * 100).toFixed(3) + "%", transform: `translate(${hoverIdx > vals.length * 0.7 ? "-92%" : "-8%"},-118%)`, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 9, boxShadow: "var(--shadow)", padding: "8px 11px", pointerEvents: "none", whiteSpace: "nowrap", zIndex: 3 }}>
-                      <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: "var(--accent-deep)" }}>
-                        {trendMetric === "rev" ? money0(hDay.rev) : num(hDay.qty) + " plates"}
-                      </div>
-                      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.06em", color: "var(--faint)", marginTop: 3 }}>
-                        {hDay.label} · {DAY_FULL[hDay.dow]}{hDay.weekend ? " · service night" : ""}{hDay.costedRev ? " · " + pct1((hDay.cogs / hDay.costedRev) * 100) + " food cost" : ""}
-                      </div>
+            <div data-tour="an-kpis" style={{ flexShrink: 0, display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 12 }}>
+              {kpiCards.map((k) => (
+                <div key={k.label} style={{ ...cardStyle, padding: "13px 16px", gap: 7 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <span style={kicker}>{k.label}</span>
+                    {k.bar && <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--faint)", whiteSpace: "nowrap" }}>TARGET {targetFoodCost}%</span>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", lineHeight: 1, color: k.color }}>{k.value}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 500, whiteSpace: "nowrap", color: k.delta.color }}>{k.delta.label}</span>
+                  </div>
+                  {k.bar ? (
+                    <div style={{ position: "relative", height: 5, background: "var(--line-soft)", borderRadius: 3, margin: "4px 0 3px" }}>
+                      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.min(100, ((foodCost || 0) / 50) * 100) + "%", background: k.color, borderRadius: 3 }} />
+                      <div style={{ position: "absolute", top: -3, width: 2, height: 11, background: "var(--text)", left: Math.min(100, (targetFoodCost / 50) * 100) + "%" }} />
                     </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...cardStyle, flex: "1 1 0", minHeight: 0, animation: "om-rise .45s cubic-bezier(.25,.8,.35,1) both" }}>
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px 0" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>Service rhythm</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {rhythmView === "day" ? `${peakDow.label} carries the week · ${moneyK(peakDow.rev)} a night` : `Plates by hour across ${span} nights`}
-                  </div>
-                </div>
-                {hourRows.length > 0 && (
-                  <div style={group}>
-                    {[["day", "By night"], ["hour", "By hour"]].map(([k, label]) => (
-                      <button key={k} type="button" onClick={() => setRhythmView(k)} style={pill(rhythmView === k)}>{label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {rhythmView === "day" || !hourRows.length ? (
-                <div style={{ flex: 1, minHeight: 0, padding: "12px 18px 14px", display: "flex", alignItems: "stretch", gap: 10 }}>
-                  {byDow.map((d) => {
-                    const peak = d.label === peakDow.label;
-                    return (
-                      <div key={d.label} style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontFamily: MONO, fontSize: 11, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: peak ? "var(--amber)" : "var(--muted)" }}>{d.nights ? moneyK(d.rev) : "—"}</span>
-                        <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "flex-end", background: "var(--panel)", borderRadius: 5, overflow: "hidden" }}>
-                          <div style={{ width: "100%", height: d.nights ? Math.max(4, (d.rev / dowMax) * 100).toFixed(1) + "%" : "0%", borderRadius: "5px 5px 0 0", background: peak ? "var(--amber)" : "color-mix(in srgb, var(--accent) 55%, var(--panel))" }} />
-                        </div>
-                        <span style={{ fontSize: 11.5, fontWeight: 600, color: peak ? "var(--amber)" : "var(--faint)" }}>{d.label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div style={{ flex: 1, minHeight: 0, padding: "12px 18px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "stretch", gap: 4 }}>
-                    {hourRows.map((h) => {
-                      const t = Number(h.qty) / hourMax;
-                      const base = t > 0.72 ? "var(--red)" : t > 0.45 ? "var(--amber)" : t > 0.15 ? "var(--accent)" : "var(--panel)";
-                      const isOpen = openHour === h.hour;
-                      return (
-                        <button key={h.hour} type="button" onClick={() => setOpenHour(isOpen ? null : h.hour)}
-                          style={{ flex: 1, minWidth: 0, border: `1px solid ${isOpen ? "var(--accent)" : "var(--line-soft)"}`, borderRadius: 5, background: `color-mix(in srgb, ${base} ${Math.round(28 + t * 72)}%, var(--shell))`, display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 4, cursor: "pointer" }}>
-                          <span style={{ fontFamily: MONO, fontSize: 9.5, color: t > 0.45 ? "var(--text)" : "var(--faint)" }}>{hourLabel(h.hour)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.06em", color: "var(--faint)" }}>
-                    <span>{hourNote}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 11 }}>
-                      {[["Peak", "var(--red)"], ["Busy", "var(--amber)"], ["Steady", "var(--accent)"], ["Quiet", "var(--panel)"]].map(([label, fill]) => (
-                        <span key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <span style={{ width: 7, height: 7, borderRadius: 2, background: fill }} />{label}
-                        </span>
-                      ))}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, minHeight: 0 }}>
-            <div data-tour="an-matrix" style={{ ...cardStyle, flex: hasSelection ? "1 1 0" : "1.15 1 0", minHeight: 0, animation: "om-rise .5s cubic-bezier(.25,.8,.35,1) both" }}>
-              <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "14px 18px 0" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>Menu engineering</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Plates sold against margin per plate</div>
-                </div>
-                {hasSelection ? (
-                  <button type="button" onClick={() => { setSelected(null); setMatrixHover(null); }} className="om-hover-accent" style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid var(--line)", borderRadius: 16, padding: "5px 11px", cursor: "pointer", fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)", whiteSpace: "nowrap", flexShrink: 0 }}>
-                    <span style={{ fontSize: 13, lineHeight: 1 }}>‹</span>All dishes
-                  </button>
-                ) : (
-                  <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", flexShrink: 0 }}>{span} nights</span>
-                )}
-              </div>
-
-              <div style={{ flex: 1, minHeight: 0, padding: "16px 22px 26px 40px" }}>
-                <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 0, borderLeft: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
-                  {hasMatrix ? (
-                    <>
-                      <div style={{ position: "absolute", left: xOf(medQty).toFixed(2) + "%", top: 0, bottom: 0, width: 1, borderLeft: "1px dashed var(--line)" }} />
-                      <div style={{ position: "absolute", top: yOf(medContrib).toFixed(2) + "%", left: 0, right: 0, height: 1, borderTop: "1px dashed var(--line)" }} />
-                    </>
                   ) : (
-                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, textAlign: "center", fontSize: 12.5, lineHeight: 1.5, color: "var(--faint)" }}>
-                      Margins appear here once dishes are priced from invoices.
-                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{k.note}</div>
                   )}
-                  {[
-                    { label: "Puzzles", left: "4%", top: "5%", shift: "0,0" },
-                    { label: "Stars", left: "96%", top: "5%", shift: "-100%,0" },
-                    { label: "Dogs", left: "4%", top: "95%", shift: "0,-100%" },
-                    { label: "Plowhorses", left: "96%", top: "95%", shift: "-100%,-100%" },
-                  ].map((q) => (
-                    <span key={q.label} style={{ position: "absolute", left: q.left, top: q.top, transform: `translate(${q.shift})`, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", opacity: 0.75, whiteSpace: "nowrap" }}>{q.label}</span>
-                  ))}
-                  {matrixDishes.map((d) => {
-                    const on = hasSelection && d.name === sel.name;
-                    const lit = on || matrixHover === d.name;
-                    const right = xOf(d.qty) > 62;
-                    const size = on ? 13 : lit ? 11 : 9;
-                    return (
-                      <div key={d.name} onClick={() => pickDish(d)} onMouseEnter={() => setMatrixHover(d.name)} onMouseLeave={() => setMatrixHover(null)} title={d.name}
-                        style={{ position: "absolute", left: xOf(d.qty).toFixed(2) + "%", top: yOf(d.contribPer).toFixed(2) + "%", transform: `translate(${lit ? (right ? "-100%" : "0%") : "-50%"},-50%)`, display: "flex", flexDirection: lit && right ? "row-reverse" : "row", alignItems: "center", gap: lit ? 5 : 0, cursor: "pointer", zIndex: on ? 5 : lit ? 4 : 2 }}>
-                        <span style={{ width: size, height: size, borderRadius: "50%", background: lit ? "var(--accent)" : "color-mix(in srgb, var(--accent) 34%, var(--shell))", border: `2px solid ${lit ? "var(--accent-deep)" : "var(--accent)"}`, flexShrink: 0 }} />
-                        <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.02em", whiteSpace: "nowrap", color: on ? "var(--text)" : "var(--muted)", fontWeight: 600 }}>{lit ? d.name.split(",")[0] : ""}</span>
-                      </div>
-                    );
-                  })}
-                  <div style={{ position: "absolute", left: -11, top: "50%", transform: "translate(-100%,-50%) rotate(-90deg)", transformOrigin: "center", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" }}>Margin / plate</div>
-                  <div style={{ position: "absolute", left: "50%", top: "100%", marginTop: 6, transform: "translateX(-50%)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" }}>Plates sold</div>
                 </div>
-              </div>
-
-              {hasSelection && (
-                <div style={{ flexShrink: 0, borderTop: "1px solid var(--line)", background: "var(--panel)", padding: "12px 18px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                    <span style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel.name}</span>
-                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 8px", borderRadius: 12, flexShrink: 0, color: sel.quad ? QUAD_COLOR[sel.quad] : "var(--faint)", border: `1px solid ${sel.quad ? QUAD_COLOR[sel.quad] : "var(--line)"}` }}>{sel.quad || "Awaiting pricing"}</span>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-                    {[
-                      { label: "Plates sold", value: num(sel.qty), color: "var(--text)" },
-                      { label: "Net sales", value: money0(sel.rev), color: "var(--text)" },
-                      { label: "Margin / plate", value: sel.contribPer == null ? "—" : money2(sel.contribPer), color: sel.contribPer == null ? "var(--faint)" : "var(--accent-deep)" },
-                      { label: "Total margin", value: sel.contribTotal == null ? "—" : money0(sel.contribTotal), color: sel.contribTotal == null ? "var(--faint)" : "var(--text)" },
-                    ].map((s) => (
-                      <div key={s.label} style={{ minWidth: 0 }}>
-                        <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
-                        <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginTop: 4, color: s.color }}>{s.value}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--muted)", textWrap: "pretty", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{verdicts[sel.quad]}</div>
-                </div>
-              )}
+              ))}
             </div>
 
-            {!hasSelection && (
-              <div style={{ ...cardStyle, flex: "1 1 0", minHeight: 0, animation: "om-rise .55s cubic-bezier(.25,.8,.35,1) both" }}>
-                <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 18px 0", flexWrap: "wrap" }}>
-                  <div style={group}>
-                    {[["top", "Top sellers"], ["rising", "Rising"], ["falling", "Falling"]].map(([k, label]) => (
-                      <button key={k} type="button" onClick={() => setMoversTab(k)}
-                        style={{ border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 12, fontWeight: 600, borderRadius: 14, padding: "6px 11px", whiteSpace: "nowrap", background: moversTab === k ? "var(--accent)" : "transparent", color: moversTab === k ? "#fff" : "var(--muted)" }}>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  {moversTab === "top" && (
-                    <div style={group}>
-                      {[["qty", "Plates"], ["rev", "Sales"]].map(([k, label]) => (
-                        <button key={k} type="button" onClick={() => setMoversMetric(k)} style={pill(moversMetric === k)}>{label}</button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "8px 18px 12px" }}>
-                  {moverRows.map((r) => (
-                    <div key={r.key} onClick={() => r.dish && pickDish(r.dish)} style={{ display: "grid", gridTemplateColumns: "16px minmax(0,1fr) minmax(0,1.1fr) 58px", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px dotted var(--line)", cursor: "pointer" }}>
-                      <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--faint)", textAlign: "right" }}>{r.rank}</span>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
-                        <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", color: "var(--faint)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.sub}</div>
-                      </div>
-                      <div style={{ height: 7, background: "var(--panel)", borderRadius: 4, overflow: "hidden" }}>
-                        <div style={{ height: 7, borderRadius: 4, width: r.barWidth, background: r.barColor }} />
-                      </div>
-                      <div style={{ fontSize: 12.5, fontWeight: 700, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: r.valColor }}>{r.value}</div>
-                    </div>
+            <div data-tour="an-trend" style={{ ...cardStyle, flex: 1, minHeight: 0, padding: "14px 18px 12px", gap: 10, animation: "om-rise .4s cubic-bezier(.25,.8,.35,1) both" }}>
+              <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>Night by night</div>
+                <div style={group}>
+                  {[["rev", "Net sales"], ["qty", "Covers"], ["fc", "Food cost %"]].map(([k, label]) => (
+                    <button key={k} type="button" onClick={() => { setTrendMetric(k); setHoverIdx(null); }} style={pill(trendMetric === k)}>{label}</button>
                   ))}
                 </div>
-                <div style={{ flexShrink: 0, borderTop: "1px solid var(--line)", padding: "10px 18px 11px", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                  <span>{footNote}</span>
-                  <span style={{ color: "var(--muted)" }}>{footValue}</span>
+              </div>
+
+              <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: "4px 16px", alignItems: "baseline", padding: "7px 10px", background: "var(--paper)", border: "1px dashed var(--paper-line)", borderRadius: 8, fontFamily: MONO, fontSize: 11, color: "var(--ink-soft)" }}>
+                <span style={{ fontWeight: 500, color: "var(--ink)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{DAY_NAMES[readDay.dow]} {readDay.label}</span>
+                <span>{money0(readDay.rev)} net</span>
+                <span>{num(readDay.qty)} covers</span>
+                <span>food cost <span style={{ fontWeight: 500, color: readFc != null && readFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{readFc == null ? "—" : pct1(readFc)}</span></span>
+              </div>
+
+              <div onMouseLeave={() => setHoverIdx(null)} style={{ flex: 1, minHeight: 100, position: "relative" }}>
+                <div style={{ position: "absolute", left: 0, top: 0, bottom: 18, width: 38 }}>
+                  <span style={{ ...axisText, position: "absolute", right: 6, top: -6 }}>{fmtAxis(chartMax)}</span>
+                  <span style={{ ...axisText, position: "absolute", right: 6, top: "calc(50% - 6px)" }}>{fmtAxis(chartMax / 2)}</span>
+                </div>
+                <div style={{ position: "absolute", left: 42, right: 0, top: 0, bottom: 18 }}>
+                  <div style={{ position: "absolute", left: 0, right: 0, top: 0, borderTop: "1px solid var(--line-soft)" }} />
+                  <div style={{ position: "absolute", left: 0, right: 0, top: "50%", borderTop: "1px solid var(--line-soft)" }} />
+                  <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, borderTop: "1px solid var(--line)" }} />
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end", gap: barGap }}>
+                    {bars.map((b, i) => (
+                      <div key={b.key} onMouseEnter={() => setHoverIdx(i)} style={{ flex: "1 1 0", height: "100%", display: "flex", alignItems: "flex-end", cursor: "pointer" }}>
+                        <div style={{ width: "100%", height: b.h + "%", background: b.color, opacity: hoverIdx == null || hoverIdx === i ? 1 : 0.4, borderRadius: "3px 3px 0 0", transition: "opacity .15s" }} />
+                      </div>
+                    ))}
+                  </div>
+                  {trendMetric === "fc" && (
+                    <>
+                      <div style={{ position: "absolute", left: 0, right: 0, top: targetTop + "%", borderTop: "2px dashed var(--text)", pointerEvents: "none" }} />
+                      <div style={{ position: "absolute", right: 0, top: `calc(${targetTop}% - 16px)`, fontFamily: MONO, fontSize: 10, color: "var(--text)", background: "var(--shell)", padding: "0 4px", pointerEvents: "none" }}>TARGET {targetFoodCost}%</div>
+                    </>
+                  )}
+                </div>
+                <div style={{ position: "absolute", left: 42, right: 0, bottom: 0, height: 14, display: "flex", gap: barGap }}>
+                  {bars.map((b) => (
+                    <div key={"x" + b.key} style={{ flex: "1 1 0", textAlign: "center", fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap" }}>{b.x}</div>
+                  ))}
                 </div>
               </div>
-            )}
+
+              <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: 14, fontSize: 11.5, color: "var(--muted)" }}>
+                {legend.map(([c, t]) => (
+                  <span key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
+
+          {/* ── middle: dish performance ── */}
+          <div data-tour="an-matrix" style={{ ...cardStyle, minHeight: 0, animation: "om-rise .5s cubic-bezier(.25,.8,.35,1) both" }}>
+            <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "14px 16px 12px", flexWrap: "wrap" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>Dish performance</div>
+              <div style={group}>
+                {[["margin", "Margin"], ["qty", "Sold"], ["fc", "Food cost"]].map(([k, label]) => (
+                  <button key={k} type="button" onClick={() => setSortBy(k)} style={pill(sortBy === k)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 12.5 }}>
+                <colgroup>
+                  <col style={{ width: "36%" }} />
+                  <col style={{ width: "11%" }} />
+                  <col style={{ width: "15%" }} />
+                  <col style={{ width: "14%" }} />
+                  <col style={{ width: "24%" }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={th("left", "0 8px 0 16px")}>Dish</th>
+                    <th style={th("right")}>Sold</th>
+                    <th style={th("right")}>Food cost</th>
+                    <th style={th("right")}>Margin</th>
+                    <th style={th("right", "0 16px 0 8px")}>Class</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dishRows.map((d) => {
+                    const qc = d.quad ? QUAD_COLOR[d.quad] : "var(--faint)";
+                    const over = d.foodCostPct != null && d.foodCostPct > targetFoodCost;
+                    return (
+                      <tr key={d.name} className="om-row" onClick={() => onSelectDish && onSelectDish(d)} style={{ borderTop: "1px solid var(--line-soft)", cursor: onSelectDish ? "pointer" : "default" }}>
+                        <td style={{ padding: "6px 8px 6px 16px", overflow: "hidden" }}>
+                          <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</div>
+                          <div style={{ fontSize: 11, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 1 }}>
+                            {[d.cat, money2(d.price), money0(d.rev) + " sales"].filter(Boolean).join(" · ")}
+                          </div>
+                        </td>
+                        <td style={td}>{num(d.qty)}</td>
+                        <td style={{ ...td, color: d.foodCostPct == null ? "var(--faint)" : over ? "var(--red)" : "var(--text)", fontWeight: over ? 700 : 400 }}>{d.foodCostPct == null ? "no price" : pct1(d.foodCostPct)}</td>
+                        <td style={{ ...td, fontWeight: 500, color: d.contribTotal == null ? "var(--faint)" : "var(--text)" }}>{d.contribTotal == null ? "—" : money0(d.contribTotal)}</td>
+                        <td style={{ ...td, padding: "6px 16px 6px 8px", fontFamily: SANS }}>
+                          <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 700, color: qc, background: d.quad ? `color-mix(in srgb, ${qc} 14%, var(--shell))` : "var(--panel)" }}>{d.quad || "Unpriced"}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ flexShrink: 0, display: "flex", flexWrap: "wrap", gap: "4px 14px", padding: "9px 16px", borderTop: "1px solid var(--line)", background: "var(--panel)", fontSize: 11, color: "var(--muted)" }}>
+              <span><strong style={{ color: QUAD_COLOR.Star }}>Star</strong> sells often, keeps a lot</span>
+              <span><strong style={{ color: QUAD_COLOR.Plowhorse }}>Plowhorse</strong> sells often, keeps less</span>
+              <span><strong style={{ color: QUAD_COLOR.Puzzle }}>Puzzle</strong> keeps a lot, sells slowly</span>
+              <span><strong style={{ color: QUAD_COLOR.Dog }}>Dog</strong> slow and thin</span>
+            </div>
+          </div>
+
+          {/* ── right: close-out ticket for the last service night ── */}
+          <div aria-label="Last night close-out" style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", gap: 10, background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, border: "1px solid var(--paper-line)", borderRadius: 12, boxShadow: "var(--card-lift)", padding: "16px 18px", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+            <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 3, flexShrink: 0 }}>
+              <div style={zLabel}>Close-out · Z report</div>
+              <div style={{ fontFamily: SANS, fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em" }}>{DAY_FULL[zNight.dow]} {zNight.label}</div>
+              <div style={{ fontSize: 10, color: "var(--ink-soft)" }}>LAST SERVICE NIGHT</div>
+            </div>
+            <div style={zRule} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, flexShrink: 0 }}>
+              <div style={zRow}><span>COVERS SOLD</span><span>{num(zNight.qty)}</span></div>
+              <div style={zRow}><span>NET SALES</span><span>{money0(zNight.rev)}</span></div>
+              <div style={{ ...zRow, color: "var(--ink-soft)" }}><span>COSTED SALES</span><span>{money0(zNight.costedRev)}</span></div>
+              <div style={{ ...zRow, color: "var(--ink-soft)" }}><span>PLATE COST</span><span>{money0(zNight.cogs)}</span></div>
+            </div>
+            <div style={zRule} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, fontWeight: 500, flexShrink: 0 }}>
+              <div style={zRow}><span>FOOD COST</span><span style={{ color: zFc != null && zFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{zFc == null ? "—" : pct1(zFc)}</span></div>
+              <div style={zRow}><span>GROSS MARGIN</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
+            </div>
+            {zPrev && (
+              <>
+                <div style={zRule} />
+                <div style={zLabel}>VS LAST {DAY_NAMES[zPrev.dow].toUpperCase()} · {zPrev.label}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, flexShrink: 0 }}>
+                  {zCompare.map((c) => (
+                    <div key={c.name} style={zRow}><span>{c.name.toUpperCase()}</span><span style={{ color: c.color }}>{c.label}</span></div>
+                  ))}
+                </div>
+              </>
+            )}
+            <div style={zRule} />
+            <div style={zLabel}>Items sold</div>
+            <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5 }}>
+              {zItems.map((x) => (
+                <div key={x.name} style={{ display: "flex", gap: 8 }}>
+                  <span style={{ width: 28, flexShrink: 0, color: "var(--ink-soft)" }}>{num(x.qty)}×</span>
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.name}</span>
+                  <span style={{ flexShrink: 0 }}>{money0(x.rev)}</span>
+                </div>
+              ))}
+            </div>
+            <div style={zRule} />
+            <div style={{ flexShrink: 0, fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
+              * {zUnpriced.length
+                ? `${money0(zUnpricedRev)} from ${zUnpriced.map((x) => x.name).join(", ")} left out of food cost until priced.`
+                : "Every dish sold was fully costed."}
+            </div>
+          </div>
+
         </div>
       </div>
     </Shell>
