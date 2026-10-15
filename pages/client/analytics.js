@@ -223,11 +223,14 @@ export default function AnalyticsPage() {
     return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([hour, qty]) => ({ hour, qty }));
   }, [sales]);
 
-  const syncStamp = session
-    ? `${session.pos_system || "POS"} · ${Number(session.row_count || 0).toLocaleString("en-US")} rows through ${session.date_to || ""}`
-    : sales.length
-      ? `${sales[0].pos_system || "POS"} · ${sales.length.toLocaleString("en-US")} rows`
-      : "";
+  // Built from the loaded sales, so it always matches the nights on screen.
+  // The latest upload only supplies the POS name; "other" reads as a plain export.
+  const rawPos = session?.pos_system || sales[0]?.pos_system || "";
+  const posName = !rawPos || /^other$/i.test(rawPos) ? "POS export" : rawPos;
+  const lastNight = days.length ? days[days.length - 1] : null;
+  const syncStamp = lastNight
+    ? `${posName} · ${sales.length.toLocaleString("en-US")} rows · ${days.length} ${days.length === 1 ? "night" : "nights"} through ${lastNight.label}`
+    : "";
 
   const initials = (userName || "Chef").split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
@@ -281,7 +284,7 @@ export default function AnalyticsPage() {
         days={days}
         hourly={hourly}
         targetFoodCost={Math.round(targetFoodCost)}
-        posSystem={session?.pos_system || "POS"}
+        posSystem={posName}
         syncStamp={syncStamp}
         loading={loading}
         error={error}
