@@ -271,7 +271,7 @@ export default function AnalyticsScreen({
     sortBy === "qty" ? d.qty
     : sortBy === "fc" ? (d.foodCostPct == null ? -1 : d.foodCostPct)
     : d.contribTotal == null ? -1 : d.contribTotal;
-  const dishRows = perDish.slice().sort((a, b) => sortVal(b) - sortVal(a));
+  const dishRows = perDish.slice().sort((a, b) => sortVal(b) - sortVal(a) || b.rev - a.rev);
 
   /* ── close-out: the last service night ─────────────────────────── */
   const zNight = days[days.length - 1];
@@ -433,8 +433,8 @@ export default function AnalyticsScreen({
                   <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, borderTop: "1px solid var(--line)" }} />
                   <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end", gap: barGap }}>
                     {bars.map((b, i) => (
-                      <div key={b.key} onMouseEnter={() => setHoverIdx(i)} style={{ flex: "1 1 0", height: "100%", display: "flex", alignItems: "flex-end", cursor: "pointer" }}>
-                        <div style={{ width: "100%", height: b.h + "%", background: b.color, opacity: hoverIdx == null || hoverIdx === i ? 1 : 0.4, borderRadius: "3px 3px 0 0", transition: "opacity .15s" }} />
+                      <div key={b.key} onMouseEnter={() => setHoverIdx(i)} style={{ flex: "1 1 0", height: "100%", display: "flex", alignItems: "flex-end", justifyContent: "center", cursor: "pointer" }}>
+                        <div style={{ width: "100%", maxWidth: 56, height: b.h + "%", background: b.color, opacity: hoverIdx == null || hoverIdx === i ? 1 : 0.4, borderRadius: "3px 3px 0 0", transition: "opacity .15s" }} />
                       </div>
                     ))}
                   </div>
@@ -566,7 +566,7 @@ export default function AnalyticsScreen({
             <div style={zRule} />
             <div style={{ flexShrink: 0, fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
               * {zUnpriced.length
-                ? `${money0(zUnpricedRev)} from ${zUnpriced.map((x) => x.name).join(", ")} left out of food cost until priced.`
+                ? `${money0(zUnpricedRev)} from ${zUnpriced.length <= 2 ? zUnpriced.map((x) => x.name).join(" and ") : zUnpriced.length + " unpriced dishes"} left out of food cost until priced.`
                 : "Every dish sold was fully costed."}
             </div>
           </div>
