@@ -78,6 +78,8 @@ const SANS = "'Manrope',system-ui,-apple-system,sans-serif";
 
 const TONE = { today: "var(--red)", soon: "var(--amber)", ok: "var(--accent)" };
 
+const STAT_TONE = { ok: "var(--text)", warn: "var(--amber)", bad: "var(--red)" };
+
 /* ── demo data (used only where a prop is missing) ──────────────────── */
 
 const DEMO_TICKETS = [
@@ -139,10 +141,8 @@ const DEMO_WASTE = [
 ];
 
 const DEMO_STATS = [
-  { label: "Avg margin", value: "64.2%" },
-  { label: "Low-margin items", value: "7" },
-  { label: "Expiring soon", value: "6" },
-  { label: "YTD spend", value: "$184,320" },
+  { label: "Avg margin", value: "64.2%", note: "target 70% · 18 priced", tone: "bad" },
+  { label: "Low-margin", value: "7", note: "dishes under 50%", tone: "bad" },
 ];
 
 const DEMO_WEEK = {
@@ -273,6 +273,10 @@ export default function PassDashboard({
 
   const visibleWaste = showAllWaste ? waste : waste.slice(0, 4);
 
+  const buckets = optiScore.buckets || [];
+  const scoreTone =
+    optiScore.label === "Strong" ? "var(--green)" : optiScore.label === "Good" ? "var(--accent-deep)" : optiScore.label === "Needs work" ? "var(--amber)" : "var(--faint)";
+
   // Close any open day drill-down when the browsed month changes, so a
   // stale panel from a different month can't linger.
   useEffect(() => {
@@ -296,14 +300,18 @@ export default function PassDashboard({
       const noData = v === null; // on or before signup: no real history
       const has = v !== undefined && v !== null;
       const future = week.todayDay ? d > week.todayDay : false;
+      const today = week.todayDay === d;
       out.push({
         key: "d" + d,
         day: d,
+        today,
         sub: noData ? "—" : has ? (v > 0 ? "+" + v : String(v)) : "",
+        // Plain cells; only the number carries color: green for a gain,
+        // grey for flat or a dip. Tonight is outlined in teal.
         bg: has || noData ? "var(--panel)" : "transparent",
-        border: openCalendarDay === d ? "var(--accent)" : has || noData ? "var(--line)" : "transparent",
-        numColor: future ? "var(--faint)" : has || noData ? "var(--text)" : "var(--muted)",
-        subColor: noData ? "var(--faint)" : has ? (v > 0 ? "var(--green)" : v < 0 ? "var(--red)" : "var(--faint)") : "transparent",
+        border: openCalendarDay === d || today ? "var(--accent)" : has || noData ? "var(--line)" : "transparent",
+        numColor: today ? "var(--accent-deep)" : future ? "var(--faint)" : has || noData ? "var(--text)" : "var(--muted)",
+        subColor: noData ? "var(--faint)" : has ? (v > 0 ? "var(--green)" : "var(--muted)") : "transparent",
         clickable: has && !future,
       });
     }
@@ -767,7 +775,7 @@ export default function PassDashboard({
           data-tour="db-grid-wrap"
           style={{
             display: "grid",
-            gridTemplateColumns: "232px 1fr",
+            gridTemplateColumns: "264px 1fr",
             gap: "16px",
             alignItems: "stretch",
             flex: "1.15 1 0",
@@ -783,8 +791,11 @@ export default function PassDashboard({
               <div style={{ fontSize: "11.5px", color: "var(--muted)", marginTop: "3px" }}>{dateLabel}</div>
             </div>
 
-            <div data-tour="db-panel" style={{ ...card, padding: "13px 14px", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+            <div
+              data-tour="db-panel"
+              style={{ ...card, padding: "13px 14px", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: "9px", overflow: "hidden" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div style={kicker}>OptiScore</div>
                 <div
                   style={{
@@ -792,8 +803,8 @@ export default function PassDashboard({
                     fontWeight: 700,
                     letterSpacing: "0.04em",
                     textTransform: "uppercase",
-                    color: "var(--accent-deep)",
-                    background: "var(--accent-tint)",
+                    color: scoreTone,
+                    background: `color-mix(in srgb, ${scoreTone} 14%, var(--shell))`,
                     borderRadius: "20px",
                     padding: "3px 9px",
                   }}
@@ -802,12 +813,13 @@ export default function PassDashboard({
                 </div>
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: "6px" }}>
-                <span style={{ fontSize: "23px", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 0.86 }}>
+                <span style={{ fontSize: "28px", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 0.9 }}>
                   {optiScore.value == null ? "—" : optiScore.value}
                 </span>
                 <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--faint)" }}>/ {optiScore.max || 100}</span>
               </div>
-              <div style={{ height: "6px", borderRadius: "4px", background: "var(--line)", marginTop: "14px", overflow: "hidden" }}>
+              {/* score bar; the tick marks 65, where "Good" starts */}
+              <div style={{ position: "relative", height: "6px", borderRadius: "4px", background: "var(--line)", flexShrink: 0 }}>
                 <div
                   style={{
                     height: "6px",
@@ -816,50 +828,49 @@ export default function PassDashboard({
                     background: "var(--accent)",
                   }}
                 />
+                <div style={{ position: "absolute", top: "-3px", left: "65%", width: "2px", height: "12px", background: "var(--text)" }} />
               </div>
-            </div>
 
-            <div style={{ ...card, flex: 1, minHeight: "120px", padding: "2px 14px", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              {stats.map((s) => (
+              {buckets.length > 0 && (
                 <div
-                  key={s.label}
                   style={{
                     flex: 1,
                     minHeight: 0,
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: "10px",
-                    padding: "3px 0",
+                    flexDirection: "column",
+                    justifyContent: "space-evenly",
+                    gap: "8px",
+                    padding: "6px 0 4px",
                     borderTop: "1px solid var(--line-soft)",
                   }}
                 >
-                  <span
-                    style={{
-                      ...kicker,
-                      fontSize: "9.5px",
-                      letterSpacing: "0.08em",
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {s.label}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "clamp(13px,1.8vh,19px)",
-                      fontWeight: 700,
-                      letterSpacing: "-0.03em",
-                      fontVariantNumeric: "tabular-nums",
-                      lineHeight: 1,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {s.value}
-                  </span>
+                  {buckets.map((b) => (
+                    <div key={b.name} style={{ display: "grid", gridTemplateColumns: "62px minmax(0,1fr) 48px", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "11.5px", fontWeight: 600 }}>{b.name}</span>
+                      <div style={{ height: "4px", borderRadius: "2px", background: "var(--line-soft)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: (b.max ? Math.min(100, (b.score / b.max) * 100) : 0) + "%", background: "var(--accent)" }} />
+                      </div>
+                      <span style={{ fontFamily: MONO, fontSize: "10px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>
+                        {b.max ? `${Math.round(b.score)}/${Math.round(b.max)}` : "day 31+"}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: "8px", flexShrink: 0, marginTop: buckets.length ? 0 : "auto" }}>
+                {stats.map((s) => (
+                  <div key={s.label} style={{ background: "var(--panel)", border: "1px solid var(--line-soft)", borderRadius: "8px", padding: "8px 10px", minWidth: 0 }}>
+                    <div style={{ ...kicker, fontSize: "9px", letterSpacing: "0.08em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                    <div style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginTop: "3px", color: STAT_TONE[s.tone] || "var(--text)" }}>
+                      {s.value}
+                    </div>
+                    {s.note && (
+                      <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.note}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -1086,19 +1097,20 @@ export default function PassDashboard({
           <div data-tour="db-week" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1.55fr",
-                gap: "16px",
+                display: "flex",
                 alignItems: "center",
-                marginBottom: "12px",
+                justifyContent: "space-between",
+                gap: "16px",
+                marginBottom: "10px",
                 flexShrink: 0,
               }}
             >
-              <div style={{ fontSize: "12.5px", fontWeight: 700, letterSpacing: "-0.02em" }}>Week in review</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "12px", paddingLeft: "18px" }}>
+              <div style={{ fontSize: "12.5px", fontWeight: 700, letterSpacing: "-0.02em" }}>Month in review</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <button
                   type="button"
                   onClick={onPrevMonth}
+                  aria-label="Previous month"
                   style={{
                     width: "22px",
                     height: "22px",
@@ -1118,6 +1130,7 @@ export default function PassDashboard({
                   type="button"
                   onClick={onNextMonth}
                   disabled={!canGoNextMonth}
+                  aria-label="Next month"
                   style={{
                     width: "22px",
                     height: "22px",
@@ -1136,71 +1149,9 @@ export default function PassDashboard({
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1.55fr", gap: "16px", flex: 1, minHeight: "230px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "7px", minHeight: 0 }}>
-                {week.stats.map((k) => (
-                  <div
-                    key={k.label}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      background: "var(--panel)",
-                      border: "1px solid var(--line)",
-                      borderRadius: "9px",
-                      padding: "7px 10px",
-                      flex: "1 1 0",
-                      minHeight: 0,
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--text)" }}>{k.label}</div>
-                      <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.06em", color: "var(--faint)", marginTop: "3px" }}>
-                        {k.sub}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "14.5px",
-                        fontWeight: 800,
-                        letterSpacing: "-0.03em",
-                        fontVariantNumeric: "tabular-nums",
-                        color: k.tone === "green" ? "var(--green)" : k.tone === "red" ? "var(--red)" : "var(--accent-deep)",
-                      }}
-                    >
-                      {k.value}
-                    </div>
-                  </div>
-                ))}
-
-                <div
-                  style={{
-                    flex: "1 1 0",
-                    minHeight: 0,
-                    background: "var(--accent-tint)",
-                    borderRadius: "9px",
-                    padding: "9px 11px",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    gap: "4px",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
-                    <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)" }}>
-                      Top performer
-                    </div>
-                    <div style={{ fontFamily: MONO, fontSize: "9.5px", color: "var(--accent-deep)" }}>{week.top.date}</div>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "-0.02em", color: "var(--text)" }}>{week.top.name}</div>
-                    <div style={{ fontSize: "15px", fontWeight: 800, letterSpacing: "-0.03em", color: "var(--green)" }}>{week.top.delta}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: "18px", display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 190px", gap: "16px", flex: 1, minHeight: "230px" }}>
+              {/* calendar */}
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "5px", flexShrink: 0 }}>
                   {DOWS.map((d) => (
                     <span key={d} style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--faint)", textAlign: "center" }}>
@@ -1232,12 +1183,12 @@ export default function PassDashboard({
                           justifyContent: "center",
                           gap: "3px",
                           borderRadius: "8px",
-                          border: "1px solid " + c.border,
+                          border: (c.today ? "1.5px solid " : "1px solid ") + c.border,
                           background: c.bg,
                           cursor: c.clickable ? "pointer" : "default",
                         }}
                       >
-                        <span style={{ fontSize: "13px", fontWeight: 600, color: c.numColor, lineHeight: 1 }}>{c.day}</span>
+                        <span style={{ fontSize: "13px", fontWeight: c.today ? 800 : 600, color: c.numColor, lineHeight: 1 }}>{c.day}</span>
                         <span style={{ fontFamily: MONO, fontSize: "10px", fontWeight: 500, lineHeight: 1, color: c.subColor }}>{c.sub}</span>
                       </div>
                     )
@@ -1271,7 +1222,7 @@ export default function PassDashboard({
                       <div style={{ fontSize: "11px", color: "var(--muted)" }}>No recommendations for this day.</div>
                     )}
                     {openCalendarDayEntry.dishes.map((dish, i) => {
-                      const diffColor = dish.diff != null ? (dish.diff > 0 ? "var(--green)" : dish.diff < 0 ? "var(--red)" : "var(--muted)") : "var(--muted)";
+                      const diffColor = dish.diff != null ? (dish.diff > 0 ? "var(--green)" : "var(--muted)") : "var(--muted)";
                       return (
                         <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "5px 0" }}>
                           <span style={{ fontSize: "11.5px", fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1290,6 +1241,45 @@ export default function PassDashboard({
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* metrics, as one vertical list to the right of the calendar */}
+              <div style={{ borderLeft: "1px solid var(--line)", paddingLeft: "16px", display: "flex", flexDirection: "column", minHeight: 0 }}>
+                {[
+                  ...week.stats.map((k) => ({
+                    label: k.label,
+                    value: k.value,
+                    sub: k.sub,
+                    color: k.tone === "green" ? "var(--green)" : k.tone === "red" ? "var(--red)" : k.tone === "muted" ? "var(--muted)" : "var(--accent-deep)",
+                    size: "16px",
+                  })),
+                  { label: "Top performer", value: week.top.name, sub: "", color: "var(--text)", size: "14px" },
+                ].map((k, i) => (
+                  <div
+                    key={k.label}
+                    style={{
+                      flex: "1 1 0",
+                      minHeight: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      gap: "3px",
+                      borderTop: i ? "1px solid var(--line-soft)" : "none",
+                    }}
+                  >
+                    <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" }}>
+                      {k.label}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "8px", minWidth: 0 }}>
+                      <span style={{ fontSize: k.size, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums", color: k.color, minWidth: 0 }}>
+                        {k.value}
+                      </span>
+                      {k.sub && (
+                        <span style={{ fontFamily: MONO, fontSize: "9px", letterSpacing: "0.04em", color: "var(--faint)", whiteSpace: "nowrap" }}>{k.sub}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1395,7 +1385,12 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
             <div style={{ fontSize: "8px", letterSpacing: "0.16em", color: "var(--ink-faint)", textAlign: "center" }}>TONIGHT&rsquo;S PITCH</div>
             <div style={{ flex: "1 1 auto", minHeight: 0, overflow: "hidden", marginTop: "6px" }}>
               <div style={{ fontFamily: SANS, fontSize: "10.5px", fontStyle: "italic", lineHeight: 1.4, color: "var(--ink)" }}>{t.pitch}</div>
-              <div style={{ fontFamily: SANS, fontSize: "9.5px", lineHeight: 1.45, color: "var(--ink-soft)", marginTop: "5px" }}>{t.reason}</div>
+              {t.why && (
+                <div style={{ borderLeft: "2px solid var(--ink-faint)", padding: "1px 0 1px 8px", marginTop: "8px" }}>
+                  <div style={{ fontSize: "8px", letterSpacing: "0.16em", color: "var(--ink-soft)" }}>WHY TONIGHT</div>
+                  <div style={{ fontFamily: SANS, fontSize: "10px", lineHeight: 1.45, color: "var(--ink)", marginTop: "3px" }}>{t.why}</div>
+                </div>
+              )}
             </div>
             <div style={dashRule} />
             <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
@@ -1443,7 +1438,7 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
               ))}
             </div>
             <div style={{ ...dashRule, margin: "9px 0" }} />
-            <div style={{ fontSize: "9.5px", fontWeight: 500, letterSpacing: "0.08em", color: "var(--red)" }}>{t.riskNote}</div>
+            <div style={{ fontSize: "9.5px", fontWeight: 500, letterSpacing: "0.08em", color: "var(--ink-soft)" }}>{t.riskNote}</div>
             <button
               type="button"
               onClick={onFlip}

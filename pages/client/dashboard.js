@@ -71,7 +71,9 @@ function firstWeekdayIndex(date) {
    each rec's title against the real menu item (exact, then substring
    fallback) to build the recipe view and cover-margin figure. */
 function toTickets(recs, wasteRisk, menuItems, trust = false) {
-  const atRisk = new Set((wasteRisk || []).map((w) => String(w.name || "").toLowerCase().trim()));
+  // Waste-risk rows by ingredient name, so each ticket can say which of its
+  // ingredients is at risk, how many days it has left and what's on hand.
+  const riskByName = new Map((wasteRisk || []).map((w) => [String(w.name || "").toLowerCase().trim(), w]));
   return (recs || []).slice(0, 3).map((r, i) => {
     // Ignore anything the AI appended in parentheses, e.g. "(South of the Border)".
     const key = (r.title || "").replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().trim();
@@ -88,13 +90,33 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
           return {
             name,
             qty: [ci.quantity, ci.unit].filter(Boolean).join(" "),
-            risk: atRisk.has(name.toLowerCase()),
+            risk: riskByName.has(name.toLowerCase()),
           };
         })
         .filter((g) => g.name),
     }));
 
     const riskCount = recipe.reduce((n, c) => n + c.ings.filter((g) => g.risk).length, 0);
+
+    // "Why tonight": the most urgent at-risk ingredient on this plate, with
+    // its days left, what's on hand and how much one plate uses. Falls back
+    // to the AI's own reason when nothing on the plate is at risk.
+    const risky = recipe
+      .flatMap((c) => c.ings)
+      .filter((g) => g.risk)
+      .map((g) => ({ ...g, w: riskByName.get(g.name.toLowerCase()) }))
+      .sort((a, b) => (a.w?.daysLeft ?? 7) - (b.w?.daysLeft ?? 7));
+    let why = r.description || "";
+    if (risky.length) {
+      const top = risky[0];
+      const dl = top.w?.daysLeft;
+      const left = dl == null ? "is at risk" : dl <= 0 ? "has to be used today" : dl === 1 ? "has 1 day left" : `has ${dl} days left`;
+      const onHand = top.w ? qtyLabelOf(top.w) : "";
+      why = `${top.name} ${left}` + (onHand ? `, with ${onHand} on hand` : "") + "." + (top.qty ? ` This dish uses ${top.qty}.` : "");
+      const others = [...new Set(risky.slice(1).map((g) => g.name))].filter((n) => n !== top.name);
+      if (others.length) why += ` Also clears ${others.join(" and ")}.`;
+    }
+
     const price = item ? parseFloat(item.price || 0) : 0;
     // Cost only from prices the restaurant may see (invoice or approved).
     // null hides both the $/cover and the margin chip. The AI's own
@@ -111,6 +133,7 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
       title: r.title,
       pitch: r.talkingPoint || r.description || "",
       reason: r.description || "",
+      why,
       margin: marginVal != null ? "MARGIN " + Math.round(marginVal) + "%" : "",
       cover: coverMargin != null ? "$" + coverMargin.toFixed(2) + "/COVER" : "",
       recipe,
@@ -155,24 +178,31 @@ function flattenSampleInvoiceItems(sampleInvoices) {
   return out;
 }
 
+/* Large amounts read better in bigger units: 5,700 oz is 356 lb. */
+function qtyLabelOf(w) {
+  if (w.remainingQty == null) return "";
+  let n = Number(w.remainingQty), u = w.unit || "";
+  if (u === "oz" && n >= 32) { n = n / 16; u = "lb"; }
+  else if (u === "fl oz" && n >= 128) { n = n / 128; u = "gal"; }
+  return (Math.round(n * 10) / 10).toLocaleString("en-US") + (u ? " " + u : "");
+}
+
 function toWaste(wasteRisk) {
-  return (wasteRisk || []).map((w) => {
-    const dl = w.daysLeft != null ? w.daysLeft : 7;
-    // Large amounts read better in bigger units: 5,700 oz is 356 lb.
-    let n = Number(w.remainingQty), u = w.unit || "";
-    if (u === "oz" && n >= 32) { n = n / 16; u = "lb"; }
-    else if (u === "fl oz" && n >= 128) { n = n / 128; u = "gal"; }
-    const qtyLabel = w.remainingQty != null
-      ? (Math.round(n * 10) / 10).toLocaleString("en-US") + (u ? " " + u : "") + " remaining"
-      : "";
-    return {
-      name: w.name,
-      qty: qtyLabel,
-      left: dl <= 0 ? "Use today" : dl === 1 ? "1 day left" : dl + " days left",
-      tone: dl <= 1 ? "today" : dl <= 2 ? "soon" : "ok",
-      pct: w.shelfLife ? Math.min(100, Math.round(((w.shelfLife - dl) / w.shelfLife) * 100)) : 50,
-    };
-  });
+  // Most urgent first, so the list reads top-down as "use this first".
+  return (wasteRisk || [])
+    .slice()
+    .sort((a, b) => (a.daysLeft ?? 7) - (b.daysLeft ?? 7))
+    .map((w) => {
+      const dl = w.daysLeft != null ? w.daysLeft : 7;
+      const qty = qtyLabelOf(w);
+      return {
+        name: w.name,
+        qty: qty ? qty + " remaining" : "",
+        left: dl <= 0 ? "Use today" : dl === 1 ? "1 day left" : dl + " days left",
+        tone: dl <= 1 ? "today" : dl <= 2 ? "soon" : "ok",
+        pct: w.shelfLife ? Math.min(100, Math.round(((w.shelfLife - dl) / w.shelfLife) * 100)) : 50,
+      };
+    });
 }
 
 export default function DashboardPage() {
@@ -455,9 +485,9 @@ export default function DashboardPage() {
       viewYear: viewDate.year,
       viewMonth: viewDate.month,
       stats: [
-        { label: "Extra sold", sub: "COVERS VS. AVG, LAST 7 NIGHTS", value: (weekExtraSold >= 0 ? "+" : "") + (weekExtraSold || 0), tone: "green" },
-        { label: "Waste saved", sub: "ESTIMATED, LAST 7 NIGHTS", value: money(weekWasteSaved), tone: "green" },
-        { label: "Hit rate", sub: "NIGHTS ABOVE AVERAGE", value: Math.round((hitRate || 0) * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
+        { label: "Extra sold", sub: "7 NIGHTS", value: (weekExtraSold >= 0 ? "+" : "") + (weekExtraSold || 0), tone: (weekExtraSold || 0) >= 0 ? "green" : "muted" },
+        { label: "Waste saved", sub: "EST. 7 NIGHTS", value: money(weekWasteSaved), tone: "green" },
+        { label: "Hit rate", sub: "ABOVE AVG", value: Math.round((hitRate || 0) * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
       ],
       top: top ? { name: top.name, date: top.date, delta: (top.delta > 0 ? "+" : "") + (Math.round(top.delta * 10) / 10) } : { name: "—", date: "", delta: "0" },
       days,
@@ -468,12 +498,25 @@ export default function DashboardPage() {
   }, [weekData, weekExtraSold, weekWasteSaved, hitRate, viewDate, isCurrentMonth, signupDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const s = data.stats;
+  // Avg margin: normal at or above the restaurant's target, amber up to 5
+  // points below it, red beyond that. Low-margin dishes: normal at 0, amber
+  // at 1-4, red at 5 or more. Expiring soon and YTD spend are no longer shown
+  // here: expiring items are in Waste risk, spend is on Invoices.
+  const marginTarget = targetFoodCost != null ? Math.max(1, 100 - targetFoodCost) : 70;
   const stats = s
     ? [
-        { label: "Avg margin", value: s.pricedCount ? s.avgMargin.toFixed(1) + "%" : "—" },
-        { label: "Low-margin items", value: s.pricedCount ? String(s.lowMargin) : "—" },
-        { label: "Expiring soon", value: String(s.expiring) },
-        { label: "YTD spend", value: money(s.ytdSpend) },
+        {
+          label: "Avg margin",
+          value: s.pricedCount ? s.avgMargin.toFixed(1) + "%" : "—",
+          note: s.pricedCount ? `target ${Math.round(marginTarget)}% · ${s.pricedCount} priced` : "awaiting pricing",
+          tone: !s.pricedCount || s.avgMargin >= marginTarget ? "ok" : s.avgMargin >= marginTarget - 5 ? "warn" : "bad",
+        },
+        {
+          label: "Low-margin",
+          value: s.pricedCount ? String(s.lowMargin) : "—",
+          note: "dishes under 50%",
+          tone: !s.pricedCount ? "ok" : s.lowMargin >= 5 ? "bad" : s.lowMargin >= 1 ? "warn" : "ok",
+        },
       ]
     : [];
 
@@ -531,7 +574,17 @@ export default function DashboardPage() {
       marginLevelScore + marginDistScore + adoptionScore + wasteScore
     )));
 
-    return { value, label: value >= 85 ? "Strong" : value >= 65 ? "Good" : "Needs work" };
+    return {
+      value,
+      label: value >= 85 ? "Strong" : value >= 65 ? "Good" : "Needs work",
+      // Points earned / points available per bucket, for the breakdown bars.
+      // Waste has 0 available until day 31 while its weight ramps in.
+      buckets: [
+        { name: "Margin", score: marginLevelScore + marginDistScore, max: marginWeight },
+        { name: "Adoption", score: adoptionScore, max: adoptWeight },
+        { name: "Waste", score: wasteScore, max: wasteWeight },
+      ],
+    };
   }, [s, hitRate, weekExtraSold, wasteResolution, restaurantCreatedAt, targetFoodCost, now]);
 
   const firstName = (userName || "").split(" ")[0] || "there";
@@ -562,7 +615,7 @@ export default function DashboardPage() {
         user={{ firstName, initials }}
         dateLabel={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
         timeLabel={now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-        optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label }}
+        optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label, buckets: optiScoreDetail.buckets || [] }}
         stats={stats}
         tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive)}
         ticketsStatus={recsStatus}
