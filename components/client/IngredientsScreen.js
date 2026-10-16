@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
-import WalkInShelf from "./WalkInShelf";
-import IngredientDetail from "./IngredientDetail";
+import IngredientCard, { qtyLabel } from "./IngredientCard";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -32,14 +31,21 @@ import {
 
 const money2 = (n) => money(n, 2);
 const moneyN = (n, d) => money(n, d);
-const pctLabel = (p) => (p == null ? "—" : (p >= 0 ? "▲ " : "▼ ") + Math.abs(p).toFixed(1) + "%");
-const pctColor = (p) => (p == null ? "var(--faint)" : p > 1.5 ? "var(--red)" : p < -1.5 ? "var(--green)" : "var(--muted)");
+// No change shows a dash, not "▲ 0.0%".
+const pctLabel = (p) => (p == null || Math.abs(p) < 0.05 ? "—" : (p > 0 ? "▲ " : "▼ ") + Math.abs(p).toFixed(1) + "%");
+// Rises are amber (watch). Red is kept for use it or lose it.
+const pctColor = (p) => (p == null ? "var(--faint)" : p > 1.5 ? "var(--amber)" : p < -1.5 ? "var(--green)" : "var(--muted)");
 
 const COLUMNS = [
   { label: "Ingredient", align: "left" },
   { label: "Price", align: "center" },
   { label: "30d", align: "right" },
+  { label: "On hand · vs next 7 days", align: "left" },
 ];
+
+/* The list's row and header grids: name, price, unit, change, on hand. */
+const ROW_GRID = "minmax(0,1fr) 78px 44px 70px 200px";
+const HEAD_GRID = "minmax(0,1fr) 136px 70px 200px";
 
 export const DEMO_INGREDIENTS = [
   { id: 1, name: "Duck breast, magret", unit: "ea", lastOrdered: "AUG 23", supplier: "Sysco Northeast",
@@ -150,10 +156,17 @@ export default function IngredientsScreen({
   const risers = all.filter((g) => g.pct != null && g.pct > 1.5);
   const fallers = all.filter((g) => g.pct != null && g.pct < -1.5);
   const unpriced = all.filter((g) => g.estimated);
-  const priced = all.filter((g) => !g.estimated);
+  // Use first: on hand with 3 days or less left.
+  const useFirst = all.filter((g) => g.daysLeft != null && g.daysLeft <= 3 && Number(g.onHand) > 0);
+  const invoicePriced = all.filter((g) => !g.estimated && !g.awaiting).length;
+  const estimatedCount = all.filter((g) => g.estimated && !g.awaiting).length;
+  const awaitingCount = all.filter((g) => g.awaiting).length;
 
-  const shown = filter === "Risers" ? risers : filter === "Needs price" ? unpriced : all;
-  const selected = shown.find((g) => g.id === selectedId) || null;
+  const shown = filter === "Use first" ? useFirst : filter === "Risers" ? risers : filter === "Needs price" ? unpriced : all;
+  // On a computer the card always shows something: the picked row, or the
+  // first one in the list. On a phone nothing opens until a row is tapped.
+  const picked = shown.find((g) => g.id === selectedId) || null;
+  const selected = picked || (isMobile ? null : shown[0] || null);
 
   const select = (g) => { setSelectedId(g.id); setMenuOpen(false); setInvoicesOpen(false); if (onOpenIngredient) onOpenIngredient(g); };
   const clear = () => { setSelectedId(null); setMenuOpen(false); setInvoicesOpen(false); };
@@ -188,7 +201,7 @@ export default function IngredientsScreen({
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)" }}>
-            <IngredientDetail g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} stacked />
+            <IngredientCard g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
           </div>
         </div>
         <MobileNav active="ingredients" NavLink={NavLink} />
@@ -223,7 +236,7 @@ export default function IngredientsScreen({
     );
   }
 
-  const monthMoved = all.reduce((a, g) => (g.pct != null && g.pct > 0 ? a + 1 : a), 0);
+  const pctOf = (n) => (all.length ? (n / all.length) * 100 : 0);
 
   return (
     <Shell theme={theme} style={{ height: "100vh", overflow: "hidden" }}>
@@ -242,23 +255,23 @@ export default function IngredientsScreen({
               <span style={{ fontSize: 12.5, color: "var(--faint)" }}>Search ingredients</span>
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3 }}>
-              {["All", "Risers", "Needs price"].map((f) => (
+              {["All", "Use first", "Risers", "Needs price"].map((f) => (
                 <button
                   key={f}
                   type="button"
                   onClick={() => { setFilter(f); clear(); }}
                   style={{ border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 600, borderRadius: 16, padding: "6px 12px", whiteSpace: "nowrap", background: filter === f ? "var(--accent)" : "transparent", color: filter === f ? "#fff" : "var(--muted)" }}
                 >
-                  {f === "Risers" ? `Risers · ${risers.length}` : f}
+                  {f === "Use first" ? `Use first · ${useFirst.length}` : f === "Risers" ? `Risers · ${risers.length}` : f === "Needs price" ? `Needs price · ${unpriced.length}` : f}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(420px,0.95fr) minmax(0,1fr)", gap: 16, flex: 1, minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="ing-list" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 126px 66px", gap: 14, padding: "12px 20px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: HEAD_GRID, gap: 14, padding: "12px 20px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
               {COLUMNS.map((c) => (
                 <span key={c.label} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", textAlign: c.align }}>{c.label}</span>
               ))}
@@ -267,34 +280,61 @@ export default function IngredientsScreen({
               {shown.map((g) => {
                 const active = selected && g.id === selected.id;
                 return (
-                  <div key={g.id} data-tour="ing-row" className="om-row" onClick={() => select(g)} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 72px 40px 66px", gap: 14, alignItems: "center", padding: "13px 20px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}>
-                    <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-                      {g.estimated && !g.awaiting && (
-                        <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 10, padding: "1px 5px", flexShrink: 0 }}>Est</span>
-                      )}
+                  <div key={g.id} data-tour="ing-row" className="om-row" onClick={() => select(g)} style={{ display: "grid", gridTemplateColumns: ROW_GRID, gap: 14, alignItems: "center", padding: "9px 20px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                        {g.estimated && !g.awaiting && (
+                          <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 10, padding: "1px 5px", flexShrink: 0 }}>Est</span>
+                        )}
+                      </div>
+                      <div style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--faint)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {g.awaiting ? "Awaiting an invoice" : g.estimated ? "Estimated price" : `${g.supplier || "Supplier"} · last ${g.lastOrdered || "—"}`}
+                      </div>
                     </div>
                     <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</div>
                     <div style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap" }}>{g.awaiting ? "" : `/${g.unit}`}</div>
                     <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, textAlign: "right", whiteSpace: "nowrap", color: pctColor(g.pct) }}>{pctLabel(g.pct)}</div>
+                    {(() => {
+                      // On hand against expected use over the next 7 days: full
+                      // at a week or more, amber under a third of a week.
+                      const oh = Number(g.onHand) || 0;
+                      const wk = Number(g.boughtPerWeek) || 0;
+                      const cover = wk > 0 ? Math.min(100, Math.round((oh / wk) * 100)) : oh > 0 ? 100 : 0;
+                      return (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                          <div style={{ flex: 1, height: 4, background: "var(--line-soft)", borderRadius: 2, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: cover + "%", background: wk > 0 && cover < 33 ? "var(--amber)" : "var(--accent)" }} />
+                          </div>
+                          <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", width: 70, textAlign: "right" }}>{oh > 0 ? qtyLabel(oh, g.unit) : "—"}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
             </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderTop: "1px solid var(--line)", flexShrink: 0, fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>
-              <span>{countLabel}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ color: "var(--red)" }}>{monthMoved} of {all.length} up</span>
-                <span>{priced.length} priced from invoices · {all.filter((g) => g.awaiting).length} awaiting price</span>
-              </span>
+            {/* How the list is priced: invoice, estimated, still awaiting. */}
+            <div style={{ padding: "11px 20px 12px", borderTop: "1px solid var(--line)", flexShrink: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700 }}>{invoicePriced} of {all.length} priced from invoices</span>
+                <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--faint)" }}>{Math.round(pctOf(invoicePriced))}%</span>
+              </div>
+              <div style={{ height: 5, background: "var(--line-soft)", borderRadius: 3, marginTop: 6, overflow: "hidden", display: "flex" }}>
+                <div style={{ width: pctOf(invoicePriced) + "%", background: "var(--accent)" }} />
+                <div style={{ width: pctOf(estimatedCount) + "%", background: "var(--amber)" }} />
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--faint)", marginTop: 5 }}>
+                <span style={{ color: "var(--accent-deep)" }}>■</span> Invoice · <span style={{ color: "var(--amber)" }}>■</span> {estimatedCount} estimated · {awaitingCount} awaiting an invoice
+              </div>
             </div>
           </div>
 
           <div data-tour="ing-detail" style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", animation: "om-rise .4s cubic-bezier(.25,.8,.35,1) both" }}>
             {selected ? (
-              <IngredientDetail g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
+              <IngredientCard g={selected} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
             ) : (
-              <WalkInShelf all={all} onPick={(g) => { setFilter("All"); select(g); }} />
+              <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: "var(--muted)" }}>Nothing in this filter.</div>
             )}
           </div>
         </div>
