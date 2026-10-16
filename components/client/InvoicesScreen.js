@@ -34,6 +34,8 @@ const STATUS = {
   processed: { label: "Processed", color: "var(--green)", bg: "rgba(63,156,86,0.12)", mark: "transparent" },
   pending: { label: "Pending review", color: "var(--amber)", bg: "rgba(193,135,28,0.14)", mark: "var(--amber)" },
   review: { label: "Needs your OK", color: "var(--red)", bg: "rgba(196,71,62,0.12)", mark: "var(--red)" },
+  // Not a stored status: shown for the extra copies of a possible duplicate.
+  duplicate: { label: "Duplicate?", color: "var(--amber)", bg: "rgba(193,135,28,0.14)", mark: "var(--amber)" },
 };
 
 const COLUMNS = [
@@ -42,9 +44,21 @@ const COLUMNS = [
   { label: "Date", align: "right" },
   { label: "Lines", align: "right" },
   { label: "Amount", align: "right" },
+  { label: "Status", align: "right" },
 ];
 
-const GRID = "1.35fr 1fr 0.72fr 0.55fr 0.78fr";
+const GRID = "1.1fr 1.25fr 0.62fr 0.55fr 0.78fr 0.95fr";
+
+/* "2026-09" -> "SEPTEMBER 2026" for the month group headings. */
+const monthHeading = (key) => {
+  if (!key || key === "none") return "NO DATE";
+  const [y, m] = key.split("-").map(Number);
+  return new Date(y, m - 1, 15).toLocaleDateString("en-US", { month: "long", year: "numeric" }).toUpperCase();
+};
+
+/* Unit-price change vs the ingredient's previous invoice, or null. */
+const priceChange = (i) =>
+  i.prevUnitCost > 0 && Number(i.unitCost) > 0 ? ((Number(i.unitCost) - i.prevUnitCost) / i.prevUnitCost) * 100 : null;
 
 export const DEMO_INVOICES = [
   { id: 1, number: "INV-88214", file: "sysco-aug23.pdf", supplier: "Sysco Northeast", date: "AUG 23", status: "processed", items: [
@@ -118,6 +132,11 @@ export default function InvoicesScreen({
   openInvoiceId = null,
   ingredientOptions = [],
   onLinkLine,
+  onDelete,
+  onMergeDuplicates,
+  onKeepDuplicates,
+  uploadStatus = null,
+  unmatchedTotal = 0,
   onSearch,
   onSignOut,
   restaurantName = "Trattoria Lume",
@@ -153,6 +172,18 @@ export default function InvoicesScreen({
     .reduce((a, v) => a + (v.amount || 0), 0);
   const pendingCount = rows.filter((v) => v.status !== "processed").length;
   const countLabel = `Showing ${rows.length} of ${rows.length} invoices`;
+  const dupCopies = rows.filter((v) => v.dup && v.dup.isCopy).length;
+
+  // Month groups, in list order (newest first), with each month's total.
+  const monthKeyOf = (v) => (v.isoDate ? String(v.isoDate).slice(0, 7) : "none");
+  const monthTotals = rows.reduce((acc, v) => {
+    const k = monthKeyOf(v);
+    const t = acc[k] || { count: 0, total: 0 };
+    t.count += 1;
+    t.total += v.amount || 0;
+    acc[k] = t;
+    return acc;
+  }, {});
 
   const pick = (v) => {
     setSelectedId(v.id);
@@ -217,7 +248,7 @@ export default function InvoicesScreen({
           </button>
         </div>
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} />
         </div>
         <MobileNav active="invoices" NavLink={NavLink} />
       </Shell>
@@ -237,7 +268,7 @@ export default function InvoicesScreen({
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
           {rows.map((v) => {
-            const m = STATUS[v.status] || STATUS.processed;
+            const m = v.dup && v.dup.isCopy ? STATUS.duplicate : STATUS[v.status] || STATUS.processed;
             return (
               <div key={v.id} onClick={() => { pick(v); setMobileDetail(true); }} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
@@ -271,9 +302,17 @@ export default function InvoicesScreen({
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 7, paddingRight: 6 }}>
-              <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)" }}>Spend this month</span>
-              <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{money0(monthSpend)}</span>
+            <div style={{ display: "flex", alignItems: "baseline", paddingRight: 6 }}>
+              {[
+                { label: "Spend this month", value: money0(monthSpend) },
+                { label: "Invoices", value: String(rows.length) },
+                { label: "Unmatched lines", value: String(unmatchedTotal) },
+              ].map((k, i) => (
+                <div key={k.label} style={{ display: "flex", alignItems: "baseline", gap: 7, padding: "0 12px", borderLeft: i ? "1px solid var(--line)" : "none" }}>
+                  <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" }}>{k.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{k.value}</span>
+                </div>
+              ))}
             </div>
             <button type="button" onClick={onSearch} className="om-hover-accent" style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "7px 12px", cursor: "pointer", fontFamily: SANS }}>
               <SearchIcon size={13} />
@@ -285,32 +324,71 @@ export default function InvoicesScreen({
 
         <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="inv-list" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+                        {dupCopies > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", flexShrink: 0, background: "rgba(193,135,28,0.10)", borderBottom: "1px solid rgba(193,135,28,0.30)" }}>
+                <span style={{ fontSize: 12, color: "var(--text)" }}>
+                  <strong style={{ color: "var(--amber)" }}>{dupCopies} possible duplicate{dupCopies === 1 ? "" : "s"}.</strong>{" "}
+                  Same supplier, number and total as another invoice — they count twice in spend and prices.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { const first = rows.find((v) => v.dup && v.dup.isCopy); if (first) pick(first); }}
+                  style={{ marginLeft: "auto", background: "none", border: "1px solid var(--amber)", color: "var(--amber)", borderRadius: 16, padding: "4px 11px", fontFamily: SANS, fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Review
+                </button>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, padding: "11px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
               {COLUMNS.map((c) => (
                 <span key={c.label} style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", textAlign: c.align }}>{c.label}</span>
               ))}
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-              {rows.map((v) => {
+              {uploadStatus && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, height: 44, padding: "0 16px", background: "var(--accent-tint)", borderBottom: "1px solid var(--line-soft)" }}>
+                  <span style={{ width: 12, height: 12, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "om-spin .8s linear infinite", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{uploadStatus.message}</span>
+                  {uploadStatus.detail && (
+                    <span style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{uploadStatus.detail}</span>
+                  )}
+                </div>
+              )}
+              {rows.map((v, idx) => {
                 const active = selected && v.id === selected.id;
+                const mk = monthKeyOf(v);
+                const newMonth = idx === 0 || monthKeyOf(rows[idx - 1]) !== mk;
+                const m = v.dup && v.dup.isCopy ? STATUS.duplicate : STATUS[v.status] || STATUS.processed;
+                const mt = monthTotals[mk];
                 return (
-                  <div
-                    key={v.id}
-                    data-tour="inv-row"
-                    className="om-row"
-                    onClick={() => pick(v)}
-                    style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, alignItems: "center", padding: "11px 16px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, color: v.number ? "var(--text)" : "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.number || "Awaiting number"}</div>
+                  <React.Fragment key={v.id}>
+                    {newMonth && (
+                      <div style={{ padding: "11px 16px 6px", background: "var(--panel)", borderBottom: "1px solid var(--line-soft)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.14em", color: "var(--faint)" }}>
+                        <span style={{ color: "var(--muted)", fontWeight: 500 }}>{monthHeading(mk)}</span>
+                        {" · "}{mt.count} invoice{mt.count === 1 ? "" : "s"}{" · "}
+                        <span style={{ color: "var(--text)" }}>{money(mt.total)}</span>
+                      </div>
+                    )}
+                    <div
+                      data-tour="inv-row"
+                      className="om-row"
+                      onClick={() => pick(v)}
+                      style={{ display: "grid", gridTemplateColumns: GRID, gap: 12, alignItems: "center", padding: "11px 16px", borderBottom: "1px solid var(--line-soft)", cursor: "pointer", background: active ? "var(--accent-tint)" : "transparent", borderLeft: `2px solid ${active ? "var(--accent)" : "transparent"}` }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, color: v.number && !(v.dup && v.dup.isCopy) ? "var(--text)" : "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.number || "Awaiting number"}</div>
+                      </div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</div>
+                      <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--accent-deep)", textAlign: "right", whiteSpace: "nowrap" }}>{v.date}</div>
+                      <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--faint)", textAlign: "right", whiteSpace: "nowrap" }}>{(v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—"}</div>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap", color: m.color, background: m.bg }}>{m.label}</span>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--muted)", textAlign: "right", whiteSpace: "nowrap" }}>{v.date}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--faint)", textAlign: "right", whiteSpace: "nowrap" }}>{(v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—"}</div>
-                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
-                    </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
             </div>
@@ -320,16 +398,25 @@ export default function InvoicesScreen({
             </div>
           </div>
 
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} />
         </div>
       </div>
     </Shell>
   );
 }
 
-function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }) {
+function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, onDelete, onMergeDuplicates, onKeepDuplicates }) {
   const [linkMode, setLinkMode] = useState(false);
-  useEffect(() => { setLinkMode(false); }, [invoice && invoice.id]);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  useEffect(() => { setLinkMode(false); setConfirmDelete(false); setActionError(""); }, [invoice && invoice.id]);
+  async function run(fn) {
+    setBusy(true);
+    setActionError("");
+    try { await fn(); setConfirmDelete(false); } catch (e) { setActionError(e.message || "That did not work."); }
+    setBusy(false);
+  }
   if (!invoice) return null;
   const s = invoice;
   const meta = STATUS[s.status] || STATUS.processed;
@@ -344,6 +431,8 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
   const extrasTotal = extras.reduce((a, e) => a + e.value, 0);
   const diff = s.amount == null ? 0 : Math.abs(itemsTotal + extrasTotal - s.amount);
   const unmatched = items.filter((i) => !i.link).length;
+  // Rises of 3% or more since the ingredient's previous invoice.
+  const priceUps = items.filter((i) => (priceChange(i) || 0) >= 3).length;
   const year = s.year || new Date().getFullYear();
 
   const fields = [
@@ -367,10 +456,30 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div data-tour="inv-detail" style={{ flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: 4, padding: "14px 16px 16px", boxShadow: "var(--shadow-lg)", overflowY: "auto", overflowX: "hidden" }}>
-          {s.fileUrl ? (
-            <a href={s.fileUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", alignSelf: "flex-end", flexShrink: 0 }}>View original ↗</a>
-          ) : (
-            <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", alignSelf: "flex-end", flexShrink: 0, color: "var(--ink-faint)" }}>No file</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexShrink: 0 }}>
+            {onDelete ? (
+              <button type="button" onClick={() => setConfirmDelete(true)} disabled={busy} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)" }}>
+                Delete invoice
+              </button>
+            ) : <span />}
+            {s.fileUrl ? (
+              <a href={s.fileUrl} target="_blank" rel="noreferrer" style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase" }}>View original ↗</a>
+            ) : (
+              <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-faint)" }}>No file</span>
+            )}
+          </div>
+          {confirmDelete && (
+            <div style={{ marginTop: 8, border: "1px dashed var(--ink-faint)", borderRadius: 4, padding: "8px 10px", fontSize: 10, lineHeight: 1.5, color: "var(--ink)", flexShrink: 0 }}>
+              Delete this invoice? Its {items.length || s.lineCount || 0} lines come off, and any ingredient it priced goes back to its previous invoice price.
+              <div style={{ display: "flex", gap: 14, marginTop: 6 }}>
+                <button type="button" disabled={busy} onClick={() => run(() => onDelete(s))} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", fontWeight: 500, color: "var(--red)" }}>
+                  {busy ? "DELETING…" : "DELETE"}
+                </button>
+                <button type="button" disabled={busy} onClick={() => setConfirmDelete(false)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--ink-soft)" }}>
+                  CANCEL
+                </button>
+              </div>
+            </div>
           )}
           <div style={{ textAlign: "center", flexShrink: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.06em" }}>{s.supplier}</div>
@@ -385,11 +494,33 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
               </div>
             ))}
           </div>
+          {s.dup && (
+            <div style={{ marginTop: 10, border: "1px dashed var(--amber)", borderRadius: 4, padding: "8px 10px", fontSize: 10, lineHeight: 1.5, color: "var(--ink)", flexShrink: 0 }}>
+              <span style={{ color: "var(--amber)", fontWeight: 500 }}>
+                ▲ SAME AS {s.dup.others.length} OTHER INVOICE{s.dup.others.length === 1 ? "" : "S"}
+                {s.dup.others.length ? " FROM " + [...new Set(s.dup.others.map((o) => o.date))].join(", ") : ""}.
+              </span>{" "}
+              Same supplier, number and {s.amount == null ? "total" : money(s.amount) + " total"}.
+              <div style={{ display: "flex", gap: 14, marginTop: 5 }}>
+                {onMergeDuplicates && (
+                  <button type="button" disabled={busy} onClick={() => run(() => onMergeDuplicates(s))} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", fontWeight: 500, color: "var(--accent-deep)" }}>
+                    {busy ? "MERGING…" : "MERGE INTO ONE ›"}
+                  </button>
+                )}
+                {onKeepDuplicates && (
+                  <button type="button" disabled={busy} onClick={() => onKeepDuplicates(s)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--ink-soft)" }}>
+                    KEEP ALL
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+          {actionError && <div style={{ fontSize: 9.5, color: "var(--red)", marginTop: 6, flexShrink: 0 }}>{actionError}</div>}
           <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "11px 0" }} />
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", flexShrink: 0 }}>
             <span>LINE ITEMS</span>
             <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span>{items.length ? `${items.length} LINES · ${unmatched} UNMATCHED` : "NOT READ YET"}</span>
+              <span>{items.length ? `${items.length} LINES · ${priceUps ? priceUps + " PRICE UP" + (priceUps === 1 ? " · " : "S · ") : ""}${unmatched} UNMATCHED` : "NOT READ YET"}</span>
               {!linkMode && s.status === "processed" && items.length > 0 && unmatched === 0 && onLinkLine && (
                 <button type="button" onClick={() => setLinkMode(true)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", color: "var(--accent-deep)", cursor: "pointer" }}>
                   CHANGE LINKS
@@ -429,9 +560,21 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
                   <span style={{ fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{i.qty} @ {money(i.unitCost)}</span>
-                  <span style={{ fontSize: 9, letterSpacing: "0.06em", color: i.link ? "var(--green)" : "var(--amber)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  <span style={{ fontSize: 9, letterSpacing: "0.06em", color: i.link ? "var(--green)" : "var(--amber)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                     {i.link ? "→ " + i.link : "▲ not linked to an ingredient"}
                   </span>
+                  {(() => {
+                    // Price move since this ingredient's previous invoice. Rises
+                    // of 3% or more are amber; smaller moves and drops stay grey.
+                    const c = priceChange(i);
+                    if (c == null || Math.abs(c) < 0.05) return null;
+                    const up = c >= 3;
+                    return (
+                      <span style={{ marginLeft: "auto", fontSize: 9, whiteSpace: "nowrap", flexShrink: 0, fontWeight: up ? 500 : 400, color: up ? "var(--amber)" : "var(--ink-faint)" }}>
+                        {(c > 0 ? "▲ " : "▼ ") + Math.abs(c).toFixed(1) + "% vs " + i.prevDate}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             ))}
@@ -449,9 +592,19 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine }
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500, color: "var(--ink)" }}>
               <span style={{ letterSpacing: "0.08em" }}>INVOICE TOTAL</span><span>{s.amount == null ? "PENDING" : money(s.amount)}</span>
             </div>
-            {s.amount != null && diff > 0.01 && (
-              <div style={{ fontSize: 9.5, letterSpacing: "0.06em", color: "var(--red)", marginTop: 2 }}>
-                ▲ Line items are off by {money(diff)} — check for tax or a missed line
+            {s.amount != null && items.length > 0 && diff <= 0.01 && (
+              <div style={{ fontSize: 9.5, color: "var(--ink-soft)", textAlign: "right", marginTop: 1 }}>✓ Lines, fees and tax add up to the total</div>
+            )}
+            {s.amount != null && items.length > 0 && diff > 0.01 && (
+              <div style={{ border: "1px dashed var(--amber)", borderRadius: 4, padding: "7px 9px", fontSize: 9.5, lineHeight: 1.5, color: "var(--ink)", marginTop: 4 }}>
+                <span style={{ color: "var(--amber)", fontWeight: 500 }}>▲ DOESN&rsquo;T ADD UP.</span>{" "}
+                Lines, fees and tax come to {money(itemsTotal + extrasTotal)} but the invoice says {money(s.amount)}. A {money(diff)} line may have been missed or misread.
+                {s.fileUrl && (
+                  <>
+                    {" "}
+                    <a href={s.fileUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 500 }}>CHECK ORIGINAL ›</a>
+                  </>
+                )}
               </div>
             )}
           </div>

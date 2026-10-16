@@ -55,6 +55,12 @@ function shortDate(iso) {
 }
 const yearOf = (iso) => (iso ? Number(String(iso).split("-")[0]) : new Date().getFullYear());
 
+/* Possible-duplicate key: same supplier, invoice number and total. */
+const dupKeyOf = (v) =>
+  v.number && v.amount != null
+    ? [String(v.supplier || "").toLowerCase().trim(), String(v.number).toLowerCase().trim(), Number(v.amount).toFixed(2)].join("|")
+    : null;
+
 /* invoices row -> screen invoice. `status` mirrors the old page's logic:
    processed once the OCR run has both a number and an amount. */
 function toInvoice(row) {
@@ -108,6 +114,11 @@ function toLine(row) {
     // unmatched count and the Link items button.
     link: row.ingredients ? row.ingredients.name : null,
     candidates: Array.isArray(row.match_candidates) ? row.match_candidates : [],
+    unit: row.unit || null,
+    // Filled in by withPrevPrices: this ingredient's unit price on its
+    // previous invoice, for the "▲ 6.3% vs APR 2" note on the receipt.
+    prevUnitCost: null,
+    prevDate: null,
   };
 }
 
@@ -163,7 +174,13 @@ export default function InvoicesPage() {
       .eq("restaurant_id", restId)
       .order("name")
       .limit(2000);
-    return { invoices: (data || []).map(toInvoice), ingredientOptions: ings || [] };
+    // Lines on any of this restaurant's invoices not yet tied to an ingredient.
+    const { count: unmatchedTotal } = await supabase
+      .from("invoice_items")
+      .select("id, invoices!invoice_items_invoice_id_fkey!inner(restaurant_id)", { count: "exact", head: true })
+      .is("ingredient_id", null)
+      .eq("invoices.restaurant_id", restId);
+    return { invoices: (data || []).map(toInvoice), ingredientOptions: ings || [], unmatchedTotal: unmatchedTotal || 0 };
   }, []);
 
   // Invoice list kept between visits: coming back shows it at once while a
@@ -197,6 +214,37 @@ export default function InvoicesPage() {
     if (data?.signedUrl) setFileLinks((prev) => ({ ...prev, [invoice.id]: data.signedUrl }));
   }, [invoices, fileLinks]);
 
+  /* For each linked line, the same ingredient's unit price on its most recent
+     earlier invoice, skipping copies of this same invoice number. Only
+     compared when both lines use the same unit, so a case price is never
+     compared with a per-lb price. */
+  const withPrevPrices = useCallback(async (invoice, rows) => {
+    const ids = [...new Set(rows.map((l) => l.ingredientId).filter(Boolean))];
+    if (!ids.length || !invoice?.isoDate || isTourQueryActive()) return rows;
+    const { data: past } = await supabase
+      .from("invoice_items")
+      .select("ingredient_id, unit, unit_cost, invoices!invoice_items_invoice_id_fkey!inner(id, date, number, restaurant_id)")
+      .in("ingredient_id", ids)
+      .eq("invoices.restaurant_id", restaurantId)
+      .lt("invoices.date", invoice.isoDate)
+      .limit(2000);
+    const latest = new Map();
+    for (const p of past || []) {
+      const inv = p.invoices;
+      if (!inv || inv.id === invoice.id) continue;
+      if (invoice.number && inv.number === invoice.number) continue; // a copy of this invoice
+      const cur = latest.get(p.ingredient_id);
+      if (!cur || String(inv.date) > String(cur.date)) {
+        latest.set(p.ingredient_id, { date: inv.date, unit: p.unit || "", unitCost: Number(p.unit_cost) });
+      }
+    }
+    return rows.map((l) => {
+      const prev = l.ingredientId ? latest.get(l.ingredientId) : null;
+      if (!prev || !(prev.unitCost > 0) || prev.unit !== (l.unit || "")) return l;
+      return { ...l, prevUnitCost: prev.unitCost, prevDate: shortDate(prev.date) };
+    });
+  }, [restaurantId]);
+
   /* Line items are fetched lazily when a row is selected — same two queries the
      old detail page ran, minus the ocr_text fetch (not shown in this design). */
   const handleSelect = useCallback(async (invoice) => {
@@ -215,8 +263,9 @@ export default function InvoicesPage() {
       .select("*, ingredients(name, unit)")
       .eq("invoice_id", invoice.id)
       .order("item_name");
-    setLines((prev) => ({ ...prev, [invoice.id]: (data || []).map(toLine) }));
-  }, [lines, signFile]);
+    const rows = await withPrevPrices(invoice, (data || []).map(toLine));
+    setLines((prev) => ({ ...prev, [invoice.id]: rows }));
+  }, [lines, signFile, withPrevPrices]);
 
   /* Link one invoice line to an ingredient (or a new one), then refresh that
      invoice's lines so the receipt updates. */
@@ -239,7 +288,7 @@ export default function InvoicesPage() {
       .select("*, ingredients(name, unit)")
       .eq("invoice_id", invoice.id)
       .order("item_name");
-    const fresh = (data || []).map(toLine);
+    const fresh = await withPrevPrices(invoice, (data || []).map(toLine));
     // A relink can also move same-name lines on other invoices. The API does
     // not say which invoices, so drop every other cached invoice; handleSelect
     // refetches them when they are opened.
@@ -253,7 +302,7 @@ export default function InvoicesPage() {
     // Prices and inventory changed: those pages load fresh on their next visit.
     clearCachedPages(AFFECTED_BY_INVOICES);
     return json;
-  }, [restaurantId, reloadInvoices]);
+  }, [restaurantId, reloadInvoices, withPrevPrices]);
 
   /* Pre-load the first invoice's lines so the receipt is never blank. */
   useEffect(() => {
@@ -268,6 +317,59 @@ export default function InvoicesPage() {
     })),
     [invoices, lines, fileLinks]
   );
+
+  /* Possible duplicates: same supplier, number and total. The first one in
+     the list (the newest) counts as the original; the rest are flagged as
+     copies. A set the owner chose to keep is remembered in this browser. */
+  const [keptDupes, setKeptDupes] = useState([]);
+  useEffect(() => {
+    if (!restaurantId) return;
+    try { setKeptDupes(JSON.parse(localStorage.getItem("om_kept_dupes_" + restaurantId) || "[]")); } catch { setKeptDupes([]); }
+  }, [restaurantId]);
+  const withDupes = useMemo(() => {
+    const groups = new Map();
+    withLines.forEach((v) => {
+      const k = dupKeyOf(v);
+      if (k && !keptDupes.includes(k)) groups.set(k, [...(groups.get(k) || []), v]);
+    });
+    return withLines.map((v) => {
+      const k = dupKeyOf(v);
+      const g = k ? groups.get(k) : null;
+      if (!g || g.length < 2) return v;
+      return {
+        ...v,
+        dup: { key: k, isCopy: g[0].id !== v.id, others: g.filter((o) => o.id !== v.id).map((o) => ({ id: o.id, date: o.date })) },
+      };
+    });
+  }, [withLines, keptDupes]);
+
+  /* Deletes through the API, which also re-prices the affected ingredients,
+     recomputes dish costs and rebuilds inventory. */
+  const deleteInvoices = useCallback(async (ids) => {
+    if (!ids.length) return null;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/invoices/delete-invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ restaurant_id: restaurantId, invoice_ids: ids }),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "Could not delete that invoice.");
+    setLines({}); // other invoices' price notes may have shifted
+    await reloadInvoices();
+    clearCachedPages(AFFECTED_BY_INVOICES);
+    return json;
+  }, [restaurantId, reloadInvoices]);
+  const handleDelete = (invoice) => deleteInvoices([invoice.id]);
+  // Keeps the invoice being viewed and removes its copies.
+  const handleMergeDuplicates = (invoice) => deleteInvoices((invoice.dup?.others || []).map((o) => o.id));
+  const handleKeepDuplicates = (invoice) => {
+    const k = invoice.dup?.key;
+    if (!k) return;
+    const next = [...keptDupes, k];
+    setKeptDupes(next);
+    try { localStorage.setItem("om_kept_dupes_" + restaurantId, JSON.stringify(next)); } catch {}
+  };
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -394,7 +496,9 @@ export default function InvoicesPage() {
           handleFiles(files);
         }}
       />
-      {(uploadStatus || uploadError) && (
+      {/* Progress now shows as a row at the top of the invoice list; this
+          toast is only for errors. */}
+      {uploadError && (
         <div
           style={{
             position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340,
@@ -423,7 +527,12 @@ export default function InvoicesPage() {
         />
       )}
       <InvoicesScreen
-        invoices={withLines}
+        invoices={withDupes}
+        unmatchedTotal={invData?.unmatchedTotal || 0}
+        uploadStatus={uploadStatus}
+        onDelete={tourMode ? null : handleDelete}
+        onMergeDuplicates={tourMode ? null : handleMergeDuplicates}
+        onKeepDuplicates={handleKeepDuplicates}
         loading={loading}
         error={error}
         onRetry={() => router.reload()}
