@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import MenuAnalysis from "./MenuAnalysis";
+import MenuCosting, { marginColor } from "./MenuCosting";
 import {
   Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
@@ -32,7 +32,10 @@ const pct = (n) => (Number(n) || 0).toFixed(0) + "%";
 const ppLabel = (p) => (p >= 0 ? "+" : "−") + Math.abs(p).toFixed(1) + "pp";
 const ppColor = (p) => (p < -2 ? "var(--red)" : p > 2 ? "var(--green)" : "var(--faint)");
 const moveLabel = (m) => (m >= 0 ? "+" : "−") + money2(Math.abs(m)).slice(1);
-const moveColor = (m) => (m > 0.01 ? "var(--red)" : m < -0.01 ? "var(--green)" : "var(--faint)");
+// Cost rises are amber (watch), drops green (a gain).
+const moveColor = (m) => (m > 0.01 ? "var(--amber)" : m < -0.01 ? "var(--green)" : "var(--faint)");
+// Plate cost change over the last 30 days, e.g. "▲ $0.42".
+const move30Label = (m) => (Math.abs(m || 0) > 0.005 ? (m > 0 ? "▲ " : "▼ ") + money2(Math.abs(m)) : "");
 
 const fmtQty = (n) => {
   const v = Number(n);
@@ -178,12 +181,15 @@ export default function MenuItemsScreen({
   // every count, filter, and average.
   const priced = data.filter((d) => !d.awaiting);
   const belowTarget = priced.filter((d) => d.margin < tgt);
-  const slipping = priced.filter((d) => d.drift < -2);
+  // Cost rising: plate cost went up over the last 30 days.
+  const costRising = priced.filter((d) => (d.move30 || 0) > 0.005);
+  const waitingList = data.filter((d) => d.awaiting);
   const estimated = priced.filter((d) => d.estShare > 0.15);
 
   const shown =
     filter === "Below target" ? belowTarget :
-    filter === "Slipping" ? slipping :
+    filter === "Cost rising" ? costRising :
+    filter === "Waiting" ? waitingList :
     filter === "Part-estimated" ? estimated : data;
 
   const selected = shown.find((d) => d.id === selectedId) || null;
@@ -253,13 +259,13 @@ export default function MenuItemsScreen({
                 {d.awaiting ? (
                   <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</span>
                 ) : (
-                  <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
+                  <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                 <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>{money0(d.price)} menu · {d.awaiting ? "awaiting pricing" : `${money2(d.cost)} cost`}</span>
                 {!d.awaiting && (
-                  <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
                 )}
               </div>
             </div>
@@ -287,10 +293,10 @@ export default function MenuItemsScreen({
               <span style={{ fontSize: 12.5, color: "var(--faint)" }}>Search dishes</span>
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3 }}>
-              {["All", "Below target", "Slipping"].map((f) => (
+              {["All", "Below target", "Cost rising", "Waiting"].map((f) => (
                 <button key={f} type="button" onClick={() => { setFilter(f); setSelectedId(null); }}
                   style={{ border: "none", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 600, borderRadius: 16, padding: "6px 12px", whiteSpace: "nowrap", background: filter === f ? "var(--accent)" : "transparent", color: filter === f ? "#fff" : "var(--muted)" }}>
-                  {f === "Below target" ? `Below target · ${belowTarget.length}` : f === "Slipping" ? `Slipping · ${slipping.length}` : f}
+                  {f === "Below target" ? `Below target · ${belowTarget.length}` : f === "Cost rising" ? `Cost rising · ${costRising.length}` : f === "Waiting" ? `Waiting · ${waitingList.length}` : f}
                 </button>
               ))}
             </div>
@@ -323,17 +329,33 @@ export default function MenuItemsScreen({
                             <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
                           )}
                         </div>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, textWrap: "pretty", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{d.name}</div>
+                        {/* One line; a long name ends in "…" so every card lines up. */}
+                        <div title={d.name} style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.25, marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</div>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                         <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.awaiting ? `${money2(d.price)} menu` : `${money2(d.price)} menu · ${money2(d.cost)} cost`}</div>
                         {d.awaiting ? (
-                          <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Awaiting pricing</div>
+                          <>
+                            {/* One pip per ingredient (scaled to 10), filled once it has a price. */}
+                            {(() => {
+                              const total = Math.max(1, d.lineCount);
+                              const n = Math.min(10, total);
+                              const filled = Math.round(((total - d.unpricedCount) / total) * n);
+                              return (
+                                <div style={{ display: "flex", gap: 2 }}>
+                                  {Array.from({ length: n }).map((_, k) => (
+                                    <span key={k} style={{ flex: 1, height: 4, borderRadius: 1, background: k < filled ? "var(--accent)" : "var(--line)" }} />
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                            <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.06em", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.unpricedCount} of {d.lineCount} ingredients unpriced</div>
+                          </>
                         ) : (
                           <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                            <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
                             <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>mgn</span>
-                            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: ppColor(d.drift) }}>{ppLabel(d.drift)}</span>
+                            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
                           </div>
                         )}
                       </div>
@@ -370,8 +392,8 @@ export default function MenuItemsScreen({
                             <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</div>
                           ) : (
                             <>
-                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.margin < tgt ? "var(--red)" : "var(--green)" }}>{pct(d.margin)}</div>
-                              <div style={{ fontFamily: MONO, fontSize: 10.5, color: ppColor(d.drift), marginTop: 2 }}>{ppLabel(d.drift)}</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</div>
+                              <div style={{ fontFamily: MONO, fontSize: 10.5, color: moveColor(d.move30), marginTop: 2 }}>{move30Label(d.move30)}</div>
                             </>
                           )}
                         </div>
@@ -384,8 +406,8 @@ export default function MenuItemsScreen({
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 20px", borderTop: "1px solid var(--line)", flexShrink: 0, fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>
               <span>{countLabel}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <span>{belowTarget.length} below {pct(tgt)}</span>
-                <span>Menu average {priced.length ? pct(avgMargin) : "—"}</span>
+                <span>{priced.length} costed</span>
+                <span>{waitingList.length} waiting on prices</span>
               </span>
             </div>
           </div>
@@ -400,10 +422,10 @@ export default function MenuItemsScreen({
                 onBack={() => setSelectedId(null)}
               />
             ) : (
-              <MenuAnalysis
+              <MenuCosting
                 dishes={data}
                 tgt={tgt}
-                restaurantName={restaurantName}
+                NavLink={NavLink}
                 onPick={(d) => { setFilter("All"); setSelectedId(d.id); }}
               />
             )}
@@ -684,7 +706,7 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
           {!d.awaiting && (() => {
             const m = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
             return (
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: m < tgt ? "var(--red)" : "var(--green)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: m < tgt ? marginColor(m, tgt) : "var(--ink-soft)" }}>
                 <span>MARGIN · TARGET {pct(tgt)}</span>
                 <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct(m)}</span>
               </div>

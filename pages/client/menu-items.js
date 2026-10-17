@@ -94,6 +94,7 @@ function toDish(row, costHistory, covers, opts = {}) {
         estimated: !!g.is_estimated,
         unitMismatch: hasUnitMismatch(recipeUnit, ingredientUnit),
         unpriced: !priced,
+        lastOrdered: g.last_ordered_at || null,
       };
     }),
   }));
@@ -118,6 +119,7 @@ function toDish(row, costHistory, covers, opts = {}) {
       estimated: !!g.is_estimated,
       unitMismatch,
       unpriced: !priced,
+      lastOrdered: g.last_ordered_at || null,
     };
   });
   if (flat.length) components.push({ name: "Recipe", ingredients: flat });
@@ -135,6 +137,30 @@ function toDish(row, costHistory, covers, opts = {}) {
   const cost = allLines.length ? recipeCost : num(row.cost);
   const costThen = history.length ? price - (history[0].value / 100) * price : cost;
 
+  // Plate cost change over the last 30 days, read from the saved cost
+  // history (recomputeMenuCosts dates each row to its invoice). Rows arrive
+  // oldest first.
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
+  const hist = (costHistory || []).filter((r) => r.created_at && num(r.new_cost) > 0);
+  const before = hist.filter((r) => r.created_at <= cutoff);
+  const inWindow = hist.filter((r) => r.created_at > cutoff);
+  const costMonthAgo = before.length
+    ? num(before[before.length - 1].new_cost)
+    : inWindow.length && num(inWindow[0].old_cost) > 0 ? num(inWindow[0].old_cost) : null;
+  const move30 = inWindow.length && costMonthAgo != null ? num(inWindow[inWindow.length - 1].new_cost) - costMonthAgo : 0;
+  // Likely cause: the costliest priced line whose ingredient was invoiced
+  // in the same window.
+  const shortDay = (iso) => `${monthLabel(iso)} ${Number(String(iso).slice(8, 10))}`;
+  const cutoffDay = cutoff.slice(0, 10);
+  const recentLine = allLines
+    .filter((i) => !i.unpriced && i.lastOrdered && String(i.lastOrdered).slice(0, 10) >= cutoffDay)
+    .sort((a, b) => b.cost - a.cost)[0];
+  const moveCause = Math.abs(move30) > 0.005
+    ? recentLine
+      ? `${recentLine.name} · ${shortDay(recentLine.lastOrdered)} invoice`
+      : `Updated ${shortDay(inWindow[inWindow.length - 1].created_at)}`
+    : null;
+
   return {
     id: row.id,
     name: row.name,
@@ -146,6 +172,8 @@ function toDish(row, costHistory, covers, opts = {}) {
     history,
     components,
     unpricedCount,
+    move30,
+    moveCause,
   };
 }
 
@@ -270,8 +298,8 @@ export default function MenuItemsPage() {
         .select(`
           id, name, price, cost, category,
           menu_item_components(id, name, cost,
-            component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at))),
-          menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at))
+            component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))),
+          menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))
         `)
         .eq("restaurant_id", restaurantId)
         .is("archived_at", null)
@@ -299,7 +327,7 @@ export default function MenuItemsPage() {
       for (let from = 0; ; from += PAGE) {
         const { data: page, error: hErr } = await supabase
           .from("menu_item_cost_history")
-          .select("menu_item_id, new_cost, created_at")
+          .select("menu_item_id, old_cost, new_cost, created_at")
           .in("menu_item_id", ids)
           .order("created_at", { ascending: true })
           .range(from, from + PAGE - 1);
