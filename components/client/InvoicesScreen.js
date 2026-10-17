@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
 } from "./ClientChrome";
 
@@ -241,12 +241,7 @@ export default function InvoicesScreen({
   if (isMobile && mobileDetail && selected) {
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-          <button type="button" onClick={() => setMobileDetail(false)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", cursor: "pointer" }}>
-            ← All invoices
-          </button>
-        </div>
+        <MobileBackBar label="Invoices" onBack={() => setMobileDetail(false)} title={selected.number || "Invoice"} />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
           <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} />
         </div>
@@ -256,34 +251,121 @@ export default function InvoicesScreen({
   }
 
   if (isMobile) {
+    const nPending = rows.filter((v) => v.status === "pending").length;
+    const nReview = rows.filter((v) => v.status === "review").length;
+    const nNeed = nPending + nReview;
+    const firstNeed = rows.find((v) => v.status !== "processed");
+    const monthShort = now.toLocaleDateString("en-US", { month: "short" });
+    const openRow = (v) => { pick(v); setMobileDetail(true); };
+    const kpi = { fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" };
+    const kpiVal = { fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", marginTop: 4, fontVariantNumeric: "tabular-nums" };
+    const banner = { width: "100%", display: "flex", alignItems: "center", gap: 12, background: "color-mix(in srgb, var(--amber) 10%, var(--shell))", border: "1px dashed var(--amber)", borderRadius: 12, padding: "12px 14px", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" };
+
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-0.03em" }}>Invoices</div>
-            <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>{countLabel}</div>
-          </div>
-          <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "9px 16px", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>↑ Upload</button>
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
-          {rows.map((v) => {
-            const m = v.dup && v.dup.isCopy ? STATUS.duplicate : STATUS[v.status] || STATUS.processed;
-            return (
-              <div key={v.id} onClick={() => { pick(v); setMobileDetail(true); }} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer" }}>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em" }}>{v.supplier}</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>
-                    {(v.number || "Awaiting number") + " · " + v.date + " · " + ((v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—")}
-                  </span>
-                  <span style={{ fontFamily: MONO, fontSize: 8.5, letterSpacing: "0.1em", textTransform: "uppercase", borderRadius: 12, padding: "3px 8px", color: m.color, background: m.bg }}>{m.label}</span>
-                </div>
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "18px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+
+          <MobileTitle
+            kicker={`${restaurantName} · Purchasing`}
+            title="Invoices"
+            action={
+              <button type="button" onClick={onUpload} style={{ flexShrink: 0, height: 44, display: "flex", alignItems: "center", gap: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 22, padding: "0 16px 0 13px", fontFamily: SANS, fontSize: 14, fontWeight: 700, boxShadow: "0 8px 18px rgba(2,164,186,0.26)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
+                Snap or upload
+              </button>
+            }
+          />
+
+          <div style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+            <div style={{ padding: "12px 12px 11px" }}>
+              <div style={kpi}>Spend · {monthShort}</div>
+              <div style={kpiVal}>{money0(monthSpend)}</div>
+            </div>
+            <div style={{ padding: "12px 12px 11px", borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={kpi}>Invoices</div>
+              <div style={kpiVal}>{rows.length}</div>
+            </div>
+            <div style={{ padding: "12px 12px 11px", borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={kpi}>Unmatched</div>
+              <div style={{ ...kpiVal, color: unmatchedTotal ? "var(--amber)" : "var(--text)" }}>
+                {unmatchedTotal} <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0, color: "var(--muted)" }}>lines</span>
               </div>
-            );
-          })}
+            </div>
+          </div>
+
+          {nNeed > 0 && firstNeed && (
+            <button type="button" onClick={() => openRow(firstNeed)} style={banner}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{nNeed} invoice{nNeed === 1 ? " needs" : "s need"} you</span>
+                <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                  {[nPending ? `${nPending} waiting on review` : null, nReview ? `${nReview} total to OK` : null].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", color: "var(--amber)", flexShrink: 0 }}>REVIEW ›</span>
+            </button>
+          )}
+
+          {dupCopies > 0 && (
+            <button type="button" onClick={() => { const first = rows.find((v) => v.dup && v.dup.isCopy); if (first) openRow(first); }} style={banner}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{dupCopies} possible duplicate{dupCopies === 1 ? "" : "s"}</span>
+                <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Same supplier, number and total. They count twice in spend and prices.</span>
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", color: "var(--amber)", flexShrink: 0 }}>REVIEW ›</span>
+            </button>
+          )}
+
+          <div style={{ ...mCard, overflow: "hidden" }}>
+            {uploadStatus && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 48, padding: "8px 14px", background: "var(--accent-tint)", borderBottom: "1px solid var(--line-soft)" }}>
+                <span style={{ width: 12, height: 12, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "om-spin .8s linear infinite", flexShrink: 0 }} />
+                <span style={{ minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{uploadStatus.message}</span>
+                  {uploadStatus.detail && (
+                    <span style={{ display: "block", fontFamily: MONO, fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{uploadStatus.detail}</span>
+                  )}
+                </span>
+              </div>
+            )}
+            {rows.map((v, idx) => {
+              const mk = monthKeyOf(v);
+              const newMonth = idx === 0 || monthKeyOf(rows[idx - 1]) !== mk;
+              const mt = monthTotals[mk];
+              const m = v.dup && v.dup.isCopy ? STATUS.duplicate : STATUS[v.status] || STATUS.processed;
+              const lines = (v.items && v.items.length) || v.lineCount;
+              return (
+                <React.Fragment key={v.id}>
+                  {newMonth && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "11px 14px 8px", background: "var(--panel)", borderTop: idx ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line-soft)", fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", color: "var(--muted)" }}>
+                      <span><span style={{ color: "var(--text)", fontWeight: 500 }}>{monthHeading(mk)}</span> · {mt.count} INVOICE{mt.count === 1 ? "" : "S"}</span>
+                      <span style={{ color: "var(--text)", whiteSpace: "nowrap" }}>{money(mt.total)}</span>
+                    </div>
+                  )}
+                  <button type="button" onClick={() => openRow(v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, minHeight: 64, padding: "12px 10px 12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
+                    <span style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: m.mark, flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+                      <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</span>
+                        <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: v.amount == null ? "var(--faint)" : "var(--text)" }}>{v.amount == null ? "—" : money(v.amount)}</span>
+                      </span>
+                      <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {(v.number || "Awaiting number") + " · " + v.date + " · " + (lines ? lines + " items" : v.status === "pending" ? "reading…" : "—")}
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap", color: m.color, background: m.bg }}>{m.label}</span>
+                      </span>
+                    </span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
+                  </button>
+                </React.Fragment>
+              );
+            })}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 14px", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>
+              <span>{countLabel}</span>
+              <span>{pendingCount ? pendingCount + " awaiting review" : "All processed"}</span>
+            </div>
+          </div>
         </div>
         <MobileNav active="invoices" NavLink={NavLink} />
       </Shell>
