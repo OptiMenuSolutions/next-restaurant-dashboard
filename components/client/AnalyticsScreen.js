@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
-  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileSegmented, mCard, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileSegmented, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD,
 } from "./ClientChrome";
 
@@ -139,16 +139,22 @@ export default function AnalyticsScreen({
   const chrome = (
     <Header active="analytics" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
+  const page = (children) => (
+    <StatePage
+      theme={theme} isMobile={isMobile} active="analytics" NavLink={NavLink} header={chrome}
+      mobileHeader={<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />}
+    >
+      {children}
+    </StatePage>
+  );
 
-  if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Reading the tickets…" /></Shell>;
-  if (error) return <Shell theme={theme}>{chrome}<ErrorState message={error} onRetry={onRetry} /></Shell>;
+  if (loading) return page(<LoadingState label="Reading the tickets…" mobile={isMobile} />);
+  if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
 
   if (!days.length) {
     const required = ["item name", "sale date", "quantity", "revenue"].map((l) => ({ label: l, border: "var(--accent)", color: "var(--accent-deep)" }))
       .concat(["category", "unit price", "hour", "voids", "comps"].map((l) => ({ label: l + " (optional)", border: "var(--line)", color: "var(--faint)" })));
-    return (
-      <Shell theme={theme}>
-        {chrome}
+    return page(
         <EmptyState
           kicker="No sales yet"
           title="Your POS knows what sold. We know what it cost."
@@ -165,7 +171,6 @@ export default function AnalyticsScreen({
             <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 10 }}>Toast, Square, Clover and Lightspeed exports map themselves. Anything else, you match the columns once.</div>
           </div>
         </EmptyState>
-      </Shell>
     );
   }
 

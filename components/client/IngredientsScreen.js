@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import IngredientCard, { qtyLabel, MobileIngredientCard } from "./IngredientCard";
 import {
-  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
 } from "./ClientChrome";
 
@@ -174,14 +174,20 @@ export default function IngredientsScreen({
   const chrome = (
     <Header active="ingredients" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
+  const page = (children) => (
+    <StatePage
+      theme={theme} isMobile={isMobile} active="ingredients" NavLink={NavLink} header={chrome}
+      mobileHeader={<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />}
+    >
+      {children}
+    </StatePage>
+  );
 
-  if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Pricing your ingredients…" /></Shell>;
-  if (error) return <Shell theme={theme}>{chrome}<ErrorState message={error} onRetry={onRetry} /></Shell>;
+  if (loading) return page(<LoadingState label="Pricing your ingredients…" mobile={isMobile} />);
+  if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
 
   if (!all.length) {
-    return (
-      <Shell theme={theme}>
-        {chrome}
+    return page(
         <EmptyState
           kicker="Nothing priced yet"
           title="Your ingredient list builds itself"
@@ -189,7 +195,6 @@ export default function IngredientsScreen({
         >
           <button type="button" onClick={onUploadInvoice} style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontFamily: SANS, fontSize: 14.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>Upload an invoice</button>
         </EmptyState>
-      </Shell>
     );
   }
 

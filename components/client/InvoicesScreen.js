@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
 } from "./ClientChrome";
 
@@ -216,25 +216,30 @@ export default function InvoicesScreen({
       logoDarkSrc={logoDarkSrc}
     />
   );
+  const page = (children) => (
+    <StatePage
+      theme={theme} isMobile={isMobile} active="invoices" NavLink={NavLink} header={chrome}
+      mobileHeader={<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />}
+    >
+      {children}
+    </StatePage>
+  );
 
-  if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Reading your invoices…" /></Shell>;
-  if (error) return <Shell theme={theme}>{chrome}<ErrorState message={error} onRetry={onRetry} /></Shell>;
+  if (loading) return page(<LoadingState label="Reading your invoices…" mobile={isMobile} />);
+  if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
 
   if (!rows.length) {
-    return (
-      <Shell theme={theme}>
-        {chrome}
+    return page(
         <EmptyState
           kicker="No invoices yet"
           title="Drop in your first delivery invoice"
           body="Photograph or export it — PDF, JPG or PNG. We read the supplier, the date, and every line item, then price your ingredients from it. Most invoices come back within a few hours."
         >
           <div style={{ width: "100%", marginTop: 8, border: "1.5px dashed var(--line)", borderRadius: 14, background: "var(--shell)", padding: "30px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)" }}>Drag files here</div>
-            <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontFamily: SANS, fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>Choose files</button>
+            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)" }}>{isMobile ? "Photo or PDF" : "Drag files here"}</div>
+            <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", minHeight: 48, fontFamily: SANS, fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>{isMobile ? "Snap or upload" : "Choose files"}</button>
           </div>
         </EmptyState>
-      </Shell>
     );
   }
 

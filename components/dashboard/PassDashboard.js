@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { MobileHeader, MobileNav } from "../client/ClientChrome";
+import { MobileHeader, MobileNav, LoadingState, ErrorState } from "../client/ClientChrome";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -529,7 +529,16 @@ export default function PassDashboard({
 
   let body;
 
-  if (loading) {
+  if (loading && isMobile) {
+    body = (
+      <div style={{ background: "var(--panel)", flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <LoadingState label="Setting the pass…" mobile />
+        </div>
+        <MobileNav active={activeNav} NavLink={Link} />
+      </div>
+    );
+  } else if (loading) {
     body = (
       <div
         style={{
@@ -588,6 +597,15 @@ export default function PassDashboard({
             </div>
           ))}
         </div>
+      </div>
+    );
+  } else if (error && isMobile) {
+    body = (
+      <div style={{ background: "var(--panel)", flex: 1, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <ErrorState message="We couldn’t reach your restaurant’s data. Nothing was lost, and tonight’s pass prints as soon as the connection is back." onRetry={onRetry} />
+        </div>
+        <MobileNav active={activeNav} NavLink={Link} />
       </div>
     );
   } else if (error) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import MenuCosting, { marginColor, MobileMenuCosting } from "./MenuCosting";
 import {
-  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileSegmented, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileSegmented, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
 } from "./ClientChrome";
 
@@ -210,14 +210,20 @@ export default function MenuItemsScreen({
   const chrome = (
     <Header active="menu-items" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
   );
+  const page = (children) => (
+    <StatePage
+      theme={theme} isMobile={isMobile} active="menu-items" NavLink={NavLink} header={chrome}
+      mobileHeader={<MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />}
+    >
+      {children}
+    </StatePage>
+  );
 
-  if (loading) return <Shell theme={theme}>{chrome}<LoadingState label="Costing your plates…" /></Shell>;
-  if (error) return <Shell theme={theme}>{chrome}<ErrorState message={error} onRetry={onRetry} /></Shell>;
+  if (loading) return page(<LoadingState label="Costing your plates…" mobile={isMobile} />);
+  if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
 
   if (!data.length) {
-    return (
-      <Shell theme={theme}>
-        {chrome}
+    return page(
         <EmptyState
           kicker="No dishes yet"
           title="Upload your menu to get started"
@@ -225,7 +231,6 @@ export default function MenuItemsScreen({
         >
           <button type="button" onClick={onAddItem} style={{ marginTop: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontFamily: SANS, fontSize: 14.5, fontWeight: 700, cursor: "pointer", boxShadow: "0 10px 24px rgba(2,164,186,0.28)" }}>Upload your menu</button>
         </EmptyState>
-      </Shell>
     );
   }
 
