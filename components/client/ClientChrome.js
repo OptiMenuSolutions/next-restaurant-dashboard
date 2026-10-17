@@ -59,6 +59,7 @@ export const CSS = `
 .om-mscroll{scrollbar-width:none}
 .om-mscroll::-webkit-scrollbar{display:none}
 .om-mscroll > *{flex-shrink:0}
+.om-mstate > div:not(.om-skel){padding:28px 20px !important}
 `;
 
 export const NAV = [
@@ -393,12 +394,62 @@ export function MobileBackBar({ label, onBack, title, right }) {
   );
 }
 
-export function LoadingState({ label = "Loading…" }) {
+export function LoadingState({ label = "Loading…", mobile = false }) {
+  if (mobile) {
+    // Phones: a pulsing outline of the phone layout instead of a lone spinner,
+    // so the page does not jump when the real content lands.
+    const bar = (w, h = 10) => ({ width: w, height: h, borderRadius: 6, background: "var(--line-soft)", animation: "om-pulse 1.4s ease-in-out infinite" });
+    return (
+      <div className="om-skel" aria-busy="true" style={{ flex: 1, padding: "18px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+        <style>{"@keyframes om-pulse{0%,100%{opacity:1}50%{opacity:.45}}"}</style>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 12, height: 12, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "om-spin .8s linear infinite", flexShrink: 0 }} />
+          <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>{label}</span>
+        </div>
+        <div style={{ ...bar("60%", 26), background: "var(--line)" }} />
+        <div style={{ ...mCard, height: 72, display: "grid", gridTemplateColumns: "repeat(3,1fr)", alignItems: "center", gap: 14, padding: "0 14px" }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={bar("70%", 8)} />
+              <div style={bar("50%", 16)} />
+            </div>
+          ))}
+        </div>
+        <div style={{ ...mCard, overflow: "hidden" }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} style={{ padding: 14, borderBottom: i < 5 ? "1px solid var(--line-soft)" : "none", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div style={bar(`${55 - (i % 3) * 10}%`, 12)} />
+                <div style={bar("18%", 12)} />
+              </div>
+              <div style={bar(`${40 + (i % 2) * 15}%`, 8)} />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, background: "var(--panel)", padding: 40 }}>
       <div style={{ width: 26, height: 26, border: "2px solid var(--line)", borderTopColor: "var(--accent)", borderRadius: "50%", animation: "om-spin .8s linear infinite" }} />
       <div style={{ fontFamily: MONO, fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)" }}>{label}</div>
     </div>
+  );
+}
+
+/* Wraps a loading, error or empty screen. Desktop: the usual shell and header,
+   unchanged. Phones: the phone header on top and the bottom nav underneath, so
+   these screens look like the rest of the phone app instead of the desktop page. */
+export function StatePage({ theme, isMobile, header, mobileHeader, active, NavLink, children }) {
+  if (!isMobile) return <Shell theme={theme}>{header}{children}</Shell>;
+  return (
+    <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
+      {mobileHeader}
+      <div className="om-mscroll om-mstate" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column", background: "var(--panel)" }}>
+        {children}
+      </div>
+      <MobileNav active={active} NavLink={NavLink} />
+    </Shell>
   );
 }
 
