@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
-import IngredientCard, { qtyLabel } from "./IngredientCard";
+import IngredientCard, { qtyLabel, MobileIngredientCard } from "./IngredientCard";
 import {
-  Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
 } from "./ClientChrome";
 
@@ -198,11 +198,9 @@ export default function IngredientsScreen({
   if (isMobile && selected) {
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)" }}>
-            <IngredientCard g={selected} onBack={clear} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
-          </div>
+        <MobileBackBar label="Ingredients" onBack={clear} title="Ingredient" />
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+          <MobileIngredientCard g={selected} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
         </div>
         <MobileNav active="ingredients" NavLink={NavLink} />
       </Shell>
@@ -210,26 +208,108 @@ export default function IngredientsScreen({
   }
 
   if (isMobile) {
+    const filterOpts = [
+      { key: "All", label: `All · ${all.length}` },
+      { key: "Use first", label: `Use first · ${useFirst.length}` },
+      { key: "Risers", label: `Risers · ${risers.length}` },
+      { key: "Needs price", label: `Needs price · ${unpriced.length}` },
+    ];
+    const pctOfAll = (n) => (all.length ? (n / all.length) * 100 : 0);
+    const showAlert = useFirst.length > 0 && (filter === "All" || filter === "Use first");
+    const uf = useFirst[0];
+    const ufLeft = uf ? (uf.daysLeft <= 0 ? "USE TODAY" : uf.daysLeft === 1 ? "1 DAY LEFT" : uf.daysLeft + " DAYS LEFT") : "";
+    const ufRisk = uf && uf.price
+      ? Math.max(0, (Number(uf.onHand) || 0) - ((Number(uf.boughtPerWeek) || 0) / 7) * Math.max(uf.daysLeft || 0, 1)) * uf.price
+      : 0;
+
     return (
-      <Shell theme={theme}>
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em" }}>Ingredients</div>
-          <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>{countLabel}</div>
-        </div>
-        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
-          {shown.map((g) => (
-            <div key={g.id} onClick={() => select(g)} style={{ background: "var(--shell)", cursor: "pointer", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{g.name}</span>
-                <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</span>
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "18px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+
+          <MobileTitle kicker={`${restaurantName} · Purchasing`} title="Ingredients" sub="Priced from your invoices" />
+
+          <MobileChips options={filterOpts} value={filter} onChange={(k) => { setFilter(k); clear(); }} />
+
+          {showAlert && uf && (
+            <button
+              type="button"
+              onClick={() => (useFirst.length === 1 ? select(uf) : setFilter("Use first"))}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, background: "color-mix(in srgb, var(--red) 8%, var(--shell))", border: "1px dashed var(--red)", borderRadius: 12, padding: "12px 14px", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}
+            >
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", fontWeight: 500, color: "var(--red)" }}>
+                  ▲ USE FIRST · {useFirst.length === 1 ? ufLeft : useFirst.length + " INGREDIENTS"}
+                </span>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {useFirst.length === 1 ? uf.name : useFirst.map((g) => g.name).join(", ")}
+                </span>
+                {useFirst.length === 1 && (
+                  <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
+                    {qtyLabel(Number(uf.onHand) || 0, uf.unit)} on hand{ufRisk >= 1 ? ` · roughly ${money(ufRisk, 0)} at risk` : ""}
+                  </span>
+                )}
+              </span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
+            </button>
+          )}
+
+          <div style={{ ...mCard, overflow: "hidden" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 14px 8px", background: "var(--panel)", borderBottom: "1px solid var(--line-soft)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--muted)" }}>
+              <span>INGREDIENT · ON HAND VS NEXT 7 DAYS</span><span>PRICE · 30D</span>
+            </div>
+            {shown.map((g) => {
+              const oh = Number(g.onHand) || 0;
+              const wk = Number(g.boughtPerWeek) || 0;
+              const cover = wk > 0 ? Math.min(100, Math.round((oh / wk) * 100)) : oh > 0 ? 100 : 0;
+              const urgent = g.daysLeft != null && g.daysLeft <= 3 && oh > 0;
+              const barColor = urgent ? "var(--red)" : wk > 0 && cover < 33 ? "var(--amber)" : "var(--accent)";
+              return (
+                <button key={g.id} type="button" onClick={() => select(g)} style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
+                  <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                      <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
+                      {g.estimated && !g.awaiting && (
+                        <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 5px", flexShrink: 0 }}>Est</span>
+                      )}
+                    </span>
+                    <span style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: g.awaiting ? "var(--faint)" : g.estimated ? "var(--amber)" : "var(--text)" }}>{g.awaiting ? "—" : money2(g.price)}</span>
+                      {!g.awaiting && <span style={{ fontFamily: MONO, fontSize: 11, color: "var(--muted)" }}>/{g.unit}</span>}
+                    </span>
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {g.awaiting ? "Awaiting an invoice" : g.estimated ? "Estimated price · no invoice yet" : `${g.supplier || "Supplier"} · last ${g.lastOrdered || "—"}`}
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, whiteSpace: "nowrap", color: pctColor(g.pct) }}>{pctLabel(g.pct)}</span>
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ flex: 1, height: 4, background: "var(--line-soft)", borderRadius: 2, overflow: "hidden" }}>
+                      <span style={{ display: "block", height: "100%", width: cover + "%", background: barColor }} />
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--muted)", whiteSpace: "nowrap", minWidth: 54, textAlign: "right" }}>{oh > 0 ? qtyLabel(oh, g.unit) : "—"}</span>
+                  </span>
+                </button>
+              );
+            })}
+            {shown.length === 0 && (
+              <div style={{ padding: "24px 14px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>Nothing in this filter.</div>
+            )}
+            <div style={{ padding: "12px 14px 13px", background: "var(--panel)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{invoicePriced} of {all.length} priced from invoices</span>
+                <span style={{ fontFamily: MONO, fontSize: 10.5, color: "var(--muted)" }}>{Math.round(pctOfAll(invoicePriced))}%</span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>per {g.unit} · {g.lastOrdered || "never"}</span>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: pctColor(g.pct) }}>{pctLabel(g.pct)}</span>
+              <div style={{ height: 5, background: "var(--line)", borderRadius: 3, marginTop: 7, overflow: "hidden", display: "flex" }}>
+                <div style={{ width: pctOfAll(invoicePriced) + "%", background: "var(--accent)" }} />
+                <div style={{ width: pctOfAll(estimatedCount) + "%", background: "var(--amber)" }} />
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)", marginTop: 6 }}>
+                <span style={{ color: "var(--accent-deep)" }}>■</span> Invoice · <span style={{ color: "var(--amber)" }}>■</span> {estimatedCount} estimated · {awaitingCount} awaiting an invoice
               </div>
             </div>
-          ))}
+          </div>
         </div>
         <MobileNav active="ingredients" NavLink={NavLink} />
       </Shell>
