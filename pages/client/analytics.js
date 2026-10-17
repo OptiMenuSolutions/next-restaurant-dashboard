@@ -123,12 +123,12 @@ export default function AnalyticsPage() {
             .eq("restaurant_id", restaurantId)
             .limit(500),
           supabase.from("upload_sessions").select("*").eq("restaurant_id", restaurantId).order("uploaded_at", { ascending: false }).limit(1),
-          supabase.from("pos_connections").select("*").eq("restaurant_id", restaurantId).eq("provider", "shift4").limit(1),
+          supabase.from("pos_connections").select("status, last_synced_at").eq("restaurant_id", restaurantId).eq("provider", "shift4").limit(1),
         ]);
         menu = realMenu || [];
         sessions = realSessions || [];
-        // A Shift4 row counts as connected unless it is marked disconnected or inactive.
-        shift4 = (realPos || []).find((c) => c.status !== "disconnected" && c.is_active !== false) || null;
+        // Only a live connection hides the upload button; pending or errored rows keep it.
+        shift4 = (realPos || []).find((c) => c.status === "connected" || c.status === "active") || null;
       }
 
       if (!sales) {
