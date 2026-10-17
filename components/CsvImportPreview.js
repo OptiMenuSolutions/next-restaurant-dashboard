@@ -21,6 +21,21 @@ const FIELD_LABELS = {
 };
 const POS_SYSTEMS = ['toast', 'square', 'clover', 'lightspeed', 'other'];
 
+/* Phones: slides up from the bottom, 16px dropdowns so iOS doesn't zoom,
+   one column of mappings on narrow screens, taller buttons clear of the home bar. */
+const CIP_CSS = `
+@media (max-width:900px){
+  .cip-overlay{padding:0 !important;align-items:flex-end !important}
+  .cip-panel{max-width:none !important;max-height:92vh !important;max-height:92dvh !important;border-radius:16px 16px 0 0 !important;border-bottom:none !important}
+  .cip-select{font-size:16px !important;min-height:44px}
+  .cip-btn{min-height:48px}
+  .cip-foot{padding-bottom:calc(14px + env(safe-area-inset-bottom, 0px)) !important}
+}
+@media (max-width:420px){
+  .cip-grid{grid-template-columns:1fr !important}
+}
+`;
+
 export default function CsvImportPreview({ analysis, onConfirm, onCancel }) {
   const [posSystem, setPosSystem] = useState(analysis.posSystem);
   const [columnMapping, setColumnMapping] = useState(analysis.columnMapping);
@@ -43,8 +58,9 @@ export default function CsvImportPreview({ analysis, onConfirm, onCancel }) {
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(17,24,25,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: 'var(--shell,#fff)', border: '1px solid var(--line,#d8dfe0)', borderRadius: 14, boxShadow: '0 24px 60px rgba(17,24,25,0.25)', overflow: 'hidden' }}>
+    <div className="cip-overlay" style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(17,24,25,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <style>{CIP_CSS}</style>
+      <div className="cip-panel" style={{ width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: 'var(--shell,#fff)', border: '1px solid var(--line,#d8dfe0)', borderRadius: 14, boxShadow: '0 24px 60px rgba(17,24,25,0.25)', overflow: 'hidden' }}>
         <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--line-soft,#eef1f2)' }}>
           <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent-deep,#03808f)', marginBottom: 6 }}>
             Review before importing
@@ -63,17 +79,18 @@ export default function CsvImportPreview({ analysis, onConfirm, onCancel }) {
         <div style={{ overflowY: 'auto', flex: 1, padding: '16px 22px' }}>
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--muted,#4b585b)', marginBottom: 5 }}>Detected POS system</label>
-            <select value={posSystem} onChange={(e) => setPosSystem(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line,#d8dfe0)', fontSize: 13.5 }}>
+            <select className="cip-select" value={posSystem} onChange={(e) => setPosSystem(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line,#d8dfe0)', fontSize: 13.5 }}>
               {POS_SYSTEMS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
 
           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted,#4b585b)', marginBottom: 8 }}>Column mapping — fix any that look wrong</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
+          <div className="cip-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
             {Object.entries(FIELD_LABELS).map(([field, label]) => (
               <div key={field}>
                 <label style={{ display: 'block', fontSize: 11, color: 'var(--faint,#78868a)', marginBottom: 3 }}>{label}</label>
                 <select
+                  className="cip-select"
                   value={columnMapping[field] || ''}
                   onChange={(e) => setField(field, e.target.value)}
                   style={{ width: '100%', padding: '7px 8px', borderRadius: 7, border: '1px solid var(--line,#d8dfe0)', fontSize: 12.5 }}
@@ -90,7 +107,7 @@ export default function CsvImportPreview({ analysis, onConfirm, onCancel }) {
               <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted,#4b585b)', marginBottom: 8 }}>Preview (first {analysis.preview.length} rows)</div>
               <div style={{ border: '1px solid var(--line-soft,#eef1f2)', borderRadius: 8, overflow: 'hidden' }}>
                 {analysis.preview.map((r, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 10px', fontSize: 12, borderBottom: i < analysis.preview.length - 1 ? '1px solid var(--line-soft,#eef1f2)' : 'none' }}>
+                  <div key={i} style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: '2px 10px', padding: '7px 10px', fontSize: 12, borderBottom: i < analysis.preview.length - 1 ? '1px solid var(--line-soft,#eef1f2)' : 'none' }}>
                     <span style={{ fontWeight: 600 }}>{r.item_name}</span>
                     <span style={{ color: 'var(--faint,#78868a)' }}>{r.sale_date} · qty {r.quantity_sold} · ${r.revenue}</span>
                   </div>
@@ -104,11 +121,11 @@ export default function CsvImportPreview({ analysis, onConfirm, onCancel }) {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line-soft,#eef1f2)' }}>
-          <button type="button" onClick={onCancel} disabled={submitting} style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid var(--line,#d8dfe0)', background: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
+        <div className="cip-foot" style={{ display: 'flex', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line-soft,#eef1f2)' }}>
+          <button type="button" className="cip-btn" onClick={onCancel} disabled={submitting} style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid var(--line,#d8dfe0)', background: 'none', fontSize: 13.5, fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
-          <button type="button" onClick={submit} disabled={submitting} style={{ flex: 2, padding: 11, borderRadius: 8, border: 'none', background: 'var(--accent,#02a4ba)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
+          <button type="button" className="cip-btn" onClick={submit} disabled={submitting} style={{ flex: 2, padding: 11, borderRadius: 8, border: 'none', background: 'var(--accent,#02a4ba)', color: '#fff', fontSize: 13.5, fontWeight: 700, cursor: 'pointer', opacity: submitting ? 0.6 : 1 }}>
             {submitting ? 'Importing…' : `Import ${analysis.usableRows} rows`}
           </button>
         </div>
