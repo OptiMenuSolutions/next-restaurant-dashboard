@@ -8,6 +8,22 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import supabase from '../lib/supabaseClient';
 
+/* Phones: full-screen search, 16px input so iOS doesn't zoom on focus,
+   Cancel instead of Esc, and taller result rows for thumbs. */
+const US_CSS = `
+.us-cancel{display:none}
+.us-row:hover{background:var(--panel,#eef0ef)}
+@media (max-width:900px){
+  .us-overlay{padding:0 !important;align-items:stretch !important}
+  .us-panel{max-width:none !important;max-height:none !important;height:100% !important;border:none !important;border-radius:0 !important;padding-top:env(safe-area-inset-top,0px)}
+  .us-input{font-size:16px !important}
+  .us-esc{display:none}
+  .us-cancel{display:inline;font-size:14px;font-weight:600;color:var(--accent-deep,#03808f)}
+  .us-close{min-height:44px;padding:0 4px !important}
+  .us-row{min-height:48px;align-items:center;padding-top:12px !important;padding-bottom:12px !important}
+}
+`;
+
 export default function UniversalSearch({ open, onClose }) {
   const router = useRouter();
   const [query, setQuery] = useState('');
@@ -60,16 +76,20 @@ export default function UniversalSearch({ open, onClose }) {
 
   return (
     <div
+      className="us-overlay"
       onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(17,24,25,0.45)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 20px' }}
     >
+      <style>{US_CSS}</style>
       <div
+        className="us-panel"
         onClick={(e) => e.stopPropagation()}
         style={{ width: '100%', maxWidth: 560, maxHeight: '70vh', display: 'flex', flexDirection: 'column', background: 'var(--shell,#fff)', border: '1px solid var(--line,#d8dfe0)', borderRadius: 14, boxShadow: '0 24px 60px rgba(17,24,25,0.25)', overflow: 'hidden' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--line-soft,#eef1f2)' }}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--faint,#78868a)" strokeWidth="1.5" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.6-3.6" /></svg>
           <input
+            className="us-input"
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -77,7 +97,10 @@ export default function UniversalSearch({ open, onClose }) {
             placeholder="Search invoices, ingredients, menu items..."
             style={{ flex: 1, border: 'none', outline: 'none', background: 'none', fontFamily: "'Manrope',sans-serif", fontSize: 14.5, color: 'var(--text,#111819)' }}
           />
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--faint,#78868a)' }}>Esc</button>
+          <button type="button" className="us-close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--faint,#78868a)' }}>
+            <span className="us-esc">Esc</span>
+            <span className="us-cancel">Cancel</span>
+          </button>
         </div>
 
         <div style={{ overflowY: 'auto', flex: 1 }}>
@@ -96,7 +119,7 @@ export default function UniversalSearch({ open, onClose }) {
             <div>
               <div style={{ padding: '10px 18px 4px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint,#78868a)' }}>Invoices</div>
               {results.invoices.map((v) => (
-                <div key={v.id} onClick={() => go(`/client/invoices?invoice=${v.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div key={v.id} className="us-row" onClick={() => go(`/client/invoices?invoice=${v.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{v.supplier || 'Unknown supplier'} {v.number ? `· #${v.number}` : ''}</span>
                   <span style={{ fontSize: 12, color: 'var(--faint,#78868a)' }}>{v.amount != null ? money(v.amount) : ''}</span>
                 </div>
@@ -108,7 +131,7 @@ export default function UniversalSearch({ open, onClose }) {
             <div>
               <div style={{ padding: '10px 18px 4px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint,#78868a)' }}>Ingredients</div>
               {results.ingredients.map((g) => (
-                <div key={g.id} onClick={() => go(`/client/ingredients?open=${g.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div key={g.id} className="us-row" onClick={() => go(`/client/ingredients?open=${g.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{g.name}</span>
                   <span style={{ fontSize: 12, color: 'var(--faint,#78868a)' }}>{g.last_price ? `${money(g.last_price)}/${g.unit || 'unit'}` : ''}</span>
                 </div>
@@ -120,7 +143,7 @@ export default function UniversalSearch({ open, onClose }) {
             <div>
               <div style={{ padding: '10px 18px 4px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--faint,#78868a)' }}>Menu items</div>
               {results.menuItems.map((m) => (
-                <div key={m.id} onClick={() => go(`/client/menu-items?item=${m.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div key={m.id} className="us-row" onClick={() => go(`/client/menu-items?item=${m.id}`)} style={{ padding: '9px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>{m.name}</span>
                   <span style={{ fontSize: 12, color: 'var(--faint,#78868a)' }}>{m.price != null ? money(m.price) : ''}</span>
                 </div>
