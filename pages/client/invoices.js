@@ -160,27 +160,30 @@ export default function InvoicesPage() {
     // query — cheap, no full item rows fetched — so the LINES column is
     // accurate for the whole list immediately, not just whichever invoice
     // has actually been clicked/lazy-loaded via handleSelect below.
-    const { data, error: qErr } = await supabase
-      .from("invoices")
-      .select("*, invoice_items(count)")
-      .eq("restaurant_id", restId)
-      .order("date", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(1000);
-    if (qErr) throw qErr;
-    const { data: ings } = await supabase
-      .from("ingredients")
-      .select("id, name, unit")
-      .eq("restaurant_id", restId)
-      .order("name")
-      .limit(2000);
-    // Lines on any of this restaurant's invoices not yet tied to an ingredient.
-    const { count: unmatchedTotal } = await supabase
-      .from("invoice_items")
-      .select("id, invoices!invoice_items_invoice_id_fkey!inner(restaurant_id)", { count: "exact", head: true })
-      .is("ingredient_id", null)
-      .eq("invoices.restaurant_id", restId);
-    return { invoices: (data || []).map(toInvoice), ingredientOptions: ings || [], unmatchedTotal: unmatchedTotal || 0 };
+    // All three run at once; none needs another's result.
+    const [invRes, ingRes, unmatchedRes] = await Promise.all([
+      supabase
+        .from("invoices")
+        .select("*, invoice_items(count)")
+        .eq("restaurant_id", restId)
+        .order("date", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      supabase
+        .from("ingredients")
+        .select("id, name, unit")
+        .eq("restaurant_id", restId)
+        .order("name")
+        .limit(2000),
+      // Lines on any of this restaurant's invoices not yet tied to an ingredient.
+      supabase
+        .from("invoice_items")
+        .select("id, invoices!invoice_items_invoice_id_fkey!inner(restaurant_id)", { count: "exact", head: true })
+        .is("ingredient_id", null)
+        .eq("invoices.restaurant_id", restId),
+    ]);
+    if (invRes.error) throw invRes.error;
+    return { invoices: (invRes.data || []).map(toInvoice), ingredientOptions: ingRes.data || [], unmatchedTotal: unmatchedRes.count || 0 };
   }, []);
 
   // Invoice list kept between visits: coming back shows it at once while a
