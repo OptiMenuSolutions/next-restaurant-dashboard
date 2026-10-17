@@ -56,6 +56,9 @@ export const CSS = `
 .om-app ::-webkit-scrollbar-track{background:transparent}
 .om-scroll-x{overflow-x:auto;scrollbar-width:none}
 .om-scroll-x::-webkit-scrollbar{display:none}
+.om-mscroll{scrollbar-width:none}
+.om-mscroll::-webkit-scrollbar{display:none}
+.om-mscroll > *{flex-shrink:0}
 `;
 
 export const NAV = [
@@ -275,16 +278,87 @@ export function NavIcon({ name, color = "currentColor", size = 20 }) {
 
 export function MobileNav({ active, NavLink }) {
   return (
-    <div style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--shell)", position: "sticky", bottom: 0 }}>
+    <nav aria-label="Main" style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--shell)", position: "sticky", bottom: 0, zIndex: 40, flexShrink: 0, padding: "6px 4px calc(10px + env(safe-area-inset-bottom, 0px))" }}>
       {NAV.map((n) => {
-        const color = n.key === active ? "var(--accent)" : "var(--faint)";
+        const on = n.key === active;
+        const color = on ? "var(--accent-deep)" : "var(--muted)";
         return (
-          <A key={n.key} NavLink={NavLink} href={n.href} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "11px 0 16px", color }}>
-            <NavIcon name={n.key} color={color} />
-            <span style={{ fontSize: 9.5, fontWeight: 600, color }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
+          <A key={n.key} NavLink={NavLink} href={n.href} style={{ flex: 1, minHeight: 50, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, color }}>
+            <span style={{ width: 54, height: 28, borderRadius: 14, background: on ? "var(--accent-tint)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <NavIcon name={n.key} color={color} />
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: on ? 700 : 600, color }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
           </A>
         );
       })}
+    </nav>
+  );
+}
+
+/* ── phone building blocks, shared by every screen's mobile layout ── */
+
+/* White card used across the phone layouts. */
+export const mCard = { background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)" };
+
+/* Page title: mono kicker, big title, optional sub line, optional action on the right. */
+export function MobileTitle({ kicker, title, sub, action }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+        {kicker && <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>{kicker}</div>}
+        <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1 }}>{title}</div>
+        {sub && <div style={{ fontSize: 13.5, color: "var(--muted)" }}>{sub}</div>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+/* Sideways-scrolling filter chips. options: [{ key, label }] */
+export function MobileChips({ options, value, onChange }) {
+  return (
+    <div className="om-scroll-x" style={{ display: "flex", gap: 6, margin: "0 -16px", padding: "0 16px", flexShrink: 0 }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <button key={o.key} type="button" onClick={() => onChange(o.key)} style={{ flexShrink: 0, height: 40, borderRadius: 20, padding: "0 15px", fontFamily: SANS, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", cursor: "pointer", border: `1px solid ${on ? "var(--accent)" : "var(--line)"}`, background: on ? "var(--accent)" : "var(--shell)", color: on ? "#fff" : "var(--muted)" }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Segmented control. "solid" = teal fill (page level), "soft" = tint (inside a card). */
+export function MobileSegmented({ options, value, onChange, variant = "solid" }) {
+  const solid = variant === "solid";
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))`, gap: solid ? 3 : 2, background: solid ? "var(--shell)" : "var(--panel)", border: solid ? "1px solid var(--line)" : "none", borderRadius: 24, padding: 3, flexShrink: 0 }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <button key={o.key} type="button" onClick={() => onChange(o.key)} style={{ height: solid ? 40 : 36, border: "none", borderRadius: 20, fontFamily: SANS, fontSize: solid ? 13.5 : 12, fontWeight: solid ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap", background: on ? (solid ? "var(--accent)" : "var(--accent-tint)") : "transparent", color: on ? (solid ? "#fff" : "var(--accent-deep)") : "var(--muted)" }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* Top bar for detail screens: back link on the left, small label in the middle,
+   optional item on the right (e.g. View original). Replaces MobileHeader there. */
+export function MobileBackBar({ label, onBack, title, right }) {
+  return (
+    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, height: 56, padding: "0 8px", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", background: "var(--shell)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
+      <button type="button" onClick={onBack} style={{ justifySelf: "start", minHeight: 44, display: "flex", alignItems: "center", gap: 4, padding: "0 8px", background: "none", border: "none", fontFamily: SANS, fontSize: 14, fontWeight: 600, color: "var(--accent-deep)", cursor: "pointer" }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+        {label}
+      </button>
+      <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" }}>{title}</div>
+      <div style={{ justifySelf: "end" }}>{right}</div>
     </div>
   );
 }
