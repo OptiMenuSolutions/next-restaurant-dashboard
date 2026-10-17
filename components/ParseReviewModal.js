@@ -482,6 +482,102 @@ const CSS = `
     animation: prm-spin .7s linear infinite;
     display: inline-block; margin-right: 8px; vertical-align: middle;
   }
+
+  /* ── Phone layout ── */
+  @media (max-width: 900px) {
+    .prm-overlay { padding: 0; align-items: stretch; }
+    .prm-shell {
+      max-width: none; height: 100vh; height: 100dvh; max-height: none;
+      border: none; border-radius: 0; box-shadow: none;
+    }
+
+    /* Top bar: progress takes the room, logo hides */
+    .prm-topbar { padding: calc(10px + env(safe-area-inset-top)) 14px 10px; gap: 10px; }
+    .prm-logo { display: none; }
+    .prm-topbar > div:nth-child(2) { flex: 1; min-width: 0; }
+    .prm-topbar-meta { font-size: 13px; text-align: left; }
+    .prm-prog-wrap { width: 100%; margin: 6px 0 0; }
+    .prm-confirm-all { margin: 6px 0 0; font-size: 13px; min-height: 28px; }
+    .prm-discard-btn { font-size: 13px; padding: 0 12px; min-height: 40px; border-radius: 10px; }
+
+    /* Sidebar becomes a horizontal chip row */
+    .prm-body { flex-direction: column; }
+    .prm-sidebar {
+      width: 100%; display: flex; align-items: center; gap: 6px;
+      overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+      border-right: none; border-bottom: 1px solid var(--line, #d8dfe0);
+      padding: 8px 14px; -webkit-overflow-scrolling: touch;
+    }
+    .prm-sidebar::-webkit-scrollbar { display: none; }
+    .prm-sb-section { display: flex; align-items: center; gap: 6px; border-bottom: none; padding: 0; flex-shrink: 0; }
+    .prm-sb-cat { padding: 0 2px 0 8px; white-space: nowrap; }
+    .prm-sb-section:first-child .prm-sb-cat { padding-left: 0; }
+    .prm-sb-item {
+      flex-shrink: 0; max-width: 200px; min-height: 36px; padding: 0 14px;
+      border: 1px solid var(--line, #d8dfe0); border-radius: 999px;
+      background: var(--shell, #fff); font-size: 13.5px;
+    }
+    .prm-sb-item.confirmed { border-color: #bfe4c9; background: #eaf6ee; }
+    .prm-sb-item.active { border-color: var(--accent, #02a4ba); background: #e8f7f9; }
+
+    /* Dish body */
+    .prm-scroll { padding: 16px 14px 20px; }
+    .prm-dish-title { font-size: 21px; }
+    .prm-cat-input { max-width: 100%; }
+    .prm-match-row { grid-template-columns: 84px 1fr; font-size: 14px; }
+    .prm-match-note { font-size: 13px; }
+    .prm-match-actions .prm-btn { flex: 1 1 auto; }
+    .prm-match-select { padding: 11px 12px; min-height: 44px; }
+
+    /* 16px on every field so iOS does not zoom on focus */
+    .prm-ing-input, .prm-qty-input, .prm-unit-select, .prm-unit-input,
+    .prm-cat-input, .prm-comp-name-input, .prm-match-select,
+    .prm-purchased-cost-input, .prm-purchased-unit-input { font-size: 16px !important; }
+    .prm-comp-name-input { letter-spacing: .04em; }
+    .prm-ing-input::placeholder { font-size: 15px; }
+
+    /* Components and ingredient rows */
+    .prm-comp-hd { padding: 6px 6px 6px 14px; }
+    .prm-purchased-btn { min-height: 32px; padding: 0 10px; font-size: 10px; }
+    .prm-comp-del, .prm-ing-del {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 40px; font-size: 16px; color: #a7b0b1;
+    }
+    .prm-purchased-label { min-width: 100%; font-size: 12.5px; }
+    .prm-purchased-inputs { flex-wrap: wrap; }
+    .prm-col-hd, .prm-ing-row { grid-template-columns: 1fr 64px 76px 36px; gap: 6px; }
+    .prm-col-hd { padding: 8px 6px 4px 14px; font-size: 10px; }
+    .prm-ing-row { padding: 4px 6px 4px 14px; min-height: 48px; }
+    .prm-ac-dropdown { max-height: 40vh; }
+    .prm-ac-item { min-height: 48px; }
+    .prm-ac-name { font-size: 15px; }
+    .prm-ac-meta { font-size: 12px; }
+    .prm-add-ing { min-height: 44px; font-size: 13px; }
+    .prm-add-comp { min-height: 48px; font-size: 13px; }
+
+    /* Footer: Prev / Next / Remove on row one, Confirm + Commit on row two */
+    .prm-footer { flex-wrap: wrap; gap: 8px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
+    .prm-nav { width: 100%; gap: 8px; }
+    .prm-nav .prm-btn { flex: 1; }
+    .prm-btn { min-height: 44px; font-size: 14px; border-radius: 10px; padding: 0 14px; }
+    .prm-footer > :not(.prm-nav) { flex: 1 1 0; min-width: 0; min-height: 44px; justify-content: center; }
+    .prm-match-hint { display: flex; align-items: center; white-space: normal; text-align: center; font-size: 13px; }
+    .prm-confirmed-tag { border-radius: 10px; font-size: 14px; }
+    .prm-btn-commit { padding: 0 14px; }
+
+    /* Launch summary */
+    .prm-commit-screen { padding: 24px 16px calc(24px + env(safe-area-inset-bottom)); }
+    .prm-commit-title { font-size: 21px; }
+    .prm-commit-sub { font-size: 14px; }
+    .prm-lists-row { flex-direction: column; align-items: stretch; }
+    .prm-lists-row > .prm-commit-summary { max-width: none; width: 100%; }
+    .prm-lists-row .prm-list-scroll { max-height: none !important; overflow-y: visible !important; }
+    .prm-archive-row { min-height: 48px; }
+    .prm-archive-name { font-size: 14px; }
+    .prm-seg-btn { min-height: 34px; padding: 0 14px; font-size: 10.5px; }
+    .prm-stat-val { font-size: 17px; }
+    .prm-commit-screen > .prm-btn { width: 100%; max-width: 420px; min-height: 50px; }
+  }
 `;
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
@@ -607,6 +703,7 @@ export default function ParseReviewModal({ dishes: rawDishes, ingredientLibrary,
           const isDone = confirmed[i];
           return (
             <div key={i} className={`prm-sb-item${isActive ? ' active' : ''}${isDone ? ' confirmed' : ''}`}
+              ref={isActive ? (el) => { if (el) el.scrollIntoView({ block: 'nearest', inline: 'center' }); } : undefined}
               onClick={() => { setCurrent(i); setView('review'); setAcSearch({}); setAcOpen({}); }}>
               <div className={`prm-sb-dot${isActive ? ' active' : ''}${isDone ? ' confirmed' : ''}`} />
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
