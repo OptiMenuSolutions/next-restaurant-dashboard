@@ -500,24 +500,28 @@ export default function InvoicesPage() {
           toast is only for errors. */}
       {uploadError && (
         <div
+          className="inv-err-toast"
+          role="alert"
+          onClick={() => setUploadError("")}
           style={{
             position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340,
-            background: uploadError ? "#faeae8" : "#e8f7f9",
-            border: `1px solid ${uploadError ? "#c4473e" : "#02a4ba"}`,
+            background: "#faeae8", border: "1px solid #c4473e",
             borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif",
-            fontSize: 13, color: uploadError ? "#c4473e" : "#03808f", boxShadow: "0 10px 30px rgba(17,24,25,0.15)",
+            fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)",
+            display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
           }}
         >
-          {uploadError ? (
-            <div style={{ fontWeight: 700 }}>{uploadError}</div>
-          ) : (
-            <>
-              <div style={{ fontWeight: 700 }}>{uploadStatus.message}</div>
-              {uploadStatus.detail && <div style={{ fontSize: 11.5, marginTop: 3, opacity: 0.85 }}>{uploadStatus.detail}</div>}
-            </>
-          )}
+          <div style={{ fontWeight: 700, flex: 1, minWidth: 0, wordBreak: "break-word" }}>{uploadError}</div>
+          <span aria-label="Dismiss" style={{ fontSize: 16, lineHeight: 1, opacity: 0.7 }}>✕</span>
         </div>
       )}
+      <style>{`@media (max-width: 900px) {
+        .inv-err-toast {
+          left: 12px !important; right: 12px !important; max-width: none !important;
+          bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+          font-size: 14px !important; padding: 14px 16px !important;
+        }
+      }`}</style>
       {duplicateModal && (
         <DuplicateInvoiceModal
           fileName={duplicateModal.fileName}
