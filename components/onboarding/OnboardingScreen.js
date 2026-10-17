@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
  * OnboardingScreen — 5-step post-signup wizard ported from
@@ -36,6 +36,7 @@ export default function OnboardingScreen({
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
+  const isPhone = useIsPhone();
   const [done, setDone] = useState(false);
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
@@ -76,7 +77,7 @@ export default function OnboardingScreen({
   };
   const removeInvoiceFile = (i) => setInvoiceFiles((prev) => prev.filter((_, idx) => idx !== i));
 
-  const inputCls = { width: "100%", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", fontSize: 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
+  const inputCls = { width: "100%", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 8, padding: isPhone ? "12px 12px" : "10px 12px", fontSize: isPhone ? 16 : 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
   const labelCls = { fontSize: 11.5, fontWeight: 600, color: "var(--muted)", marginBottom: 5, display: "block" };
   const stepKicker = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--accent-deep)", marginBottom: 8 };
   const stepTitle = { fontSize: 21, fontWeight: 800, letterSpacing: "-0.03em", marginBottom: 6 };
@@ -137,22 +138,22 @@ export default function OnboardingScreen({
         background: "var(--panel)", color: "var(--text)", fontFamily: "'Manrope',system-ui,sans-serif",
       }}
     >
-      <div style={{ background: "var(--shell)", borderBottom: "1px solid var(--line)", padding: "18px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap" }}>
+      <div style={{ background: "var(--shell)", borderBottom: "1px solid var(--line)", padding: isPhone ? "calc(12px + env(safe-area-inset-top)) 16px 12px" : "18px 30px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isPhone ? 12 : 20, flexWrap: "wrap" }}>
         <img src="/landing/logo.png" alt="optiMenu Solutions" style={{ display: "block", height: 20, width: "auto", flexShrink: 0 }} />
 
         {!done && (
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: isPhone ? 6 : 10 }}>
             {STEP_LABELS.map((label, i) => {
               const n = i + 1;
               const checked = n < step;
               const current = n === step;
               const isLast = n === STEP_LABELS.length;
               return (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: isPhone ? 6 : 10 }}>
                   <div style={{ width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, background: checked || current ? "var(--accent)" : "var(--shell)", color: checked || current ? "#fff" : "var(--faint)", border: `1px solid ${checked || current ? "var(--accent)" : "var(--line)"}` }}>
                     {checked ? <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : n}
                   </div>
-                  {!isLast && <div style={{ width: 22, height: 1, background: "var(--line)" }} />}
+                  {!isLast && <div style={{ width: isPhone ? 10 : 22, height: 1, background: "var(--line)" }} />}
                 </div>
               );
             })}
@@ -168,11 +169,11 @@ export default function OnboardingScreen({
         )}
       </div>
 
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "36px 20px" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: isPhone ? "flex-start" : "center", justifyContent: "center", padding: isPhone ? "16px 12px calc(24px + env(safe-area-inset-bottom))" : "36px 20px" }}>
         <div style={{ width: "100%", maxWidth: 520 }}>
 
           {done ? (
-            <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: "44px 36px", textAlign: "center" }}>
+            <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: isPhone ? "36px 22px" : "44px 36px", textAlign: "center" }}>
               <div style={{ width: 52, height: 52, borderRadius: "50%", background: "var(--accent-tint)", color: "var(--accent-deep)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
                 <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
               </div>
@@ -184,7 +185,7 @@ export default function OnboardingScreen({
               </NavLink>
             </div>
           ) : (
-            <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: "36px 34px" }}>
+            <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: isPhone ? "24px 18px" : "36px 34px" }}>
 
               {step === 1 && (
                 <div>
@@ -198,7 +199,7 @@ export default function OnboardingScreen({
                     {nameError && <div style={{ fontSize: 12, color: "#c4473e", marginTop: 5 }}>Enter a restaurant name to continue.</div>}
                   </div>
 
-                  <div style={{ display: "flex", gap: 12 }}>
+                  <div style={{ display: "flex", gap: isPhone ? 16 : 12, flexDirection: isPhone ? "column" : "row" }}>
                     <div style={{ flex: 1 }}>
                       <span style={labelCls}>Style of restaurant</span>
                       <select style={{ ...inputCls, cursor: "pointer" }} value={style} onChange={(e) => setStyle(e.target.value)}>
@@ -242,12 +243,12 @@ export default function OnboardingScreen({
                         { label: "Seafood", checked: freezesSeafood, set: setFreezesSeafood },
                         { label: "Bread & bakery items", checked: freezesBakery, set: setFreezesBakery },
                       ].map((opt) => (
-                        <label key={opt.label} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13.5 }}>
+                        <label key={opt.label} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: isPhone ? 15 : 13.5, minHeight: isPhone ? 44 : undefined }}>
                           <input
                             type="checkbox"
                             checked={opt.checked}
                             onChange={(e) => opt.set(e.target.checked)}
-                            style={{ width: 16, height: 16, accentColor: "var(--accent)", cursor: "pointer" }}
+                            style={{ width: isPhone ? 20 : 16, height: isPhone ? 20 : 16, accentColor: "var(--accent)", cursor: "pointer" }}
                           />
                           {opt.label}
                         </label>
@@ -267,8 +268,8 @@ export default function OnboardingScreen({
                     <span style={labelCls}>Street address</span>
                     <input style={inputCls} value={addrLine1} onChange={(e) => setAddrLine1(e.target.value)} autoComplete="address-line1" placeholder="214 Mulberry St" />
                   </div>
-                  <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-                    <div style={{ flex: 2 }}>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: isPhone ? "wrap" : undefined }}>
+                    <div style={{ flex: isPhone ? "1 1 100%" : 2 }}>
                       <span style={labelCls}>City / town</span>
                       <input style={inputCls} value={addrCity} onChange={(e) => setAddrCity(e.target.value)} autoComplete="address-level2" placeholder="New York" />
                     </div>
@@ -322,8 +323,8 @@ export default function OnboardingScreen({
                       style={{ display: "none" }}
                       onChange={(e) => { addMenuFiles(e.target.files); e.target.value = ""; }}
                     />
-                    <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 6 }}>Drag files here</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>or click to browse — PDF, JPG or PNG, as many pages as you need</div>
+                    <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 6 }}>{isPhone ? "Add menu photos" : "Drag files here"}</div>
+                    <div style={{ fontSize: isPhone ? 14 : 12, color: "var(--muted)" }}>{isPhone ? "Tap to take a photo or choose files, as many pages as you need" : "or click to browse — PDF, JPG or PNG, as many pages as you need"}</div>
                   </label>
 
                   {menuFiles.length > 0 && (
@@ -336,7 +337,7 @@ export default function OnboardingScreen({
                             type="button"
                             onClick={() => removeMenuFile(i)}
                             aria-label={`Remove ${f.name}`}
-                            style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                            style={{ position: "absolute", top: 4, right: 4, width: isPhone ? 28 : 18, height: isPhone ? 28 : 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: isPhone ? 16 : 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                           >
                             ×
                           </button>
@@ -380,8 +381,8 @@ export default function OnboardingScreen({
                       style={{ display: "none" }}
                       onChange={(e) => { addInvoiceFiles(e.target.files); e.target.value = ""; }}
                     />
-                    <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 6 }}>Drag files here</div>
-                    <div style={{ fontSize: 12, color: "var(--muted)" }}>or click to browse — PDF, JPG or PNG</div>
+                    <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 6 }}>{isPhone ? "Add invoices" : "Drag files here"}</div>
+                    <div style={{ fontSize: isPhone ? 14 : 12, color: "var(--muted)" }}>{isPhone ? "Tap to take a photo or choose files" : "or click to browse — PDF, JPG or PNG"}</div>
                   </label>
 
                   {invoiceFiles.length > 0 && (
@@ -394,7 +395,7 @@ export default function OnboardingScreen({
                             type="button"
                             onClick={() => removeInvoiceFile(i)}
                             aria-label={`Remove ${f.name}`}
-                            style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                            style={{ position: "absolute", top: 4, right: 4, width: isPhone ? 28 : 18, height: isPhone ? 28 : 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: isPhone ? 16 : 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                           >
                             ×
                           </button>
@@ -403,7 +404,7 @@ export default function OnboardingScreen({
                     </div>
                   )}
 
-                  <button type="button" onClick={continueStep} style={{ fontSize: 12.5, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>
+                  <button type="button" onClick={continueStep} style={{ fontSize: isPhone ? 14 : 12.5, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", padding: isPhone ? "12px 0" : 0 }}>
                     Skip for now — I'll upload invoices later
                   </button>
                 </div>
@@ -436,13 +437,13 @@ export default function OnboardingScreen({
 
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 30, paddingTop: 24, borderTop: "1px solid var(--line-soft)" }}>
                 {step > 1 ? (
-                  <button type="button" onClick={() => setStep((s) => Math.max(1, s - 1))} style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 24, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Back</button>
+                  <button type="button" onClick={() => setStep((s) => Math.max(1, s - 1))} style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 24, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", minHeight: isPhone ? 48 : undefined }}>Back</button>
                 ) : <span />}
                 <button
                   type="button"
                   onClick={continueStep}
                   disabled={parsingMenu || parsingInvoices}
-                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: 14, fontWeight: 700, cursor: (parsingMenu || parsingInvoices) ? "default" : "pointer", opacity: (parsingMenu || parsingInvoices) ? 0.6 : 1 }}
+                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: isPhone ? 15 : 14, fontWeight: 700, cursor: (parsingMenu || parsingInvoices) ? "default" : "pointer", opacity: (parsingMenu || parsingInvoices) ? 0.6 : 1, flex: isPhone ? 1 : undefined, minHeight: isPhone ? 48 : undefined }}
                 >
                   {parsingMenu ? "Reading your menu…" : parsingInvoices ? "Reading your invoices…" : step === 5 ? "Finish setup" : "Continue"}
                 </button>
@@ -457,4 +458,16 @@ export default function OnboardingScreen({
 
 function DefaultLink({ href, children, style }) {
   return <a href={href} style={style}>{children}</a>;
+}
+
+function useIsPhone(bp = 900) {
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${bp}px)`);
+    const update = () => setIsPhone(mq.matches);
+    update();
+    if (mq.addEventListener) mq.addEventListener("change", update); else mq.addListener(update);
+    return () => { if (mq.removeEventListener) mq.removeEventListener("change", update); else mq.removeListener(update); };
+  }, [bp]);
+  return isPhone;
 }
