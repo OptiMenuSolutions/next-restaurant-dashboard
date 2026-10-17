@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import {
-  Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileSegmented, mCard, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD,
 } from "./ClientChrome";
 
@@ -107,7 +107,8 @@ export default function AnalyticsScreen({
   days: daysProp,
   hourly,
   targetFoodCost = 30,
-  posSystem = "Toast",
+  posSystem = "Shift4",
+  posConnected = false, // true once the restaurant's POS syncs automatically; hides the upload button
   syncStamp,
   loading = false,
   error = null,
@@ -131,6 +132,7 @@ export default function AnalyticsScreen({
   const [trendMetric, setTrendMetric] = useState("rev");
   const [sortBy, setSortBy] = useState("margin");
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [mobileSection, setMobileSection] = useState("overview"); // phones: overview | dishes | close
 
   const days = useMemo(() => normalise(daysProp || DEMO_DAYS), [daysProp]);
 
@@ -294,44 +296,232 @@ export default function AnalyticsScreen({
   ] : [];
 
   if (isMobile) {
-    const mobileKpis = [
-      { label: "Net sales", value: money0(rev), color: "var(--text)" },
-      { label: "Plates", value: num(qty), color: "var(--text)" },
-      { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: foodCost == null ? "var(--faint)" : foodCost > targetFoodCost ? "var(--red)" : "var(--text)" },
-      { label: "Margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--accent-deep)" },
+    const mKpis = [
+      { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
+      { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
+      { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, note: `Target ${targetFoodCost}%`, bar: true },
+      { label: "Gross margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
     ];
+    const mGap = span <= 7 ? 12 : span <= 14 ? 6 : 2;
+    const syncLine = syncStamp || (posConnected ? `${posSystem} · synced` : "Manual upload");
+    const h2 = { fontSize: 15, fontWeight: 800, letterSpacing: "-0.02em" };
+    const hintM = { fontFamily: MONO, fontSize: 10, color: "var(--muted)" };
+    const mzRow = { display: "flex", justifyContent: "space-between", gap: 10 };
+    const mzRule = { borderTop: "1px dashed var(--ink-faint)" };
+    const mzLabel = { fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)" };
+
     return (
-      <Shell theme={theme}>
+      <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em" }}>Analytics</div>
-          <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>
-            {syncStamp || `${posSystem} · ${span} nights`}
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+
+          <div style={{ marginTop: 18 }}>
+            <MobileTitle
+              kicker={syncLine}
+              title="Sales & food cost"
+              action={!posConnected && onUpload ? (
+                <button type="button" onClick={onUpload} aria-label="Upload POS export" style={{ flexShrink: 0, width: 44, height: 44, borderRadius: "50%", border: "1px solid var(--line)", background: "var(--shell)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-deep)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
+                </button>
+              ) : null}
+            />
           </div>
-        </div>
-        <div style={{ flex: 1, padding: 16, display: "flex", flexDirection: "column", gap: 12, background: "var(--panel)" }}>
-          <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            {mobileKpis.map((k) => (
-              <div key={k.label}>
-                <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>{k.label}</div>
-                <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", marginTop: 4, color: k.color }}>{k.value}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, letterSpacing: "-0.02em" }}>Top sellers</div>
-            <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
-              {perDish.slice().sort((a, b) => b.qty - a.qty).slice(0, 5).map((d) => (
-                <div key={d.name} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px dotted var(--line)" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
-                  <span style={{ display: "flex", alignItems: "baseline", gap: 10, flexShrink: 0, fontFamily: MONO, fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
-                    <span style={{ color: "var(--faint)" }}>{num(d.qty)}</span>
-                    <span style={{ color: "var(--text)", fontWeight: 500 }}>{money0(d.rev)}</span>
-                  </span>
-                </div>
-              ))}
+
+          {/* pinned while scrolling: section tabs + range */}
+          <div style={{ position: "sticky", top: 0, zIndex: 5, margin: "0 -16px", padding: "8px 16px 10px", background: "var(--panel)", borderBottom: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: 8 }}>
+            <div role="tablist" aria-label="Section" style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
+              {[["overview", "Overview"], ["dishes", "Dishes"], ["close", "Close-out"]].map(([k, label]) => {
+                const on = mobileSection === k;
+                return (
+                  <button key={k} type="button" role="tab" aria-selected={on} onClick={() => setMobileSection(k)} style={{ flex: 1, height: 44, border: "none", background: "none", borderBottom: `2.5px solid ${on ? "var(--accent)" : "transparent"}`, marginBottom: -1, fontFamily: SANS, fontSize: 14, fontWeight: on ? 800 : 600, color: on ? "var(--accent-deep)" : "var(--muted)", cursor: "pointer" }}>
+                    {label}
+                  </button>
+                );
+              })}
             </div>
+            {mobileSection !== "close" ? (
+              <MobileSegmented
+                options={[{ key: "7d", label: "7 nights" }, { key: "14d", label: "14 nights" }, { key: "28d", label: "28 nights" }]}
+                value={range}
+                onChange={(r) => { setRange(r); setHoverIdx(null); }}
+              />
+            ) : (
+              <div style={{ height: 48, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 24, fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", color: "var(--muted)" }}>
+                LAST SERVICE NIGHT · {DAY_NAMES[zNight.dow].toUpperCase()} {zNight.label}
+              </div>
+            )}
           </div>
+
+          {/* ── overview ── */}
+          {mobileSection === "overview" && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                {mKpis.map((k) => (
+                  <div key={k.label} style={{ ...mCard, borderRadius: 12, padding: "12px 13px", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                    <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>{k.label}</div>
+                    <div style={{ fontSize: 23, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums", color: k.color }}>{k.value}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 11, fontWeight: 500, color: k.delta.color }}>{k.delta.label}</div>
+                    {k.bar && (
+                      <div style={{ position: "relative", height: 5, background: "var(--line-soft)", borderRadius: 3, margin: "4px 0 2px" }}>
+                        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: Math.min(100, ((foodCost || 0) / 50) * 100) + "%", background: k.color, borderRadius: 3 }} />
+                        <div style={{ position: "absolute", top: -3, width: 2, height: 11, background: "var(--text)", left: Math.min(100, (targetFoodCost / 50) * 100) + "%" }} />
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.35 }}>{k.note}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ ...mCard, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                  <span style={h2}>Night by night</span>
+                  <span style={hintM}>TAP A NIGHT</span>
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <MobileSegmented
+                    variant="soft"
+                    options={[{ key: "rev", label: "Net sales" }, { key: "qty", label: "Covers" }, { key: "fc", label: "Food cost %" }]}
+                    value={trendMetric}
+                    onChange={(k) => { setTrendMetric(k); setHoverIdx(null); }}
+                  />
+                </div>
+                <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline", padding: "8px 10px", background: "var(--paper)", border: "1px dashed var(--paper-line)", borderRadius: 8, fontFamily: MONO, fontSize: 11, color: "var(--ink-soft)" }}>
+                  <span style={{ fontWeight: 500, color: "var(--ink)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{DAY_NAMES[readDay.dow]} {readDay.label}</span>
+                  <span>{money0(readDay.rev)} net</span>
+                  <span>{num(readDay.qty)} covers</span>
+                  <span>food cost <span style={{ fontWeight: 500, color: readFc != null && readFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{readFc == null ? "—" : pct1(readFc)}</span></span>
+                </div>
+                <div style={{ position: "relative", height: 160, marginTop: 12 }}>
+                  <span style={{ position: "absolute", left: 0, top: -6, fontFamily: MONO, fontSize: 9.5, color: "var(--muted)" }}>{fmtAxis(chartMax)}</span>
+                  <span style={{ position: "absolute", left: 0, top: 63, fontFamily: MONO, fontSize: 9.5, color: "var(--muted)" }}>{fmtAxis(chartMax / 2)}</span>
+                  <div style={{ position: "absolute", left: 38, right: 0, top: 0, height: 140 }}>
+                    <div style={{ position: "absolute", left: 0, right: 0, top: 0, borderTop: "1px solid var(--line-soft)" }} />
+                    <div style={{ position: "absolute", left: 0, right: 0, top: "50%", borderTop: "1px solid var(--line-soft)" }} />
+                    <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, borderTop: "1px solid var(--line)" }} />
+                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "flex-end", gap: mGap }}>
+                      {bars.map((b, i) => (
+                        <button key={b.key} type="button" onClick={() => setHoverIdx(hoverIdx === i ? null : i)} aria-label={`${DAY_NAMES[win[i].dow]} ${win[i].label}`} style={{ flex: "1 1 0", minWidth: 0, height: "100%", padding: 0, border: "none", background: "none", display: "flex", alignItems: "flex-end", cursor: "pointer" }}>
+                          <span style={{ display: "block", width: "100%", height: b.h + "%", background: b.color, opacity: hoverIdx == null || hoverIdx === i ? 1 : 0.4, borderRadius: "3px 3px 0 0", transition: "opacity .15s" }} />
+                        </button>
+                      ))}
+                    </div>
+                    {trendMetric === "fc" && (
+                      <div style={{ position: "absolute", left: 0, right: 0, top: targetTop + "%", borderTop: "2px dashed var(--text)", pointerEvents: "none" }} />
+                    )}
+                  </div>
+                  <div style={{ position: "absolute", left: 38, right: 0, bottom: 0, height: 14, display: "flex", gap: mGap }}>
+                    {bars.map((b) => (
+                      <span key={"x" + b.key} style={{ flex: "1 1 0", minWidth: 0, textAlign: "center", fontFamily: MONO, fontSize: 9, color: "var(--muted)", whiteSpace: "nowrap", overflow: "visible" }}>{b.x}</span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 10, fontSize: 11.5, color: "var(--muted)" }}>
+                  {legend.map(([c, t]) => (
+                    <span key={t} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: c }} />{t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── dishes ── */}
+          {mobileSection === "dishes" && (
+            <div style={{ ...mCard, overflow: "hidden" }}>
+              <div style={{ padding: "14px 14px 10px" }}>
+                <div style={h2}>Dish performance</div>
+                <div style={{ marginTop: 10 }}>
+                  <MobileSegmented
+                    variant="soft"
+                    options={[{ key: "margin", label: "Margin" }, { key: "qty", label: "Sold" }, { key: "fc", label: "Food cost" }]}
+                    value={sortBy}
+                    onChange={setSortBy}
+                  />
+                </div>
+              </div>
+              {dishRows.map((d) => {
+                const qc = d.quad ? QUAD_COLOR[d.quad] : "var(--faint)";
+                const over = d.foodCostPct != null && d.foodCostPct > targetFoodCost;
+                return (
+                  <button key={d.name} type="button" onClick={() => onSelectDish && onSelectDish(d)} style={{ width: "100%", display: "block", padding: "11px 14px", background: "none", border: "none", borderTop: "1px solid var(--line-soft)", textAlign: "left", cursor: onSelectDish ? "pointer" : "default", fontFamily: SANS, color: "var(--text)" }}>
+                    <span style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
+                      <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, borderRadius: 20, padding: "3px 9px", color: qc, background: d.quad ? `color-mix(in srgb, ${qc} 14%, var(--shell))` : "var(--panel)" }}>{d.quad || "Unpriced"}</span>
+                    </span>
+                    <span style={{ display: "flex", gap: 12, marginTop: 4, fontFamily: MONO, fontSize: 10.5, color: "var(--muted)" }}>
+                      <span><strong style={{ color: "var(--text)", fontWeight: 500 }}>{num(d.qty)}</strong> sold</span>
+                      <span>fc <strong style={{ fontWeight: over ? 700 : 500, color: d.foodCostPct == null ? "var(--faint)" : over ? "var(--red)" : "var(--text)" }}>{d.foodCostPct == null ? "no price" : pct1(d.foodCostPct)}</strong></span>
+                      <span style={{ marginLeft: "auto" }}><strong style={{ color: d.contribTotal == null ? "var(--faint)" : "var(--text)", fontWeight: 500 }}>{d.contribTotal == null ? "—" : money0(d.contribTotal)}</strong> margin</span>
+                    </span>
+                  </button>
+                );
+              })}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: "5px 12px", padding: "10px 14px 12px", borderTop: "1px solid var(--line)", background: "var(--panel)", fontSize: 11, color: "var(--muted)" }}>
+                <span><strong style={{ color: QUAD_COLOR.Star }}>Star</strong> sells often, keeps a lot</span>
+                <span><strong style={{ color: QUAD_COLOR.Plowhorse }}>Plowhorse</strong> sells often, keeps less</span>
+                <span><strong style={{ color: QUAD_COLOR.Puzzle }}>Puzzle</strong> keeps a lot, sells slowly</span>
+                <span><strong style={{ color: QUAD_COLOR.Dog }}>Dog</strong> slow and thin</span>
+              </div>
+            </div>
+          )}
+
+          {/* ── close-out ── */}
+          {mobileSection === "close" && (
+            <div aria-label="Last night close-out" style={{ background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, border: "1px solid var(--paper-line)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "var(--card-lift)", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+              <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 3 }}>
+                <div style={mzLabel}>Close-out · Z report</div>
+                <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em" }}>{DAY_FULL[zNight.dow]} {zNight.label}</div>
+                <div style={{ fontSize: 10, color: "var(--ink-soft)" }}>LAST SERVICE NIGHT</div>
+              </div>
+              <div style={mzRule} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+                <div style={mzRow}><span>COVERS SOLD</span><span>{num(zNight.qty)}</span></div>
+                <div style={mzRow}><span>NET SALES</span><span>{money0(zNight.rev)}</span></div>
+                <div style={{ ...mzRow, color: "var(--ink-soft)" }}><span>COSTED SALES</span><span>{money0(zNight.costedRev)}</span></div>
+                <div style={{ ...mzRow, color: "var(--ink-soft)" }}><span>PLATE COST</span><span>{money0(zNight.cogs)}</span></div>
+              </div>
+              <div style={mzRule} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12.5, fontWeight: 500 }}>
+                <div style={mzRow}><span>FOOD COST</span><span style={{ color: zFc != null && zFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{zFc == null ? "—" : pct1(zFc)}</span></div>
+                <div style={mzRow}><span>GROSS MARGIN</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
+              </div>
+              {zPrev && (
+                <>
+                  <div style={mzRule} />
+                  <div style={mzLabel}>VS LAST {DAY_NAMES[zPrev.dow].toUpperCase()} · {zPrev.label}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+                    {zCompare.map((c) => (
+                      <div key={c.name} style={mzRow}><span>{c.name.toUpperCase()}</span><span style={{ color: c.color }}>{c.label}</span></div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div style={mzRule} />
+              <div style={mzLabel}>Top sellers · last night</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12 }}>
+                {zTop.map((x) => (
+                  <div key={x.name} style={{ display: "flex", gap: 8 }}>
+                    <span style={{ width: 30, flexShrink: 0, color: "var(--ink-soft)" }}>{num(x.qty)}×</span>
+                    <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.name}</span>
+                    <span style={{ flexShrink: 0 }}>{money0(x.rev)}</span>
+                  </div>
+                ))}
+                {zRest.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, color: "var(--ink-soft)", borderTop: "1px dotted var(--ink-faint)", paddingTop: 5, marginTop: 1 }}>
+                    <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>+ {zRest.length} more item{zRest.length === 1 ? "" : "s"} · {num(zNight.qty)} sold in all</span>
+                    <span style={{ flexShrink: 0 }}>{money0(zRestRev)}</span>
+                  </div>
+                )}
+              </div>
+              <div style={mzRule} />
+              <div style={{ fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
+                * {zUnpriced.length
+                  ? `${money0(zUnpricedRev)} from ${zUnpriced.length <= 2 ? zUnpriced.map((x) => x.name).join(" and ") : zUnpriced.length + " unpriced dishes"} left out of food cost until priced.`
+                  : "Every dish sold was fully costed."}
+              </div>
+            </div>
+          )}
         </div>
         <MobileNav active="analytics" NavLink={NavLink} />
       </Shell>
@@ -379,7 +569,9 @@ export default function AnalyticsScreen({
                 <button key={r} type="button" onClick={() => { setRange(r); setHoverIdx(null); }} style={{ ...pill(range === r), padding: "7px 11px", fontSize: 10.5, borderRadius: 16 }}>{label}</button>
               ))}
             </div>
-            <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "8px 16px", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 8px 18px rgba(2,164,186,0.22)" }}>Upload POS export</button>
+            {!posConnected && (
+              <button type="button" onClick={onUpload} style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "8px 16px", cursor: "pointer", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", boxShadow: "0 8px 18px rgba(2,164,186,0.22)" }}>Upload POS export</button>
+            )}
           </div>
         </div>
 
