@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
+import { useIsMobile, MobileBackBar, MobileNav } from "./ClientChrome";
 
 /**
  * ProfileScreen — ported from OptiMenu Profile.dc.html. Presentational;
@@ -33,6 +34,7 @@ export default function ProfileScreen({
   posConnection = null, posResult = null, onConnectShift4, onDisconnectShift4,
 }) {
   const { header, theme } = useAccountChrome({ user, NavLink, onSignOut });
+  const isMobile = useIsMobile(900);
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [restaurantName, setRestaurantName] = useState(restaurantNameProp);
@@ -89,10 +91,16 @@ export default function ProfileScreen({
   const card = { background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", overflow: "hidden", marginBottom: 16 };
   const cardHead = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", padding: "13px 18px", borderBottom: "1px solid var(--line-soft)" };
   const rowLabel = { fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)" };
-  const editBtn = { border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--accent-deep)", padding: 0 };
-  const pfInput = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 8, padding: "9px 12px", fontSize: 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
-  const saveBtn = { background: "var(--accent)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
-  const cancelBtn = { background: "none", border: "1px solid var(--line)", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, color: "var(--muted)", cursor: "pointer", whiteSpace: "nowrap" };
+  const editBtn = { border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--accent-deep)", padding: isMobile ? "0 4px" : 0, minHeight: isMobile ? 36 : undefined };
+  // 16px text on phones so iOS does not zoom in when a field is tapped.
+  const pfInput = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: 8, padding: isMobile ? "11px 12px" : "9px 12px", fontSize: isMobile ? 16 : 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
+  const saveBtn = { background: "var(--accent)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", minHeight: isMobile ? 44 : undefined };
+  const cancelBtn = { background: "none", border: "1px solid var(--line)", borderRadius: 8, padding: "9px 15px", fontSize: 13, fontWeight: 600, color: "var(--muted)", cursor: "pointer", whiteSpace: "nowrap", minHeight: isMobile ? 44 : undefined };
+  // Edit rows: one line on desktop; on phones the input takes the full width and the buttons sit below it.
+  const editRow = { display: "flex", flexWrap: isMobile ? "wrap" : "nowrap", gap: 8, marginTop: 6 };
+  const editInput = { ...pfInput, flex: isMobile ? "1 1 100%" : 1, minWidth: 0 };
+  // Toggle size: bigger on phones for thumbs.
+  const tg = isMobile ? { w: 48, h: 28, k: 24 } : { w: 38, h: 22, k: 18 };
 
   const tabs = [
     { id: "account", label: "Account" },
@@ -109,20 +117,26 @@ export default function ProfileScreen({
 
   return (
     <div className="om-acct" data-theme={theme} style={{ width: "100%", minHeight: "100vh" }}>
-      {header}
+      {isMobile ? (
+        <MobileBackBar
+          label="Back"
+          title="Settings"
+          onBack={() => { if (window.history.length > 1) window.history.back(); else window.location.href = "/client/dashboard"; }}
+        />
+      ) : header}
 
-      <div style={{ background: "var(--panel)", minHeight: "calc(100vh - 41px)", display: "flex", flexDirection: "column", alignItems: "center", padding: "0 20px 60px" }}>
-        <div style={{ width: "100%", maxWidth: 640, paddingTop: 24 }}>
+      <div style={{ background: "var(--panel)", minHeight: "calc(100vh - 41px)", display: "flex", flexDirection: "column", alignItems: "center", padding: isMobile ? "0 16px 28px" : "0 20px 60px" }}>
+        <div style={{ width: "100%", maxWidth: 640, paddingTop: isMobile ? 18 : 24 }}>
           <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 5 }}>Account settings</div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.1, marginBottom: 16 }}>Profile &amp; settings</div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3, marginBottom: 16, overflowX: "auto" }}>
+          <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: isMobile ? "repeat(4, minmax(0, 1fr))" : undefined, alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3, marginBottom: 16, overflowX: "auto" }}>
             {tabs.map((t) => (
               <button
                 key={t.id} type="button" onClick={() => setActiveTab(t.id)}
-                style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, borderRadius: 16, padding: "8px 15px", whiteSpace: "nowrap", background: activeTab === t.id ? "var(--accent-tint)" : "transparent", color: activeTab === t.id ? "var(--accent-deep)" : "var(--muted)" }}
+                style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, borderRadius: 16, padding: isMobile ? "0 4px" : "8px 15px", minHeight: isMobile ? 40 : undefined, whiteSpace: "nowrap", background: activeTab === t.id ? "var(--accent-tint)" : "transparent", color: activeTab === t.id ? "var(--accent-deep)" : "var(--muted)" }}
               >
-                {t.label}
+                {isMobile && t.id === "notifications" ? "Alerts" : t.label}
               </button>
             ))}
           </div>
@@ -155,8 +169,8 @@ export default function ProfileScreen({
                     {editing !== "name" && <button type="button" style={editBtn} onClick={() => { setEditing("name"); setTemp((t) => ({ ...t, name: user.name })); }}>Edit</button>}
                   </div>
                   {editing === "name" ? (
-                    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                      <input className="pf-input" style={{ ...pfInput, flex: 1, minWidth: 0 }} value={temp.name} onChange={(e) => setTemp((t) => ({ ...t, name: e.target.value }))} placeholder="Your full name" />
+                    <div style={editRow}>
+                      <input className="pf-input" style={editInput} value={temp.name} onChange={(e) => setTemp((t) => ({ ...t, name: e.target.value }))} placeholder="Your full name" />
                       <button type="button" style={saveBtn} onClick={async () => { if (!temp.name.trim()) return; await onSaveName?.(temp.name.trim()); setEditing(null); flash("Name updated"); }}>Save</button>
                       <button type="button" style={cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
                     </div>
@@ -249,8 +263,8 @@ export default function ProfileScreen({
                   {editing !== "restaurant" && <button type="button" style={editBtn} onClick={() => { setEditing("restaurant"); setTemp((t) => ({ ...t, restaurant: restaurantName })); }}>Edit</button>}
                 </div>
                 {editing === "restaurant" ? (
-                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                    <input className="pf-input" style={{ ...pfInput, flex: 1, minWidth: 0 }} value={temp.restaurant} onChange={(e) => setTemp((t) => ({ ...t, restaurant: e.target.value }))} placeholder="Restaurant name" />
+                  <div style={editRow}>
+                    <input className="pf-input" style={editInput} value={temp.restaurant} onChange={(e) => setTemp((t) => ({ ...t, restaurant: e.target.value }))} placeholder="Restaurant name" />
                     <button type="button" style={saveBtn} onClick={async () => { if (!temp.restaurant.trim()) return; await onSaveRestaurant?.(temp.restaurant.trim()); setRestaurantName(temp.restaurant.trim()); setEditing(null); flash("Restaurant name updated"); }}>Save</button>
                     <button type="button" style={cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
                   </div>
@@ -265,8 +279,8 @@ export default function ProfileScreen({
                   {editing !== "foodCost" && <button type="button" style={editBtn} onClick={() => { setEditing("foodCost"); setTemp((t) => ({ ...t, foodCost: String(targetFoodCost) })); }}>Edit</button>}
                 </div>
                 {editing === "foodCost" ? (
-                  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                    <input type="number" min="1" max="99" className="pf-input" style={{ ...pfInput, flex: 1, minWidth: 0 }} value={temp.foodCost} onChange={(e) => setTemp((t) => ({ ...t, foodCost: e.target.value }))} placeholder="e.g. 30" />
+                  <div style={editRow}>
+                    <input type="number" inputMode="decimal" min="1" max="99" className="pf-input" style={editInput} value={temp.foodCost} onChange={(e) => setTemp((t) => ({ ...t, foodCost: e.target.value }))} placeholder="e.g. 30" />
                     <button type="button" style={saveBtn} onClick={async () => {
                       const val = parseFloat(temp.foodCost);
                       if (isNaN(val) || val < 1 || val > 99) return;
@@ -308,9 +322,9 @@ export default function ProfileScreen({
                             flash(err?.message || "Could not save that setting", true);
                           }
                         }}
-                        style={{ width: 38, height: 22, borderRadius: 11, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: freezeSettings[opt.key] ? "var(--accent)" : "var(--line)" }}
+                        style={{ width: tg.w, height: tg.h, borderRadius: tg.h / 2, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: freezeSettings[opt.key] ? "var(--accent)" : "var(--line)" }}
                       >
-                        <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: freezeSettings[opt.key] ? 18 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
+                        <div style={{ width: tg.k, height: tg.k, borderRadius: "50%", background: "#fff", position: "absolute", top: (tg.h - tg.k) / 2, left: freezeSettings[opt.key] ? tg.w - tg.k - 2 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
                       </button>
                     </div>
                   ))}
@@ -335,7 +349,7 @@ export default function ProfileScreen({
           {activeTab === "restaurant" && onConnectShift4 && (
             <div style={{ ...card, marginBottom: 20 }}>
               <div style={cardHead}>Point of sale</div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
                     {posConnection?.status === "connected" ? "Shift4 connected" : posConnection?.status === "error" ? "Shift4 sync problem" : "Shift4 / SkyTab"}
@@ -389,9 +403,9 @@ export default function ProfileScreen({
                   <button
                     type="button"
                     onClick={() => { const next = !notifs[r.key]; setNotifs((n) => ({ ...n, [r.key]: next })); onToggleNotif?.(r.key, next); flash("Preference saved"); }}
-                    style={{ width: 38, height: 22, borderRadius: 11, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: notifs[r.key] ? "var(--accent)" : "var(--line)" }}
+                    style={{ width: tg.w, height: tg.h, borderRadius: tg.h / 2, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: notifs[r.key] ? "var(--accent)" : "var(--line)" }}
                   >
-                    <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: notifs[r.key] ? 18 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
+                    <div style={{ width: tg.k, height: tg.k, borderRadius: "50%", background: "#fff", position: "absolute", top: (tg.h - tg.k) / 2, left: notifs[r.key] ? tg.w - tg.k - 2 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
                   </button>
                 </div>
               ))}
@@ -438,9 +452,11 @@ export default function ProfileScreen({
         </div>
       </div>
 
+      {isMobile && <MobileNav active={null} NavLink={NavLink} />}
+
       {showDeleteModal && (
-        <div onClick={() => setShowDeleteModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,14,15,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--shadow-lg)", padding: 24, maxWidth: 400, width: "100%" }}>
+        <div onClick={() => setShowDeleteModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(10,14,15,0.55)", zIndex: 100, display: "flex", alignItems: isMobile ? "flex-end" : "center", justifyContent: "center", padding: isMobile ? 0 : 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: isMobile ? "18px 18px 0 0" : 12, boxShadow: "var(--shadow-lg)", padding: isMobile ? "22px 18px calc(22px + env(safe-area-inset-bottom, 0px))" : 24, maxWidth: isMobile ? "none" : 400, width: "100%" }}>
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>Delete account</div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 20 }}>
               This will permanently delete your account, restaurant, all invoices, ingredients, and menu items. <strong style={{ color: "var(--red)" }}>This cannot be undone.</strong>
