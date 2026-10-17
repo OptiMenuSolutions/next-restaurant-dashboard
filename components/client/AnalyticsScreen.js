@@ -279,7 +279,12 @@ export default function AnalyticsScreen({
   // that weekday when the restaurant was closed that exact date.
   const zPrev = days.slice(0, -1).reverse().find((d) => d.dow === zNight.dow) || null;
   const zFc = nightFc(zNight);
-  const zItems = zNight.items.filter((x) => x.qty > 0).sort((a, b) => b.rev - a.rev);
+  // Top sellers by plates sold (ties go to the bigger seller in dollars),
+  // capped at 8 so the ticket never scrolls; the rest fold into one line.
+  const zItems = zNight.items.filter((x) => x.qty > 0).sort((a, b) => b.qty - a.qty || b.rev - a.rev);
+  const zTop = zItems.slice(0, 8);
+  const zRest = zItems.slice(8);
+  const zRestRev = zRest.reduce((a, x) => a + x.rev, 0);
   const zUnpriced = zNight.items.filter((x) => x.cost == null && x.qty > 0);
   const zUnpricedRev = zUnpriced.reduce((a, x) => a + x.rev, 0);
   const zCompare = zPrev ? [
@@ -553,15 +558,21 @@ export default function AnalyticsScreen({
               </>
             )}
             <div style={zRule} />
-            <div style={zLabel}>Items sold</div>
-            <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5 }}>
-              {zItems.map((x) => (
+            <div style={zLabel}>Top sellers · last night</div>
+            <div style={{ flex: "1 1 auto", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5 }}>
+              {zTop.map((x) => (
                 <div key={x.name} style={{ display: "flex", gap: 8 }}>
                   <span style={{ width: 28, flexShrink: 0, color: "var(--ink-soft)" }}>{num(x.qty)}×</span>
                   <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.name}</span>
                   <span style={{ flexShrink: 0 }}>{money0(x.rev)}</span>
                 </div>
               ))}
+              {zRest.length > 0 && (
+                <div style={{ display: "flex", gap: 8, color: "var(--ink-soft)", borderTop: "1px dotted var(--ink-faint)", paddingTop: 5, marginTop: 1 }}>
+                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>+ {zRest.length} more item{zRest.length === 1 ? "" : "s"} · {num(zNight.qty)} sold in all</span>
+                  <span style={{ flexShrink: 0 }}>{money0(zRestRev)}</span>
+                </div>
+              )}
             </div>
             <div style={zRule} />
             <div style={{ flexShrink: 0, fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
