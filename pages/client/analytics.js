@@ -107,6 +107,7 @@ export default function AnalyticsPage() {
       let menu = [];
       let sessions = [];
       let sales = null;
+      let shift4 = null;
       if (tourMode) {
         const sample = await fetchSampleData();
         menu = sample?.menuItems || [];
@@ -115,16 +116,19 @@ export default function AnalyticsPage() {
         if (sample) sales = sample.posSales || [];
         // fetchSampleData() failed: sales stays null and the real query runs.
       } else {
-        const [{ data: realMenu }, { data: realSessions }] = await Promise.all([
+        const [{ data: realMenu }, { data: realSessions }, { data: realPos }] = await Promise.all([
           supabase
             .from("menu_items")
             .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
             .eq("restaurant_id", restaurantId)
             .limit(500),
           supabase.from("upload_sessions").select("*").eq("restaurant_id", restaurantId).order("uploaded_at", { ascending: false }).limit(1),
+          supabase.from("pos_connections").select("*").eq("restaurant_id", restaurantId).eq("provider", "shift4").limit(1),
         ]);
         menu = realMenu || [];
         sessions = realSessions || [];
+        // A Shift4 row counts as connected unless it is marked disconnected or inactive.
+        shift4 = (realPos || []).find((c) => c.status !== "disconnected" && c.is_active !== false) || null;
       }
 
       if (!sales) {
@@ -153,7 +157,7 @@ export default function AnalyticsPage() {
         };
       });
 
-      return { sales, costs, session: sessions[0] || null };
+      return { sales, costs, session: sessions[0] || null, shift4 };
     }
   );
   const sales = anData?.sales || EMPTY_LIST;
@@ -225,7 +229,9 @@ export default function AnalyticsPage() {
 
   // Built from the loaded sales, so it always matches the nights on screen.
   // The latest upload only supplies the POS name; "other" reads as a plain export.
-  const rawPos = session?.pos_system || sales[0]?.pos_system || "";
+  // Shift4 connected: sales sync on their own, so the screen hides the upload button.
+  const posConnected = !!anData?.shift4;
+  const rawPos = posConnected ? "Shift4" : session?.pos_system || sales[0]?.pos_system || "";
   const posName = !rawPos || /^other$/i.test(rawPos) ? "POS export" : rawPos;
   const lastNight = days.length ? days[days.length - 1] : null;
   const syncStamp = lastNight
@@ -285,6 +291,7 @@ export default function AnalyticsPage() {
         hourly={hourly}
         targetFoodCost={Math.round(targetFoodCost)}
         posSystem={posName}
+        posConnected={posConnected}
         syncStamp={syncStamp}
         loading={loading}
         error={error}
