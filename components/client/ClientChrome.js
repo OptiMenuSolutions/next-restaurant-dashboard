@@ -226,39 +226,69 @@ export function MobileHeader({ theme, onToggleTheme, onSearch, onSignOut, restau
   );
 }
 
-/* Account menu opened from the initials: same items as the desktop menu. */
+/* Account menu opened from the initials on phones: a sheet that slides up
+   from the bottom over a dimmed page. Same items as the desktop dropdown. */
 export function ProfileMenu({ user = {}, restaurantName = "", dark, onToggleTheme, onSignOut, NavLink, onClose }) {
-  const row = { display: "flex", alignItems: "center", gap: 10, padding: "11px 10px", borderRadius: 7, color: "var(--text)", fontSize: 14, fontWeight: 500, textDecoration: "none" };
-  const ic = { viewBox: "0 0 24 24", width: 16, height: 16, fill: "none", stroke: "var(--faint)", strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" };
+  // Stop the page scrolling behind the sheet; Escape closes it on tablets with keyboards.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = prev; window.removeEventListener("keydown", onKey); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const row = { display: "flex", alignItems: "center", gap: 14, minHeight: 52, padding: "0 4px", color: "var(--text)", fontFamily: SANS, fontSize: 15, fontWeight: 600, textDecoration: "none", borderBottom: "1px solid var(--line-soft)" };
+  const ic = { viewBox: "0 0 24 24", width: 20, height: 20, fill: "none", stroke: "var(--muted)", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+  const chevron = (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--faint)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+  );
+
   return (
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
-      <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 250, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", boxShadow: "var(--shadow-lg)", zIndex: 200 }}>
-        <div style={{ padding: "13px 15px", borderBottom: "1px solid var(--line-soft)" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{user.firstName || user.initials}</div>
-          {restaurantName && <div style={{ fontSize: 12, color: "var(--faint)", marginTop: 2 }}>{restaurantName}</div>}
+      <style>{"@keyframes om-sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes om-fade-in{from{opacity:0}to{opacity:1}}"}</style>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(17,24,25,0.42)", animation: "om-fade-in .2s ease both" }} />
+      <div role="dialog" aria-modal="true" aria-label="Account" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 301, maxHeight: "85vh", overflowY: "auto", background: "var(--shell)", borderRadius: "22px 22px 0 0", padding: "8px 16px calc(24px + env(safe-area-inset-bottom, 0px))", boxShadow: "0 -18px 40px rgba(17,24,25,0.18)", animation: "om-sheet-up .28s cubic-bezier(.25,.8,.35,1) both" }}>
+        <div style={{ width: 40, height: 5, borderRadius: 3, background: "var(--line)", margin: "0 auto 14px" }} />
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 4px 16px", borderBottom: "1px solid var(--line-soft)" }}>
+          <span style={{ width: 48, height: 48, borderRadius: "50%", background: "var(--accent)", color: "#fff", fontFamily: SANS, fontSize: 16, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{user.initials}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontFamily: SANS, fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.firstName || user.initials}</span>
+            {restaurantName && <span style={{ display: "block", fontFamily: SANS, fontSize: 13, color: "var(--muted)", marginTop: 1 }}>{restaurantName}</span>}
+          </span>
+          <button type="button" aria-label="Close" onClick={onClose} style={{ width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", borderRadius: "50%", cursor: "pointer", padding: 0, flexShrink: 0 }}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--muted)" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
         </div>
-        <div style={{ padding: 6 }}>
-          <A NavLink={NavLink} href="/client/profile" style={row}>
-            <svg {...ic}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-            Profile &amp; settings
-          </A>
+
+        <div style={{ display: "flex", flexDirection: "column", paddingTop: 6 }}>
+          <div onClick={onClose}>
+            <A NavLink={NavLink} href="/client/profile" style={row}>
+              <svg {...ic}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+              <span style={{ flex: 1 }}>Profile &amp; settings</span>
+              {chevron}
+            </A>
+          </div>
           <div style={row}>
             <svg {...ic}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-            <span style={{ flex: 1 }}>{dark ? "Light mode" : "Dark mode"}</span>
-            <button type="button" aria-label="Toggle dark mode" onClick={onToggleTheme} style={{ width: 38, height: 22, borderRadius: 11, border: "1px solid var(--line)", position: "relative", cursor: "pointer", flexShrink: 0, padding: 0, background: dark ? "var(--accent)" : "var(--line)" }}>
-              <span style={{ position: "absolute", top: 2, left: dark ? 18 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+            <span style={{ flex: 1 }}>Dark mode</span>
+            <button type="button" role="switch" aria-checked={!!dark} aria-label="Dark mode" onClick={onToggleTheme} style={{ width: 52, height: 32, borderRadius: 16, border: "1px solid var(--line)", position: "relative", cursor: "pointer", flexShrink: 0, padding: 0, background: dark ? "var(--accent)" : "var(--line)" }}>
+              <span style={{ position: "absolute", top: 3, left: dark ? 23 : 3, width: 24, height: 24, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 3px rgba(17,24,25,0.25)", transition: "left .2s" }} />
             </button>
           </div>
-          <A NavLink={NavLink} href="/client/profile?tab=support" style={row}>
-            <svg {...ic}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
-            Support &amp; feedback
-          </A>
-          <div style={{ height: 1, background: "var(--line-soft)", margin: "4px 0" }} />
-          <div onClick={() => { onClose(); if (onSignOut) onSignOut(); }} style={{ ...row, color: "var(--red)", cursor: "pointer" }}>
+          <div onClick={onClose}>
+            <A NavLink={NavLink} href="/client/profile?tab=support" style={row}>
+              <svg {...ic}><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
+              <span style={{ flex: 1 }}>Support &amp; feedback</span>
+              {chevron}
+            </A>
+          </div>
+          <button type="button" onClick={() => { onClose(); if (onSignOut) onSignOut(); }} style={{ ...row, width: "100%", background: "none", border: "none", color: "var(--red)", cursor: "pointer", textAlign: "left" }}>
             <svg {...ic} stroke="var(--red)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
             Sign out
-          </div>
+          </button>
         </div>
       </div>
     </>
