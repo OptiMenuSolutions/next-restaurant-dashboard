@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { MobileHeader, NavIcon } from "../client/ClientChrome";
+import { MobileHeader, MobileNav } from "../client/ClientChrome";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -663,98 +663,113 @@ export default function PassDashboard({
       </div>
     );
   } else if (isMobile) {
-    // Phones get the same month calendar as desktop, with the stats stacked below it.
-    const monthBtn = (enabled) => ({ width: "30px", height: "30px", border: "1px solid var(--line)", borderRadius: "8px", background: "none", color: enabled ? "var(--muted)" : "var(--faint)", opacity: enabled ? 1 : 0.4, cursor: enabled ? "pointer" : "default", fontSize: "15px", lineHeight: 1 });
+    // Phones: the same month calendar as desktop, then the week numbers as
+    // three tiles and the top performer, all in one card.
+    const monthBtn = (enabled) => ({ width: "36px", height: "36px", border: "1px solid var(--line)", borderRadius: "9px", background: "none", color: enabled ? "var(--muted)" : "var(--faint)", opacity: enabled ? 1 : 0.45, cursor: enabled ? "pointer" : "default", fontSize: "16px", lineHeight: 1 });
+    const statColor = (tone) => (tone === "green" ? "var(--green)" : tone === "red" ? "var(--red)" : tone === "muted" ? "var(--muted)" : "var(--accent-deep)");
     const mobileWeek = (
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "12px", padding: "14px 12px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-            <button type="button" onClick={onPrevMonth} style={monthBtn(true)}>&lsaquo;</button>
-            <span style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "-0.01em" }}>{week.month}</span>
-            <button type="button" onClick={onNextMonth} disabled={!canGoNextMonth} style={monthBtn(canGoNextMonth)}>&rsaquo;</button>
+      <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "14px", padding: "14px", boxShadow: "0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+          <div style={{ fontSize: "15px", fontWeight: 800, letterSpacing: "-0.02em" }}>Month in review</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <button type="button" onClick={onPrevMonth} aria-label="Previous month" style={monthBtn(true)}>&lsaquo;</button>
+            <span style={{ fontSize: "13px", fontWeight: 700, padding: "0 6px", whiteSpace: "nowrap" }}>{week.month}</span>
+            <button type="button" onClick={onNextMonth} disabled={!canGoNextMonth} aria-label="Next month" style={monthBtn(canGoNextMonth)}>&rsaquo;</button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "5px" }}>
-            {DOWS.map((d) => (
-              <span key={d} style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--faint)", textAlign: "center" }}>{d}</span>
-            ))}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "46px", gap: "4px" }}>
-            {cells.map((c) =>
-              c.blank ? (
-                <span key={c.key} />
-              ) : (
-                <div key={c.key} onClick={() => c.clickable && setOpenCalendarDay((prev) => (prev === c.day ? null : c.day))} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px", borderRadius: "8px", border: "1px solid " + c.border, background: c.bg, cursor: c.clickable ? "pointer" : "default" }}>
-                  <span style={{ fontSize: "13px", fontWeight: 600, color: c.numColor, lineHeight: 1 }}>{c.day}</span>
-                  <span style={{ fontFamily: MONO, fontSize: "9.5px", fontWeight: 500, lineHeight: 1, color: c.subColor }}>{c.sub}</span>
-                </div>
-              )
-            )}
-          </div>
-          {openCalendarDayEntry && (
-            <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                <span style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)" }}>{openCalendarDayEntry.dayLabel} · dish performance</span>
-                <button type="button" onClick={() => setOpenCalendarDay(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "11px", color: "var(--faint)", padding: 0 }}>Close ✕</button>
-              </div>
-              {openCalendarDayEntry.dishes.length === 0 && (
-                <div style={{ fontSize: "12px", color: "var(--muted)" }}>No recommendations for this day.</div>
-              )}
-              {openCalendarDayEntry.dishes.map((dish, i) => {
-                const diffColor = dish.diff != null ? (dish.diff > 0 ? "var(--green)" : dish.diff < 0 ? "var(--red)" : "var(--muted)") : "var(--muted)";
-                return (
-                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "6px 0" }}>
-                    <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dish.name}</span>
-                    <span style={{ fontSize: "12px", fontWeight: 700, color: diffColor, flexShrink: 0 }}>
-                      {dish.diff != null ? `${dish.diff > 0 ? "+" : ""}${dish.diff.toFixed(1)}` : "—"} sold
-                      <span style={{ color: "var(--faint)", fontWeight: 500 }}> vs avg</span>
-                    </span>
-                  </div>
-                );
-              })}
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed var(--line-soft)" }}>
-                <span style={{ fontSize: "11px", color: "var(--faint)" }}>Est. waste prevented</span>
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--green)" }}>${Math.round(openCalendarDayEntry.wasteSaved)}</span>
-              </div>
-            </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: "4px", marginBottom: "5px" }}>
+          {DOWS.map((d) => (
+            <span key={d} style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--faint)", textAlign: "center" }}>{d}</span>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "44px", gap: "4px" }}>
+          {cells.map((c) =>
+            c.blank ? (
+              <span key={c.key} />
+            ) : (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => c.clickable && setOpenCalendarDay((prev) => (prev === c.day ? null : c.day))}
+                aria-label={"Day " + c.day}
+                style={{ padding: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "3px", borderRadius: "8px", border: (c.today || openCalendarDay === c.day ? "1.5px solid " : "1px solid ") + c.border, background: openCalendarDay === c.day ? "var(--accent-tint)" : c.bg, cursor: c.clickable ? "pointer" : "default", fontFamily: SANS }}
+              >
+                <span style={{ fontSize: "13px", fontWeight: c.today ? 800 : 600, color: c.numColor, lineHeight: 1 }}>{c.day}</span>
+                <span style={{ fontFamily: MONO, fontSize: "9.5px", fontWeight: 500, lineHeight: 1, color: c.subColor }}>{c.sub}</span>
+              </button>
+            )
           )}
         </div>
-        {week.stats.map((k) => (
-          <div key={k.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "10px", padding: "12px 14px" }}>
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text)" }}>{k.label}</div>
-              <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.06em", color: "var(--faint)", marginTop: "3px" }}>{k.sub}</div>
+
+        {openCalendarDayEntry && (
+          <div style={{ marginTop: "12px", background: "var(--paper)", border: "1px dashed var(--paper-line)", borderRadius: "10px", padding: "10px 12px", fontFamily: MONO, color: "var(--ink)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
+              <span style={{ fontSize: "10px", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--ink-soft)" }}>{openCalendarDayEntry.dayLabel} · dish performance</span>
+              <button type="button" onClick={() => setOpenCalendarDay(null)} style={{ minHeight: "32px", background: "none", border: "none", padding: "0 0 0 10px", fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--ink-soft)", cursor: "pointer" }}>CLOSE ✕</button>
             </div>
-            <div style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: k.tone === "green" ? "var(--green)" : k.tone === "red" ? "var(--red)" : "var(--accent-deep)" }}>{k.value}</div>
+            {openCalendarDayEntry.dishes.length === 0 && (
+              <div style={{ fontFamily: SANS, fontSize: "12px", color: "var(--ink-soft)", padding: "4px 0" }}>No recommendations for this day.</div>
+            )}
+            {openCalendarDayEntry.dishes.map((dish, k) => {
+              const tagInfo = k === 0 ? ["PUSH", "var(--accent-deep)"] : k === 1 ? ["REC", "var(--green)"] : ["MENTION", "var(--amber)"];
+              const diffColor = dish.diff != null ? (dish.diff > 0 ? "var(--green)" : dish.diff < 0 ? "var(--red)" : "var(--ink-soft)") : "var(--ink-soft)";
+              return (
+                <div key={k} style={{ display: "flex", alignItems: "baseline", gap: "7px", padding: "4px 0", fontSize: "11.5px" }}>
+                  <span style={{ fontSize: "9px", letterSpacing: "0.1em", color: tagInfo[1], width: "52px", flexShrink: 0 }}>{tagInfo[0]}</span>
+                  <span style={{ fontFamily: SANS, fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dish.name}</span>
+                  <span style={{ flex: 1, minWidth: "8px", borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
+                  <span style={{ fontWeight: 500, color: diffColor, whiteSpace: "nowrap" }}>
+                    {dish.diff != null ? `${dish.diff > 0 ? "+" : ""}${dish.diff.toFixed(1)}` : "—"} sold
+                  </span>
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px dashed var(--paper-line)", marginTop: "5px", paddingTop: "7px", fontSize: "10.5px" }}>
+              <span style={{ color: "var(--ink-soft)" }}>EST. WASTE PREVENTED</span>
+              <span style={{ color: "var(--green)", fontWeight: 500 }}>${Math.round(openCalendarDayEntry.wasteSaved)}</span>
+            </div>
           </div>
-        ))}
-        <div style={{ background: "var(--accent-tint)", borderRadius: "10px", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "4px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
-            <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Top performer</div>
-            <div style={{ fontFamily: MONO, fontSize: "10px", color: "var(--accent-deep)" }}>{week.top.date}</div>
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px" }}>
-            <div style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--text)" }}>{week.top.name}</div>
-            <div style={{ fontSize: "17px", fontWeight: 800, color: "var(--green)" }}>{week.top.delta}</div>
-          </div>
+        )}
+
+        <div style={{ marginTop: "12px", display: "grid", gridTemplateColumns: `repeat(${Math.max(1, week.stats.length)}, minmax(0,1fr))`, gap: "8px" }}>
+          {week.stats.map((k) => (
+            <div key={k.label} style={{ background: "var(--panel)", borderRadius: "10px", padding: "10px", minWidth: 0 }}>
+              <div style={{ fontFamily: MONO, fontSize: "9px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)" }}>{k.label}</div>
+              <div style={{ fontSize: "19px", fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginTop: "3px", color: statColor(k.tone) }}>{k.value}</div>
+              {k.sub && <div style={{ fontFamily: MONO, fontSize: "8.5px", letterSpacing: "0.04em", lineHeight: 1.35, color: "var(--muted)", marginTop: "3px" }}>{k.sub}</div>}
+            </div>
+          ))}
         </div>
+        {week.top && (
+          <div style={{ marginTop: "8px", background: "var(--accent-tint)", borderRadius: "10px", padding: "11px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--accent-deep)" }}>Top performer{week.top.date ? " · " + week.top.date : ""}</div>
+              <div style={{ fontSize: "14px", fontWeight: 700, marginTop: "3px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{week.top.name}</div>
+            </div>
+            {week.top.delta && <div style={{ fontSize: "19px", fontWeight: 800, letterSpacing: "-0.03em", color: "var(--green)", flexShrink: 0 }}>{week.top.delta}</div>}
+          </div>
+        )}
       </div>
     );
     body = (
       <MobileView
         weekView={mobileWeek}
         restaurantName={restaurantName}
+        user={user}
         dateLabel={dateLabel}
         timeLabel={timeLabel}
         optiScore={optiScore}
-        tickets={tickets}
-        waste={waste}
+        buckets={buckets}
+        scoreTone={scoreTone}
         stats={stats}
-        weekData={weekData}
-        weekExtraSold={weekExtraSold}
-        weekWasteSaved={weekWasteSaved}
-        hitRate={hitRate}
+        tickets={tickets}
+        ticketsStatus={ticketsStatus}
+        onRetryTickets={onRetryTickets}
+        serviceNumber={serviceNumber}
+        waste={waste}
         activeNav={activeNav}
         Link={Link}
+        tourActive={tourActive}
       />
     );
   } else {
@@ -1465,308 +1480,283 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
 
 /* ── mobile ─────────────────────────────────────────────────────────── */
 
-const MOBILE_TABS = ["Tonight's picks", "Metrics", "Waste risk", "Week review", "Prices"];
+/* One scroll, ordered for a pre-service glance: OptiScore and its
+   barometers, then tonight's tickets one at a time (Back / Next), then
+   waste risk, then the month in review. */
+function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buckets, scoreTone, stats, tickets, ticketsStatus, onRetryTickets, serviceNumber, waste, activeNav, Link, weekView, tourActive }) {
+  const [idx, setIdx] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [allWaste, setAllWaste] = useState(false);
 
-function MobileView({ restaurantName, dateLabel, timeLabel, optiScore, tickets, waste, stats, weekData, weekExtraSold, weekWasteSaved, hitRate, activeNav, Link, weekView }) {
-  const [tab, setTab] = useState(MOBILE_TABS[0]);
+  const n = tickets.length;
+  const i = Math.min(idx, Math.max(0, n - 1));
+  const go = (k) => { setIdx(Math.max(0, Math.min(n - 1, k))); setFlipped(false); };
+  const atStart = i === 0;
+  const atEnd = i === n - 1;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const visibleWaste = allWaste ? waste : waste.slice(0, 4);
+
+  const monoK = { fontFamily: MONO, fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)" };
+  const mcard = { background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "14px", boxShadow: "0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)" };
+  const stepBtn = { height: "44px", display: "flex", alignItems: "center", gap: "6px", borderRadius: "22px", fontFamily: SANS, fontSize: "13.5px", fontWeight: 700 };
+
   return (
     <div style={{ background: "var(--panel)", flex: 1, display: "flex", flexDirection: "column" }}>
-      <div
-        style={{
-          padding: "14px 16px",
-          borderBottom: "1px solid var(--line)",
-          background: "var(--shell)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "12px",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: "16px", fontWeight: 800, letterSpacing: "-0.03em" }}>{restaurantName}</div>
-          <div style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.08em", color: "var(--faint)", marginTop: "3px" }}>
-            {dateLabel.toUpperCase()} · {timeLabel}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.1em", color: "var(--faint)" }}>OPTISCORE</div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: "4px", justifyContent: "flex-end" }}>
-            <span style={{ fontSize: "22px", fontWeight: 800, letterSpacing: "-0.03em" }}>{optiScore.value == null ? "—" : optiScore.value}</span>
-            <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--accent-deep)" }}>{optiScore.label}</span>
-          </div>
-        </div>
-      </div>
+      <div style={{ padding: "14px 16px 28px", display: "flex", flexDirection: "column", gap: "18px" }}>
 
-      <div className="om-scroll-x" style={{ display: "flex", gap: "6px", padding: "12px 16px", borderBottom: "1px solid var(--line)", background: "var(--shell)" }}>
-        {MOBILE_TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              flexShrink: 0,
-              fontFamily: SANS,
-              fontSize: "12.5px",
-              fontWeight: 600,
-              border: "none",
-              borderRadius: "20px",
-              padding: "9px 14px",
-              minHeight: "44px",
-              cursor: "pointer",
-              whiteSpace: "nowrap",
-              color: t === tab ? "var(--accent-deep)" : "var(--muted)",
-              background: t === tab ? "var(--accent-tint)" : "transparent",
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+        {/* live line, greeting, OptiScore + barometers */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ ...monoK, display: "flex", alignItems: "center", gap: "7px", minWidth: 0 }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)", animation: "om-blink 2.4s infinite", flexShrink: 0 }} />
+            <span style={{ color: "var(--accent-deep)", flexShrink: 0 }}>Live</span>
+            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {restaurantName} · {dateLabel} · {timeLabel}</span>
+          </div>
+          <div style={{ fontSize: "22px", fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.2, marginBottom: "4px" }}>
+            {greeting}, {user.firstName}.{" "}
+            <span style={{ color: "var(--faint)", fontWeight: 700 }}>
+              {n ? "Tonight\u2019s pass is set." : ticketsStatus === "loading" ? "Printing tonight\u2019s tickets\u2026" : "Tonight\u2019s pass is waiting."}
+            </span>
+          </div>
 
-      {tab === "Tonight's picks" && (
-        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
-          {tickets.map((t, i) => (
-            <div key={t.title} style={{ background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: "5px", padding: "15px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "10px", letterSpacing: "0.14em" }}>
-                <span style={{ color: t.color, fontWeight: 500 }}>{t.label}</span>
-                <span style={{ color: "var(--ink-faint)" }}>{t.num || "#124-0" + (i + 1)}</span>
-              </div>
-              <div style={{ ...dashRule, margin: "10px 0" }} />
-              <div style={{ fontFamily: SANS, fontSize: "20px", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, color: "var(--ink)" }}>{t.title}</div>
-              <div style={{ ...dashRule, margin: "10px 0" }} />
-              <div style={{ fontFamily: SANS, fontSize: "13.5px", fontStyle: "italic", lineHeight: 1.45, color: "var(--ink)" }}>{t.pitch}</div>
-              <div style={{ fontFamily: SANS, fontSize: "12.5px", lineHeight: 1.5, color: "var(--ink-soft)", marginTop: "8px" }}>{t.reason}</div>
+          <div data-tour="db-panel" style={{ ...mcard, padding: "14px", display: "flex", flexDirection: "column", gap: "13px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span style={{ ...monoK, letterSpacing: "0.14em" }}>OptiScore</span>
+              <span style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: scoreTone, background: `color-mix(in srgb, ${scoreTone} 14%, var(--shell))`, borderRadius: "20px", padding: "3px 10px" }}>
+                {optiScore.label}
+              </span>
             </div>
-          ))}
-
-          <div style={{ ...card, padding: "16px" }}>
-            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "4px" }}>
-              <div style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "-0.02em" }}>Waste risk</div>
-              <span style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.08em", color: "var(--faint)" }}>{waste.length} AT RISK</span>
-            </div>
-            {waste.slice(0, 3).map((w) => (
-              <div key={w.name} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "11px 0", borderTop: "1px solid var(--line-soft)" }}>
-                <span style={{ width: "6px", height: "6px", borderRadius: "50%", flexShrink: 0, background: TONE[w.tone] || TONE.ok }} />
-                <span style={{ flex: 1, fontSize: "13px", fontWeight: 600, textTransform: "capitalize" }}>{w.name}</span>
-                <span style={{ fontSize: "11.5px", fontWeight: 700, color: TONE[w.tone] || TONE.ok }}>{w.left}</span>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: "14px" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "5px", flexShrink: 0 }}>
+                <span style={{ fontSize: "42px", fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 0.9 }}>{optiScore.value == null ? "—" : optiScore.value}</span>
+                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--muted)" }}>/ {optiScore.max || 100}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab === "Metrics" && (
-        <div style={{ padding: "16px" }}>
-          <MobileMetricsTab stats={stats} />
-        </div>
-      )}
-
-      {tab === "Waste risk" && (
-        <div style={{ padding: "16px" }}>
-          <MobileWasteTab waste={waste} />
-        </div>
-      )}
-
-      {tab === "Week review" && (
-        <div style={{ padding: "16px" }}>
-          {weekView}
-        </div>
-      )}
-
-      {tab === "Prices" && (
-        <div style={{ padding: "16px" }}>
-          <MobilePricesTab Link={Link} />
-        </div>
-      )}
-
-      <div style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--shell)", marginTop: "auto", position: "sticky", bottom: 0 }}>
-        {NAV.map((n) => {
-          const on = n.key === activeNav;
-          return (
-            <Link
-              key={n.key}
-              href={n.href}
-              style={{
-                flex: 1,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "4px",
-                padding: "11px 0 16px",
-                minHeight: "44px",
-                color: on ? "var(--accent)" : "var(--faint)",
-              }}
-            >
-              <NavIcon name={n.key} />
-              <span style={{ fontSize: "9.5px", fontWeight: 600 }}>{n.key === "menu-items" ? "Menu" : n.label}</span>
-            </Link>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/* ── Mobile tab panels ────────────────────────────────────────────────── */
-
-function MobileMetricsTab({ stats }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-      {(stats || []).map((s) => (
-        <div key={s.label} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "10px", padding: "13px 14px" }}>
-          <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "5px" }}>
-            {s.label}
-          </div>
-          <div style={{ fontSize: "18px", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text)" }}>{s.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function MobileWasteTab({ waste }) {
-  if (!waste || waste.length === 0) {
-    return <div style={{ fontSize: "13px", color: "var(--faint)", textAlign: "center", padding: "24px 0" }}>Nothing at risk right now.</div>;
-  }
-  return (
-    <div style={{ ...card, padding: "6px 16px" }}>
-      {waste.map((w) => (
-        <div key={w.name} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 0", borderBottom: "1px solid var(--line-soft)" }}>
-          <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: TONE[w.tone] || TONE.ok }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "13.5px", fontWeight: 600, textTransform: "capitalize" }}>{w.name}</div>
-            {w.qty && <div style={{ fontSize: "11px", color: "var(--faint)", marginTop: "2px" }}>{w.qty}</div>}
-          </div>
-          <span style={{ fontSize: "12px", fontWeight: 700, color: TONE[w.tone] || TONE.ok, whiteSpace: "nowrap" }}>{w.left}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* Ported from dashboard3.js's MobileWeekInReview, adapted to take data as
-   props (from the parent's single useWeekInReview call) instead of calling
-   the hook itself — avoids a second, duplicate fetch of the same data the
-   desktop calendar already loaded. */
-function MobileWeekTab({ weekData, weekExtraSold, weekWasteSaved, hitRate }) {
-  const [openDay, setOpenDay] = useState(null);
-  const openDayData = (weekData || []).find((d) => d.date === openDay);
-
-  return (
-    <div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
-        {[
-          { l: "Extra sold", v: `${weekExtraSold >= 0 ? "+" : ""}${weekExtraSold}`, c: weekExtraSold >= 0 ? "var(--green)" : "var(--red)", sub: "vs avg" },
-          { l: "Waste saved", v: `$${Math.round(weekWasteSaved)}`, c: "var(--green)", sub: "est." },
-          { l: "Hit rate", v: `${hitRate}%`, c: "var(--accent)", sub: "days above avg" },
-        ].map(({ l, v, c, sub }) => (
-          <div key={l} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: "8px", padding: "10px 8px" }}>
-            <div style={{ fontFamily: MONO, fontSize: "9px", color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "4px" }}>{l}</div>
-            <div style={{ fontFamily: SANS, fontSize: "17px", fontWeight: 700, color: c, lineHeight: 1 }}>{v}</div>
-            <div style={{ fontSize: "9px", color: "var(--faint)", marginTop: "3px" }}>{sub}</div>
-          </div>
-        ))}
-      </div>
-      {(weekData || []).map((day) => {
-        const isOpen = openDay === day.date;
-        const extraColor = day.extraSold > 0 ? "var(--green)" : day.extraSold < 0 ? "var(--red)" : "var(--faint)";
-        return (
-          <div key={day.date} style={{ background: "var(--shell)", border: `1px solid ${isOpen ? "var(--accent)" : "var(--line)"}`, borderRadius: "8px", marginBottom: "8px", overflow: "hidden", transition: "border-color .15s" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px", cursor: "pointer" }} onClick={() => setOpenDay((prev) => (prev === day.date ? null : day.date))}>
-              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--text)", width: "28px", flexShrink: 0 }}>{day.dayLabel}</span>
-              <span style={{ fontSize: "10px", color: "var(--faint)", width: "32px", flexShrink: 0 }}>{day.date.slice(5).replace("-", "/")}</span>
-              <div style={{ flex: 1, display: "flex", gap: "4px", overflow: "hidden" }}>
-                {day.dishes.length > 0 ? (
-                  day.dishes.map((d, i) => (
-                    <span key={i} style={{ fontSize: "9px", fontWeight: 600, padding: "2px 6px", borderRadius: "3px", background: d.ticketColor, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "80px", opacity: 0.85 }}>
-                      {d.name.split(" ").slice(0, 2).join(" ")}
-                    </span>
-                  ))
-                ) : (
-                  <span style={{ fontSize: "9px", color: "var(--faint)" }}>No recs</span>
-                )}
-              </div>
-              <span style={{ fontFamily: SANS, fontSize: "12px", fontWeight: 700, color: extraColor, flexShrink: 0 }}>{day.extraSold == null ? "—" : `${day.extraSold > 0 ? "+" : ""}${day.extraSold}`}</span>
-              <span style={{ fontSize: "9px", color: "var(--faint)", flexShrink: 0 }}>{isOpen ? "▴" : "▾"}</span>
-            </div>
-            {isOpen && openDayData && (
-              <div style={{ padding: "0 12px 12px", borderTop: "1px solid var(--line-soft)" }}>
-                <div style={{ fontFamily: MONO, fontSize: "9px", fontWeight: 600, color: "var(--faint)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "10px 0 8px" }}>Dish performance</div>
-                {openDayData.dishes.length === 0 && <div style={{ fontSize: "11px", color: "var(--muted)" }}>No recommendations for this day.</div>}
-                {openDayData.dishes.map((dish, i) => {
-                  const diff = dish.diff;
-                  const diffColor = diff !== null ? (diff > 0 ? "var(--green)" : diff < 0 ? "var(--red)" : "var(--muted)") : "var(--muted)";
-                  const maxBar = Math.max(dish.sold, dish.avg || 0, 1);
-                  return (
-                    <div key={i} style={{ marginBottom: "12px" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "4px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span style={{ fontSize: "9px", fontWeight: 600, color: dish.ticketColor, textTransform: "uppercase" }}>{i === 0 ? "Push" : i === 1 ? "Rec" : "Mention"}</span>
-                          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)" }}>{dish.name}</span>
-                        </div>
-                        <span style={{ fontSize: "11px", fontWeight: 700, color: diffColor }}>{diff !== null ? `${diff > 0 ? "+" : ""}${diff.toFixed(1)}` : "—"}</span>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span style={{ fontSize: "9px", color: "var(--faint)", width: "24px", flexShrink: 0 }}>Sold</span>
-                          <div style={{ flex: 1, height: "4px", background: "var(--line-soft)", borderRadius: "2px", overflow: "hidden" }}>
-                            <div style={{ width: `${(dish.sold / maxBar) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: "2px" }} />
-                          </div>
-                          <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--accent)", width: "20px", textAlign: "right" }}>{dish.sold}</span>
-                        </div>
-                        {dish.avg !== null && (
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span style={{ fontSize: "9px", color: "var(--faint)", width: "24px", flexShrink: 0 }}>Avg</span>
-                            <div style={{ flex: 1, height: "4px", background: "var(--line-soft)", borderRadius: "2px", overflow: "hidden" }}>
-                              <div style={{ width: `${(dish.avg / maxBar) * 100}%`, height: "100%", background: "var(--line)", borderRadius: "2px" }} />
-                            </div>
-                            <span style={{ fontSize: "9px", fontWeight: 600, color: "var(--faint)", width: "20px", textAlign: "right" }}>{dish.avg.toFixed(1)}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "8px", borderTop: "1px solid var(--line-soft)" }}>
-                  <span style={{ fontSize: "10px", color: "var(--faint)" }}>Est. waste prevented</span>
-                  <span style={{ fontSize: "10px", fontWeight: 600, color: "var(--green)" }}>${Math.round(day.wasteSaved)}</span>
+              <div style={{ flex: 1, paddingBottom: "4px" }}>
+                {/* score bar; the tick marks 65, where "Good" starts */}
+                <div style={{ position: "relative", height: "7px", borderRadius: "4px", background: "var(--line)" }}>
+                  <div style={{ height: "7px", width: ((optiScore.value || 0) / (optiScore.max || 100)) * 100 + "%", borderRadius: "4px", background: "var(--accent)" }} />
+                  <div style={{ position: "absolute", top: "-4px", left: "65%", width: "2px", height: "15px", background: "var(--text)" }} />
                 </div>
+                <div style={{ position: "relative", height: "12px", marginTop: "6px" }}>
+                  <span style={{ position: "absolute", left: "65%", transform: "translateX(-50%)", fontFamily: MONO, fontSize: "9.5px", color: "var(--muted)", whiteSpace: "nowrap" }}>GOOD 65+</span>
+                </div>
+              </div>
+            </div>
+
+            {buckets.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px", paddingTop: "12px", borderTop: "1px solid var(--line-soft)" }}>
+                {buckets.map((b) => (
+                  <div key={b.name} style={{ display: "grid", gridTemplateColumns: "74px minmax(0,1fr) 54px", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 600 }}>{b.name}</span>
+                    <span style={{ height: "5px", borderRadius: "3px", background: "var(--line-soft)", overflow: "hidden" }}>
+                      <span style={{ display: "block", height: "100%", width: (b.max ? Math.min(100, (b.score / b.max) * 100) : 0) + "%", background: "var(--accent)" }} />
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: "11px", textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>
+                      {b.max ? `${Math.round(b.score)}/${Math.round(b.max)}` : "day 31+"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {stats.length > 0 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: "8px" }}>
+                {stats.map((s) => (
+                  <div key={s.label} style={{ background: "var(--panel)", border: "1px solid var(--line-soft)", borderRadius: "10px", padding: "10px 12px", minWidth: 0 }}>
+                    <div style={{ fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.label}</div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", marginTop: "3px", color: STAT_TONE[s.tone] || "var(--text)" }}>{s.value}</div>
+                    {s.note && <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "1px" }}>{s.note}</div>}
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        );
-      })}
+        </div>
+
+        {/* tonight's pass: one ticket at a time */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "12px" }}>
+            <div style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em" }}>Tonight&rsquo;s pass</div>
+            <span style={monoK}>{n ? n + " dishes on the rail" : ticketsStatus === "loading" ? "Printing\u2026" : "Rail is empty"}</span>
+          </div>
+          <div style={{ height: "9px", borderRadius: "6px", background: "linear-gradient(to bottom,var(--rail-2),var(--rail))", position: "relative", zIndex: 2 }} />
+
+          {n === 0 ? (
+            <div style={{ marginTop: "14px", border: "1px dashed var(--line)", borderRadius: "10px", padding: "22px 18px", textAlign: "center", fontSize: "13px", lineHeight: 1.5, color: "var(--muted)" }}>
+              {ticketsStatus === "loading" ? (
+                <>Printing tonight&rsquo;s tickets&hellip; the first look each day can take up to a minute.</>
+              ) : ticketsStatus === "error" ? (
+                <>
+                  Tonight&rsquo;s tickets didn&rsquo;t load.{" "}
+                  <button type="button" onClick={onRetryTickets} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "inherit", fontWeight: 700, color: "var(--accent-deep)", textDecoration: "underline" }}>Try again</button>
+                </>
+              ) : (
+                <>No tickets on the rail yet — tonight&rsquo;s dishes print here once the day&rsquo;s sales and invoices are in.</>
+              )}
+            </div>
+          ) : (
+            <>
+              <MobileTicket
+                key={i}
+                t={tickets[i]}
+                i={i}
+                flipped={flipped}
+                onFlip={() => !tourActive && setFlipped((f) => !f)}
+                restaurantName={restaurantName}
+                serviceNumber={serviceNumber}
+                timeLabel={timeLabel}
+              />
+              {n > 1 && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: "10px", marginTop: "16px" }}>
+                  <button type="button" onClick={() => go(i - 1)} disabled={atStart} aria-label="Previous ticket" style={{ ...stepBtn, justifySelf: "start", padding: "0 16px 0 12px", border: "1px solid var(--line)", background: "var(--shell)", color: "var(--text)", opacity: atStart ? 0.45 : 1, cursor: atStart ? "default" : "pointer" }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
+                    Back
+                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      {tickets.map((tk, k) => (
+                        <button key={k} type="button" onClick={() => go(k)} aria-label={`Ticket ${k + 1}, ${tk.title}`} style={{ width: "24px", height: "24px", padding: 0, border: "none", background: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                          <span style={{ width: k === i ? "22px" : "8px", height: "8px", borderRadius: "4px", background: k === i ? tk.color : "var(--rail-2)", transition: "width .2s" }} />
+                        </button>
+                      ))}
+                    </div>
+                    <span style={{ fontFamily: MONO, fontSize: "10px", letterSpacing: "0.1em", color: "var(--muted)" }}>TICKET {i + 1} OF {n}</span>
+                  </div>
+                  <button type="button" onClick={() => go(i + 1)} disabled={atEnd} aria-label="Next ticket" style={{ ...stepBtn, justifySelf: "end", padding: "0 12px 0 16px", border: "none", background: atEnd ? "var(--accent-tint)" : "var(--accent)", color: atEnd ? "var(--accent-deep)" : "#fff", cursor: atEnd ? "default" : "pointer" }}>
+                    Next
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* waste risk */}
+        <div data-tour="db-waste" style={{ ...mcard, padding: "14px 14px 12px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
+            <div>
+              <div style={{ fontSize: "15px", fontWeight: 800, letterSpacing: "-0.02em" }}>Waste risk</div>
+              <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "2px" }}>Use these first, or they go in the bin</div>
+            </div>
+            {waste.length > 4 && (
+              <button type="button" onClick={() => setAllWaste((v) => !v)} style={{ flexShrink: 0, minHeight: "36px", background: "none", border: "1px solid var(--line)", borderRadius: "20px", padding: "0 13px", fontFamily: SANS, fontSize: "12px", fontWeight: 600, color: "var(--muted)", cursor: "pointer" }}>
+                {allWaste ? "Show fewer" : "See all " + waste.length}
+              </button>
+            )}
+          </div>
+          {waste.length === 0 && (
+            <div style={{ fontSize: "13px", color: "var(--muted)", padding: "14px 0 6px", borderTop: "1px solid var(--line-soft)" }}>Nothing at risk right now.</div>
+          )}
+          {visibleWaste.map((w) => {
+            const col = TONE[w.tone] || TONE.ok;
+            return (
+              <div key={w.name} style={{ padding: "11px 0 10px", borderTop: "1px solid var(--line-soft)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
+                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: col }} />
+                  <span style={{ flex: 1, minWidth: 0, fontSize: "14px", fontWeight: 600, textTransform: "capitalize", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                  {w.qty && <span style={{ fontFamily: MONO, fontSize: "10.5px", color: "var(--muted)", whiteSpace: "nowrap" }}>{w.qty}</span>}
+                  <span style={{ fontSize: "12.5px", fontWeight: 700, whiteSpace: "nowrap", color: col, minWidth: "74px", textAlign: "right" }}>{w.left}</span>
+                </div>
+                <div style={{ height: "3px", borderRadius: "2px", background: "var(--line)", margin: "7px 0 0 16px", overflow: "hidden" }}>
+                  <div style={{ height: "3px", borderRadius: "2px", background: col, width: w.pct + "%" }} />
+                </div>
+              </div>
+            );
+          })}
+          {waste.length > 0 && (
+            <div style={{ display: "flex", gap: "14px", paddingTop: "10px", borderTop: "1px solid var(--line-soft)", fontFamily: MONO, fontSize: "9.5px", letterSpacing: "0.06em", color: "var(--muted)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--red)" }} />TODAY</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--amber)" }} />2 DAYS</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "5px" }}><span style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--accent)" }} />3–7 DAYS</span>
+            </div>
+          )}
+        </div>
+
+        {/* month in review (built in the parent so it shares the desktop calendar state) */}
+        <div data-tour="db-week">{weekView}</div>
+      </div>
+
+      <MobileNav active={activeNav} NavLink={Link} />
     </div>
   );
 }
 
-/* Old dashboard3.js had a category-level price-movement tab here
-   (MobilePriceMovement, backed by computePriceByCategory). That feature was
-   superseded by the richer per-ingredient price history now on
-   components/client/IngredientsScreen.js, not carried into this rebuild —
-   see chat. This points there instead of re-adding the old scope. */
-function MobilePricesTab({ Link }) {
+/* One phone ticket: front is the pitch, tap flips to the recipe. */
+function MobileTicket({ t, i, flipped, onFlip, restaurantName, serviceNumber, timeLabel }) {
+  const num = t.num || "#124-0" + (i + 1);
+  const why = t.why || t.reason;
+  const face = { width: "100%", height: "350px", display: "flex", flexDirection: "column", textAlign: "left", border: "none", cursor: "pointer", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: "4px", padding: "12px 14px", boxShadow: "0 14px 30px rgba(17,24,25,0.14)" };
+  const rule = { display: "block", width: "100%", borderTop: "1px dashed var(--paper-line)" };
+  const tag = { fontSize: "8.5px", fontWeight: 500, letterSpacing: "0.06em", border: "1px solid var(--ink-faint)", borderRadius: "3px", padding: "2px 6px", color: "var(--ink-soft)" };
+
   return (
-    <div style={{ ...card, padding: "24px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "6px" }}>Ingredient price trends</div>
-      <div style={{ fontSize: "12.5px", color: "var(--muted)", lineHeight: 1.5, marginBottom: "16px" }}>
-        Price history and movement now live on the Ingredients page, with a full trend per ingredient.
+    <div style={{ position: "relative", padding: "9px 14px 0" }}>
+      <div style={{ position: "absolute", top: "-7px", left: "50%", transform: "translateX(-50%)", width: "46px", height: "16px", borderRadius: "4px 4px 3px 3px", background: "linear-gradient(to bottom,var(--rail-2),var(--rail))", zIndex: 3 }} />
+      <div style={{ transform: `rotate(${TILT[i % TILT.length]})`, transformOrigin: "top center", animation: "om-print .4s cubic-bezier(.25,.8,.35,1) both" }}>
+        {!flipped ? (
+          <button type="button" onClick={onFlip} aria-label="Show recipe" style={face}>
+            <span style={{ display: "block", width: "100%", textAlign: "center" }}>
+              <span style={{ display: "block", fontSize: "10px", fontWeight: 500, letterSpacing: "0.06em" }}>{restaurantName}</span>
+              <span style={{ display: "block", fontSize: "8px", letterSpacing: "0.16em", color: "var(--ink-faint)", marginTop: "2px" }}>TONIGHT · SERVICE {serviceNumber}</span>
+            </span>
+            <span style={{ display: "flex", width: "100%", justifyContent: "space-between", fontSize: "9px", letterSpacing: "0.08em", color: "var(--ink-soft)", marginTop: "7px" }}>
+              <span>{num}</span><span>{timeLabel}</span>
+            </span>
+            <span style={{ ...rule, margin: "8px 0" }} />
+            <span style={{ display: "block", fontSize: "9.5px", fontWeight: 500, letterSpacing: "0.16em", color: t.color }}>{t.label}</span>
+            <span style={{ display: "block", fontFamily: SANS, fontSize: "18px", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.12, marginTop: "4px" }}>{t.title}</span>
+            <span style={{ ...rule, margin: "10px 0 8px" }} />
+            <span style={{ display: "block", width: "100%", fontSize: "8px", letterSpacing: "0.16em", color: "var(--ink-faint)", textAlign: "center" }}>TONIGHT&rsquo;S PITCH</span>
+            <span style={{ display: "block", flex: 1, minHeight: 0, overflow: "hidden", marginTop: "7px" }}>
+              <span style={{ display: "block", fontFamily: SANS, fontSize: "13px", fontStyle: "italic", lineHeight: 1.45 }}>{t.pitch}</span>
+              {why && (
+                <span style={{ display: "block", borderLeft: "2px solid var(--ink-faint)", padding: "1px 0 1px 9px", marginTop: "10px" }}>
+                  <span style={{ display: "block", fontSize: "8px", letterSpacing: "0.16em", color: "var(--ink-soft)" }}>WHY TONIGHT</span>
+                  <span style={{ display: "block", fontFamily: SANS, fontSize: "11.5px", lineHeight: 1.45, marginTop: "3px" }}>{why}</span>
+                </span>
+              )}
+            </span>
+            <span style={{ ...rule, margin: "8px 0" }} />
+            <span style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+              {t.margin && <span style={tag}>{t.margin}</span>}
+              {t.cover && <span style={tag}>{t.cover}</span>}
+              {t.urgency && <span style={{ ...tag, color: t.color, border: "1px solid " + t.color }}>{t.urgency}</span>}
+            </span>
+            <span style={{ display: "block", width: "100%", textAlign: "center", fontSize: "8px", letterSpacing: "0.14em", color: "var(--ink-faint)", marginTop: "8px" }}>· · · TAP FOR RECIPE · · ·</span>
+          </button>
+        ) : (
+          <button type="button" onClick={onFlip} aria-label="Back to the pitch" style={face}>
+            <span style={{ display: "flex", width: "100%", justifyContent: "space-between", fontSize: "9px", letterSpacing: "0.12em", color: "var(--ink-soft)" }}>
+              <span>RECIPE · {num}</span><span>↻ FLIP</span>
+            </span>
+            <span style={{ ...rule, margin: "9px 0" }} />
+            <span style={{ display: "block", fontFamily: SANS, fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.12 }}>{t.title}</span>
+            <span style={{ ...rule, margin: "10px 0" }} />
+            <span style={{ display: "block", width: "100%", flex: 1, minHeight: 0, overflowY: "auto" }}>
+              {(t.recipe || []).map((c) => (
+                <span key={c.name} style={{ display: "block", marginBottom: "11px" }}>
+                  <span style={{ display: "block", fontSize: "8.5px", fontWeight: 500, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-soft)", marginBottom: "2px" }}>{c.name}</span>
+                  {(c.ings || []).map((g) => {
+                    const col = g.risk ? "var(--red)" : "var(--ink-soft)";
+                    return (
+                      <span key={g.name} style={{ display: "flex", alignItems: "baseline", gap: "7px", fontSize: "10.5px", lineHeight: 1.65, color: col }}>
+                        <span style={{ whiteSpace: "nowrap" }}>{g.name}</span>
+                        <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
+                        <span style={{ whiteSpace: "nowrap" }}>{g.qty}</span>
+                      </span>
+                    );
+                  })}
+                </span>
+              ))}
+            </span>
+            <span style={{ ...rule, margin: "8px 0" }} />
+            {t.riskNote && <span style={{ display: "block", fontSize: "9px", fontWeight: 500, letterSpacing: "0.06em", color: "var(--red)" }}>{t.riskNote}</span>}
+            <span style={{ display: "block", width: "100%", textAlign: "center", fontSize: "8px", letterSpacing: "0.14em", color: "var(--ink-faint)", marginTop: "8px" }}>· · · TAP TO FLIP BACK · · ·</span>
+          </button>
+        )}
       </div>
-      <Link
-        href="/client/ingredients"
-        style={{
-          display: "inline-block",
-          background: "var(--accent)",
-          color: "#fff",
-          borderRadius: "22px",
-          padding: "10px 22px",
-          fontFamily: SANS,
-          fontSize: "13px",
-          fontWeight: 700,
-        }}
-      >
-        Open Ingredients
-      </Link>
     </div>
   );
 }
