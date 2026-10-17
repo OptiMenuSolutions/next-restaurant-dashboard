@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import MenuCosting, { marginColor } from "./MenuCosting";
+import MenuCosting, { marginColor, MobileMenuCosting } from "./MenuCosting";
 import {
-  Shell, Header, MobileHeader, MobileNav, LoadingState, EmptyState, ErrorState,
+  Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileSegmented, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money,
 } from "./ClientChrome";
 
@@ -173,6 +173,7 @@ export default function MenuItemsScreen({
   const [layout, setLayout] = useState("cards");
   const [selectedId, setSelectedId] = useState(null);
   const [open, setOpen] = useState({});
+  const [mobileTab, setMobileTab] = useState("dishes"); // phones: "dishes" | "costing"
 
   const data = useMemo(() => (itemsProp || DEMO_ITEMS).map(decorate), [itemsProp]);
   const tgt = targetMargin;
@@ -232,11 +233,68 @@ export default function MenuItemsScreen({
   const avgMargin = priced.length ? priced.reduce((a, d) => a + d.margin, 0) / priced.length : 0;
 
   if (isMobile && selected) {
+    const sd = selected;
+    const underTarget = !sd.awaiting && sd.price > 0 && sd.margin < tgt;
+    // Price that reaches the target, rounded up to the next .95 (same rule as Menu costing).
+    const tp = sd.cost / (1 - tgt / 100);
+    let reprice = Math.ceil(tp) - 0.05;
+    if (reprice < tp) reprice += 1;
+    const trimTo = sd.price * (1 - tgt / 100);
+    const kpiLbl = { fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" };
+    const kpiVal = { fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", marginTop: 4 };
+
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
-          <DishDetail d={selected} tgt={tgt} open={open} setOpen={setOpen} onBack={() => setSelectedId(null)} />
+        <MobileBackBar label="All dishes" onBack={() => setSelectedId(null)} title="Dish" />
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
+              {[sd.category || "Dish", `${sd.components.length} component${sd.components.length === 1 ? "" : "s"}`, `${sd.lineCount} ingredient${sd.lineCount === 1 ? "" : "s"}`].join(" · ")}
+            </div>
+            <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1 }}>{sd.name}</div>
+          </div>
+
+          <div style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+            <div style={{ padding: 12 }}>
+              <div style={kpiLbl}>Menu</div>
+              <div style={kpiVal}>{money2(sd.price)}</div>
+            </div>
+            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={kpiLbl}>Plate cost</div>
+              <div style={{ ...kpiVal, color: sd.awaiting ? "var(--faint)" : "var(--text)" }}>{sd.awaiting ? "—" : money2(sd.cost)}</div>
+              {!sd.awaiting && move30Label(sd.move30) && (
+                <div style={{ fontFamily: MONO, fontSize: 10, color: moveColor(sd.move30), marginTop: 2 }}>{move30Label(sd.move30)} / 30D</div>
+              )}
+            </div>
+            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={kpiLbl}>Margin</div>
+              <div style={{ ...kpiVal, color: sd.awaiting ? "var(--faint)" : marginColor(sd.margin, tgt) }}>{sd.awaiting ? "Pending" : pct(sd.margin)}</div>
+              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>TARGET {pct(tgt)}</div>
+            </div>
+          </div>
+
+          {underTarget && (
+            <div style={{ background: "var(--shell)", border: "1px dashed var(--red)", borderRadius: 14, padding: "13px 14px" }}>
+              <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", color: "var(--red)" }}>
+                ▲ {(tgt - sd.margin).toFixed(1)} POINTS UNDER YOUR {pct(tgt)} TARGET
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginTop: 10 }}>
+                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "10px 11px" }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Reprice to</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 2 }}>{money2(reprice)}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>+{money2(reprice - sd.price)} ON THE MENU</div>
+                </div>
+                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "10px 11px" }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Or trim plate cost to</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 2 }}>{money2(trimTo)}</div>
+                  <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>−{money2(sd.cost - trimTo)} A PLATE</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DishDetail d={sd} tgt={tgt} open={open} setOpen={setOpen} onBack={() => setSelectedId(null)} stacked />
         </div>
         <MobileNav active="menu-items" NavLink={NavLink} />
       </Shell>
@@ -244,32 +302,98 @@ export default function MenuItemsScreen({
   }
 
   if (isMobile) {
+    const chipOpts = [
+      { key: "All", label: `All · ${data.length}` },
+      { key: "Below target", label: `Below target · ${belowTarget.length}` },
+      { key: "Cost rising", label: `Cost rising · ${costRising.length}` },
+      { key: "Waiting", label: `Waiting · ${waitingList.length}` },
+    ];
+    const kpiVal = { fontSize: 21, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums" };
+    const kpiLbl = { fontFamily: MONO, fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", marginTop: 2, lineHeight: 1.35 };
+
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileHeader theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} restaurantName={restaurantName} NavLink={NavLink} user={user} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
-        <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--line)" }}>
-          <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em" }}>Menu items</div>
-          <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.08em", color: "var(--faint)", marginTop: 3 }}>{countLabel}</div>
-        </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 10, background: "var(--panel)" }}>
-          {shown.map((d) => (
-            <div key={d.id} onClick={() => setSelectedId(d.id)} style={{ cursor: "pointer", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "13px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em" }}>{d.name}</span>
-                {d.awaiting ? (
-                  <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</span>
-                ) : (
-                  <span style={{ fontSize: 14.5, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, color: "var(--faint)" }}>{money0(d.price)} menu · {d.awaiting ? "awaiting pricing" : `${money2(d.cost)} cost`}</span>
-                {!d.awaiting && (
-                  <span style={{ fontFamily: MONO, fontSize: 11.5, fontWeight: 500, color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
-                )}
-              </div>
+        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "18px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+
+          <MobileTitle kicker={`${restaurantName} · Menu engineering`} title="Menu items" sub="Costed from tonight’s prices" />
+
+          <div style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+            <div style={{ padding: 12 }}>
+              <div style={{ ...kpiVal, color: priced.length && avgMargin < tgt ? marginColor(avgMargin, tgt) : "var(--text)" }}>{priced.length ? pct(avgMargin) : "—"}</div>
+              <div style={kpiLbl}>Avg margin<br />target {pct(tgt)}</div>
             </div>
-          ))}
+            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={{ ...kpiVal, color: belowTarget.length ? "var(--amber)" : "var(--text)" }}>{belowTarget.length}</div>
+              <div style={kpiLbl}>Below<br />target</div>
+            </div>
+            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
+              <div style={kpiVal}>{priced.length} / {data.length}</div>
+              <div style={kpiLbl}>Dishes<br />costed</div>
+            </div>
+          </div>
+
+          <MobileSegmented
+            options={[{ key: "dishes", label: "Dishes" }, { key: "costing", label: "Is each price right?" }]}
+            value={mobileTab}
+            onChange={setMobileTab}
+          />
+
+          {mobileTab === "dishes" ? (
+            <>
+              <MobileChips options={chipOpts} value={filter} onChange={(k) => { setFilter(k); setSelectedId(null); }} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+                {shown.map((d) => {
+                  const total = Math.max(1, d.lineCount);
+                  const pips = Math.min(10, total);
+                  const filled = Math.round(((total - d.unpricedCount) / total) * pips);
+                  return (
+                    <button key={d.id} type="button" onClick={() => setSelectedId(d.id)} style={{ height: 138, minWidth: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "11px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)", overflow: "hidden" }}>
+                      <span style={{ display: "block", width: "100%", minWidth: 0 }}>
+                        <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.category}</span>
+                          {!d.awaiting && d.estShare > 0.15 && (
+                            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--amber)", border: "1px solid var(--amber)", borderRadius: 9, padding: "0 4px", flexShrink: 0 }}>Est</span>
+                          )}
+                        </span>
+                        <span style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.22, marginTop: 5 }}>{d.name}</span>
+                      </span>
+                      <span style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                        <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {d.awaiting ? `${money2(d.price)} menu` : `${money2(d.price)} menu · ${money2(d.cost)} cost`}
+                        </span>
+                        {d.awaiting ? (
+                          <>
+                            <span style={{ display: "flex", gap: 2 }}>
+                              {Array.from({ length: pips }).map((_, k) => (
+                                <span key={k} style={{ flex: 1, height: 4, borderRadius: 1, background: k < filled ? "var(--accent)" : "var(--line)" }} />
+                              ))}
+                            </span>
+                            <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.unpricedCount} of {d.lineCount} ingredients unpriced</span>
+                          </>
+                        ) : (
+                          <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                            <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
+                            <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>mgn</span>
+                            <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10.5, whiteSpace: "nowrap", color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {shown.length === 0 && (
+                <div style={{ padding: "18px 4px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>Nothing in this filter.</div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "0 2px", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>
+                <span>{countLabel}</span>
+                <span>{priced.length} costed · {waitingList.length} waiting</span>
+              </div>
+            </>
+          ) : (
+            <MobileMenuCosting dishes={data} tgt={tgt} NavLink={NavLink} onPick={(d) => { setFilter("All"); setSelectedId(d.id); }} />
+          )}
         </div>
         <MobileNav active="menu-items" NavLink={NavLink} />
       </Shell>
@@ -530,7 +654,7 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 
 /* ── right pane: one dish ───────────────────────────────────────────── */
 
-function DishDetail({ d, tgt, open, setOpen, onBack }) {
+function DishDetail({ d, tgt, open, setOpen, onBack, stacked = false }) {
   const keyOf = (c) => d.id + "|" + c.name;
   const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : false);
   const anyOpen = d.components.some(isOpen);
@@ -569,11 +693,13 @@ function DishDetail({ d, tgt, open, setOpen, onBack }) {
   const effectiveDishCost = d.components.reduce((sum, comp, ci) => sum + effectiveComponentCost(ci, comp), 0);
 
   return (
-    <div style={{ flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
-      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: 4, boxShadow: "var(--shadow-lg)", overflowY: "auto", overflowX: "hidden", padding: "18px 22px 20px" }}>
-        <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", padding: 0, marginBottom: 14, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 }}>
-          <span style={{ fontSize: 13, lineHeight: 1 }}>‹</span><span>All dishes</span>
-        </button>
+    <div style={stacked ? { position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" } : { flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+      <div style={{ ...(stacked ? { position: "relative" } : { position: "absolute", inset: 0, overflowY: "auto" }), display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: 4, boxShadow: "var(--shadow-lg)", overflowX: "hidden", padding: stacked ? "16px 16px 18px" : "18px 22px 20px" }}>
+        {!stacked && (
+          <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", padding: 0, marginBottom: 14, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 }}>
+            <span style={{ fontSize: 13, lineHeight: 1 }}>‹</span><span>All dishes</span>
+          </button>
+        )}
 
         <div style={{ flexShrink: 0 }}>
           <div style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
