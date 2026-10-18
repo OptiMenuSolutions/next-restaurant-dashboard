@@ -93,7 +93,7 @@ export default function AnalyticsPage() {
   const [, setTourEndedTick] = useState(0);
 
   // Account from the shared cache (same account checks as before).
-  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount({ instant: true });
   const restaurantId = account?.profile?.restaurant_id || null;
   const restaurantName = account?.restaurant?.name || "";
   const userName = account?.profile?.full_name || "";

@@ -214,7 +214,7 @@ export default function DashboardPage() {
 
   // Account (login, profile, restaurant) from the shared cache, with the
   // same account checks as enforceAccountGuard.
-  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount({ instant: true });
   const restaurantId = account?.profile?.restaurant_id || null;
   const rd = account?.restaurant || null;
   const userName = account?.profile?.full_name || "";

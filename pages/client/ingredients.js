@@ -356,7 +356,7 @@ export default function IngredientsPage() {
 
   // Account (login, profile, restaurant) comes from the shared cache: loaded
   // once per session, with the account checks applied on every page.
-  const { account, loading: accountLoading, error: accountError } = useGuardedAccount();
+  const { account, loading: accountLoading, error: accountError } = useGuardedAccount({ instant: true });
   const restaurantId = account?.profile?.restaurant_id || null;
   const restaurantName = account?.restaurant?.name || "";
   const userName = account?.profile?.full_name || "";
