@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import IngredientCard, { qtyLabel, MobileIngredientCard } from "./IngredientCard";
 import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
@@ -152,6 +152,20 @@ export default function IngredientsScreen({
   const [invoicesOpen, setInvoicesOpen] = useState(false);
 
   const all = useMemo(() => (ingredientsProp || DEMO_INGREDIENTS).map(decorate), [ingredientsProp]);
+
+  // Guided tour on phones: show the view a step needs (see lib/useTour.js).
+  // "detail" keeps whatever is open, or opens the first ingredient.
+  const firstIdRef = useRef(null);
+  firstIdRef.current = all[0]?.id ?? null;
+  useEffect(() => {
+    const onView = (e) => {
+      const v = e.detail?.view;
+      if (v === "list") { setFilter("All"); setSelectedId(null); setMenuOpen(false); setInvoicesOpen(false); }
+      if (v === "detail") { setFilter("All"); setSelectedId((id) => id ?? firstIdRef.current); }
+    };
+    window.addEventListener("optimenu-tour-view", onView);
+    return () => window.removeEventListener("optimenu-tour-view", onView);
+  }, []);
 
   const risers = all.filter((g) => g.pct != null && g.pct > 1.5);
   const fallers = all.filter((g) => g.pct != null && g.pct < -1.5);

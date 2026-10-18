@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileSegmented, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD,
@@ -133,6 +133,16 @@ export default function AnalyticsScreen({
   const [sortBy, setSortBy] = useState("margin");
   const [hoverIdx, setHoverIdx] = useState(null);
   const [mobileSection, setMobileSection] = useState("overview"); // phones: overview | dishes | close
+
+  // Guided tour on phones: show the tab a step needs (see lib/useTour.js).
+  useEffect(() => {
+    const onView = (e) => {
+      const v = e.detail?.view;
+      if (v === "overview" || v === "dishes") setMobileSection(v);
+    };
+    window.addEventListener("optimenu-tour-view", onView);
+    return () => window.removeEventListener("optimenu-tour-view", onView);
+  }, []);
 
   const days = useMemo(() => normalise(daysProp || DEMO_DAYS), [daysProp]);
 

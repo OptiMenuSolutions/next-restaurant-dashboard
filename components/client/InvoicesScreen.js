@@ -155,6 +155,13 @@ export default function InvoicesScreen({
   const [selectedId, setSelectedId] = useState(null);
   const [mobileDetail, setMobileDetail] = useState(false); // phones: receipt shown full screen
 
+  // Guided tour on phones: show the view a step needs (see lib/useTour.js).
+  useEffect(() => {
+    const onView = (e) => { if (e.detail?.view === "list") setMobileDetail(false); };
+    window.addEventListener("optimenu-tour-view", onView);
+    return () => window.removeEventListener("optimenu-tour-view", onView);
+  }, []);
+
   const list = invoicesProp || DEMO_INVOICES;
   const rows = useMemo(
     () => list.map((v, i) => ({ ...v, id: v.id != null ? v.id : i, amount: resolveAmount(v) })),

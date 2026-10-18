@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import MenuCosting, { marginColor, MobileMenuCosting } from "./MenuCosting";
 import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileChips, MobileSegmented, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
@@ -176,6 +176,20 @@ export default function MenuItemsScreen({
   const [mobileTab, setMobileTab] = useState("dishes"); // phones: "dishes" | "costing"
 
   const data = useMemo(() => (itemsProp || DEMO_ITEMS).map(decorate), [itemsProp]);
+
+  // Guided tour on phones: show the view a step needs (see lib/useTour.js).
+  // "detail" keeps whatever dish is open, or opens the first one.
+  const firstIdRef = useRef(null);
+  firstIdRef.current = data[0]?.id ?? null;
+  useEffect(() => {
+    const onView = (e) => {
+      const v = e.detail?.view;
+      if (v === "list") { setMobileTab("dishes"); setFilter("All"); setSelectedId(null); }
+      if (v === "detail") { setFilter("All"); setSelectedId((id) => id ?? firstIdRef.current); }
+    };
+    window.addEventListener("optimenu-tour-view", onView);
+    return () => window.removeEventListener("optimenu-tour-view", onView);
+  }, []);
   const tgt = targetMargin;
 
   // Dishes awaiting pricing have no trustworthy cost — keep them out of
