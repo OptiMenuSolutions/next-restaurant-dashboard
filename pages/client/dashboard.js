@@ -658,7 +658,25 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button type="button" onClick={() => { localStorage.setItem("optimenu_tour_done", "1"); setShowTourPrompt(false); }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid #d8dfe0", background: "none", color: "#111819", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>No thanks</button>
-              <button type="button" onClick={() => { setShowTourPrompt(false); router.push("/client/dashboard?tour=true"); }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "none", background: "#02a4ba", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Yes, show me</button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Same reset as Restart tour on the profile page: the "tour done"
+                  // flag is saved per browser, so anyone who has seen the tour on
+                  // this device before would otherwise get nothing. Also clears a
+                  // half-finished tour position from an earlier run.
+                  try {
+                    localStorage.removeItem("optimenu_tour_done");
+                    sessionStorage.removeItem("optimenu_tour_step");
+                    sessionStorage.removeItem("optimenu_tour_step_index");
+                  } catch {}
+                  setShowTourPrompt(false);
+                  router.push("/client/dashboard?tour=true");
+                }}
+                style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "none", background: "#02a4ba", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}
+              >
+                Yes, show me
+              </button>
             </div>
           </div>
         </div>
