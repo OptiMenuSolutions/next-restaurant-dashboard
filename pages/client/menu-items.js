@@ -292,7 +292,29 @@ export default function MenuItemsPage() {
     const since = new Date();
     since.setDate(since.getDate() - 30);
 
-    const [{ data: menuItems }, { data: sales }] = await Promise.all([
+    // Cost history is fetched by restaurant rather than by a list of dish
+    // ids, so it no longer has to wait for the menu query to finish (and no
+    // longer sends ~500 ids in the request URL). Supabase caps a select at
+    // 1,000 rows, so it still pages.
+    const loadHistory = async () => {
+      const out = [];
+      const PAGE = 1000;
+      for (let from = 0; ; from += PAGE) {
+        const { data: page, error: hErr } = await supabase
+          .from("menu_item_cost_history")
+          .select("menu_item_id, old_cost, new_cost, created_at, menu_items!inner(restaurant_id)")
+          .eq("menu_items.restaurant_id", restaurantId)
+          .order("created_at", { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (hErr) { console.warn("[menu-items] cost history:", hErr.message); break; }
+        if (!page || !page.length) break;
+        out.push(...page);
+        if (page.length < PAGE) break;
+      }
+      return out;
+    };
+
+    const [{ data: menuItems }, { data: sales }, history] = await Promise.all([
       supabase
         .from("menu_items")
         .select(`
@@ -310,6 +332,7 @@ export default function MenuItemsPage() {
         .select("item_name, quantity_sold")
         .eq("restaurant_id", restaurantId)
         .gte("sale_date", since.toISOString().split("T")[0]),
+      loadHistory(),
     ]);
 
     const coverMap = new Map();
@@ -317,25 +340,6 @@ export default function MenuItemsPage() {
       const key = String(s.item_name || "").toLowerCase().trim();
       coverMap.set(key, (coverMap.get(key) || 0) + num(s.quantity_sold));
     });
-
-    const ids = (menuItems || []).map((m) => m.id);
-    // Supabase caps a select at 1,000 rows — this used to silently drop the
-    // newest history and made drift compare against stale mid-May costs.
-    const history = [];
-    if (ids.length) {
-      const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
-        const { data: page, error: hErr } = await supabase
-          .from("menu_item_cost_history")
-          .select("menu_item_id, old_cost, new_cost, created_at")
-          .in("menu_item_id", ids)
-          .order("created_at", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (hErr || !page || !page.length) break;
-        history.push(...page);
-        if (page.length < PAGE) break;
-      }
-    }
 
     const historyById = new Map();
     (history || []).forEach((h) => {
