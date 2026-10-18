@@ -338,7 +338,7 @@ export default function AnalyticsScreen({
               {[["overview", "Overview"], ["dishes", "Dishes"], ["close", "Close-out"]].map(([k, label]) => {
                 const on = mobileSection === k;
                 return (
-                  <button key={k} type="button" role="tab" aria-selected={on} onClick={() => setMobileSection(k)} style={{ flex: 1, height: 44, border: "none", background: "none", borderBottom: `2.5px solid ${on ? "var(--accent)" : "transparent"}`, marginBottom: -1, fontFamily: SANS, fontSize: 14, fontWeight: on ? 800 : 600, color: on ? "var(--accent-deep)" : "var(--muted)", cursor: "pointer" }}>
+                  <button key={k} type="button" role="tab" aria-selected={on} data-tour={k === "dishes" ? "an-tab-dishes" : undefined} onClick={() => setMobileSection(k)} style={{ flex: 1, height: 44, border: "none", background: "none", borderBottom: `2.5px solid ${on ? "var(--accent)" : "transparent"}`, marginBottom: -1, fontFamily: SANS, fontSize: 14, fontWeight: on ? 800 : 600, color: on ? "var(--accent-deep)" : "var(--muted)", cursor: "pointer" }}>
                     {label}
                   </button>
                 );
@@ -359,7 +359,7 @@ export default function AnalyticsScreen({
 
           {/* ── overview ── */}
           {mobileSection === "overview" && (
-            <>
+            <div data-tour="an-overview" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
                 {mKpis.map((k) => (
                   <div key={k.label} style={{ ...mCard, borderRadius: 12, padding: "12px 13px", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
@@ -428,12 +428,12 @@ export default function AnalyticsScreen({
                   ))}
                 </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ── dishes ── */}
           {mobileSection === "dishes" && (
-            <div style={{ ...mCard, overflow: "hidden" }}>
+            <div data-tour="an-matrix" style={{ ...mCard, overflow: "hidden" }}>
               <div style={{ padding: "14px 14px 10px" }}>
                 <div style={h2}>Dish performance</div>
                 <div style={{ marginTop: 10 }}>

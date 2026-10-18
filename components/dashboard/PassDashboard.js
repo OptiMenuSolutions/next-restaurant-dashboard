@@ -1593,7 +1593,7 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buc
         </div>
 
         {/* tonight's pass: one ticket at a time */}
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div data-tour="db-grid-wrap" style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "12px" }}>
             <div style={{ fontSize: "17px", fontWeight: 800, letterSpacing: "-0.03em" }}>Tonight&rsquo;s pass</div>
             <span style={monoK}>{n ? n + " dishes on the rail" : ticketsStatus === "loading" ? "Printing\u2026" : "Rail is empty"}</span>

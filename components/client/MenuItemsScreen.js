@@ -260,7 +260,7 @@ export default function MenuItemsScreen({
             <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1 }}>{sd.name}</div>
           </div>
 
-          <div style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+          <div data-tour="mi-detail" style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
             <div style={{ padding: 12 }}>
               <div style={kpiLbl}>Menu</div>
               <div style={kpiVal}>{money2(sd.price)}</div>
@@ -347,13 +347,13 @@ export default function MenuItemsScreen({
           {mobileTab === "dishes" ? (
             <>
               <MobileChips options={chipOpts} value={filter} onChange={(k) => { setFilter(k); setSelectedId(null); }} />
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+              <div data-tour="mi-grid-wrap" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
                 {shown.map((d) => {
                   const total = Math.max(1, d.lineCount);
                   const pips = Math.min(10, total);
                   const filled = Math.round(((total - d.unpricedCount) / total) * pips);
                   return (
-                    <button key={d.id} type="button" onClick={() => setSelectedId(d.id)} style={{ height: 138, minWidth: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "11px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)", overflow: "hidden" }}>
+                    <button key={d.id} type="button" data-tour="mi-card" onClick={() => setSelectedId(d.id)} style={{ height: 138, minWidth: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, padding: "11px 12px", display: "flex", flexDirection: "column", justifyContent: "space-between", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)", overflow: "hidden" }}>
                       <span style={{ display: "block", width: "100%", minWidth: 0 }}>
                         <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                           <span style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.category}</span>

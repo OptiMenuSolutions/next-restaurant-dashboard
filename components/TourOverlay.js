@@ -13,7 +13,7 @@ export default function TourOverlay({ tour }) {
 
   const phone = tour.vw > 0 && tour.vw <= 900;
   // Highlight in the lower half: put the phone card at the top instead.
-  const spotLow = tour.hasSpot && tour.ringTop + tour.ringHeight / 2 > tour.vh / 2;
+  const spotLow = tour.hasSpot && tour.ringHeight < tour.vh * 0.5 && tour.ringTop + tour.ringHeight / 2 > tour.vh / 2;
 
   const TOKENS = {
     '--shell': '#ffffff',

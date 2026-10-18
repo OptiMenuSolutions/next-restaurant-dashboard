@@ -275,7 +275,7 @@ export default function InvoicesScreen({
             kicker={`${restaurantName} · Purchasing`}
             title="Invoices"
             action={
-              <button type="button" onClick={onUpload} style={{ flexShrink: 0, height: 44, display: "flex", alignItems: "center", gap: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 22, padding: "0 16px 0 13px", fontFamily: SANS, fontSize: 14, fontWeight: 700, boxShadow: "0 8px 18px rgba(2,164,186,0.26)", cursor: "pointer", whiteSpace: "nowrap" }}>
+              <button type="button" data-tour="inv-upload" onClick={onUpload} style={{ flexShrink: 0, height: 44, display: "flex", alignItems: "center", gap: 8, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 22, padding: "0 16px 0 13px", fontFamily: SANS, fontSize: 14, fontWeight: 700, boxShadow: "0 8px 18px rgba(2,164,186,0.26)", cursor: "pointer", whiteSpace: "nowrap" }}>
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 15v4a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
                 Snap or upload
               </button>
@@ -347,7 +347,7 @@ export default function InvoicesScreen({
                       <span style={{ color: "var(--text)", whiteSpace: "nowrap" }}>{money(mt.total)}</span>
                     </div>
                   )}
-                  <button type="button" onClick={() => openRow(v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, minHeight: 64, padding: "12px 10px 12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
+                  <button type="button" data-tour="inv-row" onClick={() => openRow(v)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, minHeight: 64, padding: "12px 10px 12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
                     <span style={{ width: 3, alignSelf: "stretch", borderRadius: 2, background: m.mark, flexShrink: 0 }} />
                     <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
                       <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>

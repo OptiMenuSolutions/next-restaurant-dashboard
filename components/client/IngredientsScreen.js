@@ -205,7 +205,9 @@ export default function IngredientsScreen({
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileBackBar label="Ingredients" onBack={clear} title="Ingredient" />
         <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
-          <MobileIngredientCard g={selected} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
+          <div data-tour="ing-detail">
+            <MobileIngredientCard g={selected} onOpenMenuItem={onOpenMenuItem} onOpenInvoice={onOpenInvoice} />
+          </div>
         </div>
         <MobileNav active="ingredients" NavLink={NavLink} />
       </Shell>
@@ -259,7 +261,7 @@ export default function IngredientsScreen({
             </button>
           )}
 
-          <div style={{ ...mCard, overflow: "hidden" }}>
+          <div data-tour="ing-list" style={{ ...mCard, overflow: "hidden" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 14px 8px", background: "var(--panel)", borderBottom: "1px solid var(--line-soft)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--muted)" }}>
               <span>INGREDIENT · ON HAND VS NEXT 7 DAYS</span><span>PRICE · 30D</span>
             </div>
@@ -270,7 +272,7 @@ export default function IngredientsScreen({
               const urgent = g.daysLeft != null && g.daysLeft <= 3 && oh > 0;
               const barColor = urgent ? "var(--red)" : wk > 0 && cover < 33 ? "var(--amber)" : "var(--accent)";
               return (
-                <button key={g.id} type="button" onClick={() => select(g)} style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
+                <button key={g.id} type="button" data-tour="ing-row" onClick={() => select(g)} style={{ width: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px", background: "none", border: "none", borderBottom: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: SANS, color: "var(--text)" }}>
                   <span style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                       <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-0.02em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
