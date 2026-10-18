@@ -1,6 +1,10 @@
 // pages/_document.js
 import { Html, Head, Main, NextScript } from 'next/document';
 
+// Applies the saved light/dark choice to <html> before anything paints,
+// so a refresh in dark mode never flashes light first.
+const THEME_SCRIPT = "try{var t=localStorage.getItem('om_theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-om-theme',t)}catch(e){}";
+
 export default function Document() {
   return (
     <Html lang="en">
@@ -40,6 +44,7 @@ export default function Document() {
         <meta property="og:image" content="https://www.opti-menu.com/icons/icon-512x512.png" />
       </Head>
       <body>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <Main />
         <NextScript />
       </body>
