@@ -241,10 +241,11 @@ export default function OnboardingPage() {
       if (profileError) throw profileError;
     }
 
-    // Refresh the shared account copy first, so the dashboard sees the
+    // Refresh the shared account copy, so the dashboard sees the
     // subscription and finished onboarding instead of an older cached copy.
+    // No redirect here: the wizard's "Your kitchen is set up" screen stays up
+    // until the owner clicks Go to dashboard.
     await mutate("account");
-    router.push("/client/dashboard?justOnboarded=true");
   };
 
   return (

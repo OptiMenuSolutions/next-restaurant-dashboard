@@ -658,7 +658,7 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button type="button" onClick={() => { localStorage.setItem("optimenu_tour_done", "1"); setShowTourPrompt(false); }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "1px solid #d8dfe0", background: "none", color: "#111819", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>No thanks</button>
-              <button type="button" onClick={() => router.push("/client/dashboard?tour=true")} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "none", background: "#02a4ba", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Yes, show me</button>
+              <button type="button" onClick={() => { setShowTourPrompt(false); router.push("/client/dashboard?tour=true"); }} style={{ flex: 1, padding: "12px 16px", borderRadius: 10, border: "none", background: "#02a4ba", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Yes, show me</button>
             </div>
           </div>
         </div>
