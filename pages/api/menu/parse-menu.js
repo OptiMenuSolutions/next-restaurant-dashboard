@@ -1700,6 +1700,11 @@ export default async function handler(req, res) {
     .then(m => m.verifyRestaurantAccess(req, restaurantId));
   if (authError) return res.status(authStatus).json({ error: authError });
 
+  // Paid feature (OCR plus a recipe-build call per dish): the restaurant must be paid up.
+  const sub = await import('../../../lib/requireActiveSubscription')
+    .then(m => m.requireActiveSubscription(supabase, restaurantId));
+  if (sub.error) return res.status(sub.status).json({ error: sub.error });
+
   const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
   for (const f of fileRefs) {
     const ext = path.extname(f.file_name || '').toLowerCase();

@@ -21,6 +21,7 @@ import { logAiUsage } from '../../lib/logAiUsage';
 import { getShelfLife, isProtein } from '../../lib/shelfLife';
 import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateStandardizedCost } from '../../lib/standardizedUnits';
+import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -459,6 +460,12 @@ export default async function handler(req, res) {
     if (!cacheError && cached?.recommendations) {
       return res.status(200).json({ recommendations: cached.recommendations, cached: true, date: currentDate });
     }
+
+    // Generating costs a Claude call, so only for restaurants that are paid
+    // up. Today's cached tickets above are still served either way. This
+    // covers both the dashboard and the staff NFC page.
+    const sub = await requireActiveSubscription(supabase, restaurantId);
+    if (sub.error) return res.status(sub.status).json({ recommendations: [], error: sub.error });
 
     const recommendations = await generateForRestaurant(restaurantId, currentDate, dayOfWeek);
     return res.status(200).json({ recommendations, cached: false, date: currentDate });

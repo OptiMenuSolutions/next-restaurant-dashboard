@@ -745,6 +745,14 @@ export default async function handler(req, res) {
     return res.end();
   }
 
+  // Paid feature (Mistral OCR plus three Claude calls): the restaurant must be paid up.
+  const sub = await import('../../../lib/requireActiveSubscription')
+    .then(m => m.requireActiveSubscription(supabase, restaurantId));
+  if (sub.error) {
+    streamEvent(res, { type: 'error', error: sub.error });
+    return res.end();
+  }
+
   const fileName = fileNameInput || 'invoice';
   const ext = path.extname(fileName).toLowerCase();
   const isPDF = ext === '.pdf';
