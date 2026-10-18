@@ -104,6 +104,29 @@ export default function AnalyticsPage() {
   const { data: anData, error: anError, mutate: reloadAnalytics } = useSWR(
     restaurantId ? ["analytics", restaurantId, tourMode] : null,
     async () => {
+      // Sales: the first page tells us the total, then the remaining pages
+      // (up to MAX_PAGES) load all at once instead of one after another.
+      // The id tiebreak keeps pages from overlapping when nights share a date.
+      const salesPage = (from, withCount) =>
+        supabase
+          .from("pos_sales")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .eq("restaurant_id", restaurantId)
+          .order("sale_date", { ascending: false })
+          .order("id", { ascending: false })
+          .range(from, from + PAGE_SIZE - 1);
+      const loadSales = async () => {
+        const first = await salesPage(0, true);
+        if (first.error || !first.data?.length) return [];
+        const total = Math.min(first.count ?? first.data.length, PAGE_SIZE * MAX_PAGES);
+        const pages = Math.ceil(total / PAGE_SIZE);
+        if (pages <= 1) return first.data;
+        const rest = await Promise.all(
+          Array.from({ length: pages - 1 }, (_, k) => salesPage((k + 1) * PAGE_SIZE, false))
+        );
+        return rest.reduce((rows, r) => rows.concat(r.data || []), first.data);
+      };
+
       let menu = [];
       let sessions = [];
       let sales = null;
@@ -116,7 +139,7 @@ export default function AnalyticsPage() {
         if (sample) sales = sample.posSales || [];
         // fetchSampleData() failed: sales stays null and the real query runs.
       } else {
-        const [{ data: realMenu }, { data: realSessions }, { data: realPos }] = await Promise.all([
+        const [{ data: realMenu }, { data: realSessions }, { data: realPos }, realSales] = await Promise.all([
           supabase
             .from("menu_items")
             .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
@@ -124,28 +147,17 @@ export default function AnalyticsPage() {
             .limit(500),
           supabase.from("upload_sessions").select("*").eq("restaurant_id", restaurantId).order("uploaded_at", { ascending: false }).limit(1),
           supabase.from("pos_connections").select("status, last_synced_at").eq("restaurant_id", restaurantId).eq("provider", "shift4").limit(1),
+          loadSales(),
         ]);
         menu = realMenu || [];
         sessions = realSessions || [];
+        sales = realSales;
         // Only a live connection hides the upload button; pending or errored rows keep it.
         shift4 = (realPos || []).find((c) => c.status === "connected" || c.status === "active") || null;
       }
 
-      if (!sales) {
-        let rows = [];
-        for (let page = 0, from = 0; page < MAX_PAGES; page++, from += PAGE_SIZE) {
-          const { data, error: qErr } = await supabase
-            .from("pos_sales")
-            .select("*")
-            .eq("restaurant_id", restaurantId)
-            .order("sale_date", { ascending: false })
-            .range(from, from + PAGE_SIZE - 1);
-          if (qErr || !data?.length) break;
-          rows = rows.concat(data);
-          if (data.length < PAGE_SIZE) break;
-        }
-        sales = rows;
-      }
+      // Tour fallback: sample data failed to load, so read the real sales.
+      if (!sales) sales = await loadSales();
 
       const costs = {};
       menu.forEach((m) => {
