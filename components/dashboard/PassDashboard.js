@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { MobileHeader, MobileNav, LoadingState, ErrorState } from "../client/ClientChrome";
+import { MobileHeader, MobileNav, LoadingState, ErrorState, useTheme } from "../client/ClientChrome";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -49,15 +49,29 @@ const CSS = `
   background:var(--shell);color:var(--text);
   font-family:'Manrope',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
 }
-.om-dash[data-theme="dark"]{
-  --ground:#0c1113;--shell:#141c1f;--panel:#0f1618;--line:#354549;--line-soft:#222c30;
-  --text:#e9f0f0;--muted:#9aa9ab;--faint:#6d7c7f;
-  --accent:#26c2d6;--accent-deep:#63d5e2;--accent-tint:#0d2b31;
-  --green:#5cc077;--amber:#dda23c;--red:#e0685d;
-  --shadow-lg:0 24px 60px rgba(0,0,0,0.55);
-  --rail:#2b383c;--rail-2:#3a494e;
-  --card-lift:0 1px 1px rgba(0,0,0,0.35),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
+.om-dash[data-theme="dark"],html[data-om-theme="dark"] .om-dash{
+  --ground:#0e0f11;--shell:#1a1b1e;--panel:#121315;--line:#26272b;--line-soft:#1f2023;
+  --text:#eceae4;--muted:#a9a7a0;--faint:#7f7d77;
+  --accent:#43bccb;--accent-deep:#6fd0dc;--accent-tint:#16292c;
+  --green:#6cc287;--amber:#e3ab4c;--red:#ee7d70;
+  --shadow-lg:0 24px 60px rgba(0,0,0,0.6);
+  --rail:#2a2b2f;--rail-2:#36373c;
+  --card-lift:0 1px 1px rgba(0,0,0,0.4),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
+  --paper:#c9cec6;--paper-line:#b2b8b0;--ink:#111617;--ink-soft:#3d4648;--ink-faint:#687270;
 }
+.om-dash[data-theme="dark"] [style*="var(--paper)"],html[data-om-theme="dark"] .om-dash [style*="var(--paper)"]{
+  --accent:#047a88;--accent-deep:#035f6b;--green:#24603a;--amber:#7a5410;--red:#9c3328;
+  --text:#111617;--muted:#3d4648;--faint:#687270;--line:#b2b8b0;--line-soft:#bfc4bc;
+}
+.om-dash[data-theme="dark"] [style*="background: var(--accent)"],html[data-om-theme="dark"] .om-dash [style*="background: var(--accent)"]{color:#0e1516 !important}
+.om-dash[data-theme="dark"] [style*="background: var(--accent)"] svg,html[data-om-theme="dark"] .om-dash [style*="background: var(--accent)"] svg{stroke:#0e1516}
+html[data-om-theme="dark"]{
+  --shell:#1a1b1e;--panel:#121315;--line:#26272b;--line-soft:#1f2023;
+  --text:#eceae4;--muted:#a9a7a0;--faint:#7f7d77;
+  --accent:#43bccb;--accent-deep:#6fd0dc;--accent-tint:#16292c;
+  --green:#6cc287;--amber:#e3ab4c;--red:#ee7d70;--red-tint:#2b1a18;--amber-tint:#2a2214;
+}
+html[data-om-theme="dark"] [style*="background: var(--accent,"]{color:#0e1516 !important}
 .om-dash a{color:var(--accent-deep);text-decoration:none}
 .om-dash a:hover{color:var(--accent)}
 .om-dash button:focus-visible,.om-dash a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -252,20 +266,14 @@ export default function PassDashboard({
   logoSrc = "/landing/logo.png",
   logoDarkSrc = "/landing/logo-knockout.png",
 }) {
-  const [innerTheme, setInnerTheme] = useState(defaultTheme);
-  const theme = themeProp || innerTheme;
+  // Shared, saved theme (same as every other page).
+  const [theme, toggleTheme] = useTheme(themeProp, defaultTheme, onThemeChange);
   const dark = theme === "dark";
   const isMobile = useMediaQuery("(max-width: 900px)");
   const [flipped, setFlipped] = useState(null);
   const [showAllWaste, setShowAllWaste] = useState(false);
   const [openCalendarDay, setOpenCalendarDay] = useState(null);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-
-  const toggleTheme = useCallback(() => {
-    const next = dark ? "light" : "dark";
-    if (!themeProp) setInnerTheme(next);
-    if (onThemeChange) onThemeChange(next);
-  }, [dark, themeProp, onThemeChange]);
 
   const Link = NavLink || (({ href, children, style, className }) => (
     <a href={href} style={style} className={className}>{children}</a>

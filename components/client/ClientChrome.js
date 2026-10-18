@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 /**
  * ClientChrome — shared shell for the ported client screens
@@ -30,15 +30,34 @@ export const CSS = `
   background:var(--shell);color:var(--text);
   font-family:'Manrope',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;
 }
-.om-app[data-theme="dark"]{
-  --ground:#0c1113;--shell:#141c1f;--panel:#0f1618;--line:#354549;--line-soft:#222c30;
-  --text:#e9f0f0;--muted:#adbcbe;--faint:#8b9a9d;
-  --accent:#26c2d6;--accent-deep:#63d5e2;--accent-tint:#0d2b31;
-  --green:#5cc077;--amber:#dda23c;--red:#e0685d;
-  --shadow:0 18px 40px rgba(0,0,0,0.45);--shadow-lg:0 24px 60px rgba(0,0,0,0.55);
-  --card-lift:0 1px 1px rgba(0,0,0,0.35),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
-  --paper:#1b2427;--paper-line:#33403f;--ink:#e6eeee;--ink-soft:#9fadad;--ink-faint:#6e7d7e;
+/* Dark: warm charcoal, with a dimmed paper for tickets and receipts. */
+.om-app[data-theme="dark"],html[data-om-theme="dark"] .om-app{
+  --ground:#0e0f11;--shell:#1a1b1e;--panel:#121315;--line:#26272b;--line-soft:#1f2023;
+  --text:#eceae4;--muted:#a9a7a0;--faint:#7f7d77;
+  --accent:#43bccb;--accent-deep:#6fd0dc;--accent-tint:#16292c;
+  --green:#6cc287;--amber:#e3ab4c;--red:#ee7d70;
+  --shadow:0 18px 40px rgba(0,0,0,0.5);--shadow-lg:0 24px 60px rgba(0,0,0,0.6);
+  --card-lift:0 1px 1px rgba(0,0,0,0.4),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
+  --paper:#c9cec6;--paper-line:#b2b8b0;--ink:#111617;--ink-soft:#3d4648;--ink-faint:#687270;
 }
+/* Anything drawn on paper keeps paper inks: deep accents that read on it. */
+.om-app[data-theme="dark"] [style*="var(--paper)"],html[data-om-theme="dark"] .om-app [style*="var(--paper)"]{
+  --accent:#047a88;--accent-deep:#035f6b;--green:#24603a;--amber:#7a5410;--red:#9c3328;
+  --text:#111617;--muted:#3d4648;--faint:#687270;--line:#b2b8b0;--line-soft:#bfc4bc;
+}
+/* Teal fills carry dark text in dark mode; white on bright teal is hard to read. */
+.om-app[data-theme="dark"] [style*="background: var(--accent)"],html[data-om-theme="dark"] .om-app [style*="background: var(--accent)"]{color:#0e1516 !important}
+.om-app[data-theme="dark"] [style*="background: var(--accent)"] svg,html[data-om-theme="dark"] .om-app [style*="background: var(--accent)"] svg{stroke:#0e1516}
+/* Pop-ups render outside the page shell and read these through their
+   var(--x, fallback) colors. Light mode leaves them undefined, so the light
+   fallbacks still apply there. */
+html[data-om-theme="dark"]{
+  --shell:#1a1b1e;--panel:#121315;--line:#26272b;--line-soft:#1f2023;
+  --text:#eceae4;--muted:#a9a7a0;--faint:#7f7d77;
+  --accent:#43bccb;--accent-deep:#6fd0dc;--accent-tint:#16292c;
+  --green:#6cc287;--amber:#e3ab4c;--red:#ee7d70;--red-tint:#2b1a18;--amber-tint:#2a2214;
+}
+html[data-om-theme="dark"] [style*="background: var(--accent,"]{color:#0e1516 !important}
 .om-app a{color:var(--accent-deep);text-decoration:none}
 .om-app a:hover{color:var(--accent)}
 .om-app button:focus-visible,.om-app a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -46,8 +65,8 @@ export const CSS = `
 .om-nav-link:hover{color:var(--text) !important}
 .om-row:hover{background:var(--panel) !important}
 .om-logo-dark{display:none}
-.om-app[data-theme="dark"] .om-logo-light{display:none}
-.om-app[data-theme="dark"] .om-logo-dark{display:block}
+.om-app[data-theme="dark"] .om-logo-light,html[data-om-theme="dark"] .om-app .om-logo-light{display:none}
+.om-app[data-theme="dark"] .om-logo-dark,html[data-om-theme="dark"] .om-app .om-logo-dark{display:block}
 @keyframes om-spin{to{transform:rotate(360deg)}}
 @keyframes om-blink{0%,100%{opacity:1}50%{opacity:.25}}
 @keyframes om-print{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
@@ -70,13 +89,43 @@ export const NAV = [
   { key: "analytics", label: "Analytics", href: "/client/analytics" },
 ];
 
+/* Light/dark choice, saved in this browser and shared by every page and tab.
+   pages/_document.js applies it to <html> before the page paints, so a
+   refresh does not flash light first. */
+const THEME_KEY = "om_theme";
+const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
+function savedTheme() {
+  try { const t = localStorage.getItem(THEME_KEY); return t === "dark" || t === "light" ? t : null; } catch { return null; }
+}
+function applyThemeToPage(t) {
+  try { document.documentElement.setAttribute("data-om-theme", t); } catch {}
+}
+
 /** Uncontrolled unless `theme` is passed. */
 export function useTheme(theme, defaultTheme = "light", onThemeChange) {
   const [internal, setInternal] = useState(defaultTheme);
+  // Pick up the saved choice before the first paint after this page mounts.
+  useIsoLayoutEffect(() => {
+    const t = savedTheme();
+    if (t) { setInternal(t); applyThemeToPage(t); }
+  }, []);
+  // Stay in sync when another part of the page, or another tab, switches it.
+  useEffect(() => {
+    const onChange = (e) => { if (e.detail === "dark" || e.detail === "light") setInternal(e.detail); };
+    const onStorage = (e) => {
+      if (e.key === THEME_KEY && (e.newValue === "dark" || e.newValue === "light")) { setInternal(e.newValue); applyThemeToPage(e.newValue); }
+    };
+    window.addEventListener("om-theme-change", onChange);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener("om-theme-change", onChange); window.removeEventListener("storage", onStorage); };
+  }, []);
   const value = theme || internal;
   const toggle = useCallback(() => {
     const next = value === "dark" ? "light" : "dark";
+    try { localStorage.setItem(THEME_KEY, next); } catch {}
+    applyThemeToPage(next);
     if (!theme) setInternal(next);
+    try { window.dispatchEvent(new CustomEvent("om-theme-change", { detail: next })); } catch {}
     if (onThemeChange) onThemeChange(next);
   }, [value, theme, onThemeChange]);
   return [value, toggle];
