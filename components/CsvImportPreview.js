@@ -24,6 +24,10 @@ const POS_SYSTEMS = ['toast', 'square', 'clover', 'lightspeed', 'other'];
 /* Phones: slides up from the bottom, 16px dropdowns so iOS doesn't zoom,
    one column of mappings on narrow screens, taller buttons clear of the home bar. */
 const CIP_CSS = `
+.cip-panel{color:var(--text,#111819)}
+.cip-panel button{color:inherit}
+.cip-select{background:var(--shell,#fff);color:var(--text,#111819)}
+html[data-om-theme="dark"] .cip-panel{color-scheme:dark}
 @media (max-width:900px){
   .cip-overlay{padding:0 !important;align-items:flex-end !important}
   .cip-panel{max-width:none !important;max-height:92vh !important;max-height:92dvh !important;border-radius:16px 16px 0 0 !important;border-bottom:none !important}

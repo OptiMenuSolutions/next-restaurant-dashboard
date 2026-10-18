@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTheme } from "./ClientChrome";
 
 /**
  * AccountChrome — shared header/nav/notification/profile-dropdown for the
@@ -21,19 +22,20 @@ export const CSS = `
   --card-lift:0 1px 1px rgba(17,24,25,0.05),0 3px 6px rgba(17,24,25,0.07),0 10px 22px rgba(17,24,25,0.10);
   background:var(--shell);color:var(--text);font-family:'Manrope',system-ui,sans-serif;-webkit-font-smoothing:antialiased;
 }
-.om-acct[data-theme="dark"]{
-  --ground:#0c1113;--shell:#141c1f;--panel:#0f1618;--line:#354549;--line-soft:#222c30;
-  --text:#e9f0f0;--muted:#adbcbe;--faint:#8b9a9d;
-  --accent:#26c2d6;--accent-deep:#63d5e2;--accent-tint:#0d2b31;
-  --green:#5cc077;--amber:#dda23c;--red:#e0685d;--red-tint:#2a1917;
-  --shadow:0 18px 40px rgba(0,0,0,0.45);--shadow-lg:0 24px 60px rgba(0,0,0,0.55);
-  --card-lift:0 1px 1px rgba(0,0,0,0.35),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
+.om-acct[data-theme="dark"],html[data-om-theme="dark"] .om-acct{
+  --ground:#0e0f11;--shell:#1a1b1e;--panel:#121315;--line:#26272b;--line-soft:#1f2023;
+  --text:#eceae4;--muted:#a9a7a0;--faint:#7f7d77;
+  --accent:#43bccb;--accent-deep:#6fd0dc;--accent-tint:#16292c;
+  --green:#6cc287;--amber:#e3ab4c;--red:#ee7d70;--red-tint:#2b1a18;
+  --shadow:0 18px 40px rgba(0,0,0,0.5);--shadow-lg:0 24px 60px rgba(0,0,0,0.6);
+  --card-lift:0 1px 1px rgba(0,0,0,0.4),0 3px 8px rgba(0,0,0,0.4),0 12px 26px rgba(0,0,0,0.45);
 }
+.om-acct[data-theme="dark"] [style*="background: var(--accent)"],html[data-om-theme="dark"] .om-acct [style*="background: var(--accent)"]{color:#0e1516 !important}
 .om-acct a{color:var(--accent-deep);text-decoration:none}
 .om-acct a:hover{color:var(--accent)}
 .om-acct .om-logo-dark{display:none}
-.om-acct[data-theme="dark"] .om-logo-light{display:none}
-.om-acct[data-theme="dark"] .om-logo-dark{display:block}
+.om-acct[data-theme="dark"] .om-logo-light,html[data-om-theme="dark"] .om-acct .om-logo-light{display:none}
+.om-acct[data-theme="dark"] .om-logo-dark,html[data-om-theme="dark"] .om-acct .om-logo-dark{display:block}
 .om-acct .pf-input::placeholder{color:var(--faint)}
 @keyframes om-blink{0%,100%{opacity:1}50%{opacity:.25}}
 .om-acct ::-webkit-scrollbar{width:4px;height:4px}
@@ -84,9 +86,8 @@ export function useAccountChrome({
   logoDarkSrc = "/landing/logo-knockout.png",
   onSignOut,
 }) {
-  const [themeState, setThemeState] = useState("light");
-  const theme = themeProp ?? themeState;
-  const setTheme = (t) => (onThemeChange ? onThemeChange(t) : setThemeState(t));
+  // Shared, saved theme (same as every other page).
+  const [theme, toggleTheme] = useTheme(themeProp, "light", onThemeChange);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -192,7 +193,7 @@ export function useAccountChrome({
                     <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 500, flex: 1 }}>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
                     <button
                       type="button"
-                      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                      onClick={toggleTheme}
                       style={{ width: 34, height: 19, borderRadius: 10, border: "1px solid var(--line)", position: "relative", cursor: "pointer", flexShrink: 0, background: theme === "dark" ? "var(--accent)" : "var(--line)" }}
                     >
                       <div style={{ position: "absolute", top: 1, left: theme === "dark" ? 17 : 1, width: 15, height: 15, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />

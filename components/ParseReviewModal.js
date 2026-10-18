@@ -578,6 +578,64 @@ const CSS = `
     .prm-stat-val { font-size: 17px; }
     .prm-commit-screen > .prm-btn { width: 100%; max-width: 420px; min-height: 50px; }
   }
+
+  /* ── Dark mode: swap the built-in light greys, greens and tints ── */
+  html[data-om-theme="dark"] .prm-shell { color-scheme: dark; color: var(--text); }
+  html[data-om-theme="dark"] .prm-sidebar,
+  html[data-om-theme="dark"] .prm-comp-hd,
+  html[data-om-theme="dark"] .prm-match-card,
+  html[data-om-theme="dark"] .prm-stat,
+  html[data-om-theme="dark"] .prm-commit-summary { background: var(--panel); }
+  html[data-om-theme="dark"] .prm-sb-item:hover { background: var(--line-soft); }
+  html[data-om-theme="dark"] .prm-sb-item.active,
+  html[data-om-theme="dark"] .prm-match-card.new,
+  html[data-om-theme="dark"] .prm-ac-item:hover,
+  html[data-om-theme="dark"] .prm-add-comp:hover,
+  html[data-om-theme="dark"] .prm-badge-price {
+    background: var(--accent-tint); border-color: color-mix(in srgb, var(--accent) 35%, var(--shell));
+  }
+  html[data-om-theme="dark"] .prm-match-card.matched,
+  html[data-om-theme="dark"] .prm-btn-commit,
+  html[data-om-theme="dark"] .prm-confirmed-tag,
+  html[data-om-theme="dark"] .prm-commit-icon,
+  html[data-om-theme="dark"] .prm-seg-btn.keep,
+  html[data-om-theme="dark"] .prm-badge-margin-ok {
+    background: color-mix(in srgb, var(--green) 14%, var(--shell));
+    border-color: color-mix(in srgb, var(--green) 35%, var(--shell)); color: var(--green);
+  }
+  html[data-om-theme="dark"] .prm-sb-item.confirmed,
+  html[data-om-theme="dark"] .prm-sb-check { color: var(--green); }
+  html[data-om-theme="dark"] .prm-sb-dot.confirmed { background: var(--green); }
+  html[data-om-theme="dark"] .prm-btn-commit:hover { background: color-mix(in srgb, var(--green) 22%, var(--shell)); }
+  html[data-om-theme="dark"] .prm-btn-commit:disabled { background: var(--line-soft); color: var(--faint); border-color: var(--line); }
+  html[data-om-theme="dark"] .prm-warn,
+  html[data-om-theme="dark"] .prm-badge-margin-warn,
+  html[data-om-theme="dark"] .prm-seg-btn.archive,
+  html[data-om-theme="dark"] .prm-commit-err {
+    background: color-mix(in srgb, var(--red) 14%, var(--shell));
+    border-color: color-mix(in srgb, var(--red) 35%, var(--shell)); color: var(--red);
+  }
+  html[data-om-theme="dark"] .prm-purchased-row {
+    background: color-mix(in srgb, var(--amber) 12%, var(--shell));
+    border-top-color: color-mix(in srgb, var(--amber) 30%, var(--shell));
+  }
+  html[data-om-theme="dark"] .prm-purchased-label,
+  html[data-om-theme="dark"] .prm-purchased-field-lbl { color: var(--amber); }
+  html[data-om-theme="dark"] .prm-purchased-btn.active { background: var(--amber); border-color: var(--amber); color: #0e1516; }
+  html[data-om-theme="dark"] .prm-match-select,
+  html[data-om-theme="dark"] .prm-ac-dropdown,
+  html[data-om-theme="dark"] .prm-seg,
+  html[data-om-theme="dark"] .prm-purchased-cost-input,
+  html[data-om-theme="dark"] .prm-purchased-unit-input,
+  html[data-om-theme="dark"] .prm-unit-select option,
+  html[data-om-theme="dark"] .prm-comp-name-input:focus { background: var(--shell); color: var(--text); }
+  html[data-om-theme="dark"] .prm-purchased-row .prm-unit-select { background-color: var(--shell) !important; border-color: var(--line) !important; }
+  html[data-om-theme="dark"] .prm-add-ing,
+  html[data-om-theme="dark"] .prm-add-comp,
+  html[data-om-theme="dark"] .prm-seg-btn,
+  html[data-om-theme="dark"] .prm-ing-input::placeholder { color: var(--faint); }
+  html[data-om-theme="dark"] .prm-btn-confirm { color: #0e1516; }
+  html[data-om-theme="dark"] .prm-btn-confirm:hover { background: var(--accent-deep); }
 `;
 
 function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }

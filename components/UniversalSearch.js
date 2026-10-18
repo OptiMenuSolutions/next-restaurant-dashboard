@@ -13,6 +13,8 @@ import supabase from '../lib/supabaseClient';
 const US_CSS = `
 .us-cancel{display:none}
 .us-row:hover{background:var(--panel,#eef0ef)}
+.us-panel{color:var(--text,#111819)}
+html[data-om-theme="dark"] .us-panel{color-scheme:dark}
 @media (max-width:900px){
   .us-overlay{padding:0 !important;align-items:stretch !important}
   .us-panel{max-width:none !important;max-height:none !important;height:100% !important;border:none !important;border-radius:0 !important;padding-top:env(safe-area-inset-top,0px)}
