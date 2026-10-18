@@ -17,6 +17,10 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// Matches SAMPLE_RESTAURANT_ID in lib/seedSampleData.js exactly. It was used
+// below without being defined, which crashed this job before it ran.
+const SAMPLE_RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
 
@@ -35,11 +39,14 @@ export default async function handler(req, res) {
   // Only accounts someone can open: onboarding finished, not deactivated.
   // The tour sample is skipped: its recommendation history is fixed demo
   // data kept current by refresh_sample_dates() in the waste snapshot cron.
+  // Paid-up only, same rule as lib/requireActiveSubscription.js: cancelled
+  // accounts stop costing a Claude call every night.
   const { data: restaurants, error } = await supabase
     .from('restaurants')
     .select('id, name')
     .is('deactivated_at', null)
     .not('onboarding_completed_at', 'is', null)
+    .in('subscription_status', ['active', 'trialing', 'past_due'])
     .neq('id', SAMPLE_RESTAURANT_ID);
 
   if (error || !restaurants?.length) {
