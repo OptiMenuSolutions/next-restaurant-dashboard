@@ -172,7 +172,11 @@ export default function MenuItemsScreen({
   const [filter, setFilter] = useState("All");
   const [layout, setLayout] = useState("cards");
   const [selectedId, setSelectedId] = useState(null);
-  const [open, setOpen] = useState({});
+  // Sandbox ("Try portions") for the open dish. Client-side only, never saved;
+  // cleared whenever a different dish opens.
+  const [sandbox, setSandbox] = useState(false);
+  const [whatIf, setWhatIf] = useState({});
+  useEffect(() => { setSandbox(false); setWhatIf({}); }, [selectedId]);
   const [mobileTab, setMobileTab] = useState("dishes"); // phones: "dishes" | "costing"
 
   const data = useMemo(() => (itemsProp || DEMO_ITEMS).map(decorate), [itemsProp]);
@@ -253,67 +257,21 @@ export default function MenuItemsScreen({
 
   if (isMobile && selected) {
     const sd = selected;
-    const underTarget = !sd.awaiting && sd.price > 0 && sd.margin < tgt;
-    // Price that reaches the target, rounded up to the next .95 (same rule as Menu costing).
-    const tp = sd.cost / (1 - tgt / 100);
-    let reprice = Math.ceil(tp) - 0.05;
-    if (reprice < tp) reprice += 1;
-    const trimTo = sd.price * (1 - tgt / 100);
-    const kpiLbl = { fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" };
-    const kpiVal = { fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", marginTop: 4 };
+    const canTry = !sd.awaiting && sd.price > 0;
+    const backRight = !canTry ? null : sandbox ? (
+      <button type="button" onClick={() => { setWhatIf({}); setSandbox(false); }} style={{ height: 34, padding: "0 14px", marginRight: 4, borderRadius: 17, background: "var(--accent)", border: "none", color: "#fff", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Done</button>
+    ) : (
+      <button type="button" onClick={() => setSandbox(true)} style={{ height: 34, display: "flex", alignItems: "center", gap: 6, padding: "0 12px", marginRight: 4, borderRadius: 17, background: "none", border: "1px solid var(--line)", color: "var(--muted)", fontFamily: SANS, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 3h6" /><path d="M10 3v6L4.5 18.5A1.6 1.6 0 006 21h12a1.6 1.6 0 001.5-2.5L14 9V3" /><path d="M7 15h10" /></svg>
+        Try
+      </button>
+    );
 
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileBackBar label="All dishes" onBack={() => setSelectedId(null)} title="Dish" />
+        <MobileBackBar label="All dishes" onBack={() => setSelectedId(null)} title="Dish" right={backRight} />
         <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>
-              {[sd.category || "Dish", `${sd.components.length} component${sd.components.length === 1 ? "" : "s"}`, `${sd.lineCount} ingredient${sd.lineCount === 1 ? "" : "s"}`].join(" · ")}
-            </div>
-            <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1 }}>{sd.name}</div>
-          </div>
-
-          <div data-tour="mi-detail" style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
-            <div style={{ padding: 12 }}>
-              <div style={kpiLbl}>Menu</div>
-              <div style={kpiVal}>{money2(sd.price)}</div>
-            </div>
-            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
-              <div style={kpiLbl}>Plate cost</div>
-              <div style={{ ...kpiVal, color: sd.awaiting ? "var(--faint)" : "var(--text)" }}>{sd.awaiting ? "—" : money2(sd.cost)}</div>
-              {!sd.awaiting && move30Label(sd.move30) && (
-                <div style={{ fontFamily: MONO, fontSize: 10, color: moveColor(sd.move30), marginTop: 2 }}>{move30Label(sd.move30)} / 30D</div>
-              )}
-            </div>
-            <div style={{ padding: 12, borderLeft: "1px solid var(--line-soft)" }}>
-              <div style={kpiLbl}>Margin</div>
-              <div style={{ ...kpiVal, color: sd.awaiting ? "var(--faint)" : marginColor(sd.margin, tgt) }}>{sd.awaiting ? "Pending" : pct(sd.margin)}</div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>TARGET {pct(tgt)}</div>
-            </div>
-          </div>
-
-          {underTarget && (
-            <div style={{ background: "var(--shell)", border: "1px dashed var(--red)", borderRadius: 14, padding: "13px 14px" }}>
-              <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", color: "var(--red)" }}>
-                ▲ {(tgt - sd.margin).toFixed(1)} POINTS UNDER YOUR {pct(tgt)} TARGET
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginTop: 10 }}>
-                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "10px 11px" }}>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Reprice to</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 2 }}>{money2(reprice)}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>+{money2(reprice - sd.price)} ON THE MENU</div>
-                </div>
-                <div style={{ background: "var(--panel)", borderRadius: 10, padding: "10px 11px" }}>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>Or trim plate cost to</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 2 }}>{money2(trimTo)}</div>
-                  <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--muted)", marginTop: 2 }}>−{money2(sd.cost - trimTo)} A PLATE</div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <DishDetail d={sd} tgt={tgt} open={open} setOpen={setOpen} onBack={() => setSelectedId(null)} stacked />
+          <DishDetail d={sd} tgt={tgt} onBack={() => setSelectedId(null)} stacked sandbox={sandbox} setSandbox={setSandbox} whatIf={whatIf} setWhatIf={setWhatIf} />
         </div>
         <MobileNav active="menu-items" NavLink={NavLink} />
       </Shell>
@@ -560,9 +518,11 @@ export default function MenuItemsScreen({
               <DishDetail
                 d={selected}
                 tgt={tgt}
-                open={open}
-                setOpen={setOpen}
                 onBack={() => setSelectedId(null)}
+                sandbox={sandbox}
+                setSandbox={setSandbox}
+                whatIf={whatIf}
+                setWhatIf={setWhatIf}
               />
             ) : (
               <MenuCosting
@@ -673,26 +633,31 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 
 /* ── right pane: one dish ───────────────────────────────────────────── */
 
-function DishDetail({ d, tgt, open, setOpen, onBack, stacked = false }) {
-  const keyOf = (c) => d.id + "|" + c.name;
-  const isOpen = (c) => (keyOf(c) in open ? open[keyOf(c)] : false);
-  const anyOpen = d.components.some(isOpen);
+const pct1 = (n) => (Number(n) || 0).toFixed(1) + "%";
+const SHADES = [100, 70, 48, 30];
+const shade = (i) => `color-mix(in srgb, var(--accent) ${SHADES[Math.min(i, SHADES.length - 1)]}%, var(--shell))`;
+const DD_CSS = `
+.dd-pt .dd-tip{opacity:0;transition:opacity .12s;pointer-events:none}
+.dd-pt:hover .dd-tip,.dd-pt.on .dd-tip{opacity:1}
+.dd-body{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:14px;align-items:start}
+@media (max-width:1279px){.dd-body{grid-template-columns:minmax(0,1fr)}}
+.dd-qty:focus{outline:none;border-color:var(--accent)!important}
+`;
 
-  // ── What-if portions ────────────────────────────────────────────────────
-  // Pure client-side exploration — nothing here ever writes to Supabase.
-  // whatIfQty holds ONLY the overridden quantities a person has typed;
-  // every real dish/component/ingredient number stays exactly as loaded.
-  // Locked behind editMode so numbers can't change by an accidental click,
-  // and both reset whenever they switch to a different dish.
-  const [whatIfQty, setWhatIfQty] = useState({});
-  const [editMode, setEditMode] = useState(false);
-  useEffect(() => { setWhatIfQty({}); setEditMode(false); }, [d.id]);
-
+/*
+ * DishDetail — one dish: price vs plate cost, the recipe by component, sales,
+ * the margin trend and how to reach the target. Desktop renders it in the
+ * right pane; phones render it stacked inside the screen's scroll area.
+ *
+ * Sandbox ("Try portions"): pure client-side what-if. Nothing here ever writes
+ * to Supabase. whatIf holds ONLY the quantities a person has typed (as the raw
+ * strings they typed, so "0.0" stays editable); every real dish number stays
+ * exactly as loaded. The parent owns sandbox/whatIf so the phone back bar can
+ * hold the Try/Done button, and clears both whenever a different dish opens.
+ */
+function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandbox, whatIf = {}, setWhatIf }) {
+  const price = Number(d.price) || 0;
   const ingKey = (ci, ii) => `${ci}-${ii}`;
-  const effectiveQty = (ci, ii, ing) => {
-    const key = ingKey(ci, ii);
-    return key in whatIfQty ? whatIfQty[key] : ing.quantity;
-  };
   // Price per RECIPE unit, derived from the line cost toDish() already
   // unit-converted (oz↔lb etc.). Multiplying qty × ing.unitPrice directly
   // skipped that conversion and under-costed mixed-unit lines.
@@ -700,164 +665,502 @@ function DishDetail({ d, tgt, open, setOpen, onBack, stacked = false }) {
     const q = Number(ing.quantity);
     return q ? (Number(ing.cost) || 0) / q : (Number(ing.unitPrice) || 0);
   };
-  const effectiveIngCost = (ci, ii, ing) => {
-    const key = ingKey(ci, ii);
-    if (!(key in whatIfQty)) return Number(ing.cost) || 0;
-    return whatIfQty[key] * recipeUnitPrice(ing);
+  const typedQty = (ci, ii) => {
+    const k = ingKey(ci, ii);
+    if (!(k in whatIf)) return null;
+    const v = parseFloat(whatIf[k]);
+    return isFinite(v) && v >= 0 ? v : 0;
   };
-  const effectiveComponentCost = (ci, comp) =>
-    comp.ingredients.reduce((sum, ing, ii) => sum + effectiveIngCost(ci, ii, ing), 0);
+  const isChanged = (ci, ii, ing) => {
+    const v = typedQty(ci, ii);
+    return v != null && Math.abs(v - (Number(ing.quantity) || 0)) > 1e-9;
+  };
+  const lineCost = (ci, ii, ing, useSandbox) =>
+    useSandbox && isChanged(ci, ii, ing) ? typedQty(ci, ii) * recipeUnitPrice(ing) : Number(ing.cost) || 0;
+  const compCost = (ci, c, useSandbox) => c.ingredients.reduce((a, ing, ii) => a + lineCost(ci, ii, ing, useSandbox), 0);
 
-  const isExploring = Object.keys(whatIfQty).length > 0;
-  const effectiveDishCost = d.components.reduce((sum, comp, ci) => sum + effectiveComponentCost(ci, comp), 0);
+  const changes = d.components.reduce((n, c, ci) => n + c.ingredients.filter((ing, ii) => isChanged(ci, ii, ing)).length, 0);
+  const realSum = d.components.reduce((a, c, ci) => a + compCost(ci, c, false), 0);
+  const sbSum = d.components.reduce((a, c, ci) => a + compCost(ci, c, true), 0);
+  const realCost = Number(d.cost) || 0;
+  const sbCost = Math.max(0, realCost + (sbSum - realSum));
+  const live = sandbox && changes > 0; // sandbox numbers differ from the real ones
+  const cost = live ? sbCost : realCost;
+  const marginOf = (c) => (price ? ((price - c) / price) * 100 : 0);
+  const realMargin = marginOf(realCost);
+  const margin = marginOf(cost);
+  const keep = price - cost;
+  const delta = sbCost - realCost; // negative = the sandbox saves money
+
+  const awaiting = d.awaiting;
+  const under = !awaiting && price > 0 && realMargin < tgt;
+  const allLines = d.components.flatMap((c) => c.ingredients);
+  const invoicePriced = allLines.filter((i) => !i.unpriced && !i.estimated).length;
+  const covers = Number(d.covers) || 0;
+
+  // Reach the target: price rounded up to the next .95 (same rule as Menu costing).
+  const tp = realCost / (1 - tgt / 100);
+  let reprice = Math.ceil(tp) - 0.05;
+  if (reprice < tp) reprice += 1;
+  const trimTo = price * (1 - tgt / 100);
+  const lever = allLines.filter((i) => !i.unpriced).sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0))[0];
+
+  const exitSandbox = () => { setWhatIf && setWhatIf({}); setSandbox && setSandbox(false); };
+  const resetSandbox = () => setWhatIf && setWhatIf({});
+
+  const kick = { fontFamily: MONO, fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)" };
+  const box = { border: "1px solid var(--line)", borderRadius: 12 };
+  const h3 = { fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em" };
+  const pill = { height: stacked ? 34 : 30, display: "flex", alignItems: "center", gap: 6, padding: "0 12px", borderRadius: 17, fontFamily: SANS, fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer" };
+  const tile = { background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 9, padding: "9px 10px", minWidth: 0 };
+  const tileLbl = { fontSize: 11.5, color: "var(--muted)" };
+  const tileVal = { fontSize: 17, fontWeight: 800, letterSpacing: "-0.03em", marginTop: 2, fontVariantNumeric: "tabular-nums" };
+  const tileNote = { fontFamily: MONO, fontSize: 9.5, color: "var(--faint)", marginTop: 2 };
+
+  /* ── status chip ── */
+  const chip = (() => {
+    const base = { display: "inline-flex", alignItems: "center", gap: 7, padding: "4px 10px", borderRadius: 20, fontFamily: MONO, fontSize: stacked ? 9.5 : 10, letterSpacing: "0.08em", fontWeight: 500, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" };
+    const dot = (c) => <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, flexShrink: 0 }} />;
+    if (awaiting) return <span style={{ ...base, background: "var(--panel)", color: "var(--muted)" }}>{dot("var(--faint)")}AWAITING PRICES · {d.unpricedCount} OF {d.lineCount} UNPRICED</span>;
+    if (live) {
+      const hit = margin >= tgt;
+      return (
+        <span style={{ ...base, background: "var(--accent-tint)", color: "var(--accent-deep)" }}>
+          {dot("var(--accent)")}{hit ? `HITS ${stacked ? "" : "YOUR "}${Math.round(tgt)}% TARGET` : `${(tgt - margin).toFixed(1)} PTS UNDER ${Math.round(tgt)}%`}
+          <span style={{ opacity: 0.7 }}>· NOW {pct1(realMargin)}</span>
+        </span>
+      );
+    }
+    if (under) return <span style={{ ...base, background: "var(--panel)", color: "var(--muted)" }}>{dot("var(--text)")}{(tgt - realMargin).toFixed(1)} PTS UNDER {stacked ? "" : "YOUR "}{Math.round(tgt)}% TARGET</span>;
+    return <span style={{ ...base, background: "var(--accent-tint)", color: "var(--accent-deep)" }}>{dot("var(--accent)")}{pct1(realMargin)} · {(realMargin - tgt).toFixed(1)} PTS OVER TARGET</span>;
+  })();
+
+  /* ── where every dollar goes: plate cost vs what the dish keeps ── */
+  const dollarBar = (() => {
+    if (awaiting || !price) return null;
+    const clamp = (v) => Math.max(0, Math.min(100, v));
+    const solidW = clamp((Math.min(realCost, cost) / price) * 100);
+    const hatchW = live ? clamp((Math.abs(delta) / price) * 100) : 0;
+    const costW = clamp((cost / price) * 100);
+    const edge = clamp((Math.max(realCost, cost) / price) * 100); // where the tint starts
+    const targetLeft = 100 - tgt;
+    const lbl = { position: "absolute", top: 0, bottom: 0, display: "flex", alignItems: "center", fontFamily: MONO, fontSize: stacked ? 10 : 10.5, fontWeight: 500, whiteSpace: "nowrap" };
+    const keepTxt = `KEEPS ${money2(keep)} · ${pct1(margin)}${live ? ` · ${delta <= 0 ? "+" : "−"}${money2(Math.abs(delta))}` : ""}`;
+    const plateInside = costW >= 24;
+    return (
+      <div style={{ padding: stacked ? "16px 0 0" : "16px 18px 0" }}>
+        <div style={{ position: "relative", height: 30 }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", borderRadius: 7, overflow: "hidden", background: "var(--accent-tint)" }}>
+            <span style={{ width: solidW + "%", background: "var(--text)", opacity: 0.86 }} />
+            {hatchW > 0 && (
+              <span style={{ width: hatchW + "%", opacity: 0.6, background: `repeating-linear-gradient(135deg, ${delta < 0 ? "var(--accent)" : "var(--text)"} 0 2px, transparent 2px 5px)` }} />
+            )}
+          </div>
+          {plateInside && <div style={{ ...lbl, left: 0, width: solidW + "%", paddingLeft: 10, color: "var(--shell)", overflow: "hidden" }}>PLATE {money2(cost)}</div>}
+          {edge > 62 ? (
+            <div style={{ ...lbl, right: 10, color: "var(--accent-deep)" }}>{plateInside ? keepTxt : `PLATE ${money2(cost)} · ${keepTxt}`}</div>
+          ) : (
+            <div style={{ ...lbl, left: edge + "%", paddingLeft: 10, color: "var(--accent-deep)" }}>{plateInside ? keepTxt : `PLATE ${money2(cost)} · ${keepTxt}`}</div>
+          )}
+          <div style={{ position: "absolute", left: targetLeft + "%", top: -5, bottom: -5, width: 0, borderLeft: "2px dashed var(--text)" }} />
+        </div>
+        <div style={{ position: "relative", height: 16, marginTop: 5 }}>
+          <span style={{ position: "absolute", left: targetLeft + "%", transform: "translateX(-50%)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.08em", color: "var(--faint)", whiteSpace: "nowrap" }}>
+            TARGET · {Math.round(100 - tgt)}% FOOD COST
+          </span>
+        </div>
+      </div>
+    );
+  })();
+
+  /* ── recipe ── */
+  const recipe = (
+    <div style={{ ...box, padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, paddingBottom: 10, marginBottom: 12, borderBottom: "1px solid var(--line-soft)" }}>
+        <span style={h3}>Recipe · one plate</span>
+        <span style={{ fontFamily: MONO, fontSize: 9.5, color: sandbox ? "var(--accent-deep)" : "var(--faint)", whiteSpace: "nowrap" }}>
+          {sandbox ? "TAP A QUANTITY TO TRY IT" : `${invoicePriced} OF ${d.lineCount} INVOICE-PRICED`}
+        </span>
+      </div>
+      {d.components.map((c, ci) => {
+        const sub = compCost(ci, c, sandbox);
+        const sub0 = compCost(ci, c, false);
+        const tot = sandbox ? sbCost : realCost;
+        const share = tot ? (sub / tot) * 100 : 0;
+        const anyUnpriced = c.ingredients.some((i) => i.unpriced);
+        const col = shade(ci);
+        return (
+          <div key={c.name + ci} style={{ paddingTop: ci === 0 ? 0 : sandbox ? 14 : 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, fontSize: 13.5, fontWeight: 800, letterSpacing: "-0.01em" }}>
+                <span style={{ width: 9, height: 9, borderRadius: 2, background: col, flexShrink: 0 }} />
+                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                {sandbox && Math.abs(sub - sub0) > 0.005 && (
+                  <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 400, color: "var(--faint)", textDecoration: "line-through", marginRight: 5 }}>{money2(sub0)}</span>
+                )}
+                {anyUnpriced ? "—" : money2(sub)}{" "}
+                {!awaiting && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 400, color: "var(--faint)" }}>{share.toFixed(0)}%</span>}
+              </span>
+            </div>
+            <div style={{ height: 3, borderRadius: 2, background: "var(--line-soft)", margin: "7px 0 4px", overflow: "hidden" }}>
+              {!awaiting && <div style={{ width: Math.min(100, share) + "%", height: "100%", background: col }} />}
+            </div>
+            {c.ingredients.map((i, ii) => {
+              const tag = (txt, color = "var(--faint)", border = "var(--line)") => (
+                <span style={{ fontFamily: MONO, fontSize: 9, color, border: `1px solid ${border}`, borderRadius: 3, padding: "0 4px", marginLeft: 5, whiteSpace: "nowrap" }}>{txt}</span>
+              );
+              const tags = (
+                <>
+                  {i.unpriced && tag("NO PRICE")}
+                  {i.estimated && !i.unpriced && tag("EST")}
+                  {i.unitMismatch && tag("CHECK UNIT", "var(--red)", "var(--red)")}
+                </>
+              );
+              const changed = sandbox && isChanged(ci, ii, i);
+              const cst = lineCost(ci, ii, i, sandbox);
+              if (!sandbox) {
+                return (
+                  <div key={ii} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "5px 0", fontSize: 13 }}>
+                    <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {i.name}{tags} <span style={{ color: "var(--faint)", fontSize: 11.5 }}>· {i.qty || `${fmtQty(i.quantity)} ${i.unit || ""}`}</span>
+                    </span>
+                    <span style={{ fontFamily: MONO, fontSize: 11.5, color: i.unpriced ? "var(--faint)" : "var(--muted)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{i.unpriced ? "—" : money2(cst)}</span>
+                  </div>
+                );
+              }
+              const k = ingKey(ci, ii);
+              const shown = k in whatIf ? whatIf[k] : fmtQty(i.quantity);
+              return (
+                <div key={ii} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto 52px", alignItems: "center", gap: 8, padding: "2px 0", fontSize: 13 }}>
+                  <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}{tags}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, fontFamily: MONO, fontSize: 10.5, color: "var(--faint)" }}>
+                    <input
+                      className="dd-qty"
+                      type="text"
+                      inputMode="decimal"
+                      value={shown}
+                      aria-label={`${i.name} quantity`}
+                      title="Try a different portion. This never changes the real recipe."
+                      onChange={(e) => {
+                        const v = e.target.value.replace(/[^0-9.]/g, "");
+                        setWhatIf && setWhatIf((prev) => ({ ...prev, [k]: v }));
+                      }}
+                      style={{
+                        width: 58, height: stacked ? 30 : 23, padding: "0 7px", borderRadius: 5, textAlign: "right",
+                        fontFamily: MONO, fontSize: stacked ? 16 : 11.5, // 16px on phones stops iOS zooming in
+                        background: changed ? "var(--accent-tint)" : "transparent",
+                        border: changed ? "1.5px solid var(--accent)" : "1px dashed var(--line)",
+                        color: changed ? "var(--accent-deep)" : "var(--text)", fontWeight: changed ? 500 : 400,
+                      }}
+                    />
+                    <span style={{ width: 34, whiteSpace: "nowrap", overflow: "hidden" }}>{i.unit || "ea"}</span>
+                  </span>
+                  <span style={{ textAlign: "right", fontFamily: MONO, fontSize: 11.5, fontVariantNumeric: "tabular-nums", color: changed ? "var(--accent-deep)" : i.unpriced ? "var(--faint)" : "var(--muted)", fontWeight: changed ? 500 : 400 }}>
+                    {i.unpriced ? "—" : money2(cst)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--line-soft)" }}>
+        <span style={{ fontSize: 13.5, fontWeight: 800 }}>{sandbox ? "Plate cost · sandbox" : "Plate cost"}</span>
+        <span style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
+          {live && <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 400, color: "var(--faint)", textDecoration: "line-through", marginRight: 8 }}>{money2(realCost)}</span>}
+          {awaiting ? "Awaiting prices" : money2(sandbox ? sbCost : realCost)}
+        </span>
+      </div>
+    </div>
+  );
+
+  /* ── sold and earned (POS, last 30 days) ── */
+  const sales = (
+    <div style={{ ...box, display: "grid", gridTemplateColumns: "1fr 1fr", overflow: "hidden" }}>
+      <div style={{ padding: stacked ? "16px 14px" : "18px 14px" }}>
+        <div style={{ ...kick, fontSize: 9.5 }}>Sold · 30D</div>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.04em", marginTop: 9, fontVariantNumeric: "tabular-nums" }}>{covers.toLocaleString()}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", marginTop: 3 }}>{covers ? "LAST 30 DAYS" : "NO SALES SYNCED"}</div>
+      </div>
+      <div style={{ padding: stacked ? "16px 14px" : "18px 14px", borderLeft: "1px solid var(--line-soft)" }}>
+        <div style={{ ...kick, fontSize: 9.5 }}>Earned · 30D</div>
+        <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.04em", marginTop: 9, fontVariantNumeric: "tabular-nums" }}>{awaiting || !covers ? "—" : money0(covers * (price - realCost))}</div>
+        <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", marginTop: 3, whiteSpace: "nowrap" }}>
+          {awaiting ? "AWAITING PRICES" : live && covers ? (
+            <span style={{ color: "var(--accent-deep)" }}>{delta <= 0 ? "+" : "−"}{money0(Math.abs(delta) * covers)} SANDBOX</span>
+          ) : `${money2(price - realCost)} A PLATE`}
+        </div>
+      </div>
+    </div>
+  );
+
+  /* ── margin trend ── */
+  const hist = (d.history || []).slice(-6);
+  const trendMove = hist.length > 1 ? hist[hist.length - 1].value - hist[0].value : 0;
+  const trend = (
+    <div style={{ ...box, padding: "12px 13px 10px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={h3}>Margin, {hist.length > 1 ? `${hist.length} months` : "trend"}</span>
+        {hist.length > 1 && Math.abs(trendMove) >= 0.05 && (
+          <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>{trendMove < 0 ? "▼" : "▲"} {Math.abs(trendMove).toFixed(1)} PTS</span>
+        )}
+      </div>
+      {hist.length > 1 ? (
+        <div style={{ marginTop: 12 }}>
+          <MarginTrend history={hist} tgt={tgt} whatIf={live ? margin : null} height={stacked ? 180 : 200} />
+          {stacked && <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.06em", color: "var(--faint)", textAlign: "center", marginTop: 10 }}>TAP A MONTH TO SEE ITS MARGIN</div>}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 8 }}>The trend appears once this dish has a second month of invoice prices.</div>
+      )}
+    </div>
+  );
+
+  /* ── reach your target / sandbox result ── */
+  const panel = (() => {
+    if (sandbox) {
+      return (
+        <div style={{ border: "1px solid var(--accent)", borderRadius: 12, padding: "12px 13px", background: "var(--accent-tint)" }}>
+          <div style={{ ...h3, color: "var(--accent-deep)" }}>Sandbox result</div>
+          {live ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 9 }}>
+              <div style={tile}>
+                <div style={tileLbl}>Plate cost</div>
+                <div style={tileVal}>{money2(sbCost)}</div>
+                <div style={tileNote}>{delta <= 0 ? "−" : "+"}{money2(Math.abs(delta))} A PLATE</div>
+              </div>
+              <div style={tile}>
+                <div style={tileLbl}>Margin</div>
+                <div style={tileVal}>{pct1(margin)}</div>
+                <div style={tileNote}>{margin >= realMargin ? "+" : "−"}{Math.abs(margin - realMargin).toFixed(1)} PTS</div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.45, marginTop: 6 }}>Change any quantity in the recipe to see what it does to the plate cost and margin.</div>
+          )}
+          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 9 }}>Only a test. Nothing here changes the real recipe.</div>
+        </div>
+      );
+    }
+    if (awaiting) {
+      return (
+        <div style={{ ...box, padding: "12px 13px", background: "var(--panel)" }}>
+          <div style={h3}>Finish costing</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 6 }}>
+            {d.unpricedCount} ingredient{d.unpricedCount === 1 ? "" : "s"} still need an invoice price before this dish has a margin.
+          </div>
+        </div>
+      );
+    }
+    if (!price) return null;
+    const leverLine = lever && realCost > 0 && (
+      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45, marginTop: 9 }}>
+        Biggest lever: <strong style={{ color: "var(--text)" }}>{lever.name.toLowerCase()}</strong>, {Math.round(((Number(lever.cost) || 0) / realCost) * 100)}% of the plate.
+      </div>
+    );
+    if (!under) {
+      return (
+        <div style={{ ...box, padding: "12px 13px", background: "var(--panel)" }}>
+          <div style={h3}>On target</div>
+          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 6 }}>
+            Plate cost can rise <strong style={{ color: "var(--text)" }}>{money2(Math.max(0, trimTo - realCost))}</strong> before this dish drops under {Math.round(tgt)}%.
+          </div>
+          {leverLine}
+        </div>
+      );
+    }
+    return (
+      <div style={{ ...box, padding: "12px 13px", background: "var(--panel)" }}>
+        <div style={h3}>Reach your target</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 9 }}>
+          <div style={tile}>
+            <div style={tileLbl}>Reprice to</div>
+            <div style={tileVal}>{money2(reprice)}</div>
+            <div style={tileNote}>+{money2(reprice - price)}</div>
+          </div>
+          <div style={tile}>
+            <div style={tileLbl}>Or trim plate to</div>
+            <div style={tileVal}>{money2(trimTo)}</div>
+            <div style={tileNote}>−{money2(realCost - trimTo)} A PLATE</div>
+          </div>
+        </div>
+        {leverLine}
+      </div>
+    );
+  })();
+
+  /* ── top bar (desktop) and sandbox actions ── */
+  const flask = (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 3h6" /><path d="M10 3v6L4.5 18.5A1.6 1.6 0 006 21h12a1.6 1.6 0 001.5-2.5L14 9V3" /><path d="M7 15h10" /></svg>
+  );
+  const canTry = !awaiting && price > 0;
+  const topBar = !stacked && (
+    <div style={{ position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 18px", background: "var(--shell)", borderBottom: "1px solid var(--line-soft)" }}>
+      <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.12em", color: "var(--accent-deep)" }}>
+        <span style={{ fontSize: 14, lineHeight: 1 }}>‹</span>ALL DISHES
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {sandbox ? (
+          <>
+            <span style={{ display: "flex", alignItems: "center", gap: 6, fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", color: "var(--accent-deep)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />
+              SANDBOX · {changes} CHANGE{changes === 1 ? "" : "S"} · NOTHING SAVES
+            </span>
+            <button type="button" onClick={resetSandbox} disabled={!changes} style={{ ...pill, background: "none", border: "1px solid var(--line)", color: "var(--muted)", opacity: changes ? 1 : 0.5 }}>Reset</button>
+            <button type="button" onClick={exitSandbox} style={{ ...pill, background: "var(--accent)", border: "none", color: "#fff" }}>Done</button>
+          </>
+        ) : canTry ? (
+          <button type="button" onClick={() => setSandbox && setSandbox(true)} style={{ ...pill, background: "none", border: "1px solid var(--line)", color: "var(--muted)" }}>{flask}Try portions</button>
+        ) : null}
+      </div>
+    </div>
+  );
+
+  // Phones: the result stays pinned to the bottom while the recipe scrolls.
+  const stickyBar = stacked && sandbox && (
+    <div style={{ position: "sticky", bottom: 12, zIndex: 5, marginTop: 2, display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 14, background: "var(--text)", color: "var(--shell)", boxShadow: "0 10px 26px rgba(0,0,0,0.22)" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.12em", opacity: 0.7 }}>SANDBOX · {changes} CHANGE{changes === 1 ? "" : "S"} · NOTHING SAVES</div>
+        <div style={{ fontSize: 14, fontWeight: 800, letterSpacing: "-0.02em", marginTop: 3, whiteSpace: "nowrap" }}>
+          Plate {money2(cost)} · {pct1(margin)}
+          {live && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 500, color: "var(--accent)", marginLeft: 6 }}>{margin >= realMargin ? "▲" : "▼"} {Math.abs(margin - realMargin).toFixed(1)} PTS</span>}
+        </div>
+      </div>
+      <button type="button" onClick={resetSandbox} disabled={!changes} style={{ height: 34, padding: "0 12px", borderRadius: 17, background: "none", border: "1px solid color-mix(in srgb, var(--shell) 35%, transparent)", color: "var(--shell)", fontFamily: SANS, fontSize: 12, fontWeight: 700, cursor: "pointer", opacity: changes ? 1 : 0.5 }}>Reset</button>
+    </div>
+  );
+
+  const hero = (
+    <div data-tour={stacked ? "mi-detail" : undefined}>
+      {stacked ? (
+        <div>
+          <div style={{ ...kick }}>{[d.category || "Dish", `${d.components.length} component${d.components.length === 1 ? "" : "s"}`, `${d.lineCount} ingredient${d.lineCount === 1 ? "" : "s"}`].join(" · ")}</div>
+          <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.12, marginTop: 7 }}>{d.name}</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12 }}>
+            <div style={{ minWidth: 0 }}>{chip}</div>
+            <div style={{ textAlign: "right", flexShrink: 0 }}>
+              <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.045em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{money2(price)}</div>
+              <div style={{ ...kick, fontSize: 9, color: "var(--accent-deep)", marginTop: 5 }}>Menu price</div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div style={{ padding: "16px 18px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ ...kick, fontSize: 10.5 }}>{[d.category || "Dish", `${d.components.length} component${d.components.length === 1 ? "" : "s"}`, `${d.lineCount} ingredient${d.lineCount === 1 ? "" : "s"}`].join(" · ")}</div>
+            <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1, marginTop: 7, textWrap: "pretty" }}>{d.name}</div>
+            <div style={{ marginTop: 10 }}>{chip}</div>
+          </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.045em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{money2(price)}</div>
+            <div style={{ ...kick, color: "var(--accent-deep)", marginTop: 7 }}>Menu price</div>
+          </div>
+        </div>
+      )}
+      {dollarBar}
+    </div>
+  );
+
+  if (stacked) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+        <style>{DD_CSS}</style>
+        {sandbox && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 10, background: "var(--accent-tint)", color: "var(--accent-deep)", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em" }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)" }} />SANDBOX · TAP ANY QUANTITY · NOTHING SAVES
+          </div>
+        )}
+        <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, padding: "16px 14px", display: "flex", flexDirection: "column", gap: 0 }}>{hero}</div>
+        {sales}
+        {recipe}
+        {trend}
+        {panel}
+        {stickyBar}
+      </div>
+    );
+  }
 
   return (
-    <div style={stacked ? { position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" } : { flex: 1, minHeight: 0, position: "relative", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
-      <div style={{ ...(stacked ? { position: "relative" } : { position: "absolute", inset: 0, overflowY: "auto" }), display: "flex", flexDirection: "column", background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, borderRadius: 4, boxShadow: "var(--shadow-lg)", overflowX: "hidden", padding: stacked ? "16px 16px 18px" : "18px 22px 20px" }}>
-        {!stacked && (
-          <button type="button" onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "flex-start", background: "none", border: "none", padding: 0, marginBottom: 14, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--ink-soft)", flexShrink: 0 }}>
-            <span style={{ fontSize: 13, lineHeight: 1 }}>‹</span><span>All dishes</span>
-          </button>
-        )}
+    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", background: "var(--shell)", borderTop: sandbox ? "3px solid var(--accent)" : "3px solid transparent", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+      <style>{DD_CSS}</style>
+      {topBar}
+      {hero}
+      <div className="dd-body" style={{ padding: "16px 18px 18px" }}>
+        {recipe}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          {sales}
+          {trend}
+          {panel}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-        <div style={{ flexShrink: 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.category || "Dish"}</div>
-          <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.02em", lineHeight: 1.25, marginTop: 5, textWrap: "pretty" }}>{d.name}</div>
-          {d.covers > 0 && (
-            <div style={{ fontSize: 8.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-faint)", marginTop: 3 }}>Serves {d.covers}</div>
+/* Margin trend: no y-axis. The first and last months are labelled, every
+   month shows its margin on hover (tap on phones), and the sandbox result
+   shows as a dashed ghost point on the latest month. */
+function MarginTrend({ history, tgt, whatIf = null, height = 200 }) {
+  const [tapped, setTapped] = useState(null);
+  const vals = history.map((p) => Number(p.value) || 0);
+  const all = vals.concat([tgt], whatIf != null ? [whatIf] : []);
+  const lo = Math.min(...all) - 1.5;
+  const hi = Math.max(...all) + 1.5;
+  const TOP = 26, BOT = 6;
+  const Y = (v) => TOP + ((hi - v) / (hi - lo || 1)) * (height - TOP - BOT);
+  const X = (i) => (vals.length < 2 ? 50 : 4 + (i / (vals.length - 1)) * 92); // % across
+  const pts = vals.map((v, i) => ({ x: X(i), y: Y(v), v, label: history[i].label }));
+  const last = pts.length - 1;
+  const line = pts.map((p, i) => (i ? "L" : "M") + p.x.toFixed(2) + " " + p.y.toFixed(1)).join(" ");
+  const area = `${line} L${pts[last].x.toFixed(2)} ${height} L${pts[0].x.toFixed(2)} ${height} Z`;
+  const ty = Y(tgt);
+  const wy = whatIf != null ? Y(whatIf) : null;
+  const mono = { fontFamily: MONO, position: "absolute", whiteSpace: "nowrap" };
+  const dot = (p, big) => (
+    <span style={{ position: "absolute", left: p.x + "%", top: p.y, width: big ? 9 : 6, height: big ? 9 : 6, transform: "translate(-50%,-50%)", borderRadius: "50%", background: big ? "var(--accent)" : "var(--shell)", border: "2px solid var(--accent)", boxSizing: "content-box", pointerEvents: "none" }} />
+  );
+  return (
+    <div>
+      <div style={{ position: "relative", height }}>
+        <svg width="100%" height={height} viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ display: "block", overflow: "visible" }} aria-hidden="true">
+          <line x1="0" y1={ty} x2="100" y2={ty} stroke="var(--text)" strokeWidth="1.5" strokeDasharray="4 4" opacity="0.45" vectorEffect="non-scaling-stroke" />
+          <path d={area} fill="var(--accent-tint)" />
+          <path d={line} fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+          {wy != null && (
+            <line x1={pts[last].x} y1={pts[last].y} x2={pts[last].x} y2={wy} stroke="var(--accent-deep)" strokeWidth="1.5" strokeDasharray="2 3" vectorEffect="non-scaling-stroke" />
           )}
-        </div>
-
-        <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "14px 0 0" }} />
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", columnGap: 12, rowGap: 6, marginTop: 11, flexShrink: 0 }}>
-          <span style={{ display: "flex", alignItems: "baseline", gap: 8, whiteSpace: "nowrap" }}>
-            <span style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-soft)" }}>Recipe</span>
-            <span style={{ fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-faint)" }}>{d.components.length} components · {d.lineCount} ingredients</span>
-          </span>
-          <span style={{ display: "flex", alignItems: "baseline", gap: 12, marginLeft: "auto" }}>
-            {isExploring && (
-              <button type="button" onClick={() => setWhatIfQty({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "#96690a" }}>
-                reset
-              </button>
-            )}
-            <button type="button" onClick={() => setOpen((prev) => {
-              const next = { ...prev };
-              d.components.forEach((c) => { next[d.id + "|" + c.name] = !anyOpen; });
-              return next;
-            })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--ink-soft)" }}>
-              {anyOpen ? "collapse all" : "expand all"}
-            </button>
-            <button type="button" onClick={() => setEditMode((v) => !v)} style={{ background: "none", border: "none", borderBottom: editMode ? "1px solid var(--ink)" : "1px solid transparent", padding: "0 0 2px", cursor: "pointer", whiteSpace: "nowrap", fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", textTransform: "uppercase", color: editMode ? "var(--ink)" : "var(--ink-soft)" }}>
-              {editMode ? "done editing" : "edit portions"}
-            </button>
-          </span>
-        </div>
-
-        <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", marginTop: 9 }}>
-          {d.components.map((c, ci) => {
-            const opened = isOpen(c);
-            const compCost = effectiveComponentCost(ci, c);
-            const move = c.cost - c.costThen; // real cost movement — not affected by what-if exploration
-            const share = effectiveDishCost ? (compCost / effectiveDishCost) * 100 : 0;
-            return (
-              <div key={c.name} style={{ padding: "9px 0 10px", borderBottom: "1px dashed var(--paper-line)" }}>
-                <div onClick={() => setOpen((prev) => ({ ...prev, [keyOf(c)]: !opened }))} style={{ display: "flex", alignItems: "baseline", gap: 8, fontFamily: MONO, cursor: "pointer" }}>
-                  <span style={{ fontSize: 12, lineHeight: 1, color: "var(--ink-soft)", width: 12, flexShrink: 0 }}>{opened ? "▾" : "▸"}</span>
-                  <span style={{ fontSize: 10.5, fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--accent-deep)", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ flex: 1, borderBottom: "1px dotted var(--paper-line)", transform: "translateY(-3px)" }} />
-                  <span style={{ fontSize: 10.5, fontWeight: 500, color: "var(--accent-deep)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{c.ingredients.some((i) => i.unpriced) ? "—" : money2(compCost)}</span>
-                  {!(c.allEstimated || c.unknownMove) && Math.abs(move) > 0.005 && (
-                    <span style={{ fontSize: 9, whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums", color: moveColor(move) }}>{moveLabel(move)}</span>
-                  )}
-                </div>
-                <div style={{ fontFamily: MONO, fontSize: 9, color: "var(--ink-faint)", marginTop: 2, paddingLeft: 20 }}>
-                  {d.awaiting ? "Awaiting pricing" : `${share.toFixed(0)}% of plate`}{!opened && ` · ${c.ingredients.length === 1 ? "1 ingredient" : c.ingredients.length + " ingredients"}`}
-                </div>
-                {opened && (
-                  <div style={{ margin: "6px 0 0 17px", paddingLeft: 12, borderLeft: "1px solid var(--paper-line)", display: "flex", flexDirection: "column", gap: 2 }}>
-                    {c.ingredients.map((i, ii) => {
-                      const im = (Number(i.cost) || 0) - (Number(i.costThen != null ? i.costThen : i.cost) || 0); // real move — not what-if
-                      const qVal = effectiveQty(ci, ii, i);
-                      const iCost = effectiveIngCost(ci, ii, i);
-                      const key = ingKey(ci, ii);
-                      const overridden = key in whatIfQty;
-                      return (
-                        <div key={ii} style={{ padding: "3px 0" }}>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-                            <span style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.name}</span>
-                            <span style={{ flex: 1, borderBottom: "1px dotted var(--ink-faint)", transform: "translateY(-3px)" }} />
-                            <span style={{ fontSize: 10.5, color: overridden ? "#96690a" : i.unpriced ? "var(--ink-faint)" : "var(--ink)", fontWeight: overridden ? 500 : 400, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{i.unpriced ? "—" : money2(iCost)}</span>
-                          </div>
-                            <div style={{ display: "grid", gridTemplateColumns: "56px 30px 14px 78px auto", alignItems: "center", columnGap: 4, marginTop: 2, fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>
-                              <>
-                                {editMode ? (
-                                  <input
-                                    type="number"
-                                    step="any"
-                                    min="0"
-                                    value={qVal}
-                                    onChange={(e) => {
-                                      const val = e.target.value === "" ? 0 : Number(e.target.value);
-                                      setWhatIfQty((prev) => ({ ...prev, [key]: val }));
-                                    }}
-                                    title="Try a different portion size — this doesn't change the real recipe"
-                                    style={{
-                                      width: 52, fontSize: 9, fontFamily: MONO, textAlign: "right",
-                                      background: overridden ? "#fdf6e8" : "transparent",
-                                      border: overridden ? "1px solid #b8860b" : "1px dashed var(--ink-faint)",
-                                      borderRadius: 3, padding: "0 3px",
-                                      color: overridden ? "#96690a" : "var(--ink-soft)",
-                                    }}
-                                  />
-                                ) : (
-                                  <span style={{ fontVariantNumeric: "tabular-nums", color: overridden ? "#96690a" : "var(--ink-faint)", fontWeight: overridden ? 500 : 400 }}>{fmtQty(qVal)}</span>
-                                )}
-                                <span>{i.unit || "ea"}</span>
-                              </>
-                              <span style={{ textAlign: "center" }}>@</span>
-                                <span style={{ textAlign: "left", fontVariantNumeric: "tabular-nums" }}>{i.unpriced ? "awaiting price" : `${money2(recipeUnitPrice(i))}/${i.unit || "ea"}`}</span>
-                              <span style={{ display: "flex", gap: 8, paddingLeft: 8 }}>
-                                {i.unitMismatch && (
-                                  <span style={{ letterSpacing: "0.06em", color: "var(--red)" }}>▲ unit mismatch — check pricing</span>
-                                )}
-                                {i.estimated && !i.unpriced && (
-                                  <span style={{ letterSpacing: "0.06em", color: "var(--amber)" }}>▲ estimated price</span>
-                                )}
-                                {!i.estimated && i.costThen != null && Math.abs(im) > 0.005 && (
-                                  <span style={{ letterSpacing: "0.06em", color: moveColor(im) }}>{moveLabel(im)}</span>
-                                )}
-                              </span>
-                            </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "10px 0", flexShrink: 0 }} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: "var(--ink-soft)" }}>
-            <span>MENU PRICE</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{money2(d.price)}</span>
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 12.5, fontWeight: 500, color: isExploring ? "#96690a" : "var(--ink)" }}>
-            <span style={{ letterSpacing: "0.08em" }}>PLATE COST{isExploring ? " (WHAT-IF)" : ""}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{d.awaiting ? "Awaiting pricing" : money2(effectiveDishCost)}</span>
-          </div>
-          {!d.awaiting && (() => {
-            const m = d.price ? ((d.price - effectiveDishCost) / d.price) * 100 : 0;
-            return (
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 10, color: m < tgt ? marginColor(m, tgt) : "var(--ink-soft)" }}>
-                <span>MARGIN · TARGET {pct(tgt)}</span>
-                <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct(m)}</span>
-              </div>
-            );
-          })()}
-        </div>
+        </svg>
+        <span style={{ ...mono, [wy != null ? "left" : "right"]: 0, top: ty + 4, fontSize: 9, letterSpacing: "0.08em", color: "var(--faint)" }}>TARGET {Math.round(tgt)}%</span>
+        {pts.map((p, i) => <React.Fragment key={i}>{dot(p, i === 0 || i === last)}</React.Fragment>)}
+        {wy != null && (
+          <>
+            <span style={{ position: "absolute", left: pts[last].x + "%", top: wy, width: 8, height: 8, transform: "translate(-50%,-50%)", borderRadius: "50%", background: "var(--shell)", border: "2px dashed var(--accent-deep)", pointerEvents: "none" }} />
+            <span style={{ ...mono, left: `calc(${pts[last].x}% - 10px)`, transform: "translateX(-100%)", top: wy - 22, fontSize: 10.5, fontWeight: 500, color: "var(--accent-deep)" }}>SANDBOX {pct1(whatIf)}</span>
+          </>
+        )}
+        <span style={{ ...mono, left: `calc(${pts[0].x}% - 4px)`, top: pts[0].y - 24, fontSize: 11, color: "var(--muted)" }}>{pct1(pts[0].v)}</span>
+        <span style={{ ...mono, left: `calc(${pts[last].x}% + 4px)`, transform: "translateX(-100%)", top: pts[last].y + 9, fontSize: 12, fontWeight: 500, color: "var(--text)" }}>{pct1(pts[last].v)}</span>
+        {pts.map((p, i) => (
+          <button
+            key={"hit" + i}
+            type="button"
+            className={"dd-pt" + (tapped === i ? " on" : "")}
+            onClick={() => setTapped((t) => (t === i ? null : i))}
+            aria-label={`${p.label}: ${pct1(p.v)} margin`}
+            style={{ position: "absolute", left: p.x + "%", top: p.y, width: 28, height: 28, transform: "translate(-50%,-50%)", padding: 0, border: "none", background: "none", cursor: "pointer" }}
+          >
+            <span className="dd-tip" style={{ position: "absolute", bottom: 32, left: "50%", transform: "translateX(-50%)", whiteSpace: "nowrap", background: "var(--text)", color: "var(--shell)", fontFamily: MONO, fontSize: 10.5, padding: "4px 8px", borderRadius: 6 }}>
+              {p.label} · {pct1(p.v)}
+            </span>
+          </button>
+        ))}
+      </div>
+      <div style={{ position: "relative", height: 12, marginTop: 6, fontFamily: MONO, fontSize: 9, color: "var(--faint)" }}>
+        {pts.map((p, i) => (
+          <span key={i} style={{ position: "absolute", left: p.x + "%", transform: "translateX(-50%)", textTransform: "uppercase" }}>{p.label}</span>
+        ))}
       </div>
     </div>
   );
