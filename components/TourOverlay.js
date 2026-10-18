@@ -11,6 +11,10 @@
 export default function TourOverlay({ tour }) {
   if (!tour || !tour.active) return null;
 
+  const phone = tour.vw > 0 && tour.vw <= 900;
+  // Highlight in the lower half: put the phone card at the top instead.
+  const spotLow = tour.hasSpot && tour.ringTop + tour.ringHeight / 2 > tour.vh / 2;
+
   const TOKENS = {
     '--shell': '#ffffff',
     '--panel': '#eef0ef',
@@ -62,7 +66,6 @@ export default function TourOverlay({ tour }) {
       <div
         style={{
           position: 'fixed',
-          width: 352,
           background: 'var(--shell)',
           border: '1px solid var(--line)',
           borderRadius: 14,
@@ -70,10 +73,23 @@ export default function TourOverlay({ tour }) {
           fontFamily: "'Manrope',sans-serif",
           pointerEvents: 'all',
           zIndex: 9999,
-          left: tour.ttLeft,
-          top: tour.ttTop,
           opacity: tour.ttOpacity,
-          transition: 'left .4s cubic-bezier(.4,0,.2,1), top .4s cubic-bezier(.4,0,.2,1), opacity .2s ease',
+          ...(phone
+            ? {
+                // Phones: full-width card on the half of the screen away from the highlight.
+                left: 12,
+                right: 12,
+                ...(spotLow
+                  ? { top: 'calc(12px + env(safe-area-inset-top, 0px))' }
+                  : { bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))' }),
+                transition: 'opacity .2s ease',
+              }
+            : {
+                width: 352,
+                left: tour.ttLeft,
+                top: tour.ttTop,
+                transition: 'left .4s cubic-bezier(.4,0,.2,1), top .4s cubic-bezier(.4,0,.2,1), opacity .2s ease',
+              }),
         }}
       >
         <div style={{ padding: '18px 20px 14px' }}>
@@ -93,7 +109,7 @@ export default function TourOverlay({ tour }) {
           <div style={{ fontSize: 17.5, fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--text)', lineHeight: 1.25, marginBottom: 8 }}>
             {tour.title}
           </div>
-          <div style={{ fontSize: 13.5, color: 'var(--muted)', lineHeight: 1.6, minHeight: 40 }}>{tour.text}</div>
+          <div style={{ fontSize: phone ? 14.5 : 13.5, color: 'var(--muted)', lineHeight: 1.6, minHeight: phone ? 0 : 40 }}>{tour.text}</div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 20px 16px' }}>
@@ -104,10 +120,11 @@ export default function TourOverlay({ tour }) {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              fontSize: 11.5,
+              fontSize: phone ? 13 : 11.5,
               color: 'var(--faint)',
               fontFamily: "'Manrope',sans-serif",
-              padding: '5px 8px',
+              padding: phone ? '0 8px' : '5px 8px',
+              minHeight: phone ? 44 : undefined,
               borderRadius: 5,
               marginRight: 'auto',
             }}
@@ -122,8 +139,9 @@ export default function TourOverlay({ tour }) {
                 background: 'none',
                 border: '1px solid var(--line)',
                 borderRadius: 20,
-                padding: '7px 14px',
-                fontSize: 12,
+                padding: phone ? '0 16px' : '7px 14px',
+                minHeight: phone ? 44 : undefined,
+                fontSize: phone ? 13.5 : 12,
                 color: 'var(--muted)',
                 cursor: 'pointer',
                 fontFamily: "'Manrope',sans-serif",
@@ -139,8 +157,9 @@ export default function TourOverlay({ tour }) {
               style={{
                 border: tour.nextBorder,
                 borderRadius: 20,
-                padding: '8px 18px',
-                fontSize: 12.5,
+                padding: phone ? '0 20px' : '8px 18px',
+                minHeight: phone ? 44 : undefined,
+                fontSize: phone ? 14 : 12.5,
                 fontWeight: 700,
                 cursor: 'pointer',
                 fontFamily: "'Manrope',sans-serif",
