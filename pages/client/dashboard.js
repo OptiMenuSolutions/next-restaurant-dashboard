@@ -286,7 +286,8 @@ export default function DashboardPage() {
       // reads, rebuilt overnight and whenever an invoice is saved or linked.
       const [{ data: invoices }, { data: ingredients }, { data: menuItems }, wasteRisk] =
         await Promise.all([
-          supabase.from("invoices").select("*").eq("restaurant_id", restaurantId).order("date", { ascending: false }),
+          // Only used for year-to-date spend: this year's rows, two columns.
+          supabase.from("invoices").select("date, amount").eq("restaurant_id", restaurantId).gte("date", `${new Date().getFullYear()}-01-01`),
           supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
           supabase.from("menu_items")
             .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
