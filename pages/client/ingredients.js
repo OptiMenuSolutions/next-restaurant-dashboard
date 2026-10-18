@@ -227,8 +227,9 @@ export default function IngredientsPage() {
       supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).order("name").limit(1000),
       supabase
         .from("invoice_items")
-        .select("*, invoices!invoice_items_invoice_id_fkey(id, date, supplier, number, restaurant_id)")
+        .select("*, invoices!invoice_items_invoice_id_fkey!inner(id, date, supplier, number, restaurant_id)")
         .not("ingredient_id", "is", null)
+        .eq("invoices.restaurant_id", restaurantId)
         .limit(5000),
       // Legacy flat structure — has no unit column, kept as a fallback for
       // any dish only ever recorded this way (not through components).
