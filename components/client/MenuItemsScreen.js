@@ -639,9 +639,20 @@ const shade = (i) => `color-mix(in srgb, var(--accent) ${SHADES[Math.min(i, SHAD
 const DD_CSS = `
 .dd-pt .dd-tip{opacity:0;transition:opacity .12s;pointer-events:none}
 .dd-pt:hover .dd-tip,.dd-pt.on .dd-tip{opacity:1}
-.dd-body{display:grid;grid-template-columns:minmax(0,1fr) 236px;gap:14px;align-items:start}
-@media (max-width:1279px){.dd-body{grid-template-columns:minmax(0,1fr)}}
 .dd-qty:focus{outline:none;border-color:var(--accent)!important}
+.dd-root{display:flex;flex-direction:column;overflow:hidden}
+.dd-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 236px;grid-template-rows:minmax(0,1fr);gap:14px}
+.dd-recipe{display:flex;flex-direction:column;min-height:0}
+.dd-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:-8px;padding-right:8px}
+.dd-rail{min-height:0;overflow-y:auto;overflow-x:hidden}
+.dd-comp{cursor:pointer;user-select:none}
+.dd-comp:hover .dd-cname{color:var(--accent-deep)}
+@media (max-width:1279px){
+  .dd-root{overflow-y:auto}
+  .dd-body{flex:none;grid-template-columns:minmax(0,1fr);grid-template-rows:none}
+  .dd-list{flex:none;overflow:visible;margin-right:0;padding-right:0}
+  .dd-rail{overflow:visible}
+}
 `;
 
 /*
@@ -656,6 +667,16 @@ const DD_CSS = `
  * hold the Try/Done button, and clears both whenever a different dish opens.
  */
 function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandbox, whatIf = {}, setWhatIf }) {
+  // Components start expanded; click a component to fold it down to its
+  // subtotal, or use Collapse all / Expand all. Resets for each dish.
+  const [folded, setFolded] = useState({});
+  useEffect(() => { setFolded({}); }, [d.id]);
+  const anyOpen = d.components.some((c, ci) => !folded[ci]);
+  const toggleAll = () => {
+    const next = {};
+    d.components.forEach((c, ci) => { next[ci] = anyOpen; });
+    setFolded(next);
+  };
   const price = Number(d.price) || 0;
   const ingKey = (ci, ii) => `${ci}-${ii}`;
   // Price per RECIPE unit, derived from the line cost toDish() already
@@ -775,13 +796,14 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
 
   /* ── recipe ── */
   const recipe = (
-    <div style={{ ...box, padding: "12px 14px", minWidth: 0 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, paddingBottom: 10, marginBottom: 12, borderBottom: "1px solid var(--line-soft)" }}>
+    <div className={stacked ? undefined : "dd-recipe"} style={{ ...box, padding: "12px 14px", minWidth: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingBottom: 10, marginBottom: 12, borderBottom: "1px solid var(--line-soft)", flexShrink: 0 }}>
         <span style={h3}>Recipe · one plate</span>
-        <span style={{ fontFamily: MONO, fontSize: 9.5, color: sandbox ? "var(--accent-deep)" : "var(--faint)", whiteSpace: "nowrap" }}>
-          {sandbox ? "TAP A QUANTITY TO TRY IT" : `${invoicePriced} OF ${d.lineCount} INVOICE-PRICED`}
-        </span>
+        <button type="button" onClick={toggleAll} style={{ minHeight: stacked ? 34 : 24, background: "none", border: "none", padding: "0 2px", cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", color: "var(--accent-deep)", whiteSpace: "nowrap" }}>
+          {anyOpen ? "COLLAPSE ALL" : "EXPAND ALL"}
+        </button>
       </div>
+      <div className={stacked ? undefined : "dd-list"}>
       {d.components.map((c, ci) => {
         const sub = compCost(ci, c, sandbox);
         const sub0 = compCost(ci, c, false);
@@ -789,12 +811,23 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
         const share = tot ? (sub / tot) * 100 : 0;
         const anyUnpriced = c.ingredients.some((i) => i.unpriced);
         const col = shade(ci);
+        const isFolded = !!folded[ci];
+        const changedHere = sandbox ? c.ingredients.filter((ing, ii) => isChanged(ci, ii, ing)).length : 0;
         return (
-          <div key={c.name + ci} style={{ paddingTop: ci === 0 ? 0 : sandbox ? 14 : 18 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+          <div key={c.name + ci} style={{ paddingTop: ci === 0 ? 0 : isFolded ? 12 : sandbox ? 14 : 18 }}>
+            <div className="dd-comp" role="button" tabIndex={0} aria-expanded={!isFolded}
+              onClick={() => setFolded((f) => ({ ...f, [ci]: !isFolded }))}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFolded((f) => ({ ...f, [ci]: !isFolded })); } }}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, minHeight: stacked ? 28 : 0 }}>
               <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, fontSize: 13.5, fontWeight: 800, letterSpacing: "-0.01em" }}>
+                <span style={{ width: 10, flexShrink: 0, fontSize: 11, lineHeight: 1, color: "var(--faint)" }}>{isFolded ? "▸" : "▾"}</span>
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: col, flexShrink: 0 }} />
-                <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                <span className="dd-cname" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                {isFolded && (
+                  <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 400, letterSpacing: "0.06em", color: changedHere ? "var(--accent-deep)" : "var(--faint)", whiteSpace: "nowrap" }}>
+                    {c.ingredients.length} ING{changedHere ? ` · ${changedHere} CHANGED` : ""}
+                  </span>
+                )}
               </span>
               <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
                 {sandbox && Math.abs(sub - sub0) > 0.005 && (
@@ -807,7 +840,7 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
             <div style={{ height: 3, borderRadius: 2, background: "var(--line-soft)", margin: "7px 0 4px", overflow: "hidden" }}>
               {!awaiting && <div style={{ width: Math.min(100, share) + "%", height: "100%", background: col }} />}
             </div>
-            {c.ingredients.map((i, ii) => {
+            {!isFolded && c.ingredients.map((i, ii) => {
               const tag = (txt, color = "var(--faint)", border = "var(--line)") => (
                 <span style={{ fontFamily: MONO, fontSize: 9, color, border: `1px solid ${border}`, borderRadius: 3, padding: "0 4px", marginLeft: 5, whiteSpace: "nowrap" }}>{txt}</span>
               );
@@ -866,8 +899,12 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
           </div>
         );
       })}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--line-soft)" }}>
-        <span style={{ fontSize: 13.5, fontWeight: 800 }}>{sandbox ? "Plate cost · sandbox" : "Plate cost"}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--line-soft)", flexShrink: 0 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 13.5, fontWeight: 800 }}>{sandbox ? "Plate cost · sandbox" : "Plate cost"}</span>
+          <span style={{ fontFamily: MONO, fontSize: 9.5, color: "var(--faint)", whiteSpace: "nowrap" }}>{invoicePriced} OF {d.lineCount} INVOICE-PRICED</span>
+        </span>
         <span style={{ fontSize: 15, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>
           {live && <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 400, color: "var(--faint)", textDecoration: "line-through", marginRight: 8 }}>{money2(realCost)}</span>}
           {awaiting ? "Awaiting prices" : money2(sandbox ? sbCost : realCost)}
@@ -1083,13 +1120,13 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   }
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", background: "var(--shell)", borderTop: sandbox ? "3px solid var(--accent)" : "3px solid transparent", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
+    <div className="dd-root" style={{ flex: 1, minHeight: 0, background: "var(--shell)", borderTop: sandbox ? "3px solid var(--accent)" : "3px solid transparent", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
       <style>{DD_CSS}</style>
       {topBar}
       {hero}
       <div className="dd-body" style={{ padding: "16px 18px 18px" }}>
         {recipe}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+        <div className="dd-rail" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
           {sales}
           {trend}
           {panel}
