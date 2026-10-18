@@ -10,6 +10,7 @@ import { parseMenuFiles } from "../../lib/parseMenu";
 import ParseReviewModal from "../../components/ParseReviewModal";
 import LeaveGuardModal from "../../components/LeaveGuardModal";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
+import { mutate } from "swr";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -240,6 +241,9 @@ export default function OnboardingPage() {
       if (profileError) throw profileError;
     }
 
+    // Refresh the shared account copy first, so the dashboard sees the
+    // subscription and finished onboarding instead of an older cached copy.
+    await mutate("account");
     router.push("/client/dashboard?justOnboarded=true");
   };
 
