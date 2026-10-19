@@ -14,6 +14,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
+import { isInternalCall } from '../../../lib/scannerAuth';
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
 // enforced at the platform level — not configurable via formidable's own
@@ -738,11 +739,15 @@ export default async function handler(req, res) {
     return res.end();
   }
 
-  const { error: authError } = await import('../../../lib/withRestaurantAuth')
-    .then(m => m.verifyRestaurantAccess(req, restaurantId));
-  if (authError) {
-    streamEvent(res, { type: 'error', error: authError });
-    return res.end();
+  // Scanner photos come from /api/scanner/process, which has already checked
+  // the scanner. Every other call must come from the restaurant's owner.
+  if (!isInternalCall(req)) {
+    const { error: authError } = await import('../../../lib/withRestaurantAuth')
+      .then(m => m.verifyRestaurantAccess(req, restaurantId));
+    if (authError) {
+      streamEvent(res, { type: 'error', error: authError });
+      return res.end();
+    }
   }
 
   // Paid feature (Mistral OCR plus three Claude calls): the restaurant must be paid up.

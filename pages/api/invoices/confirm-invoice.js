@@ -12,6 +12,7 @@ import {
   getStandardUnitForIngredient,
   calculateStandardizedCost,
 } from '../../../lib/standardizedUnits';
+import { isInternalCall } from '../../../lib/scannerAuth';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -89,10 +90,13 @@ export default async function handler(req, res) {
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
 
-  // Verify the calling user owns this restaurant
-  const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
-    .then(m => m.verifyRestaurantAccess(req, restaurant_id));
-  if (authError) return res.status(authStatus).json({ error: authError });
+  // Verify the calling user owns this restaurant. Scanner photos come from
+  // /api/scanner/process, which has already checked the scanner.
+  if (!isInternalCall(req)) {
+    const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
+      .then(m => m.verifyRestaurantAccess(req, restaurant_id));
+    if (authError) return res.status(authStatus).json({ error: authError });
+  }
 
   const activeItems = (line_items || []).filter(i => !i.dismissed);
   console.log('[confirm-invoice] raw items', JSON.stringify(activeItems.map(i => ({

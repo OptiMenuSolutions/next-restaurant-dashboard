@@ -135,6 +135,7 @@ export default function InvoicesScreen({
   onDelete,
   onMergeDuplicates,
   onKeepDuplicates,
+  onMarkReviewed,
   uploadStatus = null,
   unmatchedTotal = 0,
   onSearch,
@@ -180,6 +181,7 @@ export default function InvoicesScreen({
   const pendingCount = rows.filter((v) => v.status !== "processed").length;
   const countLabel = `Showing ${rows.length} of ${rows.length} invoices`;
   const dupCopies = rows.filter((v) => v.dup && v.dup.isCopy).length;
+  const scansToReview = rows.filter((v) => v.scannedBy && !v.scanReviewed).length;
 
   // Month groups, in list order (newest first), with each month's total.
   const monthKeyOf = (v) => (v.isoDate ? String(v.isoDate).slice(0, 7) : "none");
@@ -255,7 +257,7 @@ export default function InvoicesScreen({
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileBackBar label="Invoices" onBack={() => setMobileDetail(false)} title={selected.number || "Invoice"} />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} />
         </div>
         <MobileNav active="invoices" NavLink={NavLink} />
       </Shell>
@@ -318,6 +320,16 @@ export default function InvoicesScreen({
             </button>
           )}
 
+          {scansToReview > 0 && (
+            <button type="button" onClick={() => { const first = rows.find((v) => v.scannedBy && !v.scanReviewed); if (first) openRow(first); }} style={banner}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{scansToReview} scanned invoice{scansToReview === 1 ? "" : "s"} to review</span>
+                <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Already counted in your costs. Give each a quick look.</span>
+              </span>
+              <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", color: "var(--amber)", flexShrink: 0 }}>REVIEW ›</span>
+            </button>
+          )}
+
           {dupCopies > 0 && (
             <button type="button" onClick={() => { const first = rows.find((v) => v.dup && v.dup.isCopy); if (first) openRow(first); }} style={banner}>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -367,6 +379,7 @@ export default function InvoicesScreen({
                         </span>
                         <span style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "2px 8px", whiteSpace: "nowrap", color: m.color, background: m.bg }}>{m.label}</span>
                       </span>
+                      {v.scannedBy && <span style={{ display: "flex", minWidth: 0 }}><ScanTag v={v} compact /></span>}
                     </span>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M9 6l6 6-6 6" /></svg>
                   </button>
@@ -418,6 +431,21 @@ export default function InvoicesScreen({
 
         <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="inv-list" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+            {scansToReview > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", flexShrink: 0, background: "rgba(193,135,28,0.10)", borderBottom: "1px solid rgba(193,135,28,0.30)" }}>
+                <span style={{ fontSize: 12, color: "var(--text)" }}>
+                  <strong style={{ color: "var(--amber)" }}>{scansToReview} scanned invoice{scansToReview === 1 ? "" : "s"} to review.</strong>{" "}
+                  Already counted in your costs. Give each a quick look.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { const first = rows.find((v) => v.scannedBy && !v.scanReviewed); if (first) pick(first); }}
+                  style={{ marginLeft: "auto", background: "none", border: "1px solid var(--amber)", color: "var(--amber)", borderRadius: 16, padding: "4px 11px", fontFamily: SANS, fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Review
+                </button>
+              </div>
+            )}
                         {dupCopies > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", flexShrink: 0, background: "rgba(193,135,28,0.10)", borderBottom: "1px solid rgba(193,135,28,0.30)" }}>
                 <span style={{ fontSize: 12, color: "var(--text)" }}>
@@ -472,7 +500,10 @@ export default function InvoicesScreen({
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500, color: v.number && !(v.dup && v.dup.isCopy) ? "var(--text)" : "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.number || "Awaiting number"}</div>
                       </div>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.supplier}</div>
+                        {v.scannedBy && <div style={{ marginTop: 4, display: "flex" }}><ScanTag v={v} compact /></div>}
+                      </div>
                       <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--accent-deep)", textAlign: "right", whiteSpace: "nowrap" }}>{v.date}</div>
                       <div style={{ fontFamily: MONO, fontSize: 11, color: "var(--faint)", textAlign: "right", whiteSpace: "nowrap" }}>{(v.items && v.items.length) || v.lineCount ? (v.items.length || v.lineCount) + " items" : "—"}</div>
                       <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -492,14 +523,14 @@ export default function InvoicesScreen({
             </div>
           </div>
 
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} />
         </div>
       </div>
     </Shell>
   );
 }
 
-function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, onDelete, onMergeDuplicates, onKeepDuplicates }) {
+function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, onDelete, onMergeDuplicates, onKeepDuplicates, onMarkReviewed }) {
   const [linkMode, setLinkMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -588,6 +619,27 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
               </div>
             ))}
           </div>
+          {s.scannedBy && !s.scanReviewed && (
+            <div style={{ marginTop: 10, border: "1px dashed var(--amber)", borderRadius: 4, padding: "8px 10px", fontSize: 10, lineHeight: 1.5, color: "var(--ink)", flexShrink: 0 }}>
+              <span style={{ color: "var(--amber)", fontWeight: 500 }}>
+                ▲ SCANNED BY {String(s.scannedBy).toUpperCase()}
+                {s.scannedAt ? " · " + new Date(s.scannedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).toUpperCase() : ""}.
+              </span>{" "}
+              Already counted in your costs. Check the lines against the photo, then mark it reviewed.
+              {onMarkReviewed && (
+                <div style={{ display: "flex", gap: 14, marginTop: 5 }}>
+                  <button type="button" disabled={busy} onClick={() => run(() => onMarkReviewed(s))} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", fontWeight: 500, color: "var(--accent-deep)" }}>
+                    {busy ? "SAVING…" : "✓ MARK REVIEWED ›"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {s.scannedBy && s.scanReviewed && (
+            <div style={{ marginTop: 8, fontSize: 9, letterSpacing: "0.08em", color: "var(--ink-faint)", flexShrink: 0 }}>
+              SCANNED BY {String(s.scannedBy).toUpperCase()} · REVIEWED
+            </div>
+          )}
           {s.dup && (
             <div style={{ marginTop: 10, border: "1px dashed var(--amber)", borderRadius: 4, padding: "8px 10px", fontSize: 10, lineHeight: 1.5, color: "var(--ink)", flexShrink: 0 }}>
               <span style={{ color: "var(--amber)", fontWeight: 500 }}>
@@ -716,6 +768,18 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
         </div>
       </div>
     </div>
+  );
+}
+
+/* "Scanned by Maria · not yet reviewed" on invoices a staff scanner sent in. */
+function ScanTag({ v, compact = false }) {
+  if (!v.scannedBy) return null;
+  const todo = !v.scanReviewed;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, height: compact ? 18 : 20, padding: "0 8px", borderRadius: 10, maxWidth: "100%", fontFamily: MONO, fontSize: compact ? 9 : 9.5, letterSpacing: "0.04em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: todo ? "color-mix(in srgb, var(--amber) 12%, var(--shell))" : "var(--panel)", border: todo ? "1px solid color-mix(in srgb, var(--amber) 35%, transparent)" : "1px solid transparent", color: todo ? "var(--amber)" : "var(--muted)" }}>
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z" /><circle cx="12" cy="13" r="3.6" /></svg>
+      SCANNED BY {String(v.scannedBy).toUpperCase()} · {todo ? "NOT YET REVIEWED" : "REVIEWED"}
+    </span>
   );
 }
 

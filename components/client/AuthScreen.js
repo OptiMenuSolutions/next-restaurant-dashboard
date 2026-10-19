@@ -226,6 +226,21 @@ export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword,
                 </>
               )}
 
+              {/* Staff who only scan invoices join with the code their manager sent. */}
+              {isLogin && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "14px 0 10px" }}>
+                    <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9aa5a7" }}>Scanning for a restaurant?</span>
+                    <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
+                  </div>
+                  <NavLink href="/client/join" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, width: "100%", background: "transparent", border: "1.5px solid #02a4ba", borderRadius: 26, padding: 11, fontSize: 15, fontWeight: 700, color: "#03808f" }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#03808f" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 8.5A2.5 2.5 0 0 1 5.5 6h1.8l1.4-2h6.6l1.4 2h1.8A2.5 2.5 0 0 1 21 8.5v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5z" /><circle cx="12" cy="13" r="3.6" /></svg>
+                    I have a scanner code
+                  </NavLink>
+                </>
+              )}
+
               {!isLogin && (
                 <p style={{ fontSize: 11.5, lineHeight: 1.4, color: "#9aa5a7", textAlign: "center", marginTop: 8 }}>
                   By creating an account you agree to our <NavLink href="/terms" style={{ color: "#03808f" }}>Terms of Service</NavLink> and <NavLink href="/privacy" style={{ color: "#03808f" }}>Privacy Policy</NavLink>

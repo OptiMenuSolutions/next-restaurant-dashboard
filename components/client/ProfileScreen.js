@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
 import { useIsMobile, useInApp, MobileBackBar, MobileNav } from "./ClientChrome";
+import ScannersCard from "./ScannersCard";
 
 /**
  * ProfileScreen — ported from OptiMenu Profile.dc.html. Presentational;
@@ -393,6 +394,10 @@ export default function ProfileScreen({
                 )}
               </div>
             </div>
+          )}
+
+          {activeTab === "restaurant" && (
+            <ScannersCard card={card} cardHead={cardHead} isMobile={isMobile} />
           )}
 
           {activeTab === "notifications" && (

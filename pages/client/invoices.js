@@ -96,6 +96,10 @@ function toInvoice(row) {
     // real rows.
     lineCount,
     items: [],
+    // Set when a staff scanner sent it in; the owner marks it reviewed.
+    scannedBy: row.scanned_by_name || null,
+    scannedAt: row.scanned_by_name ? row.created_at : null,
+    scanReviewed: !!row.scan_reviewed_at,
   };
 }
 
@@ -374,6 +378,22 @@ export default function InvoicesPage() {
     try { localStorage.setItem("om_kept_dupes_" + restaurantId, JSON.stringify(next)); } catch {}
   };
 
+  /* Mark a scanned invoice reviewed. Shown at once; the list refreshes after. */
+  const handleMarkReviewed = useCallback(async (invoice) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/scanners", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ action: "review", invoice_id: invoice.id }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "Could not mark it reviewed.");
+    reloadInvoices(
+      (prev) => prev && { ...prev, invoices: prev.invoices.map((v) => (v.id === invoice.id ? { ...v, scanReviewed: true } : v)) },
+      { revalidate: true }
+    );
+  }, [reloadInvoices]);
+
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const lastUpload = invoices[0]?.isoDate ? "Last invoice " + invoices[0].date : "";
@@ -547,6 +567,7 @@ export default function InvoicesPage() {
         onSelect={handleSelect}
         ingredientOptions={ingredientOptions}
         onLinkLine={handleLinkLine}
+        onMarkReviewed={tourMode ? null : handleMarkReviewed}
         openInvoiceId={router.query.invoice || null}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
