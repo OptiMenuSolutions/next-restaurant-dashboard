@@ -262,10 +262,10 @@ export function MobileHeader({ theme, onToggleTheme, onSearch, onSignOut, restau
   const [menuOpen, setMenuOpen] = useState(false);
   const dark = theme === "dark";
   return (
-    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, background: "var(--shell)", padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-      {/* Fills the strip behind the phone clock and battery so the list does
-          not show through as it scrolls. Zero height when there is no safe area. */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
+    // Padded by the phone clock area (zero in a browser) instead of offset by
+    // it, so the header's own background fills behind the clock and the page
+    // starts below the header rather than underneath it.
+    <div style={{ position: "sticky", top: 0, zIndex: 50, background: "var(--shell)", padding: "calc(12px + env(safe-area-inset-top, 0px)) 16px 12px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
       {/* One image picked by theme, so this header also works outside the
           shared shell (the dashboard has its own stylesheet). */}
       <img src={dark ? logoDarkSrc : logoSrc} alt="optiMenu" style={{ height: 22, width: "auto" }} />
@@ -441,8 +441,9 @@ export function MobileSegmented({ options, value, onChange, variant = "solid" })
    optional item on the right (e.g. View original). Replaces MobileHeader there. */
 export function MobileBackBar({ label, onBack, title, right }) {
   return (
-    <div style={{ position: "sticky", top: "env(safe-area-inset-top, 0px)", zIndex: 50, height: 56, padding: "0 8px", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", background: "var(--shell)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: "env(safe-area-inset-top, 0px)", background: "var(--shell)", zIndex: 51 }} />
+    // Grows by the phone clock area (zero in a browser) instead of being
+    // offset by it, so the page below starts under the bar, not behind it.
+    <div style={{ position: "sticky", top: 0, zIndex: 50, boxSizing: "border-box", height: "calc(56px + env(safe-area-inset-top, 0px))", padding: "env(safe-area-inset-top, 0px) 8px 0", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", background: "var(--shell)", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
       <button type="button" onClick={onBack} style={{ justifySelf: "start", minHeight: 44, display: "flex", alignItems: "center", gap: 4, padding: "0 8px", background: "none", border: "none", fontFamily: SANS, fontSize: 14, fontWeight: 600, color: "var(--accent-deep)", cursor: "pointer" }}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
         {label}
