@@ -46,6 +46,9 @@ export default function App({ Component, pageProps }) {
   return (
     <>
       <Head>
+        {/* One viewport for every page. viewport-fit=cover lets the phone app
+            run edge to edge; headers pad themselves with env(safe-area-inset-*). */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" key="viewport" />
         <script dangerouslySetInnerHTML={{ __html: ANTI_FLASH_SCRIPT }} />
       </Head>
       <ThemeProvider>

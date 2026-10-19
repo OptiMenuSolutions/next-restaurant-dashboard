@@ -279,7 +279,6 @@ export default function ProfilePage() {
     <>
       <Head>
         <title>Profile &amp; settings — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <ProfileScreen
         NavLink={Link}

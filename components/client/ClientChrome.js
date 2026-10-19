@@ -143,6 +143,16 @@ export function useIsMobile(breakpoint = 900) {
   return mobile;
 }
 
+/* True inside the OptiMenu iPhone and Android app, which adds OptiMenuApp to
+   its user agent. Pricing and purchase screens are hidden there (App Store rules). */
+export function useInApp() {
+  const [inApp, setInApp] = useState(false);
+  useEffect(() => {
+    try { setInApp(/OptiMenuApp/i.test(navigator.userAgent)); } catch {}
+  }, []);
+  return inApp;
+}
+
 export const PAGE_PAD = "max(20px, calc((100vw - 1460px) / 2))";
 
 export function Shell({ theme, children, style }) {

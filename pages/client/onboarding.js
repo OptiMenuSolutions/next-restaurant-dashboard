@@ -252,7 +252,6 @@ export default function OnboardingPage() {
     <>
       <Head>
         <title>Set up your kitchen — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <OnboardingScreen
         NavLink={Link}

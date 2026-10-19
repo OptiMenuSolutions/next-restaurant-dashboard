@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
-import { useIsMobile, MobileBackBar, MobileNav } from "./ClientChrome";
+import { useIsMobile, useInApp, MobileBackBar, MobileNav } from "./ClientChrome";
 
 /**
  * ProfileScreen — ported from OptiMenu Profile.dc.html. Presentational;
@@ -35,6 +35,7 @@ export default function ProfileScreen({
 }) {
   const { header, theme } = useAccountChrome({ user, NavLink, onSignOut });
   const isMobile = useIsMobile(900);
+  const inApp = useInApp();
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [restaurantName, setRestaurantName] = useState(restaurantNameProp);
@@ -64,9 +65,9 @@ export default function ProfileScreen({
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
 
-  const flash = (text, isError) => {
+  const flash = (text, isError, persist = false) => {
     setMessage({ text, isError });
-    setTimeout(() => setMessage(null), 3500);
+    if (!persist) setTimeout(() => setMessage(null), 3500);
   };
 
   // Coming back from the Shift4 connect flow (?pos=...): open the Restaurant
@@ -82,7 +83,9 @@ export default function ProfileScreen({
       error: ["Could not connect Shift4. Please try again.", true],
     };
     const [text, isError] = results[posResult] || results.error;
-    flash(text, isError);
+    // Stays up (no auto-hide) so a cancelled or failed connect is not missed,
+    // with the Connect button right below it to try again (Shift4 OA-004).
+    flash(text, isError, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [posResult]);
 
@@ -210,6 +213,7 @@ export default function ProfileScreen({
                 </div>
               </div>
 
+              {!inApp && (
               <div style={card}>
                 <div style={cardHead}>Billing</div>
                 <div style={{ padding: "14px 18px", borderBottom: "1px solid var(--line-soft)" }}>
@@ -228,7 +232,7 @@ export default function ProfileScreen({
                   <div style={{ color: "var(--faint)", flexShrink: 0 }}>→</div>
                 </NavLink>
               </div>
-
+              )}
               <div style={card}>
                 <div style={cardHead}>Data &amp; privacy</div>
                 <div onClick={async () => { setExporting(true); await onExportData?.(); setExporting(false); flash("Data exported successfully"); }} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", cursor: "pointer", borderBottom: "1px solid var(--line-soft)" }}>
@@ -241,7 +245,7 @@ export default function ProfileScreen({
                 <div onClick={() => setShowDeleteModal(true)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", cursor: "pointer" }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 600, color: "var(--red)" }}>Delete account</div>
-                    <div style={{ fontSize: 12, color: "var(--red)", opacity: 0.7, marginTop: 2 }}>Permanently delete all data — cannot be undone</div>
+                    <div style={{ fontSize: 12, color: "var(--red)", opacity: 0.7, marginTop: 2 }}>Closes your account now, deletes all data after 60 days</div>
                   </div>
                   <div style={{ color: "var(--red)", flexShrink: 0 }}>→</div>
                 </div>
@@ -440,10 +444,12 @@ export default function ProfileScreen({
                   <div style={{ fontSize: 14, fontWeight: 600 }}>Email support</div>
                   <div style={{ color: "var(--faint)" }}>→</div>
                 </a>
-                <a href="https://www.opti-menu.com" target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", color: "var(--text)" }}>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>Visit opti-menu.com</div>
-                  <div style={{ color: "var(--faint)" }}>→</div>
-                </a>
+                {!inApp && (
+                  <a href="https://www.opti-menu.com" target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", color: "var(--text)" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>Visit opti-menu.com</div>
+                    <div style={{ color: "var(--faint)" }}>→</div>
+                  </a>
+                )}
               </div>
 
               <div style={{ textAlign: "center", fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, letterSpacing: "0.08em", color: "var(--faint)", marginBottom: 20 }}>OptiMenu · Founding member plan · v1.0</div>
@@ -459,7 +465,7 @@ export default function ProfileScreen({
           <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: isMobile ? "18px 18px 0 0" : 12, boxShadow: "var(--shadow-lg)", padding: isMobile ? "22px 18px calc(22px + env(safe-area-inset-bottom, 0px))" : 24, maxWidth: isMobile ? "none" : 400, width: "100%" }}>
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>Delete account</div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 20 }}>
-              This will permanently delete your account, restaurant, all invoices, ingredients, and menu items. <strong style={{ color: "var(--red)" }}>This cannot be undone.</strong>
+              Your account closes right away and billing stops. Your restaurant, invoices, ingredients and menu items are then <strong style={{ color: "var(--red)" }}>permanently deleted after 60 days</strong>. Sign back in before then if you change your mind.
               <br /><br />If you'd like to keep your data, export it first from the Data &amp; Privacy section.
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>

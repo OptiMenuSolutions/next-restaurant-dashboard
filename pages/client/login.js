@@ -133,7 +133,6 @@ export default function LoginPage() {
     <>
       <Head>
         <title>Sign in — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <AuthScreen mode="login" onSubmit={handleSubmit} onForgotPassword={handleForgotPassword} NavLink={Link} />
       {reactivatePrompt && (

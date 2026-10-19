@@ -43,8 +43,11 @@ export default async function handler(req, res) {
   }
   const returnTo = parsed?.returnTo || '/client/profile';
 
-  if (providerError) return back(res, `pos=denied`, returnTo);
-  if (!code || !parsed) return back(res, `pos=error`, returnTo);
+  // A denied or failed connect always lands on Profile, which shows what
+  // happened next to the Connect button (Shift4 OA-004). Onboarding's
+  // returnTo is the dashboard, which has no place to show it.
+  if (providerError) return back(res, `pos=denied`, '/client/profile');
+  if (!code || !parsed) return back(res, `pos=error`, '/client/profile');
 
   const { restaurantId, provider: providerId } = parsed;
 
@@ -77,6 +80,6 @@ export default async function handler(req, res) {
     return back(res, `pos=connected&provider=${providerId}`, returnTo);
   } catch (err) {
     console.error(`[pos/oauth-callback] ${providerId} connect failed:`, err.message);
-    return back(res, `pos=error`, returnTo);
+    return back(res, `pos=error`, '/client/profile');
   }
 }
