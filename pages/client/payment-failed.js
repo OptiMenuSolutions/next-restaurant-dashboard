@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import PaymentFailedScreen from "../../components/billing/PaymentFailedScreen";
+import WebsiteOnly from "../../components/client/WebsiteOnly";
 
-export default function PaymentFailedPage() {
+function PaymentFailedPage() {
   const router = useRouter();
 
   const handleRetry = async () => {
@@ -26,9 +27,12 @@ export default function PaymentFailedPage() {
     <>
       <Head>
         <title>Payment failed — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <PaymentFailedScreen onRetry={handleRetry} NavLink={Link} />
     </>
   );
+}
+
+export default function PaymentFailedRoute() {
+  return <WebsiteOnly><PaymentFailedPage /></WebsiteOnly>;
 }

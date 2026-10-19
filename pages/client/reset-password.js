@@ -79,7 +79,6 @@ export default function ResetPasswordPage() {
     <>
       <Head>
         <title>Reset password — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 22, background: "#f6f2e9" }}>
         <div style={{ width: "100%", maxWidth: 420, background: "#fff", borderRadius: 14, padding: "36px 32px", boxShadow: "0 22px 60px rgba(17,24,25,0.1)" }}>

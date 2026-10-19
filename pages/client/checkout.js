@@ -6,6 +6,7 @@ import { Elements } from "@stripe/react-stripe-js";
 import supabase from "../../lib/supabaseClient";
 import { getStripe } from "../../lib/stripeClient";
 import CheckoutScreen from "../../components/billing/CheckoutScreen";
+import WebsiteOnly from "../../components/client/WebsiteOnly";
 
 /**
  * pages/client/checkout.js — data container for BOTH first-time
@@ -21,7 +22,7 @@ import CheckoutScreen from "../../components/billing/CheckoutScreen";
  * checkout since no subscription exists yet); onSuccess navigates to the
  * real checkout-success page immediately, no inline "you're in" screen.
  */
-export default function CheckoutPage() {
+function CheckoutPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -64,7 +65,6 @@ export default function CheckoutPage() {
     <>
       <Head>
         <title>{intent?.mode === "subscribe" ? "Subscribe" : "Update payment method"} — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
       {loading && (
@@ -96,4 +96,8 @@ export default function CheckoutPage() {
       )}
     </>
   );
+}
+
+export default function CheckoutRoute() {
+  return <WebsiteOnly><CheckoutPage /></WebsiteOnly>;
 }

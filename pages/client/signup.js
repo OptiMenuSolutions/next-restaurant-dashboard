@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import AuthScreen from "../../components/client/AuthScreen";
+import WebsiteOnly from "../../components/client/WebsiteOnly";
 
 /**
  * pages/client/signup.js — data container.
@@ -23,7 +24,7 @@ import AuthScreen from "../../components/client/AuthScreen";
  * "check your email" state — login.js has a matching fallback that creates
  * the profile on first successful sign-in in that case.
  */
-export default function SignupPage() {
+function SignupPage() {
   const router = useRouter();
 
   const handleSubmit = async ({ fullName, email, password }) => {
@@ -59,9 +60,12 @@ export default function SignupPage() {
     <>
       <Head>
         <title>Create your account — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <AuthScreen mode="signup" onSubmit={handleSubmit} NavLink={Link} />
     </>
   );
+}
+
+export default function SignupRoute() {
+  return <WebsiteOnly><SignupPage /></WebsiteOnly>;
 }

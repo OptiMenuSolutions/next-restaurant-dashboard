@@ -3,6 +3,7 @@ import Head from "next/head";
 import Link from "next/link";
 import supabase from "../../lib/supabaseClient";
 import CheckoutSuccessScreen from "../../components/billing/CheckoutSuccessScreen";
+import WebsiteOnly from "../../components/client/WebsiteOnly";
 
 /**
  * pages/client/checkout-success.js — data container. Was previously a bare
@@ -11,7 +12,7 @@ import CheckoutSuccessScreen from "../../components/billing/CheckoutSuccessScree
  * just subscribed. Now fetches the real values from /api/stripe/
  * subscription-summary.
  */
-export default function CheckoutSuccessPage() {
+function CheckoutSuccessPage() {
   const [summary, setSummary] = useState(null);
   const [alreadyOnboarded, setAlreadyOnboarded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,6 @@ export default function CheckoutSuccessPage() {
     <>
       <Head>
         <title>You're in — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       {!loading && (
         <CheckoutSuccessScreen
@@ -65,4 +65,8 @@ export default function CheckoutSuccessPage() {
       )}
     </>
   );
+}
+
+export default function CheckoutSuccessRoute() {
+  return <WebsiteOnly><CheckoutSuccessPage /></WebsiteOnly>;
 }

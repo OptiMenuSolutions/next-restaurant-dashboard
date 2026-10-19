@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useInApp } from "./ClientChrome";
 
 /**
  * AuthScreen — OptiMenu login + signup, ported from OptiMenu Auth.dc.html.
@@ -14,6 +15,7 @@ import { useState } from "react";
  */
 export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword, NavLink = DefaultLink, showConfirmEmail = false }) {
   const isLogin = mode === "login";
+  const inApp = useInApp();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -209,15 +211,20 @@ export default function AuthScreen({ mode = "login", onSubmit, onForgotPassword,
                 </button>
               </form>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "14px 0 10px" }}>
-                <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
-                <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9aa5a7" }}>{isLogin ? "New to OptiMenu?" : "Already a member?"}</span>
-                <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
-              </div>
+              {/* No sign-up path inside the app: new restaurants sign up on the website. */}
+              {!(isLogin && inApp) && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, margin: "14px 0 10px" }}>
+                    <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "#9aa5a7" }}>{isLogin ? "New to OptiMenu?" : "Already a member?"}</span>
+                    <span style={{ flex: 1, height: 1, background: "#eaeeef" }} />
+                  </div>
 
-              <NavLink href={isLogin ? "/client/signup" : "/client/login"} style={{ display: "block", width: "100%", textAlign: "center", background: "transparent", border: "1px solid #d7dedf", borderRadius: 26, padding: 11, fontSize: 15, fontWeight: 600, color: "#111819" }}>
-                {isLogin ? "Create your account" : "Sign in to your account"}
-              </NavLink>
+                  <NavLink href={isLogin ? "/client/signup" : "/client/login"} style={{ display: "block", width: "100%", textAlign: "center", background: "transparent", border: "1px solid #d7dedf", borderRadius: 26, padding: 11, fontSize: 15, fontWeight: 600, color: "#111819" }}>
+                    {isLogin ? "Create your account" : "Sign in to your account"}
+                  </NavLink>
+                </>
+              )}
 
               {!isLogin && (
                 <p style={{ fontSize: 11.5, lineHeight: 1.4, color: "#9aa5a7", textAlign: "center", marginTop: 8 }}>

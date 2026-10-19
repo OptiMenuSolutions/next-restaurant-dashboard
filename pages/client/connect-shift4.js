@@ -94,7 +94,6 @@ export default function ConnectShift4Page() {
     <>
       <Head>
         <title>Connect Shift4 — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <div style={{ minHeight: "100vh", background: "#eef0ef", display: "flex", alignItems: "center", justifyContent: "center", padding: "36px 20px", fontFamily: "'Manrope',system-ui,sans-serif", color: "#111819" }}>
         <div style={{ width: "100%", maxWidth: 520, background: "#fff", border: "1px solid #d8dfe0", borderRadius: 14, boxShadow: "0 22px 60px rgba(17,24,25,0.12)", padding: "36px 34px" }}>

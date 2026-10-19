@@ -5,6 +5,7 @@ import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import BillingScreen from "../../components/client/BillingScreen";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
+import WebsiteOnly from "../../components/client/WebsiteOnly";
 
 /**
  * pages/client/billing.js — data container.
@@ -27,7 +28,7 @@ import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
  * thing to want) and doesn't require onboarding to be finished either —
  * someone might reasonably want to fix a card issue before finishing setup.
  */
-export default function BillingPage() {
+function BillingPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [card, setCard] = useState(null);
@@ -103,7 +104,6 @@ export default function BillingPage() {
     <>
       <Head>
         <title>Billing &amp; subscription — OptiMenu</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
       <BillingScreen
         NavLink={Link}
@@ -116,4 +116,8 @@ export default function BillingPage() {
       />
     </>
   );
+}
+
+export default function BillingRoute() {
+  return <WebsiteOnly><BillingPage /></WebsiteOnly>;
 }
