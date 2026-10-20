@@ -6,8 +6,9 @@
 // POST { action: "start", pages, retake_of? } -> { scanId, uploads: [{ path, token }] }
 //        Makes the scan and one signed upload slot per page. The phone uploads
 //        each photo, then calls /api/scanner/process with the scanId.
-// POST { action: "leave" }                    -> { ok }  (ends this phone's login)
-import { admin, requireScanner, endScannerLogin } from '../../../lib/scannerAuth';
+// POST { action: "leave" }                    -> { ok }  (this phone's key stops working)
+// Every call carries the phone's device key in the X-Scanner-Key header.
+import { admin, requireScanner } from '../../../lib/scannerAuth';
 
 const nowIso = () => new Date().toISOString();
 
@@ -84,10 +85,10 @@ export default async function handler(req, res) {
   }
 
   if (body.action === 'leave') {
+    // Removing the row is what stops this phone's key working.
     await admin.from('restaurant_scanners')
-      .update({ removed_at: nowIso(), removed_by: 'self' })
+      .update({ removed_at: nowIso(), removed_by: 'self', key_hash: null })
       .eq('id', scanner.id);
-    await endScannerLogin(auth.user.id);
     return res.status(200).json({ ok: true });
   }
 

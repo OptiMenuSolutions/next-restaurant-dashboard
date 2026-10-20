@@ -1,8 +1,8 @@
 // pages/api/scanner/join.js
 // GET  ?code=482913  -> { restaurantName, name }  (shown before joining; no sign-in needed)
-// POST { code }       -> { ok }  with the phone's new email-less login as Bearer.
-//                        Uses up the code and links this login to the restaurant.
-import { admin } from '../../../lib/scannerAuth';
+// POST { code }       -> { key }  Uses up the code and makes this phone's device
+//                        key. The phone keeps the key; only a scrambled copy is stored.
+import { admin, newScannerKey, hashScannerKey } from '../../../lib/scannerAuth';
 
 const nowIso = () => new Date().toISOString();
 const clean = (c) => String(c || '').replace(/\D/g, '').slice(0, 6);
@@ -32,13 +32,8 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') return res.status(405).end();
 
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  const { data: auth } = token ? await admin.auth.getUser(token) : { data: null };
-  const user = auth?.user;
-  // Only an email-less login can join. An owner signed in on this phone
-  // would otherwise turn their own account into a scanner.
-  if (!user || !user.is_anonymous) return res.status(401).json({ error: 'Please start again from the code screen.' });
+  // A key this phone already holds, if it scanned somewhere before.
+  const oldKey = String(req.headers['x-scanner-key'] || '');
 
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
   const code = clean(body.code);
@@ -48,25 +43,30 @@ export default async function handler(req, res) {
   // Claim the code first, so two phones using it at once cannot both join.
   const { data: claimed } = await admin
     .from('scanner_invites')
-    .update({ used_at: nowIso(), used_by: user.id })
+    .update({ used_at: nowIso() })
     .eq('id', invite.id).is('used_at', null)
     .select('id').maybeSingle();
   if (!claimed) return res.status(404).json({ error: NOT_FOUND });
 
-  // One restaurant per phone: an earlier membership on this login ends.
-  await admin.from('restaurant_scanners')
-    .update({ removed_at: nowIso(), removed_by: 'rejoined' })
-    .eq('user_id', user.id).is('removed_at', null);
+  // One restaurant per phone: a key this phone already holds stops working.
+  if (oldKey.length >= 32) {
+    await admin.from('restaurant_scanners')
+      .update({ removed_at: nowIso(), removed_by: 'rejoined' })
+      .eq('key_hash', hashScannerKey(oldKey)).is('removed_at', null);
+  }
 
+  // The phone keeps the key; only its scrambled copy is stored here.
+  const key = newScannerKey();
   const { error } = await admin.from('restaurant_scanners').insert({
     restaurant_id: invite.restaurant_id,
-    user_id: user.id,
     name: invite.name,
     invite_id: invite.id,
+    key_hash: hashScannerKey(key),
+    last_seen_at: nowIso(),
   });
   if (error) {
-    await admin.from('scanner_invites').update({ used_at: null, used_by: null }).eq('id', invite.id);
+    await admin.from('scanner_invites').update({ used_at: null }).eq('id', invite.id);
     return res.status(500).json({ error: 'Could not join right now. Please try again.' });
   }
-  return res.status(200).json({ ok: true });
+  return res.status(200).json({ key });
 }

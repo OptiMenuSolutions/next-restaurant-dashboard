@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import supabase from "../../lib/supabaseClient";
+import { scannerHeaders, setScannerKey } from "../../lib/scannerKey";
 import { Shell, useTheme, FONT_LINKS, MONO, SANS } from "../../components/client/ClientChrome";
 
 /**
@@ -9,9 +9,10 @@ import { Shell, useTheme, FONT_LINKS, MONO, SANS } from "../../components/client
  * owner sent them. Reached from "I have a scanner code" on the login screen,
  * or from the invite link (/join/482913 fills the code in).
  *
- * Joining signs this phone in without an email (a Supabase anonymous login,
- * kept on the phone) and links it to the restaurant. Scanners never get a
- * profile or a restaurant_id, so nothing else in OptiMenu opens for them.
+ * Joining gives this phone a device key (kept on the phone) that only the
+ * /api/scanner routes understand. It is not a Supabase login, so nothing else
+ * in OptiMenu opens for it, and an owner signed in on the same phone stays
+ * signed in.
  */
 
 const CamIcon = ({ size = 28, color = "var(--accent-deep)" }) => (
@@ -29,7 +30,6 @@ export default function JoinPage() {
   const [checking, setChecking] = useState(false);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
-  const [ownerSignedIn, setOwnerSignedIn] = useState(false);
 
   // Code from the invite link.
   useEffect(() => {
@@ -37,13 +37,6 @@ export default function JoinPage() {
     const q = String(router.query.code || "").replace(/\D/g, "").slice(0, 6);
     if (q) setCode(q);
   }, [router.isReady, router.query.code]);
-
-  // An owner already signed in on this phone would be signed out by joining.
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setOwnerSignedIn(!!session?.user && !session.user.is_anonymous);
-    });
-  }, []);
 
   // Look the code up as soon as all 6 digits are in.
   useEffect(() => {
@@ -69,23 +62,15 @@ export default function JoinPage() {
     setJoining(true);
     setError("");
     try {
-      let { data: { session } } = await supabase.auth.getSession();
-      if (session?.user && !session.user.is_anonymous) {
-        await supabase.auth.signOut();
-        session = null;
-      }
-      if (!session) {
-        const { data, error: signInError } = await supabase.auth.signInAnonymously();
-        if (signInError) throw signInError;
-        session = data.session;
-      }
+      // Sends any key this phone already holds, so that old one stops working.
       const res = await fetch("/api/scanner/join", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        headers: scannerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ code }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || "Could not join right now.");
+      if (!res.ok || !json.key) throw new Error(json.error || "Could not join right now.");
+      setScannerKey(json.key);
       router.replace("/client/scan");
     } catch (e) {
       setError(e.message || "Could not join right now.");
@@ -163,12 +148,6 @@ export default function JoinPage() {
                   <span style={{ display: "block", fontSize: 12.5, color: "var(--muted)", marginTop: 1 }}>You&rsquo;ll scan invoices as <strong style={{ color: "var(--text)" }}>{preview.name}</strong></span>
                 </span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
-              </div>
-            )}
-
-            {preview && ownerSignedIn && (
-              <div style={{ marginTop: 12, fontSize: 12.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                This phone is signed in to an owner account. Starting will sign it out and use this phone for scanning only.
               </div>
             )}
 

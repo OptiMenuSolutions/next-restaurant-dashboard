@@ -10,6 +10,7 @@ import { Analytics } from '@vercel/analytics/react';
 import { mutate } from 'swr';
 import supabase from '../lib/supabaseClient';
 import { useRouter } from 'next/router';
+import { getScannerKey } from '../lib/scannerKey';
 
 // Pages a scanner may open. Login stays open so an owner can still sign in
 // on a phone that was used for scanning.
@@ -48,14 +49,16 @@ export default function App({ Component, pageProps }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // A scanner (signed in with a scanner code, no email) only ever sees the
-  // scan screens. Any other page under /client sends them back to /client/scan.
+  // A scanner's phone (a scanner key, nobody signed in) only ever sees the
+  // scan screens. Any other page under /client sends it to /client/scan. An
+  // owner signed in on the same phone keeps the owner pages.
   const router = useRouter();
   useEffect(() => {
     const path = router.pathname || '';
     if (!path.startsWith('/client') || SCANNER_PAGES.some((p) => path.startsWith(p))) return;
+    if (!getScannerKey()) return;
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.is_anonymous) router.replace('/client/scan');
+      if (!session) router.replace('/client/scan');
     });
   }, [router.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
+import { getScannerKey, clearScannerKey, scannerHeaders } from "../../lib/scannerKey";
 import { Shell, useTheme, FONT_LINKS, MONO, SANS } from "../../components/client/ClientChrome";
 
 /**
@@ -58,7 +59,7 @@ export default function ScanPage() {
   const dark = theme === "dark";
   const camera = useRef(null);
 
-  const [token, setToken] = useState(null);
+  const [hasKey, setHasKey] = useState(false);
   const [me, setMe] = useState(null);
   const [loadError, setLoadError] = useState("");
   const [removed, setRemoved] = useState(false);
@@ -72,23 +73,15 @@ export default function ScanPage() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
-  // Only a scanner's email-less login belongs here.
+  // Only a phone holding a scanner's device key belongs here.
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.user) { router.replace("/client/login"); return; }
-      if (!session.user.is_anonymous) { router.replace("/client/dashboard"); return; }
-      setToken(session.access_token);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
-      if (session?.access_token) setToken(session.access_token);
-    });
-    return () => sub.subscription.unsubscribe();
+    if (getScannerKey()) setHasKey(true);
+    else router.replace("/client/join");
   }, [router]);
-
   const load = useCallback(async () => {
-    if (!token) return;
+    if (!hasKey) return;
     try {
-      const res = await fetch(`/api/scanner?since=${encodeURIComponent(startOfToday())}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/scanner?since=${encodeURIComponent(startOfToday())}`, { headers: scannerHeaders() });
       const json = await res.json().catch(() => ({}));
       if (res.status === 403 && json.removed) { setRemoved(true); return; }
       if (!res.ok) throw new Error(json.error || "Could not load your scans.");
@@ -97,7 +90,7 @@ export default function ScanPage() {
     } catch (e) {
       setLoadError(e.message || "Could not load your scans.");
     }
-  }, [token]);
+  }, [hasKey]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -149,7 +142,7 @@ export default function ScanPage() {
     try {
       const res = await fetch("/api/scanner", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: scannerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ action: "start", pages: pages.length, retake_of: retakeOf }),
       });
       const json = await res.json().catch(() => ({}));
@@ -166,7 +159,7 @@ export default function ScanPage() {
       // thank-you, and today's list shows it as Sending until it is done.
       fetch("/api/scanner/process", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: scannerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ scan_id: json.scanId }),
         keepalive: false,
       }).then(load).catch(load);
@@ -187,16 +180,16 @@ export default function ScanPage() {
     try {
       await fetch("/api/scanner", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: scannerHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ action: "leave" }),
       });
     } catch {}
-    await supabase.auth.signOut({ scope: "local" });
+    clearScannerKey();
     router.replace("/client/login");
   };
 
-  const startOver = async () => {
-    await supabase.auth.signOut({ scope: "local" });
+  const startOver = () => {
+    clearScannerKey();
     router.replace("/client/join");
   };
 
