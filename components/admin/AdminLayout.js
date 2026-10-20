@@ -9,7 +9,7 @@ const NAV = [
   {
     group: 'Overview',
     items: [
-      { label: 'Dashboard',       href: '/admin',                icon: 'grid' },
+      { label: 'Dashboard',       href: '/admin/old',            icon: 'grid' },
       { label: 'MRR & Revenue',   href: '/admin/revenue',        icon: 'trending-up' },
       { label: 'Churn Forecast',  href: '/admin/churn',          icon: 'activity' },
     ],
@@ -339,7 +339,7 @@ export default function AdminLayout({ children, title = 'Admin' }) {
   };
 
   const isActive = (href) => {
-    if (href === '/admin') return router.pathname === '/admin';
+    if (href === '/admin/old') return router.pathname === '/admin/old';
     return router.pathname.startsWith(href);
   };
 
@@ -366,7 +366,7 @@ export default function AdminLayout({ children, title = 'Admin' }) {
           </div>
           <div style={styles.topbarRight}>
             <NotificationBell router={router} />
-            <span style={styles.adminBadge}>Super Admin</span>
+            <button onClick={() => router.push('/admin')} style={{ ...styles.adminBadge, cursor: 'pointer' }}>New admin →</button>
             <div style={styles.avatar}>NP</div>
             <button
               onClick={handleSignOut}
