@@ -9,11 +9,12 @@
 // Two authorization paths:
 //   - Authenticated dashboard user: Bearer token + restaurantId, verified
 //     against that user's own profile.restaurant_id.
-//   - Staff/NFC page: nfcToken instead of a Bearer token — there is no user
-//     session on that page at all by design (staff shouldn't need
-//     accounts). The nfc_token itself is the authorization, resolved
-//     server-side to a restaurant id — a client-supplied restaurantId is
-//     never trusted without either a verified session or a valid token.
+//   - Tag page (/t/<code>): tagCode, a random code stored in nfc_tags and
+//     resolved server-side to a restaurant id.
+//   - Older staff links (/staff/<token>): nfcToken, resolved the same way.
+//   Neither staff path has a user session, by design. A client-supplied
+//   restaurantId is never trusted without a verified session or a valid
+//   code or token. Staff paths only get title, description, talking_point.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
@@ -402,15 +403,35 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
   return recommendations;
 }
 
+// What a staff page is allowed to see from a ticket.
+const forStaff = (r) => ({
+  title: r?.title ?? null,
+  description: r?.description ?? null,
+  talking_point: r?.talking_point ?? null,
+});
+
 // ─── On-demand handler ────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
 
   try {
-    const { restaurantId: bodyRestaurantId, nfcToken } = req.body;
+    const { restaurantId: bodyRestaurantId, nfcToken, tagCode } = req.body;
+    // Staff pages only get what the tickets show, never the operator notes.
+    const staffView = !!(tagCode || nfcToken);
     let restaurantId = null;
 
-    if (nfcToken) {
+    if (tagCode) {
+      // Tag path (/t/<code>). The random code is the authorization and is
+      // resolved to a restaurant here, server side.
+      const { data: tags } = await supabase
+        .from('nfc_tags')
+        .select('restaurant_id')
+        .eq('code', String(tagCode).toLowerCase())
+        .eq('status', 'active')
+        .limit(1);
+      if (!tags?.length) return res.status(403).json({ error: 'Invalid tag' });
+      restaurantId = tags[0].restaurant_id;
+    } else if (nfcToken) {
       // Staff/NFC path — no user session exists here at all, by design.
       // The token itself is the authorization; never trust a client-
       // supplied restaurantId without either this or a verified session.
@@ -458,7 +479,7 @@ export default async function handler(req, res) {
       .single();
 
     if (!cacheError && cached?.recommendations) {
-      return res.status(200).json({ recommendations: cached.recommendations, cached: true, date: currentDate });
+      return res.status(200).json({ recommendations: staffView ? cached.recommendations.map(forStaff) : cached.recommendations, cached: true, date: currentDate });
     }
 
     // Generating costs a Claude call, so only for restaurants that are paid
@@ -468,7 +489,7 @@ export default async function handler(req, res) {
     if (sub.error) return res.status(sub.status).json({ recommendations: [], error: sub.error });
 
     const recommendations = await generateForRestaurant(restaurantId, currentDate, dayOfWeek);
-    return res.status(200).json({ recommendations, cached: false, date: currentDate });
+    return res.status(200).json({ recommendations: staffView ? recommendations.map(forStaff) : recommendations, cached: false, date: currentDate });
 
   } catch (err) {
     console.error('[ai-recommendations] Error:', err);
