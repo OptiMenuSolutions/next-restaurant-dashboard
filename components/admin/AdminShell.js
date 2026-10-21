@@ -22,7 +22,7 @@ export const SECTIONS = [
   { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
   { label: 'Data quality', href: '/admin/review', subs: [['Review queue', '/admin/review'], ['Cost approvals', '/admin/costs'], ['Ingredient library', '/admin/ingredients']] },
   { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/health']] },
-  { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Settings', '/admin/flags']] },
+  { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Expenses & deadlines', '/admin/finances'], ['Settings', '/admin/settings']] },
 ];
 
 // Extra tokens the admin uses on top of ClientChrome's.

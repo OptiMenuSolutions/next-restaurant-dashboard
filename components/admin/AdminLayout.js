@@ -10,7 +10,7 @@ const NAV = [
     group: 'Overview',
     items: [
       { label: 'Dashboard',       href: '/admin/old',            icon: 'grid' },
-      { label: 'MRR & Revenue',   href: '/admin/revenue',        icon: 'trending-up' },
+      { label: 'MRR & Revenue',   href: '/admin/old/revenue',    icon: 'trending-up' },
       { label: 'Churn Forecast',  href: '/admin/churn',          icon: 'activity' },
     ],
   },
@@ -38,7 +38,7 @@ const NAV = [
       { label: 'AI Usage & Costs', href: '/admin/old/ai',        icon: 'cpu' },
       { label: 'Global Ingredients', href: '/admin/old/ingredients', icon: 'list' },
       { label: 'Parse Quality',   href: '/admin/parse-quality',  icon: 'check-circle' },
-      { label: 'Feature Flags',   href: '/admin/flags',          icon: 'flag' },
+      { label: 'Feature Flags',   href: '/admin/old/flags',      icon: 'flag' },
     ],
   },
   {

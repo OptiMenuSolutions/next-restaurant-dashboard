@@ -1,339 +1,176 @@
 // pages/admin/revenue.js
-// MRR & Revenue page — real Stripe data.
+// Revenue & billing: MRR, money collected, estimated profit, cancellations,
+// founding seats, 12 months of collected revenue, failed payments, and every
+// restaurant's plan with a link to its full billing page.
+// The old MRR & Revenue page is at /admin/old/revenue.
 
-import { useEffect, useState } from 'react';
-import AdminLayout from '../../components/admin/AdminLayout';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
-import { usePagination, Pagination } from '../../lib/admin/usePagination';
+import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
+import { Chip, Card, th, td, money, shortDate } from '../../components/admin/ui';
 
-const PAGE_SIZE = 12;
+const ST = {
+  ACTIVE: ['var(--green-tint)', 'var(--green)'], TRIAL: ['var(--accent-tint)', 'var(--accent-deep)'],
+  'PAYMENT FAILED': ['var(--red-tint)', 'var(--red)'], CANCELING: ['var(--amber-tint)', 'var(--amber)'],
+  'NO CARD YET': ['var(--amber-tint)', 'var(--amber)'], CANCELED: ['var(--panel)', 'var(--muted)'], 'NO PLAN': ['var(--panel)', 'var(--muted)'],
+};
+const monthName = (m, style = 'short') => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: style }).format(new Date(m + '-15T12:00:00Z'));
 
-function timeAgo(unix) {
-  if (!unix) return '—';
-  const diff = Date.now() - unix * 1000;
-  const days = Math.floor(diff / 86400000);
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 30) return `${days}d ago`;
-  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
-  return `${Math.floor(days / 365)}y ago`;
-}
-
-function formatDate(unix) {
-  if (!unix) return '—';
-  return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function statusStyle(status) {
-  const map = {
-    active:   { bg: 'rgba(61,232,160,0.1)',  border: 'rgba(61,232,160,0.25)',  text: '#3de8a0' },
-    trialing: { bg: 'rgba(2,164,186,0.1)',   border: 'rgba(2,164,186,0.25)',  text: '#02a4ba' },
-    past_due: { bg: 'rgba(245,166,35,0.1)',  border: 'rgba(245,166,35,0.25)', text: '#f5a623' },
-    canceled: { bg: 'rgba(232,84,84,0.1)',   border: 'rgba(232,84,84,0.25)',  text: '#e85454' },
-  };
-  const c = map[status] || { bg: 'rgba(255,255,255,0.04)', border: '#1e2028', text: '#5a6080' };
-  return (
-    <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 7px', borderRadius: 20,
-      textTransform: 'capitalize', letterSpacing: '0.3px',
-      background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
-      {status.replace('_', ' ')}
-    </span>
-  );
-}
-
-function MrrChart({ data }) {
-  if (!data?.length) return null;
-  const max = Math.max(...data.map(d => d.value), 1);
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 80, paddingTop: 20 }}>
-      {data.map((d, i) => {
-        const isLatest = i === data.length - 1;
-        return (
-          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%' }}>
-            <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
-              {d.value > 0 && (
-                <div style={{
-                  fontSize: 7, color: isLatest ? '#02a4ba' : '#3a3e50',
-                  fontFamily: "'DM Mono', monospace", marginBottom: 2, whiteSpace: 'nowrap',
-                }}>
-                  ${d.value.toLocaleString()}
-                </div>
-              )}
-              <div style={{
-                width: '100%',
-                borderRadius: '3px 3px 0 0',
-                background: isLatest ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.65})`,
-                height: d.value > 0 ? `${(d.value / max) * 100}%` : '2px',
-                minHeight: 2,
-                transition: 'height 0.6s',
-              }} />
-            </div>
-            <span style={{ fontSize: 8, color: '#3a3e50' }}>{d.label}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Card({ title, children, style }) {
-  return (
-    <div style={{ background: '#111318', border: '1px solid #1e2028', borderRadius: 8, overflow: 'hidden', ...style }}>
-      {title && (
-        <div style={{ fontSize: 9, fontWeight: 700, color: '#5a6080', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '14px 14px 0', marginBottom: 12 }}>
-          {title}
-        </div>
-      )}
-      {children}
-    </div>
-  );
-}
-
-export default function RevenuePage() {
+function RevenuePage() {
+  const router = useRouter();
   const { adminFetch } = useAdminFetch();
-  const [data, setData]       = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [subSearch, setSubSearch] = useState('');
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res  = await adminFetch('/api/admin/revenue');
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const res = await adminFetch('/api/admin/business/revenue');
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load revenue');
+      setData(json);
+    } catch (e) {
+      setError(e.message);
     }
-    load();
   }, [adminFetch]);
+  useEffect(() => { load(); }, [load]);
 
-  const d = data || {};
-  const momColor = d.momChange > 0 ? '#3de8a0' : d.momChange < 0 ? '#e85454' : '#5a6080';
-  const momSign  = d.momChange > 0 ? '+' : '';
+  if (error) return <ErrorState message={error} onRetry={load} />;
+  if (!data) return <LoadingState label="Loading revenue from Stripe…" />;
 
-  const filteredSubs = (d.subscriptions || []).filter(sub => {
-    const q = subSearch.toLowerCase();
-    return !q || (sub.customer_email || '').toLowerCase().includes(q) || (sub.customer_name || '').toLowerCase().includes(q);
-  });
-
-  const subPag    = usePagination(filteredSubs, PAGE_SIZE);
-  const chargePag = usePagination(d.recentCharges || [], PAGE_SIZE);
-
-  if (loading) return (
-    <AdminLayout title="Revenue">
-      <div style={s.center}><div style={s.spinner} /><span style={{ color: '#3a3e50', fontSize: 12 }}>Loading…</span></div>
-    </AdminLayout>
-  );
+  const mName = monthName(data.month, 'long');
+  const kpis = [
+    { k: 'MONTHLY RECURRING', v: money(data.mrr), s: `${data.paying} paying${data.trials ? ` · ${data.trials} on trial` : ''} · ${money(data.mrr * 12, 0)} a year` },
+    { k: `COLLECTED · ${mName.toUpperCase()}`, v: money(data.collectedThis), s: `${monthName(data.chart[10].month, 'long')}: ${money(data.collectedPrev)}` },
+    { k: `PROFIT · ${mName.toUpperCase()}`, v: money(data.profit), s: 'Estimate, after AI, hosting, Stripe fees and one-off costs', tone: data.profit < 0 ? 'var(--red)' : 'var(--green)' },
+    { k: 'CANCELLATIONS · 90 DAYS', v: String(data.cancels), s: data.topReason ? `Top reason: ${data.topReason}` : 'None' },
+  ];
 
   return (
-    <AdminLayout title="MRR & Revenue">
-      <div style={s.page}>
+    <>
+      <PageHead kicker="BUSINESS" title="Revenue & billing">
+        <a className="om-btn" href="https://dashboard.stripe.com" target="_blank" rel="noreferrer">Open Stripe ↗</a>
+      </PageHead>
+      {data.stripeError && <div style={{ background: 'var(--red-tint)', color: 'var(--red)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>Stripe did not answer: {data.stripeError}. Plans and money below may be missing.</div>}
 
-        {/* ── Header ── */}
-        <div>
-          <h1 style={s.title}>MRR & Revenue</h1>
-          <p style={s.subtitle}>Live Stripe data · updates on refresh</p>
-        </div>
-
-        {/* ── KPI Row ── */}
-        <div style={s.kpiGrid}>
-          <Card style={{ padding: 0 }}>
-            <div style={{ padding: '14px' }}>
-              <div style={s.kpiLabel}>Monthly Recurring Revenue</div>
-              <div style={{ ...s.kpiValue, color: '#02a4ba' }}>${(d.mrr || 0).toLocaleString()}</div>
-              {d.momChange != null && (
-                <div style={{ fontSize: 9, color: momColor, marginTop: 3 }}>
-                  {momSign}{d.momChange}% vs last month
-                </div>
-              )}
-            </div>
-          </Card>
-
-          <Card style={{ padding: 0 }}>
-            <div style={{ padding: '14px' }}>
-              <div style={s.kpiLabel}>ARR Run-Rate</div>
-              <div style={s.kpiValue}>${(d.arr || 0).toLocaleString()}</div>
-              <div style={{ fontSize: 9, color: '#3a3e50', marginTop: 3 }}>based on current MRR</div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 0 }}>
-            <div style={{ padding: '14px' }}>
-              <div style={s.kpiLabel}>This Month Revenue</div>
-              <div style={s.kpiValue}>${(d.thisMonthRevenue || 0).toLocaleString()}</div>
-              <div style={{ fontSize: 9, color: '#3a3e50', marginTop: 3 }}>
-                Last month: ${(d.lastMonthRevenue || 0).toLocaleString()}
-              </div>
-            </div>
-          </Card>
-
-          <Card style={{ padding: 0 }}>
-            <div style={{ padding: '14px' }}>
-              <div style={s.kpiLabel}>Subscriptions</div>
-              <div style={s.kpiValue}>{d.activeCount || 0}</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 5 }}>
-                {d.trialingCount > 0 && <span style={{ fontSize: 8, color: '#02a4ba' }}>{d.trialingCount} trialing</span>}
-                {d.pastDueCount  > 0 && <span style={{ fontSize: 8, color: '#f5a623' }}>{d.pastDueCount} past due</span>}
-                {d.canceledCount > 0 && <span style={{ fontSize: 8, color: '#e85454' }}>{d.canceledCount} canceled</span>}
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* ── MRR Chart + Failed Payments ── */}
-        <div style={s.row2}>
-          <Card title="Revenue by Month (Last 6 Months)">
-            <div style={{ padding: '0 14px 14px' }}>
-              <MrrChart data={d.mrrHistory} />
-            </div>
-          </Card>
-
-          <Card title={`Failed Payments (${(d.failedInvoices || []).length})`}>
-            <div style={{ padding: '0 14px 14px' }}>
-              {(d.failedInvoices || []).length === 0
-                ? <p style={s.empty}>No failed payments 🎉</p>
-                : (d.failedInvoices || []).map(inv => (
-                  <div key={inv.id} style={s.listRow}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, color: '#e4e6f0', fontWeight: 600 }}>{inv.customer_email}</div>
-                      <div style={{ fontSize: 9, color: '#5a6080' }}>
-                        {inv.attempt_count} attempt{inv.attempt_count !== 1 ? 's' : ''}
-                        {inv.next_payment_attempt ? ` · next retry ${formatDate(inv.next_payment_attempt)}` : ''}
-                      </div>
-                    </div>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#e85454' }}>
-                      ${inv.amount.toFixed(2)}
-                    </span>
-                  </div>
-                ))
-              }
-            </div>
-          </Card>
-        </div>
-
-        {/* ── All Subscriptions — paginated ── */}
-        <Card title="All Subscriptions">
-          <div style={{ padding: '0 14px 12px' }}>
-            <input
-              style={s.search}
-              placeholder="Search by email or name…"
-              value={subSearch}
-              onChange={e => { setSubSearch(e.target.value); subPag.reset(); }}
-            />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
+        {kpis.map((x) => (
+          <div key={x.k} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{x.k}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4, color: x.tone || 'var(--text)' }}>{x.v}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{x.s}</div>
           </div>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                {['Customer', 'Status', 'Amount', 'Renews', 'Started', ''].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {subPag.pageItems.length === 0
-                ? <tr><td colSpan={6} style={{ ...s.td, textAlign: 'center', color: '#3a3e50', padding: 24 }}>No subscriptions found</td></tr>
-                : subPag.pageItems.map(sub => (
-                  <tr key={sub.id} style={s.row}>
-                    <td style={s.td}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: '#e4e6f0' }}>{sub.customer_name || sub.customer_email}</div>
-                      {sub.customer_name && <div style={{ fontSize: 9, color: '#5a6080' }}>{sub.customer_email}</div>}
-                    </td>
-                    <td style={s.td}>{statusStyle(sub.status)}</td>
-                    <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#7880a0' }}>
-                      ${sub.amount}/mo
-                    </td>
-                    <td style={{ ...s.td, fontSize: 10, color: '#5a6080' }}>
-                      {sub.cancel_at_period_end
-                        ? <span style={{ color: '#e85454' }}>Cancels {formatDate(sub.current_period_end)}</span>
-                        : formatDate(sub.current_period_end)
-                      }
-                    </td>
-                    <td style={{ ...s.td, fontSize: 10, color: '#5a6080' }}>{timeAgo(sub.created)}</td>
-                    <td style={s.td}>
-                      <a
-                        href={`https://dashboard.stripe.com/subscriptions/${sub.id}`}
-                        target="_blank" rel="noreferrer"
-                        style={{ fontSize: 10, color: '#02a4ba', textDecoration: 'none' }}
-                      >
-                        Stripe →
-                      </a>
-                    </td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-          <Pagination
-            page={subPag.page}
-            totalPages={subPag.totalPages}
-            setPage={subPag.setPage}
-            total={filteredSubs.length}
-            pageSize={PAGE_SIZE}
-          />
-        </Card>
+        ))}
+      </div>
 
-        {/* ── Recent Charges — paginated ── */}
-        <Card title="Recent Successful Charges">
-          <table style={s.table}>
-            <thead>
-              <tr>
-                {['Customer', 'Amount', 'Description', 'Date'].map(h => (
-                  <th key={h} style={s.th}>{h}</th>
-                ))}
-              </tr>
-            </thead>
+      <section aria-label="Founding members" style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 18px' }}>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>FOUNDING MEMBERS</div>
+          <div style={{ fontSize: 15 }}><b style={{ fontSize: 22 }}>{data.seatsUsed}</b> of {data.seats ?? '[N]'} founding seats claimed</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>FOUNDING PRICE</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{data.foundingPrice != null ? `${money(Number(data.foundingPrice))} / month` : 'Not set'}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Locked for as long as they stay</div>
+        </div>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>REGULAR PRICE</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>{data.regularPrice != null ? `${money(Number(data.regularPrice))} / month` : 'Not set'}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Starts after the last founding seat</div>
+        </div>
+        <div style={{ flex: '1 1 240px', fontSize: 12.5, color: 'var(--muted)' }}>
+          Every plan: {data.tagsPerPlan} NFC tags, unlimited invoice uploads and menu re-launches, free scanner logins. No setup fee.{' '}
+          <Link href="/admin/settings" style={{ color: 'var(--accent-deep)' }}>Change in Settings</Link>
+        </div>
+      </section>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+        <Card title="Money collected by month" style={{ flex: '2 1 480px' }}>
+          <MonthBars chart={data.chart} />
+        </Card>
+        <Card title={`Failed payments (${data.failed.length})`} style={{ flex: '1 1 300px' }}>
+          {data.failed.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>None. Every open invoice is paid.</div>}
+          {data.failed.map((f) => (
+            <div key={f.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--line-soft)' }}>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {f.restaurant_id ? <Link href={`/admin/billing/${f.restaurant_id}`} style={{ color: 'var(--text)', fontWeight: 700 }}>{f.name}</Link> : <b>{f.name}</b>}
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{f.attempts} attempt{f.attempts === 1 ? '' : 's'}{f.retry ? ` · next retry ${shortDate(f.retry)}` : ' · no more retries'}</span>
+              </span>
+              <span style={{ fontFamily: MONO, color: 'var(--red)' }}>{money(f.amount)}</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <Card title="Billing by restaurant" right={<span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Click a restaurant to open its full billing page</span>}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
+            <thead><tr><th style={th}>RESTAURANT</th><th style={th}>PLAN</th><th style={th}>STATE</th><th style={th}>NEXT CHARGE</th><th style={th}>CARD</th><th style={{ ...th, textAlign: 'right' }}>PROFIT / MO</th><th style={th} /></tr></thead>
             <tbody>
-              {chargePag.pageItems.map(charge => (
-                <tr key={charge.id} style={s.row}>
-                  <td style={{ ...s.td, fontSize: 11, color: '#7880a0' }}>{charge.customer_email}</td>
-                  <td style={{ ...s.td, fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#3de8a0' }}>${charge.amount.toFixed(2)}</td>
-                  <td style={{ ...s.td, fontSize: 10, color: '#5a6080' }}>{charge.description}</td>
-                  <td style={{ ...s.td, fontSize: 10, color: '#5a6080' }}>{formatDate(charge.created)}</td>
+              {data.rows.length === 0 && <tr><td colSpan={7} style={{ ...td, color: 'var(--muted)' }}>No restaurants yet.</td></tr>}
+              {data.rows.map((r) => (
+                <tr key={r.id} tabIndex={0} onClick={() => router.push(`/admin/billing/${r.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/admin/billing/${r.id}`); }} style={{ cursor: 'pointer' }}
+                  title={`Pays ${money(r.pays)} · AI ${money(r.ai)} · hosting ${money(r.host)} · Stripe ${money(r.fee)} · one-offs ${money(r.other)}`}>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.name}</td>
+                  <td style={{ ...td, fontSize: 12.5 }}>{r.plan}</td>
+                  <td style={td}><Chip bg={ST[r.state][0]} fg={ST[r.state][1]}>{r.state}</Chip>{r.ends && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>Ends {shortDate(r.ends)}</span>}</td>
+                  <td style={{ ...td, fontSize: 12.5 }}>{r.next ? shortDate(r.next) : '—'}</td>
+                  <td style={{ ...td, fontSize: 12.5, color: r.card ? 'var(--text)' : 'var(--muted)' }}>{r.card || 'None on file'}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO, color: r.profit < 0 ? 'var(--red)' : 'var(--green)' }}>{money(r.profit)}</td>
+                  <td style={{ ...td, color: 'var(--muted)' }}>›</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <Pagination
-            page={chargePag.page}
-            totalPages={chargePag.totalPages}
-            setPage={chargePag.setPage}
-            total={(d.recentCharges || []).length}
-            pageSize={PAGE_SIZE}
-          />
-        </Card>
-
-      </div>
-    </AdminLayout>
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          Profit is an estimate for {mName}: what they pay, minus their AI spend, their share of hosting ({money(data.hosting)} ÷ {data.liveN} live), Stripe’s fee (2.9% + 30¢) and one-off costs logged for them this month. Hover a row for the breakdown.
+        </div>
+      </Card>
+    </>
   );
 }
 
-const s = {
-  page: { padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, fontFamily: "'Inter', sans-serif" },
-  title: { fontSize: 22, fontWeight: 700, color: '#e4e6f0', letterSpacing: '-0.5px', fontFamily: "'Playfair Display', serif", margin: 0 },
-  subtitle: { fontSize: 10, color: '#3a3e50', marginTop: 3 },
-  kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 },
-  kpiLabel: { fontSize: 8, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 5 },
-  kpiValue: { fontSize: 24, fontWeight: 600, color: '#e4e6f0', lineHeight: 1, fontFamily: "'DM Mono', monospace" },
-  row2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  search: {
-    width: '100%', padding: '7px 12px', fontSize: 11,
-    background: '#0f1115', border: '1px solid #1e2028', borderRadius: 6,
-    color: '#e4e6f0', fontFamily: "'Inter', sans-serif", outline: 'none',
-    boxSizing: 'border-box',
-  },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  th: {
-    fontSize: 9, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase',
-    letterSpacing: '0.8px', padding: '8px 14px', textAlign: 'left',
-    borderBottom: '1px solid #1e2028', background: '#0f1115',
-  },
-  td: { padding: '10px 14px', borderBottom: '1px solid #0f1115', verticalAlign: 'middle' },
-  row: { transition: 'background 0.1s' },
-  listRow: { display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 8, marginBottom: 8, borderBottom: '1px solid #1a1c23' },
-  empty: { fontSize: 11, color: '#3a3e50', margin: 0 },
-  center: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 60 },
-  spinner: { width: 16, height: 16, border: '2px solid #1e2028', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
-};
+function MonthBars({ chart }) {
+  const [hover, setHover] = useState(null);
+  const max = Math.max(...chart.map((c) => c.amount), 1);
+  if (!chart.some((c) => c.amount > 0)) return <div style={{ fontSize: 13, color: 'var(--muted)', padding: '20px 0' }}>Fills in with your first paying restaurant.</div>;
+  const W = 640, H = 170, L = 50, R = 6, T = 14, B = 22;
+  const slot = (W - L - R) / chart.length;
+  const bw = Math.min(30, slot - 6);
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Money collected, last 12 months: ${chart.map((c) => `${monthName(c.month)} ${money(c.amount, 0)}`).join(', ')}`} onMouseLeave={() => setHover(null)}>
+      {[0, max / 2, max].map((v) => (
+        <g key={v}>
+          <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--line-soft)" />
+          <text x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{money(v, 0)}</text>
+        </g>
+      ))}
+      {chart.map((c, i) => {
+        const x = L + slot * i + (slot - bw) / 2;
+        const h = y(0) - y(c.amount);
+        const last = i === chart.length - 1;
+        return (
+          <g key={c.month} onMouseEnter={() => setHover(i)}>
+            <rect x={L + slot * i} y={T} width={slot} height={H - T - B} fill="transparent" />
+            {c.amount > 0 && <rect x={x} y={y(c.amount)} width={bw} height={h} rx={Math.min(4, bw / 2)} fill="var(--accent-deep)" opacity={hover == null || hover === i ? 1 : 0.55} />}
+            {(hover === i || (hover == null && last)) && c.amount > 0 && <text x={x + bw / 2} y={y(c.amount) - 4} textAnchor="middle" fontSize="10.5" fontFamily="IBM Plex Mono, monospace" fill="var(--text)">{money(c.amount, 0)}</text>}
+            <text x={x + bw / 2} y={H - 6} textAnchor="middle" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill={last ? 'var(--text)' : 'var(--muted)'}>{monthName(c.month).toUpperCase()}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+export default function Page() {
+  return (
+    <AdminShell section="Business" sub="Revenue & billing" title="Revenue & billing">
+      <RevenuePage />
+    </AdminShell>
+  );
+}

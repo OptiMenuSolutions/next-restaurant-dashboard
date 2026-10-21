@@ -23,7 +23,8 @@ const PAGES = [
   ['AI & parsing', '/admin/ai'],
   ['Jobs & health', '/admin/health'],
   ['Revenue & billing', '/admin/revenue'],
-  ['Settings', '/admin/flags'],
+  ['Expenses & deadlines', '/admin/finances'],
+  ['Settings', '/admin/settings'],
   ['Old admin', '/admin/old'],
 ].map(([title, href]) => ({ id: 'p:' + href, title, sub: 'Page', href }));
 

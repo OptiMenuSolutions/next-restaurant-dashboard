@@ -2,8 +2,8 @@
 // Feature flags management — toggle features on/off across the app.
 
 import { useEffect, useState } from 'react';
-import AdminLayout from '../../components/admin/AdminLayout';
-import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import AdminLayout from '../../../components/admin/AdminLayout';
+import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 
 function Modal({ title, onClose, children }) {
   return (
