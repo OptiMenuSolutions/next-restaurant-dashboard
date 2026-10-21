@@ -121,6 +121,7 @@ function InvoiceEditor({ id, onDone }) {
   const [flash, setFlash] = useState('');
   const [page, setPage] = useState(0);
   const [calc, setCalc] = useState(null);
+  const [sel, setSel] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -214,11 +215,13 @@ function InvoiceEditor({ id, onDone }) {
                 const ring = (k) => (changed(k) ? { borderColor: 'var(--accent)', background: 'var(--accent-tint)' } : {});
                 return (
                   <Fragment key={l.id}>
-                  <tr>
+                  <tr onClick={() => setSel(l.id)} onFocusCapture={() => setSel(l.id)} style={{ background: sel === l.id ? 'var(--panel)' : undefined }}>
                     <td style={{ ...cell, paddingLeft: 14, maxWidth: 220 }}>
                       <div style={{ fontWeight: 700 }}>{l.item_name || '—'}</div>
-                      <button type="button" onClick={() => setCalc(calc === l.id ? null : l.id)} aria-expanded={calc === l.id}
-                        style={{ border: 0, background: 'none', padding: 0, margin: '2px 0', color: 'var(--accent-deep)', font: "700 11.5px 'Manrope', sans-serif", cursor: 'pointer' }}>Case math</button>
+                      {(sel === l.id || calc === l.id) && (
+                        <button type="button" onClick={() => setCalc(calc === l.id ? null : l.id)} aria-expanded={calc === l.id}
+                          style={{ border: 0, background: 'none', padding: 0, margin: '2px 0', color: 'var(--accent-deep)', font: "700 11.5px 'Manrope', sans-serif", cursor: 'pointer' }}>Case math</button>
+                      )}
                       {l.edited && <div style={{ fontSize: 11, color: 'var(--muted)' }}>AI read {l.original_quantity ?? '—'} at {money(l.original_price)}</div>}
                       {o?.checks.map((c, i) => <div key={i} style={{ fontSize: 11.5, color: c.tone === 'amber' ? 'var(--amber)' : 'var(--muted)', fontWeight: c.tone === 'amber' ? 700 : 500 }}>{c.text}</div>)}
                     </td>

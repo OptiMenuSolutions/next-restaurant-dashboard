@@ -150,6 +150,8 @@ function Overview({ data, act, reload }) {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [del, setDel] = useState(null);
+  const addr = r.address || {};
+  const fullAddress = [addr.line1, addr.city, addr.state, addr.zip].filter(Boolean).join(', ');
   const week = r.views.reduce((a, b) => a + b, 0);
 
   async function saveNote() {
@@ -244,6 +246,20 @@ function Overview({ data, act, reload }) {
                 setSaving(true);
                 try { await act({ action: 'delete-note', noteId: del.id }); setDel(null); reload(); } finally { setSaving(false); }
               }} />
+          )}
+        </Card>
+
+        <Card title="Address" right={fullAddress && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5, fontWeight: 700 }}>Open in Google Maps ↗</a>}>
+          {fullAddress ? (
+            <>
+              <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+                {addr.line1}{addr.line1 && <br />}{[addr.city, [addr.state, addr.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')}
+              </div>
+              <iframe title={`Map of ${r.name}`} src={`https://maps.google.com/maps?q=${encodeURIComponent(fullAddress)}&z=15&output=embed`}
+                loading="lazy" referrerPolicy="no-referrer-when-downgrade" style={{ width: '100%', height: 220, border: 0, borderRadius: 10 }} />
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>No shipping address yet. It comes from the owner's onboarding.</div>
           )}
         </Card>
 
