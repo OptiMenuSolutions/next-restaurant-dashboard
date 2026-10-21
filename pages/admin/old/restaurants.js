@@ -3,9 +3,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import AdminLayout from '../../components/admin/AdminLayout';
-import { useAdminFetch } from '../../lib/admin/useAdminFetch';
-import { usePagination, Pagination, FilterButton } from '../../lib/admin/usePagination';
+import AdminLayout from '../../../components/admin/AdminLayout';
+import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
+import { usePagination, Pagination, FilterButton } from '../../../lib/admin/usePagination';
 
 const PAGE_SIZE = 12;
 

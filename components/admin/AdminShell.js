@@ -37,6 +37,7 @@ const ADMIN_CSS = `
 .om-pri:disabled{opacity:.5;cursor:default}
 .om-field{min-height:38px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:var(--shell);color:var(--text);font:500 13.5px 'Manrope',sans-serif;width:100%}
 .om-field:focus{outline:2px solid var(--accent);outline-offset:-1px}
+.om-app a.om-btn,.om-app a.om-btn:hover{color:var(--text)}
 `;
 
 function initials(name) {

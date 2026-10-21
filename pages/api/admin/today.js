@@ -9,6 +9,7 @@
 import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID, etDate, etHour, addDays } from '../../../lib/admin/requireAdmin';
 import { syncTickets, sortTickets, forClient } from '../../../lib/admin/tickets';
 import { healthFor } from '../../../lib/admin/health';
+import { fetchAll } from '../../../lib/admin/fetchAll';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameDish = (a, b) => a === b || (a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a)));
@@ -68,12 +69,12 @@ export default async function handler(req, res) {
     let totActual = 0;
     let totTypical = 0;
     if (live.length) {
-      const { data: sales } = await db
+      const sales = await fetchAll(() => db
         .from('pos_sales')
-        .select('restaurant_id, item_name, quantity_sold, sale_date')
+        .select('id, restaurant_id, item_name, quantity_sold, sale_date')
         .in('restaurant_id', live.map((r) => r.id))
         .gte('sale_date', from36)
-        .limit(50000);
+        .order('id'));
 
       // restaurant -> date -> [{ name, qty }]
       const byRD = new Map();
