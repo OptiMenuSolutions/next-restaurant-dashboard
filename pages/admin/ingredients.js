@@ -30,6 +30,9 @@ const PAGE_CSS = `.om-app{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--
 .om-row:hover td{background:var(--panel)}
 .om-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}`;
 
+// The list and the details panel each scroll on their own, one screen tall at most.
+const PANE_H = 'max(460px, calc(100vh - 330px))';
+
 const per = (p, unit) => (p == null ? '—' : `${money(p)} / ${unit}`);
 function diffText(price, unit, g) {
   if (price == null || !g || g.reference_price == null || !(g.reference_price > 0)) return null;
@@ -168,10 +171,10 @@ function LibraryPage() {
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-        <section aria-label="Ingredients" style={{ flex: '1 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+        <section aria-label="Ingredients" style={{ flex: '1 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
           {isGlobal ? (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
-              <thead><tr>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}><tr>
                 <th style={{ ...th, paddingLeft: 18 }}>GLOBAL INGREDIENT</th>
                 <th style={th}>REFERENCE PRICE</th>
                 <th style={th}>AVG PAID</th>
@@ -180,7 +183,7 @@ function LibraryPage() {
               </tr></thead>
               <tbody>
                 {globalRows.length === 0 && <tr><td colSpan={5} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>No global ingredients match.</td></tr>}
-                {globalRows.slice(0, 400).map((g) => {
+                {globalRows.map((g) => {
                   const on = g.id === sel;
                   return (
                     <tr key={g.id} className="om-row" tabIndex={0} aria-selected={on} onClick={() => setSel(g.id)} onKeyDown={(e) => { if (e.key === 'Enter') setSel(g.id); }}
@@ -196,12 +199,11 @@ function LibraryPage() {
                     </tr>
                   );
                 })}
-                {globalRows.length > 400 && <tr><td colSpan={5} style={{ ...td, color: 'var(--muted)', textAlign: 'center' }}>Showing 400 of {globalRows.length}. Search to narrow it down.</td></tr>}
               </tbody>
             </table>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
-              <thead><tr>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}><tr>
                 <th style={{ ...th, paddingLeft: 18 }}>THEIR INGREDIENT</th>
                 <th style={th}>LINKED TO GLOBAL</th>
                 <th style={th}>THEY PAY</th>
@@ -236,7 +238,7 @@ function LibraryPage() {
           )}
         </section>
 
-        <aside aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, position: 'sticky', top: 90 }}>
+        <aside aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto' }}>
           {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
           {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
           {!(selGlobal || selItem) && <div style={{ color: 'var(--muted)', fontSize: 13.5, padding: '30px 0', textAlign: 'center' }}>Click an ingredient to see its price history and details.</div>}
