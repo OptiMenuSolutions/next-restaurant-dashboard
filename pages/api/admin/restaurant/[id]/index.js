@@ -42,7 +42,7 @@ function healthChecks(f) {
     'POS sync failing': ['/admin/errors', 'See the error'],
     'POS disconnected': ['/admin/errors', 'See the error'],
     'No Tonight’s Dish today': ['#run-dish', 'Run it now'],
-    'Invoices waiting over 3 days': ['/admin/invoice-review', 'Review'],
+    'Invoices waiting over 3 days': [`/admin/review?restaurant=${f.id}`, 'Review'],
   };
   const bad = f.health.reasons.map((t) => {
     const key = Object.keys(fix).find((k) => t.startsWith(k)) || (t.startsWith('POS last synced') ? 'POS sync failing' : null);

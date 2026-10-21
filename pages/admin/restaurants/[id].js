@@ -422,7 +422,7 @@ function Invoices({ id }) {
                     ? <Chip bg="var(--red-tint)" fg="var(--red)">COULD NOT READ</Chip>
                     : i.reviewed ? <Chip bg="var(--green-tint)" fg="var(--green)">REVIEWED</Chip> : <Chip bg="var(--accent-tint)" fg="var(--accent-deep)">TO CHECK</Chip>}
                 </td>
-                <td style={{ ...td, paddingRight: 18 }}><Link href="/admin/invoice-review" style={{ fontWeight: 700, fontSize: 12.5 }}>Open</Link></td>
+                <td style={{ ...td, paddingRight: 18 }}><Link href={`/admin/review?restaurant=${id}`} style={{ fontWeight: 700, fontSize: 12.5 }}>Open</Link></td>
               </tr>
             ))}
           </tbody>

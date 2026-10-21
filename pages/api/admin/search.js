@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     invoices: (inv.data || []).map((i) => ({
       id: i.id, title: `Invoice ${i.number}`,
       sub: [i.supplier, i.restaurants?.name, i.date].filter(Boolean).join(' · '),
-      href: '/admin/invoice-review',
+      href: `/admin/review?restaurant=${i.restaurant_id}`,
     })),
   });
 }
