@@ -38,7 +38,7 @@ const soldOn = (days, date, dish) => (days.get(date) || []).filter((x) => sameDi
 // The health box: what is wrong (with a way to fix it) and what is fine.
 function healthChecks(f) {
   const fix = {
-    'Payment failed': ['/admin/stripe', 'Open billing'],
+    'Payment failed': [`/admin/billing/${f.id}`, 'Open billing'],
     'POS sync failing': ['/admin/errors', 'See the error'],
     'POS disconnected': ['/admin/errors', 'See the error'],
     'No Tonight’s Dish today': ['#run-dish', 'Run it now'],

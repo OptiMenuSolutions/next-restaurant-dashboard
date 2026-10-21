@@ -446,9 +446,9 @@ function Billing({ r }) {
       ))}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
         {r.stripe_customer_id && <a className="om-btn" href={`https://dashboard.stripe.com/customers/${r.stripe_customer_id}`} target="_blank" rel="noopener noreferrer">Open in Stripe ↗</a>}
-        <Link className="om-btn" href="/admin/stripe">Old billing page</Link>
+        <Link className="om-pri" href={`/admin/billing/${r.id}`}>Open client billing →</Link>
       </div>
-      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>The full client billing page (what they paid, what they cost, profit by month) comes in the next part of this step and will open from here.</p>
+      <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>What they paid, what they cost you month by month, payments and billing actions are on the client billing page.</p>
     </Card>
   );
 }
