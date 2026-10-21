@@ -8,8 +8,8 @@
 //         same ingredient waiting at other restaurants.
 // POST { action: 'approve', ingredientId, price, alsoIds: [] }
 // POST { action: 'skip', ingredientId }        stays a missing price until an invoice
-// POST { action: 'undo', ingredientId }        puts an approved or skipped guess back
-// POST { action: 'approve-bulk', ingredientIds } approves each at its AI guess
+// POST { action: 'undo', ingredientId }        puts a guess back; an approval undoes with its whole batch
+// POST { action: 'approve-bulk', ingredientIds } approves each at its AI guess, as one batch
 // POST { action: 'set-state', restaurantId, state }
 
 import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID, etDate } from '../../../lib/admin/requireAdmin';
@@ -131,8 +131,24 @@ async function load() {
 
   const pending = pendingAll.map(row).sort((a, b) => a.restaurant.localeCompare(b.restaurant) || b.dishes - a.dishes || a.name.localeCompare(b.name));
   const startET = new Date(`${today}T00:00:00-05:00`).toISOString();
-  const approvedToday = ingredients.filter((g) => g.price_approved_at && g.price_approved_at >= startET && real(g.restaurant_id))
-    .map((g) => ({ id: g.id, name: g.name, unit: g.unit, price: Number(g.last_price), restaurant: restById.get(g.restaurant_id)?.name }));
+  // Grouped by click: a shared price or a bulk approval is one row.
+  const batches = new Map();
+  for (const g of ingredients) {
+    if (!(g.price_approved_at && g.price_approved_at >= startET && g.is_estimated !== false && real(g.restaurant_id))) continue;
+    if (!batches.has(g.price_approved_at)) batches.set(g.price_approved_at, []);
+    batches.get(g.price_approved_at).push(g);
+  }
+  const approvedToday = [...batches.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([at, list]) => {
+    const g = list[0];
+    const oneName = list.every((x) => norm(x.name) === norm(g.name));
+    const rests = [...new Set(list.map((x) => restById.get(x.restaurant_id)?.name).filter(Boolean))];
+    return {
+      id: g.id, at, count: list.length, unit: g.unit,
+      name: oneName ? g.name : `Bulk approval · ${list.length.toLocaleString('en-US')} items`,
+      restaurant: rests.length === 1 ? rests[0] : `${rests.length} restaurants`,
+      price: oneName ? Number(g.last_price) : null,
+    };
+  });
   const skipped = ingredients.filter((g) => g.price_skipped_at && g.is_estimated !== false && !g.price_approved_at && real(g.restaurant_id))
     .map((g) => ({ id: g.id, name: g.name, unit: g.unit, restaurant: restById.get(g.restaurant_id)?.name, when: g.price_skipped_at }));
 
@@ -172,10 +188,32 @@ export default async function handler(req, res) {
       }
     };
 
-    if (b.action === 'approve' || b.action === 'approve-bulk') {
-      const jobs = b.action === 'approve'
-        ? [b.ingredientId, ...(b.alsoIds || [])].map((id) => ({ id, price: Number(b.price) }))
-        : (b.ingredientIds || []).map((id) => ({ id, price: null }));
+    if (b.action === 'approve-bulk') {
+      // Every item at its AI guess, in a few large updates. They all share
+      // one timestamp, so one Undo on Approved today takes the batch back.
+      const ids = [...new Set(b.ingredientIds || [])];
+      const byRest = new Map();
+      let n = 0;
+      for (let i = 0; i < ids.length; i += 300) {
+        const { data, error } = await db.from('ingredients')
+          .update({ price_approved_at: now, price_skipped_at: null })
+          .in('id', ids.slice(i, i + 300)).is('price_approved_at', null).gt('last_price', 0)
+          .or('is_estimated.is.null,is_estimated.eq.true')
+          .select('id, restaurant_id');
+        if (error) throw new Error(error.message);
+        for (const g of data || []) {
+          n++;
+          if (!byRest.has(g.restaurant_id)) byRest.set(g.restaurant_id, []);
+          byRest.get(g.restaurant_id).push(g.id);
+        }
+      }
+      await recompute(byRest);
+      await log(`Approved ${n} AI cost guesses at the guess (bulk)`, byRest.size === 1 ? await restName([...byRest.keys()][0]) : null);
+      return res.status(200).json({ ok: true, approved: n });
+    }
+
+    if (b.action === 'approve') {
+      const jobs = [b.ingredientId, ...(b.alsoIds || [])].map((id) => ({ id, price: Number(b.price) }));
       const byRest = new Map();
       let n = 0;
       for (const j of jobs) {
@@ -205,15 +243,33 @@ export default async function handler(req, res) {
     }
 
     if (b.action === 'undo') {
-      const { data: g } = await db.from('ingredients').select('id, name, restaurant_id, ai_estimate, is_estimated, price_approved_at').eq('id', b.ingredientId).single();
+      const { data: g } = await db.from('ingredients').select('id, name, restaurant_id, is_estimated, price_approved_at').eq('id', b.ingredientId).single();
       if (!g) return res.status(404).json({ error: 'Not found' });
       if (g.is_estimated === false) return res.status(400).json({ error: 'An invoice has priced it since. Nothing to undo.' });
-      const patch = { price_skipped_at: null, price_approved_at: null };
-      if (g.price_approved_at && g.ai_estimate != null) patch.last_price = g.ai_estimate;
-      await db.from('ingredients').update(patch).eq('id', g.id);
-      if (g.price_approved_at) await recompute(new Map([[g.restaurant_id, [g.id]]]));
-      await log(`Undid the decision on ${g.name}`, await restName(g.restaurant_id));
-      return res.status(200).json({ ok: true });
+
+      // An approval undoes together with everything approved in the same
+      // click (a shared price or a bulk approval): they share one timestamp.
+      let batch = [g];
+      if (g.price_approved_at) {
+        const rows = await fetchAll(() => db.from('ingredients').select('id, name, restaurant_id, ai_estimate, is_estimated').eq('price_approved_at', g.price_approved_at).order('id'));
+        batch = rows.filter((x) => x.is_estimated !== false);
+      }
+      const byRest = new Map();
+      const plain = [];
+      for (const x of batch) {
+        if (g.price_approved_at && x.ai_estimate != null) {
+          await db.from('ingredients').update({ price_skipped_at: null, price_approved_at: null, last_price: x.ai_estimate }).eq('id', x.id);
+        } else plain.push(x.id);
+        if (!byRest.has(x.restaurant_id)) byRest.set(x.restaurant_id, []);
+        byRest.get(x.restaurant_id).push(x.id);
+      }
+      for (let i = 0; i < plain.length; i += 300) {
+        const { error } = await db.from('ingredients').update({ price_skipped_at: null, price_approved_at: null }).in('id', plain.slice(i, i + 300));
+        if (error) throw new Error(error.message);
+      }
+      if (g.price_approved_at) await recompute(byRest);
+      await log(batch.length > 1 ? `Undid an approval of ${batch.length} items` : `Undid the decision on ${g.name}`, byRest.size === 1 ? await restName(g.restaurant_id) : null);
+      return res.status(200).json({ ok: true, undone: batch.length });
     }
 
     if (b.action === 'set-state') {

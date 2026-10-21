@@ -21,6 +21,9 @@ const TIP_CSS = `.om-tip{position:relative;cursor:help;border-bottom:1px dotted 
 .om-tipbox b{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;opacity:.7;margin-bottom:3px}
 .om-tip:hover .om-tipbox,.om-tip:focus .om-tipbox{display:block}`;
 
+// The waiting list scrolls on its own, at most one screen tall.
+const PANE_H = 'max(420px, calc(100vh - 360px))';
+
 function CostsPage() {
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
@@ -30,6 +33,8 @@ function CostsPage() {
   const [busy, setBusy] = useState(null);
   const [share, setShare] = useState(null); // { row, price }
   const [flash, setFlash] = useState('');
+  const [view, setView] = useState('waiting');
+  const [bulkAsk, setBulkAsk] = useState(null); // { list, label }
 
   const load = useCallback(async () => {
     setError('');
@@ -68,6 +73,7 @@ function CostsPage() {
 
   const priceFor = (r) => (mine[r.id] != null ? mine[r.id] : r.guess != null ? r.guess.toFixed(2) : '');
   const steady = rows.filter((r) => r.move === 'STEADY' && r.guess);
+  const approvedN = data.approvedToday.reduce((a, x) => a + (x.count || 1), 0);
 
   async function approve(r) {
     const price = Number(priceFor(r));
@@ -76,11 +82,8 @@ function CostsPage() {
     await post({ action: 'approve', ingredientId: r.id, price }, r.id);
   }
 
-  async function bulk(list, label) {
-    if (!list.length) return;
-    if (!window.confirm(`${label}: approve ${list.length} item${list.length === 1 ? '' : 's'} at the AI guess?`)) return;
-    const json = await post({ action: 'approve-bulk', ingredientIds: list.map((r) => r.id) }, 'bulk');
-    if (json) setFlash(`Approved ${json.approved}.`);
+  function bulk(list, label) {
+    if (list.length) setBulkAsk({ list, label });
   }
 
   return (
@@ -95,13 +98,22 @@ function CostsPage() {
         <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>FROM</span>
         <Pills label="Filter by restaurant" value={from} onChange={setFrom}
           options={[{ key: 'all', label: 'All', n: data.pending.length }, ...data.from.map((f) => ({ key: f.id, label: f.name, n: f.n }))]} />
-        <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{data.approvedToday.length} APPROVED TODAY · {data.pending.length} LEFT</span>
+        <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{approvedN} APPROVED TODAY · {data.pending.length} LEFT</span>
       </div>
       {flash && <div style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <section aria-label="Estimates" style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <div role="tablist" aria-label="Which list" style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
+        {[['waiting', 'Waiting', rows.length], ['approved', 'Approved today', approvedN], ['skipped', 'Skipped', data.skipped.length]].map(([k, l, c]) => (
+          <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
+            style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${view === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: view === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${view === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
+            {l} <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>{c.toLocaleString('en-US')}</span>
+          </button>
+        ))}
+      </div>
+
+      {view === 'waiting' && <section aria-label="Estimates" style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 1060 }}>
-          <thead>
+          <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
             <tr>
               <th style={{ ...th, paddingLeft: 18 }}>INGREDIENT</th>
               <th style={th}>RESTAURANT</th>
@@ -151,31 +163,30 @@ function CostsPage() {
             ))}
           </tbody>
         </table>
-      </section>
+      </section>}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-        <Done title="Approved today" items={data.approvedToday} right={(x) => `${money(x.price)}/${x.unit}`} onUndo={(x) => post({ action: 'undo', ingredientId: x.id }, x.id)} busy={busy} />
-        <Done title="Skipped · missing price until an invoice" items={data.skipped} right={() => 'SKIPPED'} onUndo={(x) => post({ action: 'undo', ingredientId: x.id }, x.id)} busy={busy} />
-      </div>
+      {view === 'approved' && <Done items={data.approvedToday} empty="Nothing approved yet today." right={(x) => (x.count > 1 ? `${x.count} ITEMS${x.price != null ? ` · ${money(x.price)}/${x.unit}` : ''}` : `${money(x.price)}/${x.unit}`)} onUndo={(x) => post({ action: 'undo', ingredientId: x.id }, x.id)} busy={busy} />}
+      {view === 'skipped' && <Done items={data.skipped} empty="Nothing skipped." right={() => 'SKIPPED'} onUndo={(x) => post({ action: 'undo', ingredientId: x.id }, x.id)} busy={busy} />}
 
       {share && <ShareDialog share={share} restaurants={data.restaurants} busy={busy === 'share'}
         onClose={() => setShare(null)}
         onSave={async (alsoIds) => { const ok = await post({ action: 'approve', ingredientId: share.row.id, price: share.price, alsoIds }, 'share'); if (ok) setShare(null); }}
         onSetState={async (restaurantId, state) => { if (await post({ action: 'set-state', restaurantId, state }, 'state')) { setShare(null); setFlash('State saved. Click Approve again and same-state restaurants start checked.'); } }} />}
+        {bulkAsk && <BulkDialog ask={bulkAsk} busy={busy === 'bulk'} onClose={() => setBulkAsk(null)}
+          onConfirm={async () => { const json = await post({ action: 'approve-bulk', ingredientIds: bulkAsk.list.map((r) => r.id) }, 'bulk'); setBulkAsk(null); if (json) { setFlash(`Approved ${json.approved}. Undo all is on Approved today if you change your mind.`); } }} />}
     </>
   );
 }
 
-function Done({ title, items, right, onUndo, busy }) {
+function Done({ items, right, onUndo, busy, empty }) {
   return (
-    <section style={{ flex: '1 1 420px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: '14px 18px' }}>
-      <h2 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 800 }}>{title}</h2>
-      {items.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>None.</div>}
-      {items.map((x) => (
-        <div key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5 }}>
+    <section style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '4px 18px', maxHeight: PANE_H, overflowY: 'auto' }}>
+      {items.length === 0 && <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--muted)' }}>{empty}</div>}
+      {items.map((x, i) => (
+        <div key={x.at || x.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: i ? '1px solid var(--line-soft)' : 'none', fontSize: 13.5 }}>
           <span style={{ flex: 1, minWidth: 0 }}><b>{x.name}</b> <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>· {x.restaurant}</span></span>
           <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>{right(x)}</span>
-          <button type="button" className="om-btn" style={{ minHeight: 28, fontSize: 12 }} disabled={!!busy} onClick={() => onUndo(x)}>Undo</button>
+          <button type="button" className="om-btn" style={{ minHeight: 28, fontSize: 12 }} disabled={!!busy} onClick={() => onUndo(x)}>{busy === x.id ? '…' : x.count > 1 ? 'Undo all' : 'Undo'}</button>
         </div>
       ))}
     </section>
@@ -212,6 +223,60 @@ function ShareDialog({ share, busy, onClose, onSave, onSetState }) {
         <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
         <button type="button" className="om-btn" disabled={busy} onClick={() => onSave([])}>Only {row.restaurant}</button>
         <button type="button" className="om-pri" disabled={busy || !n} onClick={() => onSave(Object.keys(picked).filter((k) => picked[k]))}>{busy ? 'Saving…' : `Approve for ${n + 1} restaurants`}</button>
+      </div>
+    </Dialog>
+  );
+}
+
+function BulkDialog({ ask, busy, onClose, onConfirm }) {
+  const { list, label } = ask;
+  const byRest = new Map();
+  for (const r of list) byRest.set(r.restaurant, (byRest.get(r.restaurant) || 0) + 1);
+  const rests = [...byRest.entries()].sort((a, b) => b[1] - a[1]);
+  // The guesses that move dish costs the most: price × dishes using it.
+  const big = [...list].sort((a, b) => b.guess * b.dishes - a.guess * a.dishes).slice(0, 3);
+  const warned = list.filter((r) => r.warn).length;
+  const n = list.length.toLocaleString('en-US');
+  const cap = { fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 6 };
+
+  return (
+    <Dialog title={`Approve ${n} AI guess${list.length === 1 ? '' : 'es'}?`} sub={`${label}, each at its AI guess. Owners see these prices in their dish costs right away, and a real invoice price replaces each one when it comes in.`} onClose={onClose} width={560}>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div style={cap}>BY RESTAURANT</div>
+          <div style={{ border: '1px solid var(--line)', borderRadius: 10, maxHeight: 190, overflowY: 'auto' }}>
+            {rests.map(([name, c], i) => (
+              <div key={name} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 12px', borderTop: i ? '1px solid var(--line-soft)' : 'none', fontSize: 13 }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                <b style={{ fontFamily: MONO, fontSize: 12.5 }}>{c}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+          <div style={cap}>BIGGEST EFFECT ON DISH COSTS</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {big.map((r) => (
+              <div key={r.id} style={{ background: 'var(--panel)', borderRadius: 10, padding: '8px 12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+                  <b style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</b>
+                  <span style={{ fontFamily: MONO, fontSize: 12.5 }}>{money(r.guess)}/{r.unit}</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{r.restaurant} · in {r.dishes} dish{r.dishes === 1 ? '' : 'es'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      {warned > 0 && (
+        <div style={{ background: 'var(--amber-tint)', color: 'var(--amber)', borderRadius: 10, padding: '9px 12px', fontSize: 13, fontWeight: 600 }}>
+          {warned} of these are 40% or more away from what was paid or the library price. Approve those on their own if you want to check them first.
+        </div>
+      )}
+      <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>The whole batch shows as one row in Approved today, and one Undo takes it all back.</div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
+        <button type="button" className="om-pri" disabled={busy} onClick={onConfirm}>{busy ? 'Approving…' : `Approve ${n}`}</button>
       </div>
     </Dialog>
   );
