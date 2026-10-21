@@ -8,7 +8,7 @@
 //     them checked.
 // /admin/review?restaurant=<id> opens on that restaurant's invoices.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AdminShell, { PageHead } from '../../components/admin/AdminShell';
@@ -120,6 +120,7 @@ function InvoiceEditor({ id, onDone }) {
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState('');
   const [page, setPage] = useState(0);
+  const [calc, setCalc] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -174,10 +175,10 @@ function InvoiceEditor({ id, onDone }) {
           ))}
           {pg && <a href={pg.url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 'auto', fontSize: 12.5, fontWeight: 700 }}>Open full size ↗</a>}
         </div>
-        <div style={{ flex: 1, overflow: 'auto', background: 'var(--panel)' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', background: 'var(--panel)' }}>
           {!pg && <div style={{ padding: 30, color: 'var(--muted)', fontSize: 13.5 }}>No photo on file for this invoice.</div>}
-          {pg && pg.kind === 'pdf' && <iframe title="Invoice" src={pg.url} style={{ width: '100%', height: 760, border: 0 }} />}
-          {pg && pg.kind === 'image' && <img src={pg.url} alt={`Invoice page ${pg.page || page + 1}`} style={{ width: '100%', display: 'block' }} />}
+          {pg && pg.kind === 'pdf' && <iframe title="Invoice" src={pg.url} style={{ width: '100%', minHeight: 400, border: 0 }} />}
+          {pg && pg.kind === 'image' && <PhotoViewer key={pg.url} url={pg.url} alt={`Invoice page ${pg.page || page + 1}`} />}
         </div>
       </section>
 
@@ -212,9 +213,12 @@ function InvoiceEditor({ id, onDone }) {
                 const changed = (k) => String(o?.[k] ?? '') !== String(l[k] ?? '');
                 const ring = (k) => (changed(k) ? { borderColor: 'var(--accent)', background: 'var(--accent-tint)' } : {});
                 return (
-                  <tr key={l.id}>
+                  <Fragment key={l.id}>
+                  <tr>
                     <td style={{ ...cell, paddingLeft: 14, maxWidth: 220 }}>
                       <div style={{ fontWeight: 700 }}>{l.item_name || '—'}</div>
+                      <button type="button" onClick={() => setCalc(calc === l.id ? null : l.id)} aria-expanded={calc === l.id}
+                        style={{ border: 0, background: 'none', padding: 0, margin: '2px 0', color: 'var(--accent-deep)', font: "700 11.5px 'Manrope', sans-serif", cursor: 'pointer' }}>Case math</button>
                       {l.edited && <div style={{ fontSize: 11, color: 'var(--muted)' }}>AI read {l.original_quantity ?? '—'} at {money(l.original_price)}</div>}
                       {o?.checks.map((c, i) => <div key={i} style={{ fontSize: 11.5, color: c.tone === 'amber' ? 'var(--amber)' : 'var(--muted)', fontWeight: c.tone === 'amber' ? 700 : 500 }}>{c.text}</div>)}
                     </td>
@@ -234,6 +238,14 @@ function InvoiceEditor({ id, onDone }) {
                       {changed('ingredient_id') && o?.ingredient_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>Future invoices with this item name will match it too.</div>}
                     </td>
                   </tr>
+                  {calc === l.id && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '0 14px 10px' }}>
+                        <CaseCalc line={l} onClose={() => setCalc(null)} onUse={(patch) => { set(l.id, patch); setCalc(null); }} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -241,6 +253,108 @@ function InvoiceEditor({ id, onDone }) {
         </div>
       </section>
     </>
+  );
+}
+
+
+// ── Invoice photo viewer ──────────────────────────────────────────────────────
+// Drag to move, scroll to go up and down, pinch or Ctrl + scroll to zoom,
+// double-click to reset. Rotate turns the page a quarter turn.
+
+function PhotoViewer({ url, alt }) {
+  const box = useRef(null);
+  const drag = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [boxW, setBoxW] = useState(0);
+  const [ratio, setRatio] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [rot, setRot] = useState(0);
+  const [off, setOff] = useState({ x: 0, y: 0 });
+  const clampZ = (v) => Math.min(6, Math.max(0.5, v));
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    const onWheel = (e) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) setZoom((z) => clampZ(z * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      else setOff((o) => ({ x: o.x - e.deltaX, y: o.y - e.deltaY }));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => { ro.disconnect(); el.removeEventListener('wheel', onWheel); };
+  }, []);
+
+  // A sideways page is shrunk to fit the panel width and lifted to the top.
+  const sideways = rot % 180 !== 0;
+  const fit = sideways && ratio ? Math.min(1, 1 / ratio) : 1;
+  const lift = sideways && ratio ? -((boxW * ratio) / 2 - (boxW * fit) / 2) : 0;
+  const reset = () => { setZoom(1); setOff({ x: 0, y: 0 }); };
+
+  const down = (e) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { x: e.clientX - off.x, y: e.clientY - off.y };
+    setDragging(true);
+  };
+  const move = (e) => { if (drag.current) setOff({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); };
+  const up = () => { drag.current = null; setDragging(false); };
+
+  const btn = { minWidth: 32, height: 30, padding: '0 9px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--shell)', color: 'var(--text)', font: "700 13px 'Manrope', sans-serif", cursor: 'pointer' };
+
+  return (
+    <div ref={box} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onDoubleClick={reset}
+      style={{ position: 'relative', flex: 1, minHeight: 0, overflow: 'hidden', cursor: dragging ? 'grabbing' : 'grab', touchAction: 'none', userSelect: 'none' }}>
+      <img src={url} alt={alt} draggable={false} onLoad={(e) => setRatio(e.currentTarget.naturalHeight / e.currentTarget.naturalWidth)}
+        style={{ width: '100%', display: 'block', transformOrigin: 'center center', transform: `translate(${off.x}px, ${off.y + lift}px) scale(${zoom * fit}) rotate(${rot}deg)`, transition: dragging ? 'none' : 'transform .12s ease-out' }} />
+      <div onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', right: 10, bottom: 10, display: 'flex', alignItems: 'center', gap: 6, padding: 6, borderRadius: 10, background: 'var(--shell)', border: '1px solid var(--line)', boxShadow: 'var(--shadow-lg)', cursor: 'default' }}>
+        <button type="button" aria-label="Zoom out" style={btn} onClick={() => setZoom((z) => clampZ(z / 1.25))}>−</button>
+        <span style={{ fontFamily: MONO, fontSize: 11.5, width: 42, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+        <button type="button" aria-label="Zoom in" style={btn} onClick={() => setZoom((z) => clampZ(z * 1.25))}>+</button>
+        <button type="button" aria-label="Rotate a quarter turn" title="Rotate" style={btn} onClick={() => { setRot((r) => (r + 90) % 360); setOff({ x: 0, y: 0 }); }}>↻</button>
+        <button type="button" style={btn} onClick={reset}>Fit</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Case math ─────────────────────────────────────────────────────────────────
+// For a line priced by the case: cases bought × what each case holds gives the
+// quantity, and the case price ÷ what it holds gives the unit cost.
+
+function CaseCalc({ line, onUse, onClose }) {
+  const [cases, setCases] = useState(String(line.quantity ?? ''));
+  const [per, setPer] = useState('');
+  const [unit, setUnit] = useState(line.unit || '');
+  const [price, setPrice] = useState(String(line.unit_cost ?? ''));
+  const c = Number(cases), n = Number(per), p = Number(price), u = unit.trim();
+  const ok = c > 0 && n > 0 && p > 0 && !!u;
+  const r = (v, d) => String(Math.round(v * 10 ** d) / 10 ** d);
+  const lab = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' };
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 12, padding: '10px 12px', background: 'var(--panel)', borderRadius: 8 }}>
+      <label style={lab}>Cases bought<input inputMode="decimal" value={cases} onChange={(e) => setCases(e.target.value)} style={inp(70)} /></label>
+      <label style={lab}>Each case holds
+        <span style={{ display: 'flex', gap: 5 }}>
+          <input autoFocus aria-label="Amount per case" inputMode="decimal" placeholder="6" value={per} onChange={(e) => setPer(e.target.value)} style={inp(60)} />
+          <input aria-label="Unit inside the case" placeholder="dz" value={unit} onChange={(e) => setUnit(e.target.value)} style={inp(60)} />
+        </span>
+      </label>
+      <label style={lab}>Price per case $<input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} style={inp(84)} /></label>
+      <div style={{ flex: '1 1 220px', fontSize: 12.5, lineHeight: 1.5, paddingBottom: 6 }}>
+        {ok
+          ? <>Quantity <b>{r(c * n, 3)} {u}</b> · unit cost <b>${r(p / n, 4)}/{u}</b> · total <b>{money(c * p)}</b></>
+          : <span style={{ color: 'var(--muted)' }}>Fill in all four to see the math.</span>}
+      </div>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button type="button" className="om-btn" style={{ minHeight: 32 }} onClick={onClose}>Cancel</button>
+        <button type="button" className="om-pri" style={{ minHeight: 32 }} disabled={!ok}
+          onClick={() => onUse({ quantity: r(c * n, 3), unit: u, unit_cost: r(p / n, 4), amount: r(c * p, 2) })}>Use these</button>
+      </div>
+    </div>
   );
 }
 
