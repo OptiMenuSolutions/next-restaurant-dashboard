@@ -223,7 +223,7 @@ export default async function handler(req, res) {
     }
 
     if (b.action === 'delete') {
-      const g = (all || []).find((x) => x.id === b.id);
+      const g = (all || []).find((x) => String(x.id) === String(b.id));
       if (!g) return res.status(404).json({ error: 'Not found' });
       const { error } = await db.from('global_ingredients').delete().eq('id', g.id);
       if (error) throw new Error(error.message);
@@ -233,7 +233,7 @@ export default async function handler(req, res) {
 
     if (b.action === 'link') {
       const name = String(b.name || '').trim();
-      const target = (all || []).find((x) => x.id === b.globalId);
+      const target = (all || []).find((x) => String(x.id) === String(b.globalId));
       if (!target || !name) return res.status(400).json({ error: 'Pick a global ingredient' });
       // Take the name off any other global first, so it points to one place.
       for (const g of all || []) {
@@ -250,7 +250,7 @@ export default async function handler(req, res) {
     }
 
     if (b.action === 'unlink') {
-      const g = (all || []).find((x) => x.id === b.globalId);
+      const g = (all || []).find((x) => String(x.id) === String(b.globalId));
       if (!g) return res.status(404).json({ error: 'Not found' });
       const kept = (g.aliases || []).filter((a) => norm(a) !== norm(b.alias));
       await db.from('global_ingredients').update({ aliases: kept }).eq('id', g.id);
