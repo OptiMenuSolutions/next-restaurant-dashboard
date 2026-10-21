@@ -36,7 +36,7 @@ const NAV = [
     group: 'Product',
     items: [
       { label: 'AI Usage & Costs', href: '/admin/ai',            icon: 'cpu' },
-      { label: 'Global Ingredients', href: '/admin/ingredients', icon: 'list' },
+      { label: 'Global Ingredients', href: '/admin/old/ingredients', icon: 'list' },
       { label: 'Parse Quality',   href: '/admin/parse-quality',  icon: 'check-circle' },
       { label: 'Feature Flags',   href: '/admin/flags',          icon: 'flag' },
     ],
