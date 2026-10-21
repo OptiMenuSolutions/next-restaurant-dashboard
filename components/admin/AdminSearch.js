@@ -16,6 +16,9 @@ const PAGES = [
   ['All restaurants', '/admin/restaurants'],
   ['Support inbox', '/admin/support'],
   ['Tag kits', '/admin/tags'],
+  ['Pipeline', '/admin/pipeline'],
+  ['Calendar', '/admin/calendar'],
+  ['Testimonials', '/admin/testimonials'],
   ['Review queue', '/admin/review'],
   ['Cost approvals', '/admin/costs'],
   ['Ingredient library', '/admin/ingredients'],
@@ -30,6 +33,7 @@ const PAGES = [
 
 const ACTIONS = [
   { id: 'a:note', title: 'Add a note to the rail', sub: 'Action', href: '/admin?note=1' },
+  { id: 'a:prospect', title: 'Add a prospect', sub: 'Action', href: '/admin/pipeline?add=1' },
   { id: 'a:theme', title: 'Switch light or dark mode', sub: 'Action', run: 'theme' },
 ];
 

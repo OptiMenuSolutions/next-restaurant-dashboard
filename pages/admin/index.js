@@ -2,8 +2,8 @@
 // Today: the greeting, four numbers and the rail of to-dos.
 // The rail is two rows of five. Past 10 tickets, 9 show and the last spot
 // becomes "See all", which opens All tickets.
-// Today's plan, last night's jobs and coming-up deadlines join this page
-// when Calendar, Jobs & health and Expenses & deadlines are built.
+// Below the rail: today's plan (Calendar events, today's note and sales
+// follow-ups), what is coming up in two weeks, and last night's jobs.
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -13,7 +13,7 @@ import NoteDialog from '../../components/admin/NoteDialog';
 import Ticket from '../../components/admin/Ticket';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState } from '../../components/client/ClientChrome';
-import { Chip } from '../../components/admin/ui';
+import { Chip, Card } from '../../components/admin/ui';
 
 const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 const TONE = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
@@ -65,8 +65,9 @@ function TodayPage() {
 
   return (
     <>
-      <PageHead kicker={data?.dateLabel || ' '} title={data?.greeting || 'Today'} sub={data ? railLine : 'Loading…'}>
+      <PageHead kicker={data?.dateLabel || ' '} title={data?.greeting || 'Today'} sub={data ? `${railLine}${data.planLine ? ` ${data.planLine}` : ''}` : 'Loading…'}>
         <button type="button" className="om-btn" onClick={() => setNoteOpen(true)}>Add note</button>
+        <Link href="/admin/pipeline?add=1" className="om-pri">Add prospect</Link>
       </PageHead>
 
       <section aria-label="Key numbers" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
@@ -108,6 +109,31 @@ function TodayPage() {
           )}
         </div>
       </section>
+
+      {data && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+          <Card title="Today’s plan" style={{ flex: '1 1 340px' }} right={<Link href="/admin/calendar" style={{ fontSize: 12.5, fontWeight: 700 }}>Calendar</Link>}>
+            {(data.plan || []).length === 0 && !data.dayNote && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing planned. Add events and a note for the day on the Calendar.</div>}
+            {(data.plan || []).map((p, i) => (
+              <Link key={i} href={p.href} style={{ display: 'flex', gap: 12, padding: '6px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5, color: 'var(--text)' }}>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, width: 70, flexShrink: 0, color: p.time === 'LATE' ? 'var(--red)' : 'var(--muted)' }}>{p.time || '—'}</span>
+                <span style={{ flex: 1 }}>{p.text}</span>
+              </Link>
+            ))}
+            {data.dayNote && <div style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'pre-wrap', borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>{data.dayNote}</div>}
+          </Card>
+          <Card title="Coming up" style={{ flex: '1 1 340px' }} right={<Link href="/admin/finances" style={{ fontSize: 12.5, fontWeight: 700 }}>Deadlines</Link>}>
+            {(data.comingUp || []).length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing in the next two weeks.</div>}
+            {(data.comingUp || []).map((c, i) => (
+              <Link key={i} href={c.href} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '6px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5, color: 'var(--text)' }}>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, width: 70, flexShrink: 0, color: c.date === 'LATE' ? 'var(--red)' : c.date === 'TODAY' ? 'var(--amber)' : 'var(--muted)' }}>{c.date}</span>
+                <span style={{ flex: 1 }}>{c.text}</span>
+                {c.kind === 'deadline' && <Chip>DEADLINE</Chip>}
+              </Link>
+            ))}
+          </Card>
+        </div>
+      )}
 
       {data?.jobs && (
         <section aria-labelledby="jobs" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

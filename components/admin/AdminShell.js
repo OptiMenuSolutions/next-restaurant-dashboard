@@ -16,10 +16,12 @@ import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { CSS, FONT_LINKS, MONO, PAGE_PAD, useTheme, LoadingState, SearchIcon } from '../client/ClientChrome';
 import AdminSearch from './AdminSearch';
+import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 
 export const SECTIONS = [
   { label: 'Today', href: '/admin', subs: [['Today', '/admin'], ['All tickets', '/admin/tickets']] },
   { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
+  { label: 'Sales', href: '/admin/pipeline', subs: [['Pipeline', '/admin/pipeline'], ['Calendar', '/admin/calendar'], ['Testimonials', '/admin/testimonials']] },  { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
   { label: 'Data quality', href: '/admin/review', subs: [['Review queue', '/admin/review'], ['Cost approvals', '/admin/costs'], ['Ingredient library', '/admin/ingredients']] },
   { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/health']] },
   { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Expenses & deadlines', '/admin/finances'], ['Settings', '/admin/settings']] },
@@ -52,6 +54,8 @@ export default function AdminShell({ section, sub, title, children }) {
   const [me, setMe] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [badges, setBadges] = useState({});
+  const { adminFetch } = useAdminFetch();
 
   // Admins only.
   useEffect(() => {
@@ -77,6 +81,14 @@ export default function AdminShell({ section, sub, title, children }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Open to-dos per section, for the counts on the section pills.
+  useEffect(() => {
+    if (!me) return undefined;
+    let alive = true;
+    adminFetch('/api/admin/badges').then((r) => r.json()).then((j) => { if (alive && j.badges) setBadges(j.badges); }).catch(() => {});
+    return () => { alive = false; };
+  }, [me, adminFetch, router.asPath]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -109,6 +121,7 @@ export default function AdminShell({ section, sub, title, children }) {
                 <Link key={s.label} href={s.href} className="om-pill" aria-current={on ? 'page' : undefined}
                   style={{ fontSize: 12.5, whiteSpace: 'nowrap', borderRadius: 16, padding: '5px 11px', fontWeight: on ? 700 : 500, color: on ? 'var(--text)' : 'var(--muted)', background: on ? 'var(--accent-tint)' : 'transparent' }}>
                   {s.label}
+                  {badges[s.label] ? <span aria-label={`${badges[s.label]} open`} style={{ marginLeft: 6, fontFamily: MONO, fontSize: 10.5, fontWeight: 700, borderRadius: 8, padding: '1px 6px', background: 'var(--text)', color: 'var(--shell)' }}>{badges[s.label]}</span> : null}
                 </Link>
               );
             })}

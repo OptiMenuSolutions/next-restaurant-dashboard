@@ -1,5 +1,6 @@
 // pages/api/admin/today.js
-// Everything the Today page shows: the greeting, four numbers and the rail.
+// Everything the Today page shows: the greeting, four numbers, the rail,
+// today's plan, what is coming up and last night's jobs.
 //
 // Dish lift: for the last 7 nights, how many of the dishes Tonight's Dish
 // picked actually sold, against what the same dish usually sells on the same
@@ -41,7 +42,7 @@ export default async function handler(req, res) {
     const from36 = addDays(today, -36);
     const monthStart = today.slice(0, 8) + '01';
 
-    const [rest, recs, conns, unrev, usage, open, jobRuns, anyRun] = await Promise.all([
+    const [rest, recs, conns, unrev, usage, open, jobRuns, anyRun, evs, dayNotes, dls, pros] = await Promise.all([
       db.from('restaurants').select('id, name, subscription_status, deactivated_at'),
       db.from('ai_recommendations').select('restaurant_id, generated_date, recommendations').gte('generated_date', addDays(today, -8)),
       db.from('pos_connections').select('restaurant_id, status, last_synced_at'),
@@ -50,6 +51,10 @@ export default async function handler(req, res) {
       db.from('admin_tickets').select('*').eq('status', 'open'),
       db.from('admin_job_runs').select('job, status, summary, started_at').gte('started_at', addDays(today, -1)).order('started_at', { ascending: false }),
       db.from('admin_job_runs').select('id').limit(1),
+      db.from('admin_events').select('day, time, title').gte('day', today).lte('day', addDays(today, 7)).order('day').order('time', { ascending: true, nullsFirst: true }),
+      db.from('admin_day_notes').select('note').eq('day', today),
+      db.from('admin_deadlines').select('title, due_on').eq('status', 'open').not('due_on', 'is', null).lte('due_on', addDays(today, 14)).order('due_on'),
+      db.from('sales_prospects').select('name, next_step, due_on').not('due_on', 'is', null).lte('due_on', today).not('stage', 'in', '("Lost","Live")').order('due_on'),
     ]);
 
     // ── Live restaurants ─────────────────────────────────────────────────
@@ -123,6 +128,22 @@ export default async function handler(req, res) {
       return { key: j.key, name: j.name, time: etTimeOf(j.utc, today), status, summary: run?.summary || null };
     });
 
+    // ── Today's plan and coming up ───────────────────────────────────────
+    const t12 = (t) => { const [h, m] = String(t).split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+    const short = (d) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(new Date(d + 'T12:00:00Z')).toUpperCase();
+    const evRows = evs.data || [];
+    const plan = [
+      ...evRows.filter((e) => e.day === today).map((e) => ({ time: e.time ? t12(e.time) : '', text: e.title, href: '/admin/calendar' })),
+      ...(pros.data || []).map((p) => ({ time: p.due_on < today ? 'LATE' : '', text: `Follow up with ${p.name}${p.next_step ? `: ${p.next_step}` : ''}`, href: '/admin/pipeline' })),
+    ];
+    const dayNote = dayNotes.data?.[0]?.note || null;
+    const comingUp = [
+      ...(dls.data || []).map((d) => ({ date: d.due_on < today ? 'LATE' : d.due_on === today ? 'TODAY' : short(d.due_on), sort: d.due_on, text: d.title, kind: 'deadline', href: '/admin/finances' })),
+      ...evRows.filter((e) => e.day > today).map((e) => ({ date: short(e.day), sort: e.day, text: `${e.time ? t12(e.time) + ' · ' : ''}${e.title}`, kind: 'event', href: '/admin/calendar' })),
+    ].sort((a, b) => a.sort.localeCompare(b.sort)).slice(0, 8);
+    const firstTimed = evRows.find((e) => e.day === today && e.time);
+    const planLine = firstTimed ? `${firstTimed.title} is at ${t12(firstTimed.time)}.` : '';
+
     // ── Rail ─────────────────────────────────────────────────────────────
     const tickets = sortTickets(open.data || []).map(forClient);
     const first = String(admin.profile.full_name || '').trim().split(/\s+/)[0] || 'there';
@@ -153,6 +174,10 @@ export default async function handler(req, res) {
       ],
       tickets,
       jobs,
+      plan,
+      dayNote,
+      comingUp,
+      planLine,
       ticketError,
     });
   } catch (err) {
