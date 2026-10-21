@@ -8,7 +8,7 @@ import StaffBriefing from '../../components/staff/StaffBriefing';
 
 const CODE_RE = /^[a-z0-9]{12}$/;
 
-export default function TagPage({ restaurantName, cachedRecommendations, code, askSpot }) {
+export default function TagPage({ restaurantName, cachedRecommendations, code, askSpot, testTap }) {
   async function saveSpot(spot) {
     try {
       const res = await fetch('/api/t/spot', {
@@ -20,6 +20,18 @@ export default function TagPage({ restaurantName, cachedRecommendations, code, a
     } catch {
       return false;
     }
+  }
+
+  if (testTap) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0ece4', fontFamily: "'Courier New', monospace", padding: 24, textAlign: 'center', color: '#1a1612' }}>
+        <div>
+          <div style={{ fontSize: 44, color: '#2f8a47' }}>✓</div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginTop: 8 }}>{testTap.label} works</div>
+          <div style={{ fontSize: 14, color: '#7a6e60', marginTop: 6 }}>Written for {testTap.restaurantName}. It goes live when the kit is delivered.</div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -43,7 +55,7 @@ const forStaff = (r) => ({
 
 export async function getServerSideProps({ params, res }) {
   res.setHeader('Cache-Control', 'no-store');
-  const dead = { props: { restaurantName: null, cachedRecommendations: [], code: null, askSpot: false } };
+  const dead = { props: { restaurantName: null, cachedRecommendations: [], code: null, askSpot: false, testTap: null } };
 
   const code = String(params.code || '').toLowerCase();
   if (!CODE_RE.test(code)) return dead;
@@ -58,12 +70,19 @@ export async function getServerSideProps({ params, res }) {
 
   const { data: tags } = await supabase
     .from('nfc_tags')
-    .select('id, restaurant_id, spot, tap_count, first_tap_at, restaurants(name)')
+    .select('id, restaurant_id, label, status, spot, tap_count, first_tap_at, confirmed_at, restaurants(name)')
     .eq('code', code)
-    .eq('status', 'active')
+    .in('status', ['active', 'pending'])
     .limit(1);
   const tag = tags?.[0];
   if (!tag || !tag.restaurants?.name) return dead;
+
+  // A tag you just wrote, before it is delivered: this tap is your test.
+  // Confirm it and stop. No tap is logged and nobody is asked for a spot.
+  if (tag.status === 'pending') {
+    if (!tag.confirmed_at) await supabase.from('nfc_tags').update({ confirmed_at: new Date().toISOString() }).eq('id', tag.id);
+    return { props: { ...dead.props, testTap: { label: tag.label, restaurantName: tag.restaurants.name } } };
+  }
 
   // Log the tap. A failed log never blocks the page.
   const now = new Date().toISOString();

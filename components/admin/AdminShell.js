@@ -19,7 +19,7 @@ import AdminSearch from './AdminSearch';
 
 export const SECTIONS = [
   { label: 'Today', href: '/admin', subs: [['Today', '/admin'], ['All tickets', '/admin/tickets']] },
-  { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support']] },
+  { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
   { label: 'Data quality', href: '/admin/invoice-review', subs: [['Review queue', '/admin/invoice-review'], ['Cost approvals', '/admin/prices'], ['Ingredient library', '/admin/ingredients']] },
   { label: 'Platform', href: '/admin/ai', subs: [['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/errors']] },
   { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Settings', '/admin/flags']] },

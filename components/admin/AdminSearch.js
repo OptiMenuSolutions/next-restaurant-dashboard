@@ -15,6 +15,7 @@ const PAGES = [
   ['All tickets', '/admin/tickets'],
   ['All restaurants', '/admin/restaurants'],
   ['Support inbox', '/admin/support'],
+  ['Tag kits', '/admin/tags'],
   ['Review queue', '/admin/invoice-review'],
   ['Cost approvals', '/admin/prices'],
   ['Ingredient library', '/admin/ingredients'],
