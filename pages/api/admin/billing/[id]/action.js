@@ -7,13 +7,12 @@
 //   add-cost { date, what, amount, source? }
 //   delete-cost { costId }
 
-import { Resend } from 'resend';
+import { sendFromNick } from '../../../../../lib/admin/email';
 import stripe from '../../../../../lib/stripeServer';
 import { adminDb as db, requireAdmin } from '../../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../../lib/admin/withAdminAuth';
 
 const REASONS = ['Too expensive', 'Not using it enough', 'Closed or sold the restaurant', 'Switched POS', 'Missing a feature they need', 'Other'];
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
@@ -73,15 +72,7 @@ export default async function handler(req, res) {
       const subject = String(body.subject || '').trim().slice(0, 150);
       const message = String(body.message || '').trim().slice(0, 5000);
       if (!subject || !message) return res.status(400).json({ error: 'Subject and message are needed' });
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const { error } = await resend.emails.send({
-        from: 'Nick <nick@opti-menu.com>',
-        to: owner.email,
-        subject,
-        text: `${message}\n\nNick Lavin\nOptiMenu · opti-menu.com`,
-        html: `<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px;color:#111819;font-size:15px;line-height:1.6;white-space:pre-wrap">${esc(message)}</div><p style="font-family:-apple-system,Segoe UI,sans-serif;color:#4b585b;font-size:13px;margin-top:24px">Nick Lavin<br>OptiMenu · <a href="https://www.opti-menu.com" style="color:#03808f">opti-menu.com</a></p>`,
-      });
-      if (error) throw new Error(error.message || 'Email failed');
+      await sendFromNick({ to: owner.email, subject, message });
       await log(`Emailed the owner: ${subject}`, { to: owner.email });
       return res.status(200).json({ ok: true, message: `Sent to ${owner.email}.` });
     }

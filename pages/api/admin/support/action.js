@@ -68,7 +68,9 @@ export default async function handler(req, res) {
         const owner = await ownerOf(db, t.restaurant_id);
         if (!owner) return res.status(400).json({ error: 'No owner email on file. Untick email to save it without sending.' });
         const subject = t.subject ? `Re: ${t.subject.replace(/^Re:\s*/i, '').slice(0, 120)}` : 'OptiMenu support';
-        await sendFromNick({ to: owner.email, subject, message: body });
+        const { data: last } = await db.from('support_messages').select('body, created_at')
+          .eq('thread_id', t.id).eq('direction', 'in').order('created_at', { ascending: false }).limit(1).maybeSingle();
+        await sendFromNick({ to: owner.email, subject, message: body, quote: last ? { from: owner.name, at: last.created_at, body: last.body } : null });
         emailed = true;
       }
       await db.from('support_messages').insert({ thread_id: t.id, direction: 'out', body, author: admin.name, emailed });
