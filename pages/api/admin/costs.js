@@ -33,12 +33,13 @@ async function load() {
   const today = etDate();
   const since = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
   const [{ data: rest }, ingredients, dishes, { data: globals }] = await Promise.all([
-    db.from('restaurants').select('id, name, state, deactivated_at'),
+    db.from('restaurants').select('id, name, state, shipping_state, deactivated_at'),
     fetchAll(() => db.from('ingredients').select('id, restaurant_id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at, price_skipped_at, ai_estimate').order('id')),
     fetchAll(() => db.from('component_ingredients').select('id, ingredient_id, menu_item_components!inner(menu_item_id, menu_items!inner(archived_at))').order('id')),
     db.from('global_ingredients').select('name, aliases, reference_price, reference_unit'),
   ]);
-  const restById = new Map((rest || []).map((r) => [r.id, r]));
+  // State comes from the shipping address; the admin-set state is only a fallback.
+  const restById = new Map((rest || []).map((r) => [r.id, { ...r, state: String(r.shipping_state || r.state || '').trim().toUpperCase() || null }]));
   const real = (rid) => rid !== TOUR_RESTAURANT_ID && restById.get(rid) && !restById.get(rid).deactivated_at;
 
   // Dishes using each ingredient (live dishes only).
@@ -156,7 +157,7 @@ async function load() {
   for (const p of pending) from.set(p.restaurant_id, { id: p.restaurant_id, name: p.restaurant, n: (from.get(p.restaurant_id)?.n || 0) + 1 });
   return {
     pending, approvedToday, skipped, from: [...from.values()],
-    restaurants: (rest || []).filter((r) => real(r.id)).map((r) => ({ id: r.id, name: r.name, state: r.state || null })),
+    restaurants: (rest || []).filter((r) => real(r.id)).map((r) => ({ id: r.id, name: r.name, state: restById.get(r.id).state })),
   };
 }
 
