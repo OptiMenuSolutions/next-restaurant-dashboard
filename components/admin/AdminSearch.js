@@ -17,7 +17,7 @@ const PAGES = [
   ['Support inbox', '/admin/support'],
   ['Tag kits', '/admin/tags'],
   ['Review queue', '/admin/review'],
-  ['Cost approvals', '/admin/prices'],
+  ['Cost approvals', '/admin/costs'],
   ['Ingredient library', '/admin/ingredients'],
   ['AI & parsing', '/admin/ai'],
   ['Jobs & health', '/admin/errors'],
