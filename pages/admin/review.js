@@ -16,6 +16,10 @@ import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, money, shortDate } from '../../components/admin/ui';
 
+// Each panel is at most one screen tall and scrolls on its own, so a long
+// queue or a long invoice never stretches the page.
+const PANE_H = 'max(460px, calc(100vh - 300px))';
+
 function useApi() {
   const { adminFetch } = useAdminFetch();
   return useCallback(async (url, body) => {
@@ -82,10 +86,10 @@ function Invoices({ initialRestaurant }) {
 
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      <section aria-label="Invoices to review" style={{ flex: '0 1 250px', minWidth: 220, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      <section aria-label="Invoices to review" style={{ flex: '0 1 250px', minWidth: 220, border: '1px solid var(--line)', borderRadius: 12, overflowY: 'auto', maxHeight: PANE_H }}>
         {groups.map((g) => (
           <div key={g.id}>
-            <div style={{ padding: '9px 14px', background: 'var(--panel)', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.1em', color: 'var(--muted)' }}>{g.name.toUpperCase()} · {g.items.length}</div>
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '9px 14px', background: 'var(--panel)', fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.1em', color: 'var(--muted)' }}>{g.name.toUpperCase()} · {g.items.length}</div>
             {g.items.map((i) => {
               const on = i.id === openId;
               return (
@@ -163,7 +167,7 @@ function InvoiceEditor({ id, onDone }) {
 
   return (
     <>
-      <section aria-label="Invoice photo" style={{ flex: '1 1 340px', minWidth: 280, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignSelf: 'stretch', maxHeight: 820 }}>
+      <section aria-label="Invoice photo" style={{ flex: '1 1 340px', minWidth: 280, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', display: 'flex', flexDirection: 'column', alignSelf: 'stretch', maxHeight: PANE_H }}>
         <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {data.pages.length > 1 && data.pages.map((p, i) => (
             <button key={i} type="button" className="om-btn" style={{ minHeight: 28, fontSize: 12, background: i === page ? 'var(--accent-tint)' : undefined }} onClick={() => setPage(i)}>Page {p.page || i + 1}</button>
@@ -177,7 +181,7 @@ function InvoiceEditor({ id, onDone }) {
         </div>
       </section>
 
-      <section aria-label="Invoice lines" style={{ flex: '2 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column' }}>
+      <section aria-label="Invoice lines" style={{ flex: '2 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', maxHeight: PANE_H, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
           <div style={{ flex: '1 1 220px' }}>
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{inv.supplier || 'Unknown supplier'}{inv.number && <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>#{inv.number}</span>}</h2>
@@ -190,9 +194,9 @@ function InvoiceEditor({ id, onDone }) {
           <button type="button" className="om-pri" disabled={busy} onClick={() => save(true)}>{busy ? 'Saving…' : dirty.length ? 'Save and mark reviewed' : 'Mark reviewed'}</button>
         </div>
         {flash && <div style={{ padding: '8px 16px', fontSize: 13, background: 'var(--accent-tint)' }}>{flash}</div>}
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
-            <thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
               <tr style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', color: 'var(--muted)', textAlign: 'left', background: 'var(--panel)' }}>
                 <th style={{ padding: '8px 6px 8px 14px', fontWeight: 500 }}>ITEM</th>
                 <th style={{ padding: 8, fontWeight: 500 }}>QTY</th>
@@ -266,7 +270,7 @@ function Menus() {
 
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-      <section aria-label="Restaurants" style={{ flex: '0 1 250px', minWidth: 220, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      <section aria-label="Restaurants" style={{ flex: '0 1 250px', minWidth: 220, border: '1px solid var(--line)', borderRadius: 12, overflowY: 'auto', maxHeight: PANE_H }}>
         {list.map((r) => {
           const on = r.id === rid;
           return (
