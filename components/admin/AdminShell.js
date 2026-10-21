@@ -11,7 +11,7 @@
 
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import { CSS, FONT_LINKS, MONO, PAGE_PAD, useTheme, LoadingState, SearchIcon } from '../client/ClientChrome';
@@ -21,7 +21,7 @@ import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 export const SECTIONS = [
   { label: 'Today', href: '/admin', subs: [['Today', '/admin'], ['All tickets', '/admin/tickets']] },
   { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
-  { label: 'Sales', href: '/admin/pipeline', subs: [['Pipeline', '/admin/pipeline'], ['Calendar', '/admin/calendar'], ['Testimonials', '/admin/testimonials']] },  { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
+  { label: 'Sales', href: '/admin/pipeline', subs: [['Pipeline', '/admin/pipeline'], ['Calendar', '/admin/calendar'], ['Testimonials', '/admin/testimonials']] },
   { label: 'Data quality', href: '/admin/review', subs: [['Review queue', '/admin/review'], ['Cost approvals', '/admin/costs'], ['Ingredient library', '/admin/ingredients']] },
   { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/health']] },
   { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Expenses & deadlines', '/admin/finances'], ['Settings', '/admin/settings']] },
@@ -56,13 +56,14 @@ export default function AdminShell({ section, sub, title, children }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [badges, setBadges] = useState({});
   const { adminFetch } = useAdminFetch();
+  const leaving = useRef(false);
 
   // Admins only.
   useEffect(() => {
     let alive = true;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.replace('/admin/login'); return; }
+      if (!session) { router.replace(leaving.current ? '/admin/login' : '/admin/login?redirected=1'); return; }
       const { data: profile } = await supabase.from('profiles').select('role, full_name, email').eq('id', session.user.id).single();
       if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
       if (alive) setMe({ name: profile.full_name || profile.email || 'Admin' });
@@ -91,6 +92,7 @@ export default function AdminShell({ section, sub, title, children }) {
   }, [me, adminFetch, router.asPath]);
 
   async function signOut() {
+    leaving.current = true;
     await supabase.auth.signOut();
     router.push('/admin/login');
   }
@@ -229,5 +231,20 @@ export function Dialog({ title, sub, onClose, children, width = 460 }) {
         {children}
       </div>
     </div>
+  );
+}
+
+// A yes/no question in the admin's own style, used instead of the browser's confirm box.
+export function Confirm({ title, sub, yes = 'Confirm', danger = false, busy = false, onYes, onClose }) {
+  return (
+    <Dialog title={title} sub={sub} onClose={onClose} width={420}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
+        <button type="button" className={danger ? 'om-btn' : 'om-pri'} disabled={busy} onClick={onYes}
+          style={danger ? { background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' } : undefined}>
+          {busy ? 'Working…' : yes}
+        </button>
+      </div>
+    </Dialog>
   );
 }

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import AdminShell from '../../../components/admin/AdminShell';
+import AdminShell, { Confirm } from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Dot, StatusChip, Chip, Pills, Card, th, td, money, shortDate, HEALTH_WORD, DOT } from '../../../components/admin/ui';
@@ -80,7 +80,7 @@ function RestaurantPage({ id }) {
 
   return (
     <>
-      <Link href="/admin/restaurants" style={{ fontSize: 13, fontWeight: 700 }}>← All restaurants</Link>
+      <Link href="/admin/restaurants" style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← All restaurants</Link>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
         <div style={{ flex: '1 1 360px' }}>
@@ -149,6 +149,7 @@ function Overview({ data, act, reload }) {
   const r = data.restaurant;
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [del, setDel] = useState(null);
   const week = r.views.reduce((a, b) => a + b, 0);
 
   async function saveNote() {
@@ -228,10 +229,22 @@ function Overview({ data, act, reload }) {
           </div>
           {data.notes.map((n) => (
             <div key={n.id} style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{n.when} · {n.by}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{n.when} · {n.by}</span>
+                <button type="button" onClick={() => setDel(n)} aria-label="Delete note"
+                  style={{ border: 0, background: 'none', padding: 0, color: 'var(--muted)', cursor: 'pointer', font: "600 12px 'Manrope', sans-serif" }}>Delete</button>
+              </div>
               <div style={{ fontSize: 13.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>{n.body}</div>
             </div>
           ))}
+          {del && (
+            <Confirm title="Delete this note?" sub={del.body.length > 140 ? `${del.body.slice(0, 140)}…` : del.body}
+              yes="Delete note" danger busy={saving} onClose={() => setDel(null)}
+              onYes={async () => {
+                setSaving(true);
+                try { await act({ action: 'delete-note', noteId: del.id }); setDel(null); reload(); } finally { setSaving(false); }
+              }} />
+          )}
         </Card>
 
         <Card title="People & scanners">

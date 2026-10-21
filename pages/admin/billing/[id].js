@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import AdminShell, { Dialog } from '../../../components/admin/AdminShell';
+import AdminShell, { Dialog, Confirm } from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Chip, Card, th, td, money, shortDate } from '../../../components/admin/ui';
@@ -22,6 +22,7 @@ function BillingPage({ id }) {
   const [dialog, setDialog] = useState(null);
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ask, setAsk] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -36,8 +37,7 @@ function BillingPage({ id }) {
   }, [adminFetch, id]);
   useEffect(() => { load(); }, [load]);
 
-  async function act(body, { confirmText } = {}) {
-    if (confirmText && !window.confirm(confirmText)) return false;
+  async function act(body) {
     setBusy(true);
     setFlash('');
     try {
@@ -69,7 +69,7 @@ function BillingPage({ id }) {
 
   return (
     <>
-      <Link href={`/admin/restaurants/${r.id}`} style={{ fontSize: 13, fontWeight: 700 }}>← {r.name}</Link>
+      <Link href={`/admin/restaurants/${r.id}`} style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← {r.name}</Link>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
         <div style={{ flex: '1 1 360px' }}>
@@ -84,7 +84,7 @@ function BillingPage({ id }) {
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {stripeUrl && <a className="om-btn" href={stripeUrl} target="_blank" rel="noopener noreferrer">Open in Stripe ↗</a>}
-          <button type="button" className="om-btn" disabled={busy || !st.subscriptionId} onClick={() => act({ action: 'comp-month' }, { confirmText: `Credit one month (${money(data.perMonth)}) to ${r.name}? Their next invoice uses it first.` })}>Comp a month</button>
+          <button type="button" className="om-btn" disabled={busy || !st.subscriptionId || !data.perMonth} onClick={() => setAsk({ title: `Comp a month for ${r.name}?`, sub: `Adds a ${money(data.perMonth)} credit to their Stripe balance. Their next invoice uses it first.`, yes: `Credit ${money(data.perMonth)}`, body: { action: 'comp-month' } })}>Comp a month</button>
           <button type="button" className="om-btn" disabled={busy || !data.refundable.length} onClick={() => setDialog('refund')}>Refund</button>
           {st.subscriptionId && <a className="om-btn" href={`https://dashboard.stripe.com/subscriptions/${st.subscriptionId}`} target="_blank" rel="noopener noreferrer">Change plan ↗</a>}
           <button type="button" className="om-btn" disabled={busy} onClick={() => setDialog('email')}>Email the owner</button>
@@ -93,6 +93,7 @@ function BillingPage({ id }) {
       </div>
 
       {flash && <div style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
+      {st.subMissing && <div style={{ background: 'var(--panel)', color: 'var(--muted)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>No live Stripe subscription. The subscription ID saved for {r.name} is not in Stripe (often an old test-mode ID), so comp and plan changes are off. Comped accounts look like this.</div>}
       {st.error && <div style={{ background: 'var(--amber-tint)', color: 'var(--amber)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>Stripe could not be read: {st.error}</div>}
 
       {failed && (
@@ -229,7 +230,7 @@ function BillingPage({ id }) {
                   <td style={td}>{o.what}{o.source && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--muted)' }}>{o.source}</span>}</td>
                   <td style={{ ...td, textAlign: 'right', fontFamily: MONO, fontSize: 12.5 }}>{money(o.amount)}</td>
                   <td style={{ ...td, paddingRight: 18, textAlign: 'right' }}>
-                    <button type="button" aria-label={`Delete ${o.what}`} onClick={() => act({ action: 'delete-cost', costId: o.id }, { confirmText: `Delete ${o.what}?` })} style={{ border: 0, background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                    <button type="button" aria-label={`Delete ${o.what}`} onClick={() => setAsk({ title: `Delete ${o.what}?`, sub: `${money(o.amount)} from ${shortDate(o.date)} comes off their costs.`, yes: 'Delete cost', danger: true, body: { action: 'delete-cost', costId: o.id } })} style={{ border: 0, background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                   </td>
                 </tr>
               ))}
@@ -242,6 +243,7 @@ function BillingPage({ id }) {
       {dialog === 'refund' && <RefundDialog charges={data.refundable} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'refund', ...v })} />}
       {dialog === 'email' && <EmailDialog r={r} owner={data.owner} failed={failed} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'email', ...v })} />}
       {dialog === 'cost' && <CostDialog kitCost={data.kitCost} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'add-cost', ...v })} />}
+      {ask && <Confirm title={ask.title} sub={ask.sub} yes={ask.yes} danger={ask.danger} busy={busy} onClose={() => setAsk(null)} onYes={async () => { await act(ask.body); setAsk(null); }} />}
     </>
   );
 }

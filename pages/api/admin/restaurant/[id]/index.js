@@ -97,7 +97,7 @@ async function overview(id) {
 async function activity(id) {
   const since = new Date(Date.now() - 60 * 86400000).toISOString();
   const [inv, scans, recs, taps, audit, notes, usage] = await Promise.all([
-    db.from('invoices').select('supplier, number, created_at, reviewed, parse_status').eq('restaurant_id', id).eq('is_sample', false).gte('created_at', since).order('created_at', { ascending: false }).limit(200),
+    db.from('invoices').select('supplier, number, created_at, reviewed').eq('restaurant_id', id).eq('is_sample', false).gte('created_at', since).order('created_at', { ascending: false }).limit(200),
     db.from('scanner_scans').select('status, pages, error, created_at').eq('restaurant_id', id).gte('created_at', since).order('created_at', { ascending: false }).limit(200),
     db.from('ai_recommendations').select('generated_date, recommendations').eq('restaurant_id', id).gte('generated_date', since.slice(0, 10)).limit(60),
     fetchAll(() => db.from('nfc_tag_taps').select('id, tapped_at').eq('restaurant_id', id).gte('tapped_at', since).order('id')),
@@ -177,7 +177,7 @@ async function menu(id) {
 
 async function invoices(id) {
   const { data, error } = await db.from('invoices')
-    .select('id, supplier, number, date, total_amount, amount, reviewed, parse_status, created_at, invoice_items(count)')
+    .select('id, supplier, number, date, amount, reviewed, created_at, invoice_items(count)')
     .eq('restaurant_id', id).eq('is_sample', false)
     .order('created_at', { ascending: false }).limit(300);
   if (error) throw new Error(error.message);

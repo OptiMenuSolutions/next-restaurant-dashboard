@@ -56,11 +56,15 @@ export default async function handler(req, res) {
 
     // ── Stripe ─────────────────────────────────────────────────────────────
     let customer = null, sub = null, invoices = [], charges = [], credits = [], stripeError = null;
+    let subMissing = false;
     if (r.stripe_customer_id) {
       try {
         [customer, sub, invoices, charges, credits] = await Promise.all([
           stripe.customers.retrieve(r.stripe_customer_id, { expand: ['invoice_settings.default_payment_method'] }),
-          r.stripe_subscription_id ? stripe.subscriptions.retrieve(r.stripe_subscription_id, { expand: ['default_payment_method'] }) : null,
+          r.stripe_subscription_id
+            ? stripe.subscriptions.retrieve(r.stripe_subscription_id, { expand: ['default_payment_method'] })
+              .catch((e) => { if (e.code === 'resource_missing') { subMissing = true; return null; } throw e; })
+            : null,
           stripe.invoices.list({ customer: r.stripe_customer_id, limit: 100, expand: ['data.charge'] }).then((x) => x.data),
           stripe.charges.list({ customer: r.stripe_customer_id, limit: 100, expand: ['data.balance_transaction', 'data.refunds'] }).then((x) => x.data),
           stripe.customers.listBalanceTransactions(r.stripe_customer_id, { limit: 100 }).then((x) => x.data),
@@ -165,7 +169,8 @@ export default async function handler(req, res) {
       owner: owner ? { name: owner.full_name || owner.email, email: owner.email } : null,
       stripe: {
         customerId: r.stripe_customer_id || null,
-        subscriptionId: r.stripe_subscription_id || null,
+        subscriptionId: subMissing ? null : (r.stripe_subscription_id || null),
+        subMissing,
         error: stripeError,
         status: sub?.status || null,
         cancelAtPeriodEnd: !!sub?.cancel_at_period_end,

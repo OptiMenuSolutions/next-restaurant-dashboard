@@ -34,7 +34,7 @@ const fileKind = (v) => (/\.pdf(\?|$)/i.test(v || '') ? 'pdf' : 'image');
 
 async function detail(id) {
   const { data: inv } = await db.from('invoices')
-    .select('id, restaurant_id, supplier, number, date, amount, total_amount, file_url, parse_status, created_at, reviewed')
+    .select('id, restaurant_id, supplier, number, date, amount, file_url, created_at, reviewed')
     .eq('id', id).single();
   if (!inv) return null;
 
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
         return res.status(200).json(out);
       }
       const { data: invs, error } = await db.from('invoices')
-        .select('id, restaurant_id, supplier, number, date, amount, total_amount, parse_status, created_at, invoice_items(count)')
+        .select('id, restaurant_id, supplier, number, date, amount, created_at, invoice_items(count)')
         .eq('reviewed', false).eq('is_sample', false)
         .order('created_at', { ascending: true }).limit(500);
       if (error) throw new Error(error.message);

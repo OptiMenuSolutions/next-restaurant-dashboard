@@ -50,7 +50,7 @@ export default async function handler(req, res) {
     });
     const since = Math.floor(Date.parse(`${months[0]}-01T00:00:00Z`) / 1000) - 86400;
 
-    const [settings, { data: rest }, { data: recs }, usage, oneoffs, { data: cancels }] = await Promise.all([
+    const [settings, { data: rest }, { data: recs }, usage, { data: oneoffs }, { data: cancels }] = await Promise.all([
       getSettings(db),
       db.from('restaurants').select('id, name, stripe_customer_id, stripe_subscription_id, subscription_status, deactivated_at, created_at'),
       db.from('ai_recommendations').select('restaurant_id').gte('generated_date', addDays(today, -7)),
