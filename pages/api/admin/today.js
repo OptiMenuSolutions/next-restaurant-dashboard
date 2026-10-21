@@ -10,6 +10,7 @@ import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID, etDate, etHour, addDay
 import { syncTickets, sortTickets, forClient } from '../../../lib/admin/tickets';
 import { healthFor } from '../../../lib/admin/health';
 import { fetchAll } from '../../../lib/admin/fetchAll';
+import { JOBS, etTimeOf } from '../../../lib/admin/jobRun';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameDish = (a, b) => a === b || (a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a)));
@@ -40,13 +41,15 @@ export default async function handler(req, res) {
     const from36 = addDays(today, -36);
     const monthStart = today.slice(0, 8) + '01';
 
-    const [rest, recs, conns, unrev, usage, open] = await Promise.all([
+    const [rest, recs, conns, unrev, usage, open, jobRuns, anyRun] = await Promise.all([
       db.from('restaurants').select('id, name, subscription_status, deactivated_at'),
       db.from('ai_recommendations').select('restaurant_id, generated_date, recommendations').gte('generated_date', addDays(today, -8)),
       db.from('pos_connections').select('restaurant_id, status, last_synced_at'),
       db.from('invoices').select('restaurant_id, created_at').eq('reviewed', false).eq('is_sample', false).order('created_at', { ascending: true }).limit(1000),
       db.from('ai_usage').select('feature, cost').gte('created_at', monthStart),
       db.from('admin_tickets').select('*').eq('status', 'open'),
+      db.from('admin_job_runs').select('job, status, summary, started_at').gte('started_at', addDays(today, -1)).order('started_at', { ascending: false }),
+      db.from('admin_job_runs').select('id').limit(1),
     ]);
 
     // ── Live restaurants ─────────────────────────────────────────────────
@@ -111,6 +114,15 @@ export default async function handler(req, res) {
     const spend = u.reduce((a, x) => a + parseFloat(x.cost || 0), 0);
     const count = (f) => u.filter((x) => x.feature === f).length;
 
+    // ── Last night's jobs ────────────────────────────────────────────────
+    const tracking = !!(anyRun.data || []).length;
+    const jobs = JOBS.map((j) => {
+      const run = (jobRuns.data || []).find((x) => x.job === j.key && etDate(new Date(x.started_at)) === today);
+      const due = Date.parse(`${today}T${String(j.utc[1]).padStart(2, '0')}:${String(j.utc[0]).padStart(2, '0')}:00Z`) + 30 * 60000;
+      const status = run ? run.status : !tracking ? 'none' : due < Date.now() ? 'missed' : 'waiting';
+      return { key: j.key, name: j.name, time: etTimeOf(j.utc, today), status, summary: run?.summary || null };
+    });
+
     // ── Rail ─────────────────────────────────────────────────────────────
     const tickets = sortTickets(open.data || []).map(forClient);
     const first = String(admin.profile.full_name || '').trim().split(/\s+/)[0] || 'there';
@@ -140,6 +152,7 @@ export default async function handler(req, res) {
         },
       ],
       tickets,
+      jobs,
       ticketError,
     });
   } catch (err) {

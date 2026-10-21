@@ -13,9 +13,18 @@ import NoteDialog from '../../components/admin/NoteDialog';
 import Ticket from '../../components/admin/Ticket';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState } from '../../components/client/ClientChrome';
+import { Chip } from '../../components/admin/ui';
 
 const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 const TONE = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
+const JOB_RUN = {
+  ok: ['RAN OK', 'var(--green-tint)', 'var(--green)'],
+  partial: ['PROBLEMS', 'var(--amber-tint)', 'var(--amber)'],
+  failed: ['FAILED', 'var(--red-tint)', 'var(--red)'],
+  missed: ['DID NOT RUN', 'var(--red-tint)', 'var(--red)'],
+  waiting: ['NOT YET', 'var(--panel)', 'var(--muted)'],
+  none: ['NOT TRACKED', 'var(--panel)', 'var(--muted)'],
+};
 
 function TodayPage() {
   const router = useRouter();
@@ -99,6 +108,30 @@ function TodayPage() {
           )}
         </div>
       </section>
+
+      {data?.jobs && (
+        <section aria-labelledby="jobs" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <h2 id="jobs" style={{ margin: 0, fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em' }}>Last night’s jobs</h2>
+            <Link href="/admin/health" style={{ fontSize: 12.5, fontWeight: 700 }}>Jobs & health</Link>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+            {data.jobs.map((j) => {
+              const [label, bg, fg] = JOB_RUN[j.status] || JOB_RUN.none;
+              return (
+                <Link key={j.key} href="/admin/health" style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text)', background: 'var(--shell)' }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{j.time}</span>
+                    <Chip bg={bg} fg={fg}>{label}</Chip>
+                  </span>
+                  <b style={{ fontSize: 14 }}>{j.name}</b>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{j.summary || (j.status === 'waiting' ? 'Runs later this morning' : j.status === 'none' ? 'Recording starts with tonight’s run' : 'No run recorded today')}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {noteOpen && <NoteDialog onClose={() => setNoteOpen(false)} onSaved={() => { setNoteOpen(false); load(); }} />}
     </>

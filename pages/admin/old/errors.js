@@ -3,9 +3,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import AdminLayout from '../../components/admin/AdminLayout';
-import { useAdminFetch } from '../../lib/admin/useAdminFetch';
-import { FilterButton } from '../../lib/admin/usePagination';
+import AdminLayout from '../../../components/admin/AdminLayout';
+import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
+import { FilterButton } from '../../../lib/admin/usePagination';
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();

@@ -45,7 +45,7 @@ const NAV = [
     group: 'Support',
     items: [
       { label: 'Feedback',        href: '/admin/feedback',       icon: 'message-square', badge: 'amber' },
-      { label: 'Error Queue',     href: '/admin/errors',         icon: 'alert-circle',   badge: 'red' },
+      { label: 'Error Queue',     href: '/admin/old/errors',     icon: 'alert-circle',   badge: 'red' },
       { label: 'Audit Log',       href: '/admin/audit',          icon: 'clipboard' },
     ],
   },
