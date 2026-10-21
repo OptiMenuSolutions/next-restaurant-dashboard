@@ -1,248 +1,214 @@
 // pages/admin/ai.js
-// AI Usage & Costs dashboard page.
+// AI & parsing: what the readers and Tonight's Dish cost, per day, per job
+// and per restaurant (next to what each one pays you), and how often you
+// have to fix invoice lines. The old AI Usage page is at /admin/old/ai.
 
-import { useEffect, useState } from 'react';
-import AdminLayout from '../../components/admin/AdminLayout';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
+import { Card, th, td, money, shortDate } from '../../components/admin/ui';
 
-const FEATURE_LABELS = {
-  invoice_parse: 'Invoice Parse',
-  menu_import:   'Menu Import',
-  dish_recs:     'Dish Recs',
-  profit_score:  'Profit Score',
+const NAMES = {
+  invoice_parse: 'Invoice reading', invoice_sanity: 'Invoice double-check', invoice_match: 'Invoice line matching',
+  menu_import: 'Menu reading', dish_recs: 'Tonight’s Dish', profit_score: 'Profit score',
 };
+const cents = (n) => (n == null ? '—' : n < 0.1 && n > 0 ? `$${n.toFixed(3)}` : money(n));
+const pct = (n, d) => (d ? `${Math.round((n / d) * 100)}%` : '—');
+const monthLabel = (m) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'long', year: 'numeric' }).format(new Date(m + '-15T12:00:00Z'));
+const shift = (m, n) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1 + n, 1)).toISOString().slice(0, 7); };
 
-const FEATURE_COLORS = {
-  invoice_parse: '#02a4ba',
-  menu_import:   '#3de8a0',
-  dish_recs:     '#f5a623',
-  profit_score:  '#e85454',
-};
-
-function timeAgo(dateStr) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function BarRow({ label, value, max, color }) {
-  const pct = max > 0 ? (value / max) * 100 : 0;
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-      <span style={{ fontSize: 10, color: '#5a6080', width: 100, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, background: '#1a1c23', borderRadius: 3, height: 5 }}>
-        <div style={{ width: `${pct}%`, height: 5, borderRadius: 3, background: color || '#02a4ba', transition: 'width 0.6s' }} />
-      </div>
-      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: color || '#02a4ba', width: 55, textAlign: 'right' }}>
-        ${value.toFixed(4)}
-      </span>
-    </div>
-  );
-}
-
-// Monthly spend bar chart with dollar value labels on EVERY bar
-function MiniChart({ data }) {
-  if (!data?.length) return null;
-  const max = Math.max(...data.map(d => d.value), 0.0001);
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 72, paddingTop: 20 }}>
-      {data.map((d, i) => {
-        const isLatest = i === data.length - 1;
-        return (
-          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, height: '100%' }}>
-            <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end' }}>
-              {/* Dollar label above every bar */}
-              <div style={{
-                fontSize: 7,
-                color: isLatest ? '#02a4ba' : '#3a3e50',
-                fontFamily: "'DM Mono', monospace",
-                marginBottom: 2,
-                whiteSpace: 'nowrap',
-              }}>
-                ${d.value > 0 ? d.value.toFixed(2) : '0'}
-              </div>
-              <div style={{
-                width: '100%',
-                borderRadius: '2px 2px 0 0',
-                background: isLatest ? '#02a4ba' : `rgba(2,164,186,${0.2 + (i / data.length) * 0.6})`,
-                height: d.value > 0 ? `${(d.value / max) * 100}%` : '2px',
-                minHeight: 2,
-                transition: 'height 0.6s',
-              }} />
-            </div>
-            <span style={{ fontSize: 7, color: '#3a3e50' }}>{d.label}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function Card({ title, children, style }) {
-  return (
-    <div style={{ background: '#111318', border: '1px solid #1e2028', borderRadius: 8, padding: 14, ...style }}>
-      {title && <div style={{ fontSize: 9, fontWeight: 700, color: '#5a6080', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 12 }}>{title}</div>}
-      {children}
-    </div>
-  );
-}
-
-export default function AiUsagePage() {
+function AiPage() {
   const { adminFetch } = useAdminFetch();
-  const [data, setData]     = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [month, setMonth] = useState(null);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [limit, setLimit] = useState('');
+  const [flash, setFlash] = useState('');
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res  = await adminFetch('/api/admin/ai');
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  const load = useCallback(async () => {
+    setError('');
+    try {
+      const res = await adminFetch(`/api/admin/platform/ai${month ? `?month=${month}` : ''}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load AI spend');
+      setData(json);
+      setLimit(String(json.limit));
+    } catch (e) {
+      setError(e.message);
     }
-    load();
-  }, [adminFetch]);
+  }, [adminFetch, month]);
+  useEffect(() => { load(); }, [load]);
 
-  if (loading) return (
-    <AdminLayout title="AI Usage">
-      <div style={s.center}><div style={s.spinner} /><span style={{ color: '#3a3e50', fontSize: 12 }}>Loading…</span></div>
-    </AdminLayout>
-  );
+  const saveLimit = async () => {
+    setFlash('');
+    const res = await adminFetch('/api/admin/platform/ai', { method: 'POST', body: JSON.stringify({ action: 'limit', value: limit }) });
+    const json = await res.json();
+    setFlash(res.ok ? 'Daily line saved.' : json.error || 'Could not save');
+    if (res.ok) load();
+  };
 
-  const d   = data || {};
-  const tm  = d.thisMonth || {};
-  const lm  = d.lastMonth || {};
-  const at  = d.allTime   || {};
-  const budgetPct   = d.budgetUsedPct || 0;
-  const budgetColor = budgetPct >= 100 ? '#e85454' : budgetPct >= 80 ? '#f5a623' : '#3de8a0';
-  const maxFeatureCost = Math.max(tm.invoice_parse || 0, tm.menu_import || 0, tm.dish_recs || 0, 0.0001);
+  if (error) return <ErrorState message={error} onRetry={load} />;
+  if (!data) return <LoadingState label="Loading AI spend…" />;
 
-  // Top restaurants — show even if only 1 restaurant has data
-  const topRestaurants = d.topRestaurants || [];
+  const m = data.month;
+  const a = data.accuracy;
+  const change = data.prevSpend > 0 ? (data.spend - data.prevSpend) / data.prevSpend : null;
+  const jobsTotal = data.jobs.reduce((s, j) => s + j.total, 0);
 
   return (
-    <AdminLayout title="AI Usage & Costs">
-      <div style={s.page}>
+    <>
+      <PageHead kicker="PLATFORM" title="AI & parsing" sub="What the invoice and menu readers and Tonight’s Dish cost, who it is spent on, and how often you fix the readers.">
+        <button type="button" className="om-btn" aria-label="Previous month" onClick={() => { setData(null); setMonth(shift(m, -1)); }}>←</button>
+        <span style={{ alignSelf: 'center', fontWeight: 700, minWidth: 130, textAlign: 'center' }}>{monthLabel(m)}</span>
+        <button type="button" className="om-btn" aria-label="Next month" disabled={data.isThisMonth} onClick={() => { setData(null); setMonth(shift(m, 1)); }}>→</button>
+      </PageHead>
+      {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-        {/* ── Header ── */}
-        <div>
-          <h1 style={s.title}>AI Usage & Costs</h1>
-          <p style={s.subtitle}>Anthropic API spend tracked across all features and restaurants</p>
-        </div>
-
-        {/* ── KPI Row ── */}
-        <div style={s.kpiGrid}>
-          <Card>
-            <div style={s.kpiLabel}>This Month</div>
-            <div style={{ ...s.kpiValue, color: budgetColor }}>${(tm.total || 0).toFixed(2)}</div>
-            <div style={{ fontSize: 9, color: '#3a3e50', marginTop: 3 }}>of ${d.budget || 180} budget</div>
-            <div style={{ marginTop: 8, background: '#1a1c23', borderRadius: 3, height: 4 }}>
-              <div style={{ width: `${Math.min(budgetPct, 100)}%`, height: 4, borderRadius: 3, background: budgetColor, transition: 'width 0.6s' }} />
-            </div>
-          </Card>
-
-          <Card>
-            <div style={s.kpiLabel}>Last Month</div>
-            <div style={s.kpiValue}>${(lm.total || 0).toFixed(2)}</div>
-            {lm.total > 0 && tm.total > 0 && (
-              <div style={{ fontSize: 9, color: tm.total > lm.total ? '#e85454' : '#3de8a0', marginTop: 3 }}>
-                {tm.total > lm.total ? '↑' : '↓'} {Math.abs(Math.round(((tm.total - lm.total) / lm.total) * 100))}% vs last month
-              </div>
-            )}
-          </Card>
-
-          <Card>
-            <div style={s.kpiLabel}>All Time Spend</div>
-            <div style={s.kpiValue}>${(at.total || 0).toFixed(2)}</div>
-            <div style={{ fontSize: 9, color: '#3a3e50', marginTop: 3 }}>
-              {((at.input_tokens || 0) / 1000).toFixed(0)}k input · {((at.output_tokens || 0) / 1000).toFixed(0)}k output tokens
-            </div>
-          </Card>
-
-          <Card>
-            <div style={s.kpiLabel}>This Month Tokens</div>
-            <div style={s.kpiValue}>{(((tm.input_tokens || 0) + (tm.output_tokens || 0)) / 1000).toFixed(1)}k</div>
-            <div style={{ fontSize: 9, color: '#3a3e50', marginTop: 3 }}>
-              {((tm.input_tokens || 0) / 1000).toFixed(0)}k in · {((tm.output_tokens || 0) / 1000).toFixed(0)}k out
-            </div>
-          </Card>
-        </div>
-
-        {/* ── Row 2: Trend + Feature Breakdown ── */}
-        <div style={s.row2}>
-          <Card title="Monthly Spend Trend">
-            <MiniChart data={d.monthlyTrend} />
-          </Card>
-
-          <Card title="This Month by Feature">
-            <BarRow label="Invoice Parse" value={tm.invoice_parse || 0} max={maxFeatureCost} color={FEATURE_COLORS.invoice_parse} />
-            <BarRow label="Menu Import"   value={tm.menu_import   || 0} max={maxFeatureCost} color={FEATURE_COLORS.menu_import} />
-            <BarRow label="Dish Recs"     value={tm.dish_recs     || 0} max={maxFeatureCost} color={FEATURE_COLORS.dish_recs} />
-            <BarRow label="Profit Score"  value={tm.profit_score  || 0} max={maxFeatureCost} color={FEATURE_COLORS.profit_score} />
-          </Card>
-        </div>
-
-        {/* ── Row 3: Top Restaurants + Recent Calls ── */}
-        <div style={s.row2}>
-          <Card title="Top Restaurants by Spend (This Month)">
-            {topRestaurants.length === 0 ? (
-              <p style={s.empty}>No AI calls this month yet</p>
-            ) : (
-              topRestaurants.map((r, i) => (
-                <div key={r.id} style={s.listRow}>
-                  <span style={{ fontSize: 9, color: '#3a3e50', width: 16 }}>{i + 1}</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#e4e6f0', fontWeight: 600 }}>{r.name}</div>
-                    <div style={{ fontSize: 9, color: '#5a6080' }}>{r.calls} call{r.calls !== 1 ? 's' : ''}</div>
-                  </div>
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: '#02a4ba' }}>${r.cost.toFixed(4)}</span>
-                </div>
-              ))
-            )}
-          </Card>
-
-          <Card title="Recent API Calls">
-            {(d.recentCalls || []).length === 0
-              ? <p style={s.empty}>No calls yet</p>
-              : (d.recentCalls || []).map((call, i) => (
-                <div key={i} style={s.listRow}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: FEATURE_COLORS[call.feature] || '#5a6080', flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 11, color: '#e4e6f0', fontWeight: 600 }}>{FEATURE_LABELS[call.feature] || call.feature}</div>
-                    <div style={{ fontSize: 9, color: '#5a6080' }}>{call.restaurant} · {call.input_tokens}in / {call.output_tokens}out tokens</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#7880a0' }}>${call.cost.toFixed(6)}</div>
-                    <div style={{ fontSize: 8, color: '#3a3e50' }}>{timeAgo(call.created_at)}</div>
-                  </div>
-                </div>
-              ))
-            }
-          </Card>
-        </div>
-
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+        <Tile k={`SPEND · ${monthLabel(m).toUpperCase()}`} v={money(data.spend)} s={change == null ? `${data.calls} calls` : `${data.calls} calls · ${change >= 0 ? '+' : ''}${Math.round(change * 100)}% vs last month`} />
+        <Tile k="SPEND · TODAY" v={data.isThisMonth ? money(data.todaySpend) : '—'} s={`Daily line ${money(data.limit)}${data.daysOver ? ` · crossed on ${data.daysOver} day${data.daysOver === 1 ? '' : 's'}` : ''}`} />
+        <Tile k="PARSE ACCURACY" v={pct(a.clean, a.lines)} s={`Invoice lines you did not change, of ${a.lines} reviewed in the last 90 days`} />
+        <Tile k="PER RESTAURANT" v={data.restaurants.length ? money(data.spend / data.restaurants.length) : '—'} s={`Average AI spend across ${data.restaurants.length} restaurant${data.restaurants.length === 1 ? '' : 's'} this month`} />
       </div>
-    </AdminLayout>
+
+      <Card title={`Spend per day · ${monthLabel(m)}`} right={
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+          Daily line $<input className="om-field" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} style={{ width: 70, minHeight: 30 }} />
+          <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={Number(limit) === data.limit} onClick={saveLimit}>Save</button>
+        </label>
+      }>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Hover a bar for that day’s calls. The dashed line is your daily line; days over it are marked.</div>
+        <DayBars days={data.days} limit={data.limit} />
+      </Card>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
+        <Card title="By job" style={{ flex: '1 1 420px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr><th style={th}>JOB</th><th style={{ ...th, textAlign: 'right' }}>RUNS</th><th style={{ ...th, textAlign: 'right' }}>EACH</th><th style={{ ...th, textAlign: 'right' }}>TOTAL</th></tr></thead>
+            <tbody>
+              {data.jobs.length === 0 && <tr><td colSpan={4} style={{ ...td, color: 'var(--muted)' }}>No AI calls this month.</td></tr>}
+              {data.jobs.map((j) => (
+                <tr key={j.key}>
+                  <td style={td}><b>{j.name}</b><span style={{ display: 'block', fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{j.models.join(', ') || '—'}</span></td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{j.runs}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{cents(j.each)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{money(j.total)}</td>
+                </tr>
+              ))}
+              {data.jobs.length > 0 && <tr><td style={{ ...td, fontWeight: 800 }}>Total</td><td style={td} /><td style={td} /><td style={{ ...td, textAlign: 'right', fontFamily: MONO, fontWeight: 800 }}>{money(jobsTotal)}</td></tr>}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Claude only. Mistral (the text reader for photos and PDFs) is not logged yet, so its cost is not in these numbers.</div>
+        </Card>
+
+        <Card title="What you fix most" style={{ flex: '1 1 340px' }}>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>{a.lines ? `Of ${a.lines} invoice lines on invoices you reviewed in the last 90 days.` : 'No reviewed invoices in the last 90 days yet.'}</div>
+          {[['Price changed', a.price], ['Quantity changed', a.qty], ['Left without an ingredient link', a.unlinked]].map(([label, n]) => (
+            <div key={label}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}><span>{label}</span><span style={{ fontFamily: MONO }}>{n} · {pct(n, a.lines)}</span></div>
+              <div style={{ height: 6, borderRadius: 3, background: 'var(--panel)', marginTop: 4 }}>
+                <div style={{ height: 6, borderRadius: 3, background: 'var(--accent-deep)', width: a.lines ? `${Math.min(100, (n / a.lines) * 100)}%` : 0 }} />
+              </div>
+            </div>
+          ))}
+          <Link href="/admin/review" style={{ fontSize: 12.5, color: 'var(--accent-deep)' }}>Open the review queue</Link>
+        </Card>
+      </div>
+
+      <Card title={`Spend by restaurant · ${monthLabel(m)}`}>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>What each restaurant costs you in AI, next to what they pay you.</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 720 }}>
+            <thead><tr>
+              <th style={th}>RESTAURANT</th><th style={{ ...th, textAlign: 'right' }}>INVOICES</th><th style={{ ...th, textAlign: 'right' }}>MENU CALLS</th><th style={{ ...th, textAlign: 'right' }}>DISH RUNS</th>
+              <th style={{ ...th, textAlign: 'right' }}>AI SPEND</th><th style={{ ...th, textAlign: 'right' }}>PAYS YOU / MO</th><th style={{ ...th, textAlign: 'right' }}>AI AS % OF PLAN</th>
+            </tr></thead>
+            <tbody>
+              {data.restaurants.length === 0 && <tr><td colSpan={7} style={{ ...td, color: 'var(--muted)' }}>No restaurant spend this month.</td></tr>}
+              {data.restaurants.map((r) => (
+                <tr key={r.id}>
+                  <td style={td}><Link href={`/admin/restaurants/${r.id}`} style={{ color: 'var(--text)', fontWeight: 700 }}>{r.name}</Link></td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{r.invoices}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{r.menuCalls}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{r.dishRuns}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{money(r.spend)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO }}>{r.pays == null ? <span style={{ color: 'var(--muted)' }}>Not paying</span> : money(r.pays)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO, color: r.pct > 0.2 ? 'var(--red)' : r.pct > 0.1 ? 'var(--amber)' : 'var(--text)' }}>{r.pct == null ? '—' : `${(r.pct * 100).toFixed(1)}%`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </>
   );
 }
 
-const s = {
-  page: { padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, fontFamily: "'Inter', sans-serif" },
-  title: { fontSize: 22, fontWeight: 700, color: '#e4e6f0', letterSpacing: '-0.5px', fontFamily: "'Playfair Display', serif", margin: 0 },
-  subtitle: { fontSize: 10, color: '#3a3e50', marginTop: 3 },
-  kpiGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 },
-  kpiLabel: { fontSize: 8, fontWeight: 700, color: '#3a3e50', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 5 },
-  kpiValue: { fontSize: 24, fontWeight: 600, color: '#e4e6f0', lineHeight: 1, fontFamily: "'DM Mono', monospace" },
-  row2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
-  listRow: { display: 'flex', alignItems: 'flex-start', gap: 8, paddingBottom: 8, marginBottom: 8, borderBottom: '1px solid #1a1c23' },
-  empty: { fontSize: 11, color: '#3a3e50', margin: 0 },
-  center: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 60 },
-  spinner: { width: 16, height: 16, border: '2px solid #1e2028', borderTopColor: '#02a4ba', borderRadius: '50%', animation: 'spin 0.8s linear infinite' },
-};
+function Tile({ k, v, s }) {
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{k}</div>
+      <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>{v}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s}</div>
+    </div>
+  );
+}
+
+function DayBars({ days, limit }) {
+  const [hover, setHover] = useState(null);
+  const box = useRef(null);
+  if (!days.length) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>No days yet.</div>;
+  const W = 760, H = 170, L = 44, R = 8, T = 10, B = 22;
+  const max = Math.max(limit * 1.15, ...days.map((d) => d.spend), 0.01);
+  const n = days.length;
+  const slot = (W - L - R) / n;
+  const bw = Math.max(3, Math.min(22, slot - 2));
+  const y = (v) => T + (1 - v / max) * (H - T - B);
+  const d = hover != null ? days[hover] : null;
+  return (
+    <div style={{ position: 'relative' }}>
+      <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Spend per day. ${days.filter((x) => x.spend > limit).length} days over the ${money(limit)} line.`} onMouseLeave={() => setHover(null)} style={{ display: 'block' }}>
+        {[0, max / 2, max].map((v) => (
+          <g key={v}>
+            <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--line-soft)" />
+            <text x={L - 6} y={y(v) + 3.5} textAnchor="end" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{money(v)}</text>
+          </g>
+        ))}
+        {days.map((x, i) => {
+          const h = Math.max(0, y(0) - y(x.spend));
+          const over = x.spend > limit;
+          const cx = L + slot * i + (slot - bw) / 2;
+          return (
+            <g key={x.date} onMouseEnter={() => setHover(i)}>
+              <rect x={L + slot * i} y={T} width={slot} height={H - T - B} fill="transparent" />
+              {h > 0 && <rect x={cx} y={y(x.spend)} width={bw} height={h} rx={Math.min(4, bw / 2)} fill={over ? 'var(--amber)' : 'var(--accent-deep)'} opacity={hover == null || hover === i ? 1 : 0.55} />}
+              {over && <text x={cx + bw / 2} y={y(x.spend) - 4} textAnchor="middle" fontSize="10" fill="var(--amber)">!</text>}
+            </g>
+          );
+        })}
+        <line x1={L} x2={W - R} y1={y(limit)} y2={y(limit)} stroke="var(--muted)" strokeWidth="1.5" strokeDasharray="5 4" />
+        <text x={W - R} y={y(limit) - 4} textAnchor="end" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{money(limit)} LINE</text>
+        <text x={L} y={H - 6} fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{shortDate(days[0].date).toUpperCase()}</text>
+        <text x={W - R} y={H - 6} textAnchor="end" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{shortDate(days[n - 1].date).toUpperCase()}</text>
+      </svg>
+      {d && (
+        <div style={{ position: 'absolute', top: 0, left: `${Math.min(72, Math.max(0, ((L + slot * hover) / W) * 100 - 12))}%`, pointerEvents: 'none', background: 'var(--text)', color: 'var(--shell)', borderRadius: 8, padding: '8px 10px', fontSize: 12, minWidth: 170, boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ fontFamily: MONO, fontSize: 10, opacity: 0.75 }}>{shortDate(d.date).toUpperCase()}</div>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>{money(d.spend)}{d.spend > limit ? ' · over the line' : ''}</div>
+          <div style={{ opacity: 0.8 }}>{d.calls} call{d.calls === 1 ? '' : 's'}</div>
+          {Object.entries(d.by).sort((p, q) => q[1] - p[1]).map(([f, c]) => <div key={f} style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}><span>{NAMES[f] || f}</span><span style={{ fontFamily: MONO }}>{c}</span></div>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <AdminShell section="Platform" sub="AI & parsing" title="AI & parsing">
+      <AiPage />
+    </AdminShell>
+  );
+}

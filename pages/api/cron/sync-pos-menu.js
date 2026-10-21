@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { buildHmacHeaders } from '../../../lib/pos/hmac-auth.js';
 import { saveMenu } from '../../../lib/pos/saveMenu';
 import { sendCronAlert } from '../../../lib/cronAlert';
+import { withJobRun } from '../../../lib/admin/jobRun';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -43,7 +44,7 @@ async function fetchMenu(locationId) {
   }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -96,3 +97,5 @@ export default async function handler(req, res) {
 
   return res.status(200).json(results);
 }
+
+export default withJobRun('sync-pos-menu', handler);

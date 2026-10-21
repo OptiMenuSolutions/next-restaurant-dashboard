@@ -17,13 +17,14 @@
 import { createClient } from '@supabase/supabase-js';
 import shift4 from '../../../lib/pos/providers/shift4';
 import { sendCronAlert } from '../../../lib/cronAlert';
+import { withJobRun } from '../../../lib/admin/jobRun';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -119,3 +120,5 @@ export default async function handler(req, res) {
     timeZonesSaved,
   });
 }
+
+export default withJobRun('reconcile-shift4', handler);

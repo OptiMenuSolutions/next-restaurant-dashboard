@@ -11,6 +11,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateForRestaurant } from '../ai-recommendations';
 import { sendCronAlert } from '../../../lib/cronAlert';
+import { withJobRun } from '../../../lib/admin/jobRun';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -21,7 +22,7 @@ const supabase = createClient(
 // below without being defined, which crashed this job before it ran.
 const SAMPLE_RESTAURANT_ID = '00000000-0000-0000-0000-000000000001';
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
 
   // Verify cron secret
@@ -109,3 +110,5 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ date: currentDate, ...results });
 }
+
+export default withJobRun('generate-recommendations', handler);

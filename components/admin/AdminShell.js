@@ -21,7 +21,7 @@ export const SECTIONS = [
   { label: 'Today', href: '/admin', subs: [['Today', '/admin'], ['All tickets', '/admin/tickets']] },
   { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
   { label: 'Data quality', href: '/admin/review', subs: [['Review queue', '/admin/review'], ['Cost approvals', '/admin/costs'], ['Ingredient library', '/admin/ingredients']] },
-  { label: 'Platform', href: '/admin/ai', subs: [['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/errors']] },
+  { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/health']] },
   { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Settings', '/admin/flags']] },
 ];
 

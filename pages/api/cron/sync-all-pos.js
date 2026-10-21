@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { saveTickets } from '../../../lib/pos/saveTickets';
+import { withJobRun } from '../../../lib/admin/jobRun';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -114,7 +115,7 @@ async function syncConnection(conn, range) {
   return { rows: records.length, ...ticketCounts };
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
 
   const authHeader = req.headers.authorization;
@@ -162,3 +163,5 @@ export default async function handler(req, res) {
   }
   return res.status(200).json({ synced: results.success.length, failed: results.failed.length, results });
 }
+
+export default withJobRun('sync-all-pos', handler);
