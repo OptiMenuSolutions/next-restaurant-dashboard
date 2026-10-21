@@ -14,7 +14,7 @@
 // GET                         -> global list, restaurants, every restaurant
 //                                ingredient with its link and price
 // GET ?history=id,id,...      -> weekly invoice prices for those restaurant
-//                                ingredients, last 13 weeks
+//                                ingredients, back to the first price (13 to 52 weeks)
 // POST { action: 'create' | 'update', id?, name, unit, reference_price, reference_unit, aliases }
 // POST { action: 'delete', id }
 // POST { action: 'link', globalId, name }      adds name as an alias (moves it off any other global)
@@ -28,7 +28,8 @@ import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from '
 import { getShelfLife } from '../../../lib/shelfLife';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-const WEEKS = 13;
+const MIN_WEEKS = 13;  // the price chart never shows less than this
+const LOOKBACK = 52;  // and looks back at most a year
 
 function priceStatus(g) {
   if (g.is_estimated === false && Number(g.last_price) > 0) return 'INVOICE';
@@ -39,7 +40,7 @@ function priceStatus(g) {
 
 async function load() {
   const [{ data: globals, error: gErr }, { data: rest }, ingredients, lines, dishes] = await Promise.all([
-    db.from('global_ingredients').select('id, name, unit, aliases, reference_price, reference_unit').order('name').limit(10000),
+    fetchAll(() => db.from('global_ingredients').select('id, name, unit, aliases, reference_price, reference_unit').order('name').order('id')).then((data) => ({ data, error: null })),
     db.from('restaurants').select('id, name, state, deactivated_at').order('name'),
     fetchAll(() => db.from('ingredients').select('id, restaurant_id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at').order('id')),
     fetchAll(() => db.from('invoice_items').select('id, ingredient_id, item_name').not('ingredient_id', 'is', null).order('id')),
@@ -136,12 +137,13 @@ async function load() {
   };
 }
 
-// Weekly average invoice price (per the ingredient's own unit) for the last 13 weeks.
+// Weekly average invoice price (per the ingredient's own unit). Looks back up
+// to a year and starts at the first week with a price, never under 13 weeks.
 async function history(ids) {
   const today = etDate();
   const dow = (new Date(today + 'T12:00:00Z').getUTCDay() + 6) % 7; // Monday = 0
   const thisWeek = addDays(today, -dow);
-  const weeks = Array.from({ length: WEEKS }, (_, i) => addDays(thisWeek, (i - WEEKS + 1) * 7));
+  const weeks = Array.from({ length: LOOKBACK }, (_, i) => addDays(thisWeek, (i - LOOKBACK + 1) * 7));
   const { data: ings } = await db.from('ingredients').select('id, restaurant_id, name, unit').in('id', ids);
   const { data: rest } = await db.from('restaurants').select('id, name').in('id', [...new Set((ings || []).map((g) => g.restaurant_id))]);
   const restName = new Map((rest || []).map((r) => [r.id, r.name]));
@@ -155,14 +157,16 @@ async function history(ids) {
       if (r.ingredient_id !== g.id || !(Number(r.unit_cost) > 0) || !r.invoices?.date) continue;
       if (getStandardUnitForIngredient(r.unit, g.name) !== g.unit) continue; // cannot compare
       const w = Math.floor((Date.parse(r.invoices.date) - Date.parse(weeks[0])) / (7 * 86400000));
-      if (w >= 0 && w < WEEKS) buckets[w].push(convertInvoiceCostToStandardUnit(Number(r.unit_cost), r.unit, g.name));
+      if (w >= 0 && w < LOOKBACK) buckets[w].push(convertInvoiceCostToStandardUnit(Number(r.unit_cost), r.unit, g.name));
     }
     return {
       ingredientId: g.id, name: g.name, unit: g.unit, restaurant: restName.get(g.restaurant_id) || 'Unknown',
       points: buckets.map((b) => (b.length ? b.reduce((a, v) => a + v, 0) / b.length : null)),
     };
   }).filter((s) => s.points.some((p) => p != null));
-  return { weeks, series };
+
+  const start = Math.max(0, Math.min(LOOKBACK - MIN_WEEKS, ...series.map((s) => s.points.findIndex((p) => p != null))));
+  return { weeks: weeks.slice(start), series: series.map((s) => ({ ...s, points: s.points.slice(start) })) };
 }
 
 const cleanAliases = (list, name) => {
@@ -193,7 +197,7 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
     const b = req.body || {};
-    const { data: all } = await db.from('global_ingredients').select('id, name, aliases').limit(10000);
+    const all = await fetchAll(() => db.from('global_ingredients').select('id, name, aliases').order('id'));
     const nameTaken = (name, exceptId) => (all || []).some((g) => g.id !== exceptId && norm(g.name) === norm(name));
 
     if (b.action === 'create' || b.action === 'update') {

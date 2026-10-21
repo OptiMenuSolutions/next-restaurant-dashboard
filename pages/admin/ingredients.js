@@ -300,8 +300,8 @@ function GlobalPanel({ g, items, busy, post, onDeleted }) {
         <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{g.restaurants ? `Linked by ${g.restaurants} restaurant${g.restaurants === 1 ? '' : 's'} · in ${g.dishes} dish${g.dishes === 1 ? '' : 'es'}` : 'No restaurant uses it yet'}</div>
       </div>
 
-      <PriceChart title="Price paid, last 13 weeks" hist={hist} series={drawn} unit={unit} reference={ref}
-        empty={g.reference_price == null ? 'No invoice prices yet, and no reference price.' : `No invoice prices in the last 13 weeks. Reference is ${per(g.reference_price, g.reference_unit || g.unit)}.`}
+      <PriceChart title={`Price paid, last ${hist?.weeks?.length || 13} weeks`} hist={hist} series={drawn} unit={unit} reference={ref}
+        empty={g.reference_price == null ? 'No invoice prices in the last year, and no reference price.' : `No invoice prices in the last year. Reference is ${per(g.reference_price, g.reference_unit || g.unit)}.`}
         note={left > 0 ? `${left} restaurant${left === 1 ? '' : 's'} priced in a different unit, not drawn.` : ''} />
 
       <div>
@@ -415,8 +415,8 @@ function ItemPanel({ x, g, globals, busy, post }) {
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>Linking adds “{x.name}” as an alias on the global, so the menu and invoice readers learn it too.</div>
       </div>
 
-      <PriceChart title="What they paid, last 13 weeks" hist={hist} series={hist?.series || []} unit={x.unit} reference={g && (g.reference_unit || g.unit) === x.unit ? g.reference_price : null}
-        empty={x.status === 'INVOICE' ? 'No invoices in the last 13 weeks.' : 'No invoice prices yet.'} />
+      <PriceChart title={`What they paid, last ${hist?.weeks?.length || 13} weeks`} hist={hist} series={hist?.series || []} unit={x.unit} reference={g && (g.reference_unit || g.unit) === x.unit ? g.reference_price : null}
+        empty={x.status === 'INVOICE' ? 'No invoices in the last year that compare in this unit.' : 'No invoice prices yet.'} />
 
       <div>
         <Kicker>ON THEIR INVOICES AS</Kicker>
