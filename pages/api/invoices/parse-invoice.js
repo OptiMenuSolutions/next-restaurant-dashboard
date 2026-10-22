@@ -156,7 +156,7 @@ async function parseWithClaude(ocrText, restaurantId, res) {
     temperature: 0, // reading printed numbers: the same invoice should parse the same way every time
     messages: [{
       role: 'user',
-      content: `You are an expert at parsing food service supplier invoice data. Mistral OCR has extracted the following text from an invoice image. Parse it into structured JSON.
+      content: `You are an expert at parsing restaurant supplier invoice data: food distributors, produce, dairy, bakery, and liquor, wine and beer distributors. Mistral OCR has extracted the following text from an invoice image. Parse it into structured JSON.
 
 CRITICAL: Output ONLY raw JSON. No preamble, no explanation, no markdown fences. Start with { and end with }.
 
@@ -270,9 +270,11 @@ CONFIDENCE DEFINITION:
 
 IGNORE: handwritten annotations, circled numbers, crossed-out values, watermarks, signatures.
 
-FOOD vs NON-FOOD:
-is_food=false: cleaning supplies, paper goods, foil, bags, gloves, equipment (taxes and fees are never line items — they go in tax_amount and fees_amount)
-is_food=true: all food, oils, condiments, beverages, dairy, produce, meat, seafood, spices
+FOOD vs NON-FOOD (is_food means anything a guest eats or drinks, or that goes into a dish or a drink):
+is_food=true: all food, produce, dairy, eggs, meat, poultry, seafood, oils, spices, condiments, sauces, dressings, baking supplies, AND every beverage: liquor and spirits (bourbon, whiskey, vodka, gin, rum, tequila, liqueurs), wine, beer, cider, hard seltzer, mixers, bitters, juices, soda and soda syrup, coffee, tea, water. Alcohol is ALWAYS is_food=true.
+is_food=false ONLY for things that never go into a dish or drink: cleaning supplies and chemicals, paper goods and disposables (napkins, to-go containers, cups, lids, straws, foil, film, bags), gloves, smallwares, equipment, uniforms.
+Taxes, fees, bottle or keg deposits and surcharges are never line items: they go in tax_amount and fees_amount.
+When unsure whether a line is food or drink, use is_food=true.
 
 INGREDIENT NAME NORMALIZATION:
 "CHIX BRS BNLS SKNLS" → "Chicken Breast Boneless Skinless"
@@ -818,7 +820,7 @@ export default async function handler(req, res) {
     const nonFoodCount = allRaw.filter(i => !i.is_food).length;
 
     streamStatus(res,
-      `Found ${foodCount} food item${foodCount !== 1 ? 's' : ''} from ${supplier}`,
+      `Found ${foodCount} food and drink item${foodCount !== 1 ? 's' : ''} from ${supplier}`,
       nonFoodCount > 0 ? `Plus ${nonFoodCount} non-food items filtered out` : 'Checking for duplicates...'
     );
 
@@ -846,6 +848,17 @@ export default async function handler(req, res) {
 
     const foodItems    = readableItems.filter(i => i.is_food);
     const nonFoodItems = readableItems.filter(i => !i.is_food);
+
+    // Nothing a guest eats or drinks: say so instead of saving an empty invoice.
+    if (!foodItems.length) {
+      streamEvent(res, {
+        type: 'error',
+        error: nonFoodItems.length
+          ? `No food or drink lines on this invoice from ${supplier} (${nonFoodItems.length} non-food line${nonFoodItems.length !== 1 ? 's' : ''} like paper goods or supplies). Nothing was saved.`
+          : `No line items could be read on this invoice from ${supplier}. Try a clearer photo.`,
+      });
+      return res.end();
+    }
 
     // ── Pass 3: Claude ingredient matching (batched) ──────────────────────────
     streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
@@ -948,7 +961,8 @@ export default async function handler(req, res) {
         duplicate: duplicateCheck || false,
         invoice: {
           supplier:       extracted.supplier,
-          invoice_number: normalizeInvoiceNumber(extracted.invoice_number),
+          // Saved as printed. The normalized form is only for the duplicate check.
+          invoice_number: extracted.invoice_number ? String(extracted.invoice_number).trim() : null,
           invoice_date:   extracted.invoice_date,
           total_amount:   extracted.total_amount,
           tax_amount:     extracted.tax_amount ?? null,

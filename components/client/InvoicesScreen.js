@@ -666,7 +666,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)", flexShrink: 0 }}>
             <span>LINE ITEMS</span>
             <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span>{items.length ? `${items.length} LINES · ${priceUps ? priceUps + " PRICE UP" + (priceUps === 1 ? " · " : "S · ") : ""}${unmatched} UNMATCHED` : "NOT READ YET"}</span>
+              <span>{items.length ? `${items.length} LINES · ${priceUps ? priceUps + " PRICE UP" + (priceUps === 1 ? " · " : "S · ") : ""}${unmatched} UNMATCHED` : s.status === "pending" ? "NOT READ YET" : "NO LINES SAVED"}</span>
               {!linkMode && s.status === "processed" && items.length > 0 && unmatched === 0 && onLinkLine && (
                 <button type="button" onClick={() => setLinkMode(true)} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 8, letterSpacing: "0.14em", color: "var(--accent-deep)", cursor: "pointer" }}>
                   CHANGE LINKS
@@ -724,6 +724,14 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
                 </div>
               </div>
             ))}
+            {!linkMode && !items.length && s.status !== "pending" && (
+              <div style={{ fontSize: 10, color: "var(--ink-soft)", lineHeight: 1.5, padding: "6px 0" }}>
+                {Number(s.nonFoodTotal) > 0
+                  ? "Nothing on this invoice was read as food or drink, so no lines were saved."
+                  : "No lines were saved from this invoice."}{" "}
+                Delete it and upload it again to re-read it.
+              </div>
+            )}
           </div>
           <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "10px 0", flexShrink: 0 }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 5, flexShrink: 0 }}>
