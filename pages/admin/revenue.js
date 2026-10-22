@@ -19,6 +19,17 @@ const ST = {
 };
 const monthName = (m, style = 'short') => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: style }).format(new Date(m + '-15T12:00:00Z'));
 
+// Billing by restaurant scrolls on its own, one screen tall at most.
+const PANE_H = 'max(420px, calc(100vh - 320px))';
+// The profit breakdown that shows when you hover or focus a restaurant row.
+const TIP_CSS = `.om-prow:hover td{background:var(--panel)}
+.om-ptip{display:none;position:absolute;z-index:5;right:calc(100% + 8px);top:4px;width:230px;background:var(--text);color:var(--shell);font:500 12px/1.6 Manrope,sans-serif;padding:10px 12px;border-radius:8px;text-align:left;box-shadow:var(--shadow-lg)}
+.om-ptip b{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;opacity:.7;margin-bottom:4px}
+.om-pline{display:flex;justify-content:space-between;gap:12px}
+.om-pline span:last-child{font-family:'IBM Plex Mono',monospace}
+.om-ptotal{border-top:1px solid rgba(255,255,255,.25);margin-top:4px;padding-top:4px;font-weight:700}
+.om-prow:hover .om-ptip,.om-prow:focus .om-ptip{display:block}`;
+
 function RevenuePage() {
   const router = useRouter();
   const { adminFetch } = useAdminFetch();
@@ -43,7 +54,7 @@ function RevenuePage() {
 
   const mName = monthName(data.month, 'long');
   const kpis = [
-    { k: 'MONTHLY RECURRING', v: money(data.mrr), s: `${data.paying} paying${data.trials ? ` · ${data.trials} on trial` : ''} · ${money(data.mrr * 12, 0)} a year` },
+    { k: 'MONTHLY RECURRING', v: money(data.mrr), s: `${data.paying} paying in Stripe${data.trials ? ` · ${data.trials} on trial` : ''} · ${money(data.mrr * 12, 0)} a year${data.unlinked.n ? ` · ${data.payingLinked} linked to a restaurant` : ''}` },
     { k: `COLLECTED · ${mName.toUpperCase()}`, v: money(data.collectedThis), s: `${monthName(data.chart[10].month, 'long')}: ${money(data.collectedPrev)}` },
     { k: `PROFIT · ${mName.toUpperCase()}`, v: money(data.profit), s: 'Estimate, after AI, hosting, Stripe fees and one-off costs', tone: data.profit < 0 ? 'var(--red)' : 'var(--green)' },
     { k: 'CANCELLATIONS · 90 DAYS', v: String(data.cancels), s: data.topReason ? `Top reason: ${data.topReason}` : 'None' },
@@ -51,10 +62,16 @@ function RevenuePage() {
 
   return (
     <>
+      <style>{TIP_CSS}</style>
       <PageHead kicker="BUSINESS" title="Revenue & billing">
         <a className="om-btn" href="https://dashboard.stripe.com" target="_blank" rel="noreferrer">Open Stripe ↗</a>
       </PageHead>
       {data.stripeError && <div style={{ background: 'var(--red-tint)', color: 'var(--red)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>Stripe did not answer: {data.stripeError}. Plans and money below may be missing.</div>}
+      {data.unlinked.n > 0 && (
+        <div style={{ background: 'var(--amber-tint)', color: 'var(--amber)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>
+          {data.unlinked.n} live Stripe subscription{data.unlinked.n === 1 ? '' : 's'} ({money(data.unlinked.amount)}/mo) {data.unlinked.n === 1 ? 'is' : 'are'} not linked to any restaurant. They count in MRR, as in Stripe, but not in Billing by restaurant.
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
         {kpis.map((x) => (
@@ -96,7 +113,10 @@ function RevenuePage() {
           {data.failed.map((f) => (
             <div key={f.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--line-soft)' }}>
               <span style={{ flex: 1, minWidth: 0 }}>
-                {f.restaurant_id ? <Link href={`/admin/billing/${f.restaurant_id}`} style={{ color: 'var(--text)', fontWeight: 700 }}>{f.name}</Link> : <b>{f.name}</b>}
+                {f.restaurant_id
+                  ? <Link href={`/admin/billing/${f.restaurant_id}`} style={{ color: 'var(--text)', fontWeight: 700 }}>{f.name}</Link>
+                  : <b style={{ color: 'var(--muted)' }}>Not matched to a restaurant</b>}
+                {(f.owner || f.email) && <span style={{ display: 'block', fontSize: 12.5 }}>{[f.owner, f.email].filter(Boolean).join(' · ')}</span>}
                 <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{f.attempts} attempt{f.attempts === 1 ? '' : 's'}{f.retry ? ` · next retry ${shortDate(f.retry)}` : ' · no more retries'}</span>
               </span>
               <span style={{ fontFamily: MONO, color: 'var(--red)' }}>{money(f.amount)}</span>
@@ -106,20 +126,28 @@ function RevenuePage() {
       </div>
 
       <Card title="Billing by restaurant" right={<span style={{ fontSize: 12.5, color: 'var(--muted)' }}>Click a restaurant to open its full billing page</span>}>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflow: 'auto', maxHeight: PANE_H, border: '1px solid var(--line-soft)', borderRadius: 8 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
-            <thead><tr><th style={th}>RESTAURANT</th><th style={th}>PLAN</th><th style={th}>STATE</th><th style={th}>NEXT CHARGE</th><th style={th}>CARD</th><th style={{ ...th, textAlign: 'right' }}>PROFIT / MO</th><th style={th} /></tr></thead>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}><tr><th style={th}>RESTAURANT</th><th style={th}>PLAN</th><th style={th}>STATE</th><th style={th}>NEXT CHARGE</th><th style={th}>CARD</th><th style={{ ...th, textAlign: 'right' }}>PROFIT / MO</th><th style={th} /></tr></thead>
             <tbody>
               {data.rows.length === 0 && <tr><td colSpan={7} style={{ ...td, color: 'var(--muted)' }}>No restaurants yet.</td></tr>}
               {data.rows.map((r) => (
-                <tr key={r.id} tabIndex={0} onClick={() => router.push(`/admin/billing/${r.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/admin/billing/${r.id}`); }} style={{ cursor: 'pointer' }}
-                  title={`Pays ${money(r.pays)} · AI ${money(r.ai)} · hosting ${money(r.host)} · Stripe ${money(r.fee)} · one-offs ${money(r.other)}`}>
+                <tr key={r.id} className="om-prow" tabIndex={0} onClick={() => router.push(`/admin/billing/${r.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/admin/billing/${r.id}`); }} style={{ cursor: 'pointer' }}>
                   <td style={{ ...td, fontWeight: 700 }}>{r.name}</td>
                   <td style={{ ...td, fontSize: 12.5 }}>{r.plan}</td>
                   <td style={td}><Chip bg={ST[r.state][0]} fg={ST[r.state][1]}>{r.state}</Chip>{r.ends && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>Ends {shortDate(r.ends)}</span>}</td>
                   <td style={{ ...td, fontSize: 12.5 }}>{r.next ? shortDate(r.next) : '—'}</td>
                   <td style={{ ...td, fontSize: 12.5, color: r.card ? 'var(--text)' : 'var(--muted)' }}>{r.card || 'None on file'}</td>
-                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO, color: r.profit < 0 ? 'var(--red)' : 'var(--green)' }}>{money(r.profit)}</td>
+                  <td style={{ ...td, textAlign: 'right', fontFamily: MONO, color: r.profit < 0 ? 'var(--red)' : 'var(--green)', position: 'relative' }}>
+                    {money(r.profit)}
+                    <span className="om-ptip" role="tooltip">
+                      <b>{r.name.toUpperCase()} · {mName.toUpperCase()}</b>
+                      {[['Pays you', r.pays], ['AI', -r.ai], ['Hosting share', -r.host], ['Stripe fee', -r.fee], ['One-off costs', -r.other]].map(([k, v]) => (
+                        <span key={k} className="om-pline"><span>{k}</span><span>{money(v)}</span></span>
+                      ))}
+                      <span className="om-pline om-ptotal"><span>Profit</span><span>{money(r.profit)}</span></span>
+                    </span>
+                  </td>
                   <td style={{ ...td, color: 'var(--muted)' }}>›</td>
                 </tr>
               ))}

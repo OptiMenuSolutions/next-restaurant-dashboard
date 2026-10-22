@@ -50,19 +50,20 @@ export default async function handler(req, res) {
     });
     const since = Math.floor(Date.parse(`${months[0]}-01T00:00:00Z`) / 1000) - 86400;
 
-    const [settings, { data: rest }, { data: recs }, usage, { data: oneoffs }, { data: cancels }] = await Promise.all([
+    const [settings, { data: rest }, { data: recs }, usage, { data: oneoffs }, { data: cancels }, { data: profiles }] = await Promise.all([
       getSettings(db),
       db.from('restaurants').select('id, name, stripe_customer_id, stripe_subscription_id, subscription_status, deactivated_at, created_at'),
       db.from('ai_recommendations').select('restaurant_id').gte('generated_date', addDays(today, -7)),
       fetchAll(() => db.from('ai_usage').select('id, restaurant_id, cost, created_at').gte('created_at', addDays(`${month}-01`, -1)).order('id')),
       db.from('admin_client_costs').select('restaurant_id, amount, spent_on').gte('spent_on', `${month}-01`),
       db.from('admin_cancellations').select('reason, created_at').gte('created_at', addDays(today, -90)),
+      db.from('profiles').select('restaurant_id, full_name, email, role'),
     ]);
 
     let subs = [], invoices = [], stripeError = null;
     try {
       [subs, invoices] = await Promise.all([
-        listAll((p) => stripe.subscriptions.list(p), { status: 'all', expand: ['data.default_payment_method'] }),
+        listAll((p) => stripe.subscriptions.list(p), { status: 'all', expand: ['data.default_payment_method', 'data.discounts'] }),
         listAll((p) => stripe.invoices.list(p), { created: { gte: since } }),
       ]);
     } catch (err) {
@@ -72,10 +73,27 @@ export default async function handler(req, res) {
     const subById = new Map(subs.map((s) => [s.id, s]));
     const subByCustomer = new Map();
     for (const s of [...subs].sort((a, b) => a.created - b.created)) subByCustomer.set(typeof s.customer === 'string' ? s.customer : s.customer?.id, s);
+    // Monthly amount of a subscription: every item × quantity, turned into a
+    // month whatever the billing interval, minus lasting coupon discounts.
+    const itemMonthly = (price, qty) => {
+      const r = price?.recurring;
+      if (!r || price.unit_amount == null) return 0;
+      const perMonthOf = { day: 365 / 12, week: 52 / 12, month: 1, year: 1 / 12 }[r.interval] || 1;
+      return (price.unit_amount * (qty || 1) * perMonthOf) / (r.interval_count || 1) / 100;
+    };
     const perMonth = (s) => {
-      const p = s?.items?.data?.[0]?.price;
-      if (!p?.unit_amount) return 0;
-      return p.recurring?.interval === 'year' ? p.unit_amount / 1200 : p.unit_amount / 100;
+      if (!s) return 0;
+      let amt = (s.items?.data || []).reduce((a, it) => a + itemMonthly(it.price, it.quantity), 0);
+      const ds = [...(s.discounts || []).filter((d) => d && typeof d === 'object'), ...(s.discount ? [s.discount] : [])];
+      const seen = new Set();
+      for (const d of ds) {
+        const c = d.coupon;
+        if (!c || seen.has(d.id) || c.duration === 'once') continue;
+        seen.add(d.id);
+        if (c.percent_off) amt *= 1 - c.percent_off / 100;
+        else if (c.amount_off) amt -= c.amount_off / 100;
+      }
+      return Math.max(0, amt);
     };
 
     const withRecs = new Set((recs || []).map((r) => r.restaurant_id));
@@ -120,6 +138,27 @@ export default async function handler(req, res) {
       };
     }).sort((a, b) => b.pays - a.pays || a.name.localeCompare(b.name));
 
+    // MRR the way Stripe counts it: every active or past-due subscription,
+    // monthly, after discounts, whether or not it is linked to a restaurant.
+    const counted = subs.filter((s) => ['active', 'past_due'].includes(s.status));
+    const stripeMrr = counted.reduce((a, s) => a + perMonth(s), 0);
+    const linkedSubs = new Set();
+    for (const r of restaurants) {
+      const s = (r.stripe_subscription_id && subById.get(r.stripe_subscription_id)) || (r.stripe_customer_id && subByCustomer.get(r.stripe_customer_id));
+      if (s) linkedSubs.add(s.id);
+    }
+    const unlinked = counted.filter((s) => !linkedSubs.has(s.id));
+
+    // Owners by restaurant and restaurants by owner email, to name failed payments.
+    const ownerOf = new Map();
+    const restByEmail = new Map();
+    for (const p of profiles || []) {
+      if (p.role === 'admin' || !p.restaurant_id) continue;
+      if (!ownerOf.has(p.restaurant_id)) ownerOf.set(p.restaurant_id, p);
+      const r = (rest || []).find((x) => x.id === p.restaurant_id);
+      if (p.email && r) restByEmail.set(p.email.toLowerCase(), r);
+    }
+
     // Collected per month (paid invoices), and payments that failed.
     const collected = new Map(months.map((m) => [m, 0]));
     const failed = [];
@@ -129,8 +168,15 @@ export default async function handler(req, res) {
         if (collected.has(k)) collected.set(k, collected.get(k) + dollars(inv.amount_paid));
       }
       if (inv.status === 'open' && inv.attempt_count > 0) {
-        const r = (rest || []).find((x) => x.stripe_customer_id === (typeof inv.customer === 'string' ? inv.customer : inv.customer?.id));
-        failed.push({ id: inv.id, restaurant_id: r?.id || null, name: r?.name || inv.customer_email || 'Unknown', amount: dollars(inv.amount_remaining), attempts: inv.attempt_count, retry: fromUnix(inv.next_payment_attempt) });
+        const cust = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
+        const email = String(inv.customer_email || '').toLowerCase();
+        const r = (rest || []).find((x) => x.stripe_customer_id === cust) || restByEmail.get(email) || null;
+        const owner = r ? ownerOf.get(r.id) : null;
+        failed.push({
+          id: inv.id, restaurant_id: r?.id || null, name: r?.name || null,
+          owner: owner?.full_name || inv.customer_name || null, email: inv.customer_email || owner?.email || null,
+          amount: dollars(inv.amount_remaining), attempts: inv.attempt_count, retry: fromUnix(inv.next_payment_attempt),
+        });
       }
     }
 
@@ -141,9 +187,12 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       month, stripeError,
-      mrr: rows.reduce((a, r) => a + r.mrr, 0),
-      paying: rows.filter((r) => r.mrr > 0).length,
-      trials: rows.filter((r) => r.trial).length,
+      mrr: stripeMrr,
+      mrrLinked: rows.reduce((a, r) => a + r.mrr, 0),
+      paying: counted.length,
+      payingLinked: rows.filter((r) => r.mrr > 0).length,
+      unlinked: { n: unlinked.length, amount: unlinked.reduce((a, s) => a + perMonth(s), 0) },
+      trials: subs.filter((s) => s.status === 'trialing').length,
       collectedThis: collected.get(month) || 0,
       collectedPrev: collected.get(prevMonth) || 0,
       profit: rows.reduce((a, r) => a + r.profit, 0),
