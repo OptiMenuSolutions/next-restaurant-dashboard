@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, th, td, shortDate } from '../../components/admin/ui';
@@ -181,7 +181,7 @@ function PipelinePage() {
             </table>
           )}
         </Card>
-        <Card title="Why we lose, all time" style={{ flex: '1 1 260px' }}>
+        <Card title="Why we lose" style={{ flex: '1 1 260px' }}>
           {view.reasons.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No losses yet.</div>}
           {view.reasons.map(([r, n]) => (
             <div key={r} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderTop: '1px solid var(--line-soft)' }}><span>{r}</span><span style={{ fontFamily: MONO }}>{n}</span></div>
@@ -190,7 +190,7 @@ function PipelinePage() {
       </div>
 
       {current && <ProspectPanel key={current.id} p={current} today={data.today} restaurants={data.restaurants} busy={busy} post={post} onClose={() => setOpen(null)} onLost={() => setLost(current)} />}
-      {adding && <AddDialog busy={busy} onClose={() => setAdding(false)} onSave={async (f) => { const r = await post({ action: 'save', ...f }); if (r) { setAdding(false); setOpen(r.id); } }} />}
+      {adding && <AddDialog busy={busy} onClose={() => setAdding(false)} onSave={async (f) => { const r = await post({ action: 'save', ...f }); if (r) { setAdding(false); setFlash(`Added ${f.name.trim()} as a Lead.`); } }} />}
       {lost && <LostDialog p={lost} busy={busy} onClose={() => setLost(null)} onSave={async (reason, note) => { if (await post({ action: 'lost', id: lost.id, reason, note })) setLost(null); }} />}
     </>
   );
@@ -214,6 +214,7 @@ function ProspectPanel({ p, today, restaurants, busy, post, onClose, onLost }) {
   const [t, setT] = useState({ kind: 'Call', text: '', happened_on: today, next_step: p.next_step || '', due_on: p.due_on || '' });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const dirty = Object.keys(f).some((k) => (f[k] || '') !== (p[k] || ''));
+  const [askDel, setAskDel] = useState(false);
   const linked = restaurants.find((r) => r.id === p.restaurant_id);
 
   return (
@@ -227,7 +228,7 @@ function ProspectPanel({ p, today, restaurants, busy, post, onClose, onLost }) {
         {p.stage !== 'Lost' && <button type="button" className="om-btn" style={{ color: 'var(--red)' }} onClick={onLost}>Mark lost</button>}
         {linked && <Link href={`/admin/restaurants/${linked.id}`} className="om-btn">Open {linked.name}</Link>}
         <span style={{ flex: 1 }} />
-        <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm(`Delete ${p.name} and its history?`) && await post({ action: 'delete', id: p.id })) onClose(); }}>Delete</button>
+        <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button>
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
@@ -300,6 +301,11 @@ function ProspectPanel({ p, today, restaurants, busy, post, onClose, onLost }) {
           </div>
         </div>
       </div>
+      {askDel && (
+        <Confirm title={`Delete ${p.name}?`} sub="Its touches and history go too. This cannot be undone." yes="Delete prospect" danger busy={busy}
+          onClose={() => setAskDel(false)}
+          onYes={async () => { if (await post({ action: 'delete', id: p.id })) { setAskDel(false); onClose(); } }} />
+      )}
     </Dialog>
   );
 }
