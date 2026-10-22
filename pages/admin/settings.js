@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
-import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, shortDate } from '../../components/admin/ui';
@@ -217,35 +217,39 @@ function Field({ label, children }) {
 
 function ReplyDialog({ r, busy, onClose, post }) {
   const [f, setF] = useState({ label: r.label || '', body: r.body || '' });
+  const [askDel, setAskDel] = useState(false);
   return (
     <Dialog title={r.id ? 'Edit saved reply' : 'Add a saved reply'} sub="{name} fills in the owner’s first name." onClose={onClose} width={560}>
       <Field label="Button label"><input className="om-field" autoFocus value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="e.g. Thanks, on it" /></Field>
       <Field label="Reply text"><textarea className="om-field" rows={6} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} style={{ padding: 10, resize: 'vertical' }} /></Field>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {r.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm(`Delete the reply ${r.label}?`) && await post({ action: 'reply-delete', id: r.id })) onClose(); }}>Delete</button> : <span />}
+        {r.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="om-pri" disabled={busy || !f.label.trim() || !f.body.trim()} onClick={async () => { if (await post({ action: 'reply-save', id: r.id || undefined, ...f })) onClose(); }}>{busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
+      {askDel && <Confirm title={`Delete the reply ${r.label}?`} sub="Its button leaves the Support inbox." yes="Delete reply" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'reply-delete', id: r.id })) onClose(); setAskDel(false); }} />}
     </Dialog>
   );
 }
 
 function FlagDialog({ f: flag, busy, onClose, post }) {
   const [f, setF] = useState({ label: flag.label || '', key: flag.key || '', description: flag.description || '' });
+  const [askDel, setAskDel] = useState(false);
   return (
     <Dialog title={flag.id ? 'Edit switch' : 'Add a switch'} sub="New switches start off." onClose={onClose}>
       <Field label="Name"><input className="om-field" autoFocus value={f.label} onChange={(e) => setF({ ...f, label: e.target.value })} placeholder="e.g. Store app prompts" /></Field>
       <Field label="Key (what the code checks)"><input className="om-field" value={f.key} onChange={(e) => setF({ ...f, key: e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase() })} placeholder="e.g. store_app_prompts" style={{ fontFamily: MONO }} /></Field>
       <Field label="What it does (optional)"><input className="om-field" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} /></Field>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {flag.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm(`Delete ${flag.label}? Code checking ${flag.key} will see it as off.`) && await post({ action: 'flag-delete', id: flag.id })) onClose(); }}>Delete</button> : <span />}
+        {flag.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="om-pri" disabled={busy || !f.label.trim() || !f.key.trim()} onClick={async () => { if (await post({ action: 'flag-save', id: flag.id || undefined, ...f })) onClose(); }}>{busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
+      {askDel && <Confirm title={`Delete ${flag.label}?`} sub={`Code that checks ${flag.key} will see it as off.`} yes="Delete switch" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'flag-delete', id: flag.id })) onClose(); setAskDel(false); }} />}
     </Dialog>
   );
 }

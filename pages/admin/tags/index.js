@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import AdminShell, { PageHead, Dialog } from '../../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog, Confirm } from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Chip, th, td, money, shortDate } from '../../../components/admin/ui';
@@ -238,6 +238,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
   const [pack, setPack] = useState(PACK.map(() => false));
   const [ship, setShip] = useState({ carrier: 'USPS', tracking: '', postage: '' });
   const [shipFrom, setShipFrom] = useState(data.settings.ship_from || '');
+  const [askCancel, setAskCancel] = useState(false);
 
   const loadKit = useCallback(async (id, jump) => {
     const res = await adminFetch(`/api/admin/tags?kit=${id}`);
@@ -382,7 +383,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <div>
               {kit && !kit.kit.packed_at && (
-                <button type="button" onClick={async () => { if (window.confirm('Cancel this kit? Its tags are deleted.')) { if (await act({ action: 'cancel-kit', kitId })) onClose(); } }}
+                <button type="button" onClick={() => setAskCancel(true)}
                   style={{ border: 0, background: 'none', color: 'var(--red)', fontSize: 12.5, cursor: 'pointer' }}>Cancel kit</button>
               )}
             </div>
@@ -399,6 +400,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
           </div>
         </>
       )}
+      {askCancel && <Confirm title="Delete this kit?" sub="Its tags are deleted. Nothing has come off the shelf yet." yes="Delete kit" danger busy={busy} onClose={() => setAskCancel(false)} onYes={async () => { if (await act({ action: 'cancel-kit', kitId })) onClose(); setAskCancel(false); }} />}
     </Dialog>
   );
 }

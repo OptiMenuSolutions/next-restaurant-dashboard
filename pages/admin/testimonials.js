@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, shortDate } from '../../components/admin/ui';
@@ -136,6 +136,7 @@ function TestimonialsPage() {
 
 function EditDialog({ q, restaurants, busy, onClose, post }) {
   const [f, setF] = useState({ quote: q.quote || '', person: q.person || '', restaurant_id: q.restaurant_id || '' });
+  const [askDel, setAskDel] = useState(false);
   const label = (t) => <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.1em', color: 'var(--muted)' }}>{t}</span>;
   return (
     <Dialog title={q.id ? 'Edit quote' : 'Add a quote'} onClose={onClose} width={540}>
@@ -148,12 +149,13 @@ function EditDialog({ q, restaurants, busy, onClose, post }) {
         </select>
       </label>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {q.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm('Delete this quote?') && await post({ action: 'delete', id: q.id })) onClose(); }}>Delete</button> : <span />}
+        {q.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="om-pri" disabled={busy || !f.quote.trim()} onClick={async () => { if (await post({ action: 'save', id: q.id || undefined, ...f })) onClose(); }}>{busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
+      {askDel && <Confirm title="Delete this quote?" sub={q.quote.length > 120 ? `${q.quote.slice(0, 120)}…` : q.quote} yes="Delete quote" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'delete', id: q.id })) onClose(); setAskDel(false); }} />}
     </Dialog>
   );
 }

@@ -11,7 +11,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import AdminShell, { PageHead } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, money, shortDate } from '../../components/admin/ui';
@@ -410,6 +410,7 @@ function MenuDishes({ rid, onChanged }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [askAll, setAskAll] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -418,9 +419,8 @@ function MenuDishes({ rid, onChanged }) {
   useEffect(() => { load(); }, [load]);
 
   async function checkAll() {
-    if (!window.confirm(`Mark all ${data.dishes.length} dishes checked?`)) return;
     setBusy(true);
-    try { await api('/api/admin/review/menus', { action: 'checked', dishIds: data.dishes.map((d) => d.id) }); await onChanged(); } finally { setBusy(false); }
+    try { await api('/api/admin/review/menus', { action: 'checked', dishIds: data.dishes.map((d) => d.id) }); setAskAll(false); await onChanged(); } finally { setBusy(false); }
   }
 
   if (error) return <div style={{ flex: '1 1 600px' }}><ErrorState message={error} onRetry={load} /></div>;
@@ -437,9 +437,10 @@ function MenuDishes({ rid, onChanged }) {
           <option value="all">All dishes</option>
           <option value="unsure">Unsure only ({data.dishes.filter(unsure).length})</option>
         </select>
-        <button type="button" className="om-btn" disabled={busy} onClick={checkAll}>Mark all checked</button>
+        <button type="button" className="om-btn" disabled={busy} onClick={() => setAskAll(true)}>Mark all checked</button>
       </div>
       {shown.map((d) => <DishCard key={d.id} dish={d} ingredients={data.ingredients} api={api} onSaved={load} onChecked={async () => { await load(); await onChanged(); }} />)}
+      {askAll && <Confirm title={`Mark all ${data.dishes.length} dishes checked?`} sub="They leave Menu parses without another look. Check the unsure ones first if you have not." yes={`Mark ${data.dishes.length} checked`} busy={busy} onClose={() => setAskAll(false)} onYes={checkAll} />}
     </div>
   );
 }

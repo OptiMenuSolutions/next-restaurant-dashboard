@@ -4,7 +4,7 @@
 // cannot miss. Repeating deadlines add their next date when marked done.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import supabase from '../../lib/supabaseClient';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
@@ -235,6 +235,7 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
   const [file, setFile] = useState(null);
   const [err, setErr] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [askDel, setAskDel] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
 
   const save = async () => {
@@ -284,12 +285,13 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
       </Field>
       {err && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{err}</div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {e.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm(`Delete ${e.vendor} ${money(e.amount)}?`) && await post({ action: 'expense-delete', id: e.id })) onClose(); }}>Delete</button> : <span />}
+        {e.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="om-pri" disabled={busy || uploading || !f.vendor.trim() || f.amount === ''} onClick={save}>{uploading ? 'Uploading…' : busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
+      {askDel && <Confirm title={`Delete ${e.vendor} ${money(e.amount)}?`} sub="The expense and its receipt are removed." yes="Delete expense" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'expense-delete', id: e.id })) onClose(); setAskDel(false); }} />}
     </Dialog>
   );
 }
@@ -297,6 +299,7 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
 function DeadlineDialog({ d, busy, onClose, post }) {
   const [f, setF] = useState({ title: d.title || '', note: d.note || '', due_on: d.due_on || '', repeats: d.repeats || 'none' });
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const [askDel, setAskDel] = useState(false);
   return (
     <Dialog title={d.id ? 'Edit deadline' : 'Add a deadline'} sub="Shows on Today when it is a week away." onClose={onClose}>
       <Field label="What"><input className="om-field" autoFocus value={f.title} onChange={(x) => set('title', x.target.value)} placeholder="e.g. NJ annual report" /></Field>
@@ -310,12 +313,13 @@ function DeadlineDialog({ d, busy, onClose, post }) {
         </Field>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {d.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={async () => { if (window.confirm(`Delete ${d.title}?`) && await post({ action: 'deadline-delete', id: d.id })) onClose(); }}>Delete</button> : <span />}
+        {d.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
         <span style={{ display: 'flex', gap: 8 }}>
           <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
           <button type="button" className="om-pri" disabled={busy || !f.title.trim()} onClick={async () => { if (await post({ action: 'deadline-save', id: d.id || undefined, ...f })) onClose(); }}>{busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
+      {askDel && <Confirm title={`Delete ${d.title}?`} sub={d.repeats !== 'none' ? 'Its future repeats stop too.' : undefined} yes="Delete deadline" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'deadline-delete', id: d.id })) onClose(); setAskDel(false); }} />}
     </Dialog>
   );
 }
