@@ -31,6 +31,10 @@
       "path": "/api/cron/reconcile-shift4",
       "schedule": "0 7 * * *"
     },
+    {
+      "path": "/api/cron/refresh-shift4-tokens",
+      "schedule": "15 */6 * * *"
+    },
     { 
       "path": "/api/cron/sync-pos-menu", 
       "schedule": "45 7 * * *" 

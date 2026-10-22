@@ -30,7 +30,9 @@ async function syncConnection(conn, range) {
   let connection = conn;
 
   // ─── Handle OAuth2 refresh (Square, etc.) ───────────────────────────────
-  if (provider.authType === 'oauth2' && conn.expires_at) {
+  // Not Shift4: its sales use HMAC, and its tokens are renewed by the
+  // refresh-shift4-tokens job, so a sign-in problem never blocks a sales sync.
+  if (provider.authType === 'oauth2' && conn.expires_at && conn.provider !== 'shift4') {
     const soon = new Date(Date.now() + 5 * 60 * 1000);
     if (new Date(conn.expires_at) < soon) {
       const refreshed = await provider.refresh(conn);

@@ -45,18 +45,16 @@ export default async function handler(req, res) {
     return res.status(502).json({ error: 'Shift4 could not connect that location. Please try again.' });
   }
 
-  // The merchant token was only needed to list and install locations. Ongoing
-  // sales syncs use OptiMenu's own HMAC credentials, so drop the token now
-  // instead of storing it and refreshing it every 24 hours.
+  // Keep the merchant's access and refresh tokens (saved by oauth-callback with
+  // their expiry). The refresh-shift4-tokens job renews them before they
+  // expire (OA-009); sales syncs use OptiMenu's own HMAC credentials.
   const { error: updateError } = await supabaseAdmin
     .from('pos_connections')
     .update({
       status: 'connected',
       shift4_location_id: locationId,
-      access_token: null,
-      refresh_token: null,
-      expires_at: null,
       last_error: null,
+      token_error: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conn.id);

@@ -68,6 +68,7 @@ export default async function handler(req, res) {
         locations: result.locations,
         expires_at: result.expiresAt,
         last_error: null,
+        token_error: null,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'restaurant_id,provider' });
     if (upsertError) throw new Error(upsertError.message);
