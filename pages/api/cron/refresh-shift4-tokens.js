@@ -31,7 +31,7 @@ async function handler(req, res) {
   const force = req.query.manual === '1' || req.query.force === '1';
   const { data: conns, error } = await supabase
     .from('pos_connections')
-    .select('id, restaurant_id, status, refresh_token, expires_at')
+    .select('id, restaurant_id, status, refresh_token, expires_at, restaurants(name)')
     .eq('provider', 'shift4')
     .in('status', ['connected', 'error'])
     .not('refresh_token', 'is', null);
@@ -52,7 +52,7 @@ async function handler(req, res) {
       if (saveErr) throw new Error(`renewed, but the new token could not be saved: ${saveErr.message}`);
       // One authenticated Bearer call proves the renewed token works.
       const locations = await shift4.listLocations(t.accessToken);
-      refreshed.push({ restaurantId: c.restaurant_id, expiresAt: t.expiresAt, locations: locations.length });
+      refreshed.push({ restaurantId: c.restaurant_id, restaurant: c.restaurants?.name || null, expiresAt: t.expiresAt, locations: locations.length });
       console.log(`[cron:refresh-shift4-tokens] ✓ restaurant ${c.restaurant_id}, valid until ${t.expiresAt}`);
     } catch (err) {
       const msg = err.reauth
@@ -60,12 +60,12 @@ async function handler(req, res) {
         : `Shift4 sign-in renewal failed (${err.message}). It tries again in 6 hours.`;
       console.error(`[cron:refresh-shift4-tokens] ✗ restaurant ${c.restaurant_id}:`, err.message);
       await supabase.from('pos_connections').update({ token_error: msg, updated_at: now }).eq('id', c.id);
-      failed.push({ restaurantId: c.restaurant_id, reauth: !!err.reauth, error: msg });
+      failed.push({ restaurantId: c.restaurant_id, restaurant: c.restaurants?.name || null, reauth: !!err.reauth, error: msg });
     }
   }
 
   if (failed.length) {
-    await sendCronAlert('Shift4 sign-in refresh', `${failed.length} Shift4 connection(s) could not renew their sign-in.`, failed.map((f) => `Restaurant ${f.restaurantId}: ${f.error}`));
+    await sendCronAlert('Shift4 sign-in refresh', `${failed.length} Shift4 connection(s) could not renew their sign-in.`, failed.map((f) => `${f.restaurant || `Restaurant ${f.restaurantId}`}: ${f.error}`));
   }
   return res.status(200).json({ checked: (conns || []).length, due: due.length, refreshed, failed });
 }
