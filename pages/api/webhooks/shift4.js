@@ -1,7 +1,9 @@
 // pages/api/webhooks/shift4.js
 //
-// Shift4 Marketplace Installation Request webhook receiver.
-// Writes to pos_connections (unified POS provider table).
+// Shift4 Marketplace webhook receiver. marketplace.Location.deleted (the
+// merchant uninstalled OptiMenu) disconnects the location and clears its
+// OAuth tokens. The Installation Request handler below is legacy, kept until
+// the OAuth Token Flow is confirmed in production.
 
 import { createClient } from "@supabase/supabase-js";
 import { verifyWebhook, buildHmacHeaders } from "../../../lib/pos/hmac-auth.js";
@@ -61,6 +63,7 @@ async function handleLocationDeleted(payload, res) {
       access_token: null,
       refresh_token: null,
       expires_at: null,
+      token_error: null,
       last_error: "Uninstalled from the Shift4 Marketplace",
       updated_at: new Date().toISOString(),
     })

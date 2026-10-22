@@ -21,8 +21,11 @@ export default async function handler(req, res) {
     try {
       await shift4.removeInstallation(conn.shift4_location_id);
     } catch (err) {
+      // A 404 means Shift4 already removed OptiMenu from this location, so
+      // finish the disconnect on our side instead of leaving the owner stuck.
+      const gone = err.status === 404 || /\b404\b|not found/i.test(String(err.message));
       console.error('[pos/shift4/disconnect]', err.message);
-      return res.status(502).json({ error: 'Shift4 could not disconnect this location. Please try again.' });
+      if (!gone) return res.status(502).json({ error: 'Shift4 could not disconnect this location. Please try again.' });
     }
   }
 
@@ -34,6 +37,8 @@ export default async function handler(req, res) {
       access_token: null,
       refresh_token: null,
       expires_at: null,
+      token_error: null,
+      last_error: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', conn.id);
