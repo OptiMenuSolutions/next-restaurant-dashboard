@@ -227,8 +227,16 @@ function Thread({ id, replies, onChanged }) {
   return (
     <>
       <section aria-label="Conversation" style={isPhone
-        ? { position: 'fixed', zIndex: 95, top: 40, right: 0, bottom: 0, left: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }
+        ? { position: 'fixed', zIndex: 120, top: 0, right: 0, bottom: 0, left: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }
         : { flex: '3 1 520px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {isPhone && (
+          <div style={{ flexShrink: 0, height: 40, minHeight: 40, boxSizing: 'border-box', display: 'flex', alignItems: 'center', padding: '0 16px', borderBottom: '1px solid var(--line)', background: 'var(--shell)' }}>
+            <Link href="/admin/support" style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-deep)', textDecoration: 'none', fontSize: 14, fontWeight: 700 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+              Back to inbox
+            </Link>
+          </div>
+        )}
         <div style={{ flexShrink: 0, padding: isPhone ? '10px 12px' : '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
           {isPhone ? (
             <>
@@ -440,9 +448,7 @@ export default function Page() {
       section="Restaurants"
       sub="Support inbox"
       title="Support inbox"
-      back={inConversation ? { label: 'Inbox', href: '/admin/support' } : undefined}
       hideBottomNav={inConversation}
-      fixedBack={inConversation}
     >
       <SupportPage />
     </AdminShell>
