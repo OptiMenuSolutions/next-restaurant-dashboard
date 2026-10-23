@@ -290,6 +290,7 @@ const WIZ = ['Details', 'Write tags', 'Pack', 'Ship'];
 const PACK = ['Each tag has its OM number on the back', 'Tags pressed into the foam insert', 'Intro card in the box', 'Magnets or adhesive pads in the box', 'Box closed'];
 
 function KitDialog({ kitId: startId, preset, data, onClose }) {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [kitId, setKitId] = useState(startId);
   const [kit, setKit] = useState(null);
@@ -445,7 +446,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
 
           {err && <div style={{ fontSize: 13, color: 'var(--red)' }}>{err}</div>}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap', ...(useIsPhone() ? { position: 'sticky', bottom: 0, marginTop: 'auto', paddingTop: 10, background: 'var(--shell)' } : {}) }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap', ...(isPhone ? { position: 'sticky', bottom: 0, marginTop: 'auto', paddingTop: 10, background: 'var(--shell)' } : {}) }}>
             <div>
               {kit && !kit.kit.packed_at && (
                 <button type="button" onClick={() => setAskCancel(true)}
