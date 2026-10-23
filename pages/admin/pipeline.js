@@ -12,6 +12,7 @@ import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/Ad
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, th, td, shortDate } from '../../components/admin/ui';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 const STAGES = ['Lead', 'Contacted', 'Demo done', 'Setting up', 'Live', 'Lost'];
 const SUPPORTED = ['shift4', 'square'];
@@ -30,6 +31,7 @@ function dueInfo(p, today) {
 
 function PipelinePage() {
   const router = useRouter();
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -40,6 +42,8 @@ function PipelinePage() {
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState(false);
   const [over, setOver] = useState(null);
+  const [mobileStage, setMobileStage] = useState('Lead');
+  const [moveTarget, setMoveTarget] = useState(null);
   const dragId = useRef(null);
 
   const load = useCallback(async () => {
@@ -57,6 +61,9 @@ function PipelinePage() {
   useEffect(() => {
     if (router.query.add === '1') { setAdding(true); router.replace('/admin/pipeline', undefined, { shallow: true }); }
   }, [router]);
+  useEffect(() => {
+    if (isPhone) setOpen(typeof router.query.prospect === 'string' ? router.query.prospect : null);
+  }, [isPhone, router.query.prospect]);
 
   const post = useCallback(async (body) => {
     setBusy(true);
@@ -104,10 +111,21 @@ function PipelinePage() {
     post({ action: 'move', id, stage }).then((r) => { if (r && stage === 'Setting up') setFlash(`${p.name} is setting up. Create their account from the signup page, then link it on their card so the pipeline follows them.`); });
   };
   const current = open ? data.prospects.find((p) => p.id === open) : null;
+  const mobileColumn = view.columns.find((col) => col.stage === mobileStage) || view.columns[0];
+
+  function openProspect(id) {
+    setOpen(id);
+    if (isPhone) router.push({ pathname: '/admin/pipeline', query: { prospect: id } }, undefined, { shallow: true });
+  }
+
+  function closeProspect() {
+    setOpen(null);
+    if (isPhone && typeof router.query.prospect === 'string') router.replace('/admin/pipeline', undefined, { shallow: true });
+  }
 
   return (
     <>
-      <PageHead kicker="SALES" title="Pipeline" sub="Drag a card to move it. Click a card to see the prospect and log a touch.">
+      <PageHead kicker="SALES" title="Pipeline" sub={isPhone ? 'Choose a stage, then move prospects from their cards.' : 'Drag a card to move it. Click a card to see the prospect and log a touch.'}>
         <button type="button" className="om-pri" onClick={() => setAdding(true)}>Add prospect</button>
       </PageHead>
       <Pills label="Filter" value={filter} onChange={setFilter} options={[
@@ -117,7 +135,7 @@ function PipelinePage() {
       ]} />
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <div style={{ overflowX: 'auto', paddingBottom: 6 }}>
+      <div style={{ display: isPhone ? 'none' : undefined, overflowX: 'auto', paddingBottom: 6 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(210px, 1fr))', gap: 12, minWidth: 1300 }}>
           {view.columns.map((col) => (
             <section key={col.stage} aria-label={col.stage}
@@ -133,7 +151,7 @@ function PipelinePage() {
                 const sup = SUPPORTED.includes(String(p.pos).toLowerCase());
                 return (
                   <button key={p.id} type="button" draggable onDragStart={(e) => { dragId.current = p.id; try { e.dataTransfer.setData('text/plain', p.id); e.dataTransfer.effectAllowed = 'move'; } catch {} }}
-                    onClick={() => setOpen(p.id)}
+                    onClick={() => openProspect(p.id)}
                     style={{ textAlign: 'left', cursor: 'grab', border: '1px solid var(--line)', background: 'var(--shell)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5, color: 'var(--text)', font: "500 13px 'Manrope',sans-serif" }}>
                     <b style={{ fontSize: 14 }}>{p.name}</b>
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>{[p.town, p.type].filter(Boolean).join(' · ') || '—'}</span>
@@ -151,15 +169,51 @@ function PipelinePage() {
         </div>
       </div>
 
+      {isPhone && (
+        <>
+          <nav aria-label="Pipeline stages" style={{ display: 'flex', gap: 8, overflowX: 'auto', flexWrap: 'nowrap', whiteSpace: 'nowrap', paddingBottom: 2 }}>
+            {view.columns.map((col) => (
+              <button key={col.stage} type="button" onClick={() => setMobileStage(col.stage)}
+                style={{ flexShrink: 0, minHeight: 40, padding: '0 13px', border: '1px solid var(--line)', borderRadius: 20, background: mobileStage === col.stage ? 'var(--text)' : 'var(--shell)', color: mobileStage === col.stage ? 'var(--shell)' : 'var(--text)', font: "600 13px 'Manrope',sans-serif" }}>
+                {col.stage} <span style={{ fontFamily: MONO, fontSize: 11, opacity: 0.75 }}>{col.cards.length}</span>
+              </button>
+            ))}
+          </nav>
+          <section aria-label={`${mobileColumn.stage} prospects`} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {mobileColumn.cards.length === 0 && <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, color: 'var(--muted)', fontSize: 13 }}>No prospects in this stage.</div>}
+            {mobileColumn.cards.map((p) => {
+              const d = dueInfo(p, data.today);
+              const sup = SUPPORTED.includes(String(p.pos).toLowerCase());
+              return (
+                <article key={p.id} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, background: 'var(--shell)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button type="button" onClick={() => openProspect(p.id)} style={{ border: 0, padding: 0, background: 'none', color: 'var(--text)', textAlign: 'left', font: "inherit", cursor: 'pointer' }}>
+                    <b style={{ fontSize: 15 }}>{p.name}</b>
+                    <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, color: 'var(--muted)' }}>{[p.town, p.type].filter(Boolean).join(' · ') || '—'}</span>
+                  </button>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {p.pos && <Chip bg={sup ? 'var(--accent-tint)' : 'var(--amber-tint)'} fg={sup ? 'var(--accent-deep)' : 'var(--amber)'}>{p.pos.toUpperCase()}</Chip>}
+                    {p.source && <Chip>{p.source.toUpperCase()}</Chip>}
+                  </div>
+                  <div style={{ fontFamily: MONO, fontSize: 11.5, color: d.hot ? 'var(--red)' : 'var(--muted)' }}>{d.text}</div>
+                  <div style={{ fontSize: 13 }}>{p.next_step || <span style={{ color: 'var(--muted)' }}>No next step</span>}</div>
+                  <button type="button" className="om-btn" style={{ minHeight: 40, alignSelf: 'flex-start' }} onClick={() => setMoveTarget(p)}>Move ›</button>
+                </article>
+              );
+            })}
+          </section>
+        </>
+      )}
+
       {view.waitingList.length > 0 && (
-        <Card title={`Waiting on POS support · ${view.waitingList.length}`}>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Good fits on a POS OptiMenu does not support yet. They stay off the board until you change their POS.</div>
+        <details open={!isPhone} style={{ border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)', padding: 12 }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 800, fontSize: 14 }}>Waiting on POS support · {view.waitingList.length}</summary>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)', margin: '8px 0' }}>Good fits on a POS OptiMenu does not support yet. They stay off the board until you change their POS.</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {view.waitingList.map((p) => (
-              <button key={p.id} type="button" className="om-btn" onClick={() => setOpen(p.id)}>{p.name} <span style={{ color: 'var(--muted)' }}>· on {p.pos}</span></button>
+              <button key={p.id} type="button" className="om-btn" onClick={() => openProspect(p.id)}>{p.name} <span style={{ color: 'var(--muted)' }}>· on {p.pos}</span></button>
             ))}
           </div>
-        </Card>
+        </details>
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
@@ -189,7 +243,18 @@ function PipelinePage() {
         </Card>
       </div>
 
-      {current && <ProspectPanel key={current.id} p={current} today={data.today} restaurants={data.restaurants} busy={busy} post={post} onClose={() => setOpen(null)} onLost={() => setLost(current)} />}
+      {current && <ProspectPanel key={current.id} p={current} today={data.today} restaurants={data.restaurants} busy={busy} post={post} isPhone={isPhone} onClose={closeProspect} onLost={() => setLost(current)} />}
+      {moveTarget && (
+        <Dialog title={`Move ${moveTarget.name}`} onClose={() => setMoveTarget(null)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {STAGES.map((stage) => (
+              <button key={stage} type="button" className={stage === 'Lost' ? 'om-btn' : 'om-btn'} style={{ minHeight: 44, justifyContent: 'flex-start', color: stage === 'Lost' ? 'var(--red)' : undefined }} onClick={() => { setMoveTarget(null); move(moveTarget.id, stage); }}>
+                {stage}{stage === 'Lost' ? ' · choose reason' : ''}
+              </button>
+            ))}
+          </div>
+        </Dialog>
+      )}
       {adding && <AddDialog busy={busy} onClose={() => setAdding(false)} onSave={async (f) => { const r = await post({ action: 'save', ...f }); if (r) { setAdding(false); setFlash(`Added ${f.name.trim()} as a Lead.`); } }} />}
       {lost && <LostDialog p={lost} busy={busy} onClose={() => setLost(null)} onSave={async (reason, note) => { if (await post({ action: 'lost', id: lost.id, reason, note })) setLost(null); }} />}
     </>
@@ -205,7 +270,7 @@ function Field({ label, children, style }) {
   );
 }
 
-function ProspectPanel({ p, today, restaurants, busy, post, onClose, onLost }) {
+function ProspectPanel({ p, today, restaurants, busy, post, isPhone, onClose, onLost }) {
   const [f, setF] = useState({
     name: p.name || '', town: p.town || '', state: p.state || '', type: p.type || '', pos: p.pos || '', source: p.source || '',
     contact: p.contact || '', phone: p.phone || '', email: p.email || '', seats: p.seats || '', covers: p.covers || '',
@@ -218,7 +283,7 @@ function ProspectPanel({ p, today, restaurants, busy, post, onClose, onLost }) {
   const linked = restaurants.find((r) => r.id === p.restaurant_id);
 
   return (
-    <Dialog title={p.name} sub={`${p.stage}${p.town ? ` · ${p.town}` : ''}${p.type ? ` · ${p.type}` : ''}`} onClose={onClose} width={900}>
+    <Dialog title={p.name} sub={`${p.stage}${p.town ? ` · ${p.town}` : ''}${p.type ? ` · ${p.type}` : ''}`} onClose={onClose} width={900} fullScreen={isPhone} backLabel={isPhone ? 'Pipeline' : undefined}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
         <Field label="Stage" style={{ flex: '0 1 200px' }}>
           <select className="om-field" value={p.stage} disabled={busy} onChange={(e) => (e.target.value === 'Lost' ? onLost() : post({ action: 'move', id: p.id, stage: e.target.value }))}>

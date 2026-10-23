@@ -381,7 +381,7 @@ export function PageHead({ kicker, title, sub, children }) {
   );
 }
 
-export function Dialog({ title, sub, onClose, children, width = 460, fullScreen = false }) {
+export function Dialog({ title, sub, onClose, children, width = 460, fullScreen = false, backLabel }) {
   const isPhone = useIsPhone();
   const swipeStartY = useRef(null);
 
@@ -412,6 +412,14 @@ export function Dialog({ title, sub, onClose, children, width = 460, fullScreen 
             : { width: '100%', maxWidth: width, maxHeight: '90dvh', overflowY: 'auto', background: 'var(--shell)', borderRadius: '20px 20px 0 0', boxShadow: 'var(--shadow-lg)', padding: '12px 16px calc(16px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: 16, touchAction: 'pan-y' }
           : { width: '100%', maxWidth: width, background: 'var(--shell)', borderRadius: 16, boxShadow: 'var(--shadow-lg)', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         {isPhone && !fullScreen && <div data-sheet-handle="" aria-hidden="true" style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--faint)', opacity: 0.55, alignSelf: 'center', marginBottom: 2 }} />}
+        {isPhone && fullScreen && backLabel && (
+          <div style={{ flexShrink: 0, minHeight: 40, display: 'flex', alignItems: 'center', borderBottom: '1px solid var(--line)' }}>
+            <button type="button" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 0, background: 'none', color: 'var(--accent-deep)', font: "700 14px 'Manrope',sans-serif", padding: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+              {backLabel}
+            </button>
+          </div>
+        )}
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{title}</h2>
           {sub && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>{sub}</p>}
