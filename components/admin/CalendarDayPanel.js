@@ -43,7 +43,7 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
     setEdit(item?.id || null);
     if (m === 'note') setForm({ note: item?.note || '' });
     if (m === 'event') setForm({ title: item?.title || '', allDay: item ? !item.time : false, time: hhmm(item?.time), end_time: hhmm(item?.end_time), details: item?.details || '' });
-    if (m === 'time') setForm({ hours: item ? String(item.hours) : '', category: item?.category || '', description: item?.description || '' });
+    if (m === 'time') setForm({ hours: item ? String(item.hours) : '', categories: item?.categories || [], description: item?.description || '' });
   }
   const close = () => { setMode(null); setEdit(null); };
   const set = (k) => (e) => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; setForm((f) => ({ ...f, [k]: v })); };
@@ -66,7 +66,7 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
     if (!canSave || busy) return;
     const body = mode === 'note' ? { action: 'note', id: edit, day, note: form.note }
       : mode === 'event' ? { action: 'event', id: edit, day, title: form.title, time: form.allDay ? '' : form.time, end_time: form.allDay ? '' : form.end_time, details: form.details }
-      : { action: 'time', id: edit, day, hours: form.hours, category: form.category, description: form.description };
+      : { action: 'time', id: edit, day, hours: form.hours, categories: TIME_CATEGORIES.filter((c) => form.categories.includes(c)), description: form.description };
     const done = { note: edit ? 'Note updated.' : 'Note added.', event: edit ? 'Event updated.' : 'Event added.', time: edit ? 'Time updated.' : 'Time logged.' }[mode];
     if (await post(body, done)) close();
   }
@@ -122,9 +122,9 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {TIME_CATEGORIES.map((c) => {
-                  const on = form.category === c;
+                  const on = form.categories.includes(c);
                   return (
-                    <button key={c} type="button" aria-pressed={on} onClick={() => setForm((f) => ({ ...f, category: on ? '' : c }))}
+                    <button key={c} type="button" aria-pressed={on} onClick={() => setForm((f) => ({ ...f, categories: on ? f.categories.filter((x) => x !== c) : [...f.categories, c] }))}
                       style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '3px 10px', fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--shell)', color: on ? 'var(--accent-deep)' : 'var(--text)', fontWeight: on ? 700 : 500 }}>{c}</button>
                   );
                 })}
@@ -151,7 +151,9 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
           <div key={t.id} style={row}>
             <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, width: 48, flexShrink: 0 }}>{hoursText(t.hours)}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
-              {t.category && <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: 'var(--accent-deep)', background: 'var(--accent-tint)', borderRadius: 4, padding: '1px 6px', marginRight: 6 }}>{t.category}</span>}
+              {(t.categories || []).map((c) => (
+                <span key={c} style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: 'var(--accent-deep)', background: 'var(--accent-tint)', borderRadius: 4, padding: '1px 6px', marginRight: 4, marginBottom: 2 }}>{c}</span>
+              ))}
               {t.description ? <span style={{ whiteSpace: 'pre-wrap' }}>{t.description}</span> : <span style={{ color: 'var(--muted)' }}>No description</span>}
             </span>
             <Actions busy={busy} what="this time entry" onEdit={() => open('time', t)}

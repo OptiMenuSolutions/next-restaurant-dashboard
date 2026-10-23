@@ -8,7 +8,7 @@
 // POST { action: 'note-delete', id }
 // POST { action: 'event', id?, day, time, end_time, title, details }
 // POST { action: 'event-delete', id }
-// POST { action: 'time', id?, day, hours, category, description } log or edit hours worked
+// POST { action: 'time', id?, day, hours, categories, description } log or edit hours worked
 // POST { action: 'time-delete', id }
 
 import { adminDb as db, requireAdmin, etDate, addDays, TOUR_RESTAURANT_ID } from '../../../../lib/admin/requireAdmin';
@@ -34,7 +34,7 @@ export default async function handler(req, res) {
       const [notes, events, timeRows, deadlines, touches, follow, runs, invoices, recs, msgs, accounts] = await Promise.all([
         db.from('admin_day_notes').select('id, day, note, created_at').gte('day', first).lte('day', last).order('created_at'),
         db.from('admin_events').select('id, day, time, end_time, title, details').gte('day', first).lte('day', last).order('time', { ascending: true, nullsFirst: true }),
-        db.from('admin_time_entries').select('id, day, hours, category, description').gte('day', first).lte('day', last).order('created_at'),
+        db.from('admin_time_entries').select('id, day, hours, categories, description').gte('day', first).lte('day', last).order('created_at'),
         db.from('admin_deadlines').select('id, title, due_on, status').gte('due_on', first).lte('due_on', last),
         db.from('sales_touches').select('id, kind, text, happened_on, sales_prospects(id, name)').gte('happened_on', first).lte('happened_on', last).neq('kind', 'Stage'),
         db.from('sales_prospects').select('id, name, next_step, due_on, stage').gte('due_on', first).lte('due_on', last).not('stage', 'in', '("Lost","Live")'),
@@ -129,7 +129,9 @@ export default async function handler(req, res) {
       const row = {
         day: b.day,
         hours,
-        category: String(b.category || '').trim() || null,
+        categories: Array.isArray(b.categories)
+          ? [...new Set(b.categories.map((c) => String(c).trim()).filter(Boolean))].slice(0, 10)
+          : [],
         description: String(b.description || '').trim() || null,
         updated_at: new Date().toISOString(),
       };
