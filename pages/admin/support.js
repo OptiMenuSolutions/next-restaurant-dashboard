@@ -98,7 +98,7 @@ function SupportPage() {
 
       <div style={{ display: 'flex', gap: 18, alignItems: 'stretch', flexWrap: 'wrap', minHeight: 560 }}>
         {/* Thread list */}
-        <section aria-label="Conversations" style={{ flex: '1 1 300px', maxWidth: 380, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <section aria-label="Conversations" style={{ display: isPhone && typeof router.query.thread === 'string' ? 'none' : 'flex', flex: '1 1 300px', maxWidth: 380, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--line)' }}>
             <input type="search" className="om-field" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search messages" aria-label="Search messages" style={{ borderRadius: 18 }} />
             <Pills label="Filter by status" value={filter} onChange={(k) => { setFilter(k); setOpenId(null); }} options={[
@@ -139,9 +139,17 @@ function SupportPage() {
           </div>
         </section>
 
-        {!isPhone && (openId
-          ? <Thread key={openId} id={openId} replies={data.replies} onChanged={load} />
-          : <div style={{ flex: '3 1 560px', border: '1px solid var(--line)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>Pick a conversation.</div>)}
+        {((isPhone && typeof router.query.thread === 'string') || (!isPhone && openId)) && (
+          <Thread
+            key={isPhone ? router.query.thread : openId}
+            id={isPhone ? router.query.thread : openId}
+            replies={data.replies}
+            onChanged={load}
+          />
+        )}
+        {!isPhone && !openId && (
+          <div style={{ flex: '3 1 560px', border: '1px solid var(--line)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>Pick a conversation.</div>
+        )}
       </div>
 
       {startOpen && (
@@ -153,7 +161,9 @@ function SupportPage() {
 }
 
 function Thread({ id, replies, onChanged }) {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
+  const [phoneActionsOpen, setPhoneActionsOpen] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [mode, setMode] = useState('reply');
@@ -216,40 +226,59 @@ function Thread({ id, replies, onChanged }) {
 
   return (
     <>
-      <section aria-label="Conversation" style={{ flex: '3 1 520px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{t.subject || '(no subject)'}</h2>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>
-              {r ? r.name : 'No restaurant'}{data.owner ? ` · ${data.owner.name} · ${data.owner.email}` : ' · no owner email'}
-            </div>
-          </div>
-          <Chip bg={sBg} fg={sFg}>{sLabel}</Chip>
-          <select className="om-field" aria-label="Type" value={t.kind} onChange={(e) => act({ action: 'kind', kind: e.target.value })} style={{ width: 'auto', minHeight: 32 }}>
-            {KINDS.map((k) => <option key={k} value={k}>{k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
-          </select>
-          {t.status !== 'done'
-            ? <button type="button" className="om-btn" disabled={busy} onClick={() => act({ action: 'status', status: 'done' })}>Mark done</button>
-            : <button type="button" className="om-btn" disabled={busy} onClick={() => act({ action: 'status', status: 'new' })}>Reopen</button>}
-          {firstIn && (
-            <button type="button" className="om-btn" disabled={busy || data.hasTestimonial} onClick={() => setQuoteOpen(true)}>
-              {data.hasTestimonial ? 'Saved as testimonial ✓' : 'Save as testimonial'}
-            </button>
+      <section aria-label="Conversation" style={isPhone
+        ? { position: 'fixed', zIndex: 95, top: 48, right: 0, bottom: 0, left: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }
+        : { flex: '3 1 520px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flexShrink: 0, padding: isPhone ? '10px 12px' : '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+          {isPhone ? (
+            <>
+              <Link href={r ? `/admin/restaurants/${r.id}` : '/admin/support'} style={{ flex: 1, minWidth: 0, color: 'var(--accent-deep)', fontSize: 14, fontWeight: 700, textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r?.name || 'Support inbox'}
+              </Link>
+              <button type="button" className="om-btn" aria-label="Conversation actions" onClick={() => setPhoneActionsOpen(true)} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>⋯</button>
+              <div style={{ flexBasis: '100%', minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{t.subject || '(no subject)'}</h2>
+                <div style={{ marginTop: 3, fontSize: 12, color: 'var(--muted)' }}>
+                  {data.owner ? `${data.owner.name} · ${data.owner.email}` : 'No owner email'}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ flex: '1 1 240px', minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{t.subject || '(no subject)'}</h2>
+                <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>
+                  {r ? r.name : 'No restaurant'}{data.owner ? ` · ${data.owner.name} · ${data.owner.email}` : ' · no owner email'}
+                </div>
+              </div>
+              <Chip bg={sBg} fg={sFg}>{sLabel}</Chip>
+              <select className="om-field" aria-label="Type" value={t.kind} onChange={(e) => act({ action: 'kind', kind: e.target.value })} style={{ width: 'auto', minHeight: 32 }}>
+                {KINDS.map((k) => <option key={k} value={k}>{k.charAt(0).toUpperCase() + k.slice(1)}</option>)}
+              </select>
+              {t.status !== 'done'
+                ? <button type="button" className="om-btn" disabled={busy} onClick={() => act({ action: 'status', status: 'done' })}>Mark done</button>
+                : <button type="button" className="om-btn" disabled={busy} onClick={() => act({ action: 'status', status: 'new' })}>Reopen</button>}
+              {firstIn && (
+                <button type="button" className="om-btn" disabled={busy || data.hasTestimonial} onClick={() => setQuoteOpen(true)}>
+                  {data.hasTestimonial ? 'Saved as testimonial ✓' : 'Save as testimonial'}
+                </button>
+              )}
+            </>
           )}
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--panel)', minHeight: 260 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: isPhone ? '14px 12px' : '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--panel)' }}>
           {data.messages.map((m) => {
             const out = m.direction === 'out';
             const note = m.direction === 'note';
             return (
-              <div key={m.id} style={{ alignSelf: out ? 'flex-end' : note ? 'center' : 'flex-start', maxWidth: note ? '90%' : '78%' }}>
+              <div key={m.id} style={{ alignSelf: note ? (isPhone ? 'stretch' : 'center') : out ? 'flex-end' : 'flex-start', width: note && isPhone ? '100%' : undefined, maxWidth: note ? (isPhone ? '100%' : '90%') : isPhone ? '88%' : '78%' }}>
                 <div style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--muted)', marginBottom: 3, textAlign: out ? 'right' : 'left' }}>
                   {note ? `PRIVATE NOTE · ${m.author || ''}` : out ? `${m.author || 'You'}${m.emailed ? ' · emailed' : ' · not emailed'}` : (data.owner?.name || 'Owner')} · {stamp(m.created_at)}
                 </div>
                 <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55, padding: '10px 13px', borderRadius: 12,
-                  background: out ? 'var(--accent-tint)' : note ? 'var(--amber-tint)' : 'var(--shell)',
-                  border: `1px solid ${out ? 'transparent' : note ? 'transparent' : 'var(--line)'}` }}>
+                  background: out ? 'var(--accent-tint)' : note ? 'var(--amber-tint)' : 'var(--panel)',
+                  border: note ? '1px dashed var(--amber)' : out ? '1px solid transparent' : '1px solid var(--line)' }}>
                   {m.body}
                 </div>
               </div>
@@ -257,19 +286,19 @@ function Thread({ id, replies, onChanged }) {
           })}
         </div>
 
-        <div style={{ borderTop: '1px solid var(--line)', padding: '12px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div role="tablist" aria-label="What to add" style={{ display: 'flex', gap: 14 }}>
+        <div style={{ flexShrink: 0, borderTop: '1px solid var(--line)', padding: isPhone ? '10px 12px calc(10px + env(safe-area-inset-bottom))' : '12px 18px', background: 'var(--shell)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div role="tablist" aria-label="What to add" style={{ display: isPhone ? 'none' : 'flex', gap: 14 }}>
             {MODES.map(([k, l]) => (
               <button key={k} type="button" role="tab" aria-selected={mode === k} onClick={() => setMode(k)}
                 style={{ border: 0, background: 'none', padding: '4px 0', cursor: 'pointer', font: `${mode === k ? 700 : 500} 13px 'Manrope', sans-serif`, color: mode === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${mode === k ? 'var(--accent)' : 'transparent'}` }}>{l}</button>
             ))}
           </div>
           {mode === 'reply' && replies.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {replies.map((x) => <button key={x.id} type="button" className="om-btn" style={{ minHeight: 28, fontSize: 12 }} onClick={() => applySaved(x)}>{x.label}</button>)}
+            <div style={{ display: 'flex', gap: 6, flexWrap: isPhone ? 'nowrap' : 'wrap', overflowX: isPhone ? 'auto' : 'visible', paddingBottom: isPhone ? 2 : 0 }}>
+              {replies.map((x) => <button key={x.id} type="button" className="om-btn" style={{ minHeight: 32, fontSize: 12, flexShrink: 0 }} onClick={() => applySaved(x)}>{x.label}</button>)}
             </div>
           )}
-          <textarea className="om-field" rows={4} value={body} onChange={(e) => setBody(e.target.value)} style={{ padding: '8px 10px', resize: 'vertical' }}
+          <textarea className="om-field" rows={isPhone ? 3 : 4} value={body} onChange={(e) => setBody(e.target.value)} style={{ padding: '8px 10px', resize: isPhone ? 'none' : 'vertical' }}
             aria-label={mode === 'reply' ? 'Your reply' : mode === 'note' ? 'Private note' : 'Their reply'}
             placeholder={mode === 'reply' ? `Reply to ${data.owner?.first || 'the owner'}…` : mode === 'note' ? 'Only you see this' : 'Paste what they wrote back by email'} />
           {flash && <div style={{ fontSize: 13, color: 'var(--muted)' }}>{flash}</div>}
@@ -284,7 +313,7 @@ function Thread({ id, replies, onChanged }) {
         </div>
       </section>
 
-      <aside aria-label="Restaurant" style={{ flex: '1 1 240px', maxWidth: 300, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10, alignSelf: 'flex-start' }}>
+      <aside aria-label="Restaurant" style={{ flex: '1 1 240px', maxWidth: 300, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', display: isPhone ? 'none' : 'flex', flexDirection: 'column', gap: 10, alignSelf: 'flex-start' }}>
         {!r ? (
           <div style={{ fontSize: 13, color: 'var(--muted)' }}>Not tied to a restaurant.</div>
         ) : (
@@ -314,6 +343,28 @@ function Thread({ id, replies, onChanged }) {
           </>
         )}
       </aside>
+
+      {isPhone && phoneActionsOpen && (
+        <Dialog title="Conversation actions" onClose={() => setPhoneActionsOpen(false)}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" className="om-btn" disabled={busy} onClick={() => { setPhoneActionsOpen(false); act({ action: 'status', status: t.status === 'done' ? 'new' : 'done' }); }}>
+              {t.status === 'done' ? 'Reopen conversation' : 'Mark done'}
+            </button>
+            <button type="button" className="om-btn" disabled={!firstIn || data.hasTestimonial} onClick={() => { setPhoneActionsOpen(false); setQuoteOpen(true); }}>
+              {data.hasTestimonial ? 'Saved as testimonial ✓' : 'Save as testimonial'}
+            </button>
+            <button type="button" className="om-btn" onClick={() => { setPhoneActionsOpen(false); setMode('their-reply'); }}>
+              Log their reply
+            </button>
+            <button type="button" className="om-btn" onClick={() => { setPhoneActionsOpen(false); setMode('note'); }}>
+              Add private note
+            </button>
+            <button type="button" className="om-btn" onClick={() => { setPhoneActionsOpen(false); setMode('reply'); }}>
+              Write a reply
+            </button>
+          </div>
+        </Dialog>
+      )}
 
       {quoteOpen && (
         <QuoteDialog initial={firstIn?.body || ''} person={data.owner ? `${data.owner.name}, ${r?.name || ''}` : r?.name || ''} busy={busy}
@@ -381,8 +432,17 @@ function StartDialog({ restaurants, initial, onClose, onSent }) {
 }
 
 export default function Page() {
+  const router = useRouter();
+  const inConversation = typeof router.query.thread === 'string';
+
   return (
-    <AdminShell section="Restaurants" sub="Support inbox" title="Support inbox">
+    <AdminShell
+      section="Restaurants"
+      sub="Support inbox"
+      title="Support inbox"
+      back={inConversation ? { label: 'Inbox', href: '/admin/support' } : undefined}
+      hideBottomNav={inConversation}
+    >
       <SupportPage />
     </AdminShell>
   );
