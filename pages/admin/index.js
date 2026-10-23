@@ -14,6 +14,7 @@ import Ticket from '../../components/admin/Ticket';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState } from '../../components/client/ClientChrome';
 import { Chip, Card } from '../../components/admin/ui';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 const TONE = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)' };
@@ -32,6 +33,8 @@ function TodayPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [noteOpen, setNoteOpen] = useState(false);
+  const [busyTicket, setBusyTicket] = useState(null);
+  const isPhone = useIsPhone();
 
   const load = useCallback(async () => {
     setError('');
@@ -47,6 +50,19 @@ function TodayPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  async function act(id, action, extra = {}) {
+    setBusyTicket(id);
+    try {
+      const res = await adminFetch('/api/admin/tickets', { method: 'POST', body: JSON.stringify({ id, action, ...extra }) });
+      if (!res.ok) throw new Error((await res.json()).error || 'Could not save');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyTicket(null);
+    }
+  }
+
   // ⌘K "Add a note" lands here with ?note=1.
   useEffect(() => {
     if (router.query.note === '1') {
@@ -60,7 +76,8 @@ function TodayPage() {
   const tickets = data?.tickets || [];
   const n = tickets.length;
   const over = n > 10;
-  const shown = over ? tickets.slice(0, 9) : tickets;
+  const shown = isPhone ? tickets.slice(0, 4) : over ? tickets.slice(0, 9) : tickets;
+  const showMore = isPhone ? n > 4 : over;
   const railLine = `${WORDS[n] || n} ${n === 1 ? 'ticket' : 'tickets'} on the rail.`;
 
   return (
@@ -70,9 +87,9 @@ function TodayPage() {
         <Link href="/admin/pipeline?add=1" className="om-pri">Add prospect</Link>
       </PageHead>
 
-      <section aria-label="Key numbers" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      <section aria-label="Key numbers" style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(200px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
         {(data?.kpis || [0, 1, 2, 3].map(() => null)).map((k, i) => (
-          <div key={i} style={{ padding: '16px 20px', borderRight: '1px solid var(--line-soft)', display: 'flex', flexDirection: 'column', gap: 4, minHeight: 104 }}>
+          <div key={i} style={{ padding: isPhone ? '12px' : '16px 20px', ...(isPhone ? { borderRight: i % 2 === 1 ? 'none' : '1px solid var(--line-soft)', borderBottom: i < 2 ? '1px solid var(--line-soft)' : 'none' } : { borderRight: '1px solid var(--line-soft)' }), display: 'flex', flexDirection: 'column', gap: 4, minHeight: isPhone ? 84 : 104 }}>
             <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.14em', color: 'var(--muted)' }}>{k?.label || ' '}</div>
             <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.03em', color: (k && TONE[k.tone]) || 'var(--text)' }}>{k ? k.value : '·'}</div>
             <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{k?.sub || ''}</div>
@@ -90,16 +107,27 @@ function TodayPage() {
             The rail could not refresh: {data.ticketError}. Showing what was saved last.
           </div>
         )}
-        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 16, overflowX: 'auto' }}>
+        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: isPhone ? 10 : 16, overflowX: isPhone ? 'visible' : 'auto' }}>
           {data && n === 0 ? (
             <div style={{ padding: '30px 10px', textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>Nothing on the rail. Nice.</div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(220px, 1fr))', gap: 14, minWidth: 1156 }}>
-              {shown.map((t) => <Ticket key={t.id} t={t} />)}
-              {over && (
-                <Link href="/admin/tickets" style={{ border: '1.5px dashed var(--line)', borderRadius: 6, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 6, minHeight: 180, color: 'var(--text)', background: 'var(--shell)' }}>
-                  <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em' }}>+{n - 9}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-deep)' }}>See all {n} tickets →</span>
+            <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'repeat(5, minmax(220px, 1fr))', gap: isPhone ? 10 : 14, minWidth: isPhone ? 0 : 1156 }}>
+              {shown.map((t) => (
+                <Ticket key={t.id} t={t} busy={busyTicket === t.id}
+                  onSnooze={isPhone ? (days) => act(t.id, 'snooze', { days }) : undefined}
+                  onDone={isPhone ? () => act(t.id, 'done') : undefined} />
+              ))}
+              {showMore && (
+                <Link href="/admin/tickets"
+                  style={isPhone
+                    ? { border: '1px dashed var(--line)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 44, color: 'var(--accent-deep)', background: 'var(--shell)', fontWeight: 700 }
+                    : { border: '1.5px dashed var(--line)', borderRadius: 6, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: 6, minHeight: 180, color: 'var(--text)', background: 'var(--shell)' }}>
+                  {isPhone ? `See all ${n} to-dos →` : (
+                    <>
+                      <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-0.03em' }}>+{n - 9}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-deep)' }}>See all {n} tickets →</span>
+                    </>
+                  )}
                 </Link>
               )}
               {!data && [0, 1, 2, 3, 4].map((i) => (
@@ -141,17 +169,30 @@ function TodayPage() {
             <h2 id="jobs" style={{ margin: 0, fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em' }}>Last night’s jobs</h2>
             <Link href="/admin/health" style={{ fontSize: 12.5, fontWeight: 700 }}>Jobs & health</Link>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
             {data.jobs.map((j) => {
               const [label, bg, fg] = JOB_RUN[j.status] || JOB_RUN.none;
               return (
-                <Link key={j.key} href="/admin/health" style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text)', background: 'var(--shell)' }}>
-                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{j.time}</span>
-                    <Chip bg={bg} fg={fg}>{label}</Chip>
-                  </span>
-                  <b style={{ fontSize: 14 }}>{j.name}</b>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{j.summary || (j.status === 'waiting' ? 'Runs later this morning' : j.status === 'none' ? 'Recording starts with tonight’s run' : 'No run recorded today')}</span>
+                <Link key={j.key} href="/admin/health"
+                  style={isPhone
+                    ? { border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 9, color: 'var(--text)', background: 'var(--shell)', textDecoration: 'none' }
+                    : { border: '1px solid var(--line)', borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, color: 'var(--text)', background: 'var(--shell)' }}>
+                  {isPhone ? (
+                    <>
+                      <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: '50%', background: fg, flexShrink: 0 }} />
+                      <b style={{ flex: 1, fontSize: 13 }}>{j.name}</b>
+                      <Chip bg={bg} fg={fg}>{label}</Chip>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{j.time}</span>
+                        <Chip bg={bg} fg={fg}>{label}</Chip>
+                      </span>
+                      <b style={{ fontSize: 14 }}>{j.name}</b>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{j.summary || (j.status === 'waiting' ? 'Runs later this morning' : j.status === 'none' ? 'Recording starts with tonight’s run' : 'No run recorded today')}</span>
+                    </>
+                  )}
                 </Link>
               );
             })}
