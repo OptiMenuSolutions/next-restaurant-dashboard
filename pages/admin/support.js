@@ -139,9 +139,9 @@ function SupportPage() {
           </div>
         </section>
 
-        {openId
+        {!isPhone && (openId
           ? <Thread key={openId} id={openId} replies={data.replies} onChanged={load} />
-          : <div style={{ flex: '3 1 560px', border: '1px solid var(--line)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>Pick a conversation.</div>}
+          : <div style={{ flex: '3 1 560px', border: '1px solid var(--line)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>Pick a conversation.</div>)}
       </div>
 
       {startOpen && (
