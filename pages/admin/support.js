@@ -227,7 +227,7 @@ function Thread({ id, replies, onChanged }) {
   return (
     <>
       <section aria-label="Conversation" style={isPhone
-        ? { position: 'fixed', zIndex: 95, top: 48, right: 0, bottom: 0, left: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }
+        ? { position: 'fixed', zIndex: 95, top: 40, right: 0, bottom: 0, left: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }
         : { flex: '3 1 520px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ flexShrink: 0, padding: isPhone ? '10px 12px' : '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
           {isPhone ? (
@@ -442,6 +442,7 @@ export default function Page() {
       title="Support inbox"
       back={inConversation ? { label: 'Inbox', href: '/admin/support' } : undefined}
       hideBottomNav={inConversation}
+      fixedBack={inConversation}
     >
       <SupportPage />
     </AdminShell>

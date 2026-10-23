@@ -55,7 +55,7 @@ function initials(name) {
   return (parts[0]?.[0] || 'A').toUpperCase() + (parts[1]?.[0] || '').toUpperCase();
 }
 
-export default function AdminShell({ section, sub, title, children, back, hideBottomNav = false }) {
+export default function AdminShell({ section, sub, title, children, back, hideBottomNav = false, fixedBack = false }) {
   const isPhone = useIsPhone();
   const router = useRouter();
   const [theme, toggleTheme] = useTheme();
@@ -177,7 +177,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
       )}
 
       {isPhone && (back ? (
-        <header style={{ height: 48, minHeight: 48, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', position: 'sticky', top: 0, zIndex: 110, background: 'var(--shell)', borderBottom: '1px solid var(--line)' }}>
+        <header style={{ height: fixedBack ? 40 : 48, minHeight: fixedBack ? 40 : 48, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', position: fixedBack ? 'fixed' : 'sticky', top: 0, left: fixedBack ? 0 : undefined, right: fixedBack ? 0 : undefined, zIndex: 110, background: 'var(--shell)', borderBottom: '1px solid var(--line)' }}>
           <Link href={back.href} style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-deep)', textDecoration: 'none', fontSize: 14, fontWeight: 700 }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
             {back.label}
@@ -240,7 +240,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
 
       {me ? (
         <main style={{ flex: 1, padding: isPhone
-          ? `16px 16px ${hideBottomNav ? '20px' : 'calc(64px + env(safe-area-inset-bottom) + 20px)'}`
+          ? `${fixedBack ? 56 : 16}px 16px ${hideBottomNav ? '20px' : 'calc(64px + env(safe-area-inset-bottom) + 20px)'}`
           : `24px ${PAGE_PAD} 56px`,
           display: 'flex', flexDirection: 'column', gap: isPhone ? 16 : 24 }}>
           {children}
