@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import AdminShell, { Confirm } from '../../../components/admin/AdminShell';
+import AdminShell, { Confirm, Dialog } from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Dot, StatusChip, Chip, Pills, Card, th, td, money, shortDate, HEALTH_WORD, DOT } from '../../../components/admin/ui';
@@ -158,8 +158,10 @@ function RestaurantPage({ id }) {
 }
 
 function Overview({ data, act, reload }) {
+  const isPhone = useIsPhone();
   const r = data.restaurant;
   const [note, setNote] = useState('');
+  const [noteOpen, setNoteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [del, setDel] = useState(null);
   const addr = r.address || {};
@@ -172,6 +174,7 @@ function Overview({ data, act, reload }) {
     try {
       await act({ action: 'note', body: note });
       setNote('');
+      setNoteOpen(false);
       reload();
     } finally {
       setSaving(false);
@@ -190,7 +193,7 @@ function Overview({ data, act, reload }) {
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
       <div style={{ flex: '2 1 600px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <Card title="Data">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
             {stats.map(([k, v, s]) => (
               <div key={k}>
                 <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: '0.14em', color: 'var(--muted)' }}>{k}</div>
@@ -203,10 +206,10 @@ function Overview({ data, act, reload }) {
 
         <Card title="Setup">
           {r.setup.map((ok, i) => (
-            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13.5, padding: '4px 0' }}>
-              <span style={{ width: 20, fontWeight: 800, color: ok ? 'var(--green)' : 'var(--faint)' }}>{ok ? '✓' : '○'}</span>
-              <span style={{ fontWeight: 600, width: 140 }}>{STEP_NAMES[i]}</span>
-              <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: isPhone ? 'flex-start' : 'center', flexWrap: isPhone ? 'wrap' : 'nowrap', fontSize: 13.5, padding: '4px 0' }}>
+              <span style={{ width: 20, flexShrink: 0, fontWeight: 800, color: ok ? 'var(--green)' : 'var(--faint)' }}>{ok ? '✓' : '○'}</span>
+              <span style={{ fontWeight: 600, width: isPhone ? 105 : 140, flexShrink: 0 }}>{STEP_NAMES[i]}</span>
+              <span style={{ color: 'var(--muted)', fontSize: 12.5, flex: isPhone ? 1 : undefined, minWidth: isPhone ? 0 : undefined, overflowWrap: isPhone ? 'anywhere' : undefined }}>
                 {i === 0 && (ok ? `${r.menuCount} items` : 'No menu yet')}
                 {i === 1 && (ok ? `${r.invoiceCount} invoices` : 'No invoices yet')}
                 {i === 2 && (r.conn ? `${r.conn.provider || 'POS'} · ${r.conn.status}` : 'Not connected')}
@@ -237,10 +240,32 @@ function Overview({ data, act, reload }) {
 
       <div style={{ flex: '1 1 320px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
         <Card title="Notes">
-          <textarea className="om-field" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note about this restaurant" aria-label="New note" style={{ padding: '8px 10px', resize: 'vertical' }} />
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="button" className="om-pri" onClick={saveNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
-          </div>
+          {isPhone ? (
+            <>
+              <button type="button" className="om-pri" onClick={() => setNoteOpen(true)} style={{ width: '100%' }}>
+                + Add note
+              </button>
+              {noteOpen && (
+                <Dialog title="Add note" sub="This note is only visible to your team." onClose={() => setNoteOpen(false)}>
+                  <textarea className="om-field" rows={4} value={note} onChange={(e) => setNote(e.target.value)}
+                    placeholder="Add a note about this restaurant" aria-label="New note" style={{ padding: '8px 10px', resize: 'vertical' }} />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="om-btn" onClick={() => setNoteOpen(false)} style={{ flex: 1 }}>Cancel</button>
+                    <button type="button" className="om-pri" onClick={saveNote} disabled={saving || !note.trim()} style={{ flex: 1 }}>
+                      {saving ? 'Saving…' : 'Save note'}
+                    </button>
+                  </div>
+                </Dialog>
+              )}
+            </>
+          ) : (
+            <>
+              <textarea className="om-field" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add a note about this restaurant" aria-label="New note" style={{ padding: '8px 10px', resize: 'vertical' }} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="button" className="om-pri" onClick={saveNote} disabled={saving || !note.trim()}>{saving ? 'Saving…' : 'Save note'}</button>
+              </div>
+            </>
+          )}
           {data.notes.map((n) => (
             <div key={n.id} style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
