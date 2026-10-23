@@ -9,6 +9,7 @@ import AdminShell, { PageHead, Dialog, Confirm } from '../../../components/admin
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Chip, th, td, money, shortDate } from '../../../components/admin/ui';
+import useIsPhone from '../../../lib/admin/useIsPhone';
 
 const STAGES = [
   ['Not written', 'var(--shell)', 'var(--line)'],
@@ -45,6 +46,7 @@ function useAct(onDone) {
 }
 
 function TagsPage() {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -77,13 +79,13 @@ function TagsPage() {
 
       <section aria-labelledby="shelf" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h2 id="shelf" style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>On the shelf</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+        <div style={{ display: isPhone ? 'flex' : 'grid', gridTemplateColumns: isPhone ? undefined : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, overflowX: isPhone ? 'auto' : 'visible', flexWrap: isPhone ? 'nowrap' : undefined, paddingBottom: isPhone ? 2 : 0 }}>
           {data.stock.map((s) => {
             const low = s.on_hand <= s.reorder_at;
             const pct = Math.min(100, Math.round((s.on_hand / Math.max(1, s.reorder_at * 3)) * 100));
             return (
               <button key={s.item} type="button" onClick={() => setDialog({ type: 'stock', item: s })} title="Edit count"
-                style={{ textAlign: 'left', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', background: 'var(--shell)', cursor: 'pointer', color: 'var(--text)', fontFamily: "'Manrope', sans-serif", display: 'flex', flexDirection: 'column', gap: 6 }}>
+                style={{ flex: isPhone ? '0 0 170px' : undefined, minWidth: isPhone ? 170 : undefined, textAlign: 'left', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', background: 'var(--shell)', cursor: 'pointer', color: 'var(--text)', fontFamily: "'Manrope', sans-serif", display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>{s.name}</span>
                   <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: low ? 'var(--amber)' : 'var(--green)' }}>{low ? 'REORDER' : 'OK'}</span>
@@ -97,7 +99,7 @@ function TagsPage() {
         </div>
       </section>
 
-      <section aria-labelledby="kits" style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <section aria-labelledby="kits" style={{ display: isPhone ? 'none' : undefined, border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}><h2 id="kits" style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Kits</h2></div>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 980 }}>
           <thead>
@@ -164,7 +166,7 @@ function TagsPage() {
         </div>
       </section>
 
-      <section aria-labelledby="field" style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <section aria-labelledby="field" style={{ display: isPhone ? 'none' : undefined, border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h2 id="field" style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Tags in the field</h2>
           <span style={{ fontSize: 12.5, color: 'var(--muted)' }}>The first tap on a new tag asks where it is. A tag nobody taps for 3 days turns red.</span>
@@ -204,6 +206,64 @@ function TagsPage() {
             })}
           </tbody>
         </table>
+      </section>
+
+      <section aria-label="Kits in progress" style={{ display: isPhone ? 'flex' : 'none', flexDirection: 'column', gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Kits in progress</h2>
+        {data.kits.length === 0 && <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, color: 'var(--muted)', fontSize: 13 }}>No kits yet. Start one above.</div>}
+        {data.kits.map((k) => {
+          const n = k.tags.length;
+          const steps = ['Written', 'Packed', k.delivery === 'mail' ? 'Mailed' : 'Handed off', 'Delivered', 'Placed'];
+          return (
+            <article key={k.id} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, background: 'var(--shell)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ minWidth: 0 }}>
+                  <Link href={`/admin/restaurants/${k.restaurant_id}`} style={{ color: 'var(--text)', fontWeight: 800, textDecoration: 'none' }}>{k.restaurant}</Link>
+                  <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 12 }}>{KIND[k.kind]} · {k.delivery === 'mail' ? 'Mail' : 'Hand delivered'} · {shortDate(k.created_at)}</div>
+                </div>
+                <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{n} tags</span>
+              </div>
+              <div aria-label="Kit progress" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 4 }}>
+                {steps.map((name, i) => {
+                  const done = n > 0 && k.tags.filter((t) => t.stage >= i + 1).length === n;
+                  return <span key={name} title={name} style={{ height: 6, borderRadius: 4, background: done ? 'var(--accent)' : 'var(--line)' }} />;
+                })}
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{k.next.text}{k.tracking ? ` · ${k.carrier || ''} ${k.tracking}` : ''}</div>
+              {k.next.step
+                ? <button type="button" className="om-btn" style={{ minHeight: 40, justifyContent: 'center' }} onClick={() => setDialog({ type: 'kit', kitId: k.id })}>Continue kit</button>
+                : k.delivery === 'mail' && k.sent_at && !k.delivered_at
+                  ? <button type="button" className="om-btn" style={{ minHeight: 40, justifyContent: 'center' }} disabled={busy} onClick={() => act({ action: 'delivered', kitId: k.id })}>Mark delivered</button>
+                  : null}
+            </article>
+          );
+        })}
+      </section>
+
+      <section aria-label="Tags in the field" style={{ display: isPhone ? 'flex' : 'none', flexDirection: 'column', gap: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Tags in the field</h2>
+        <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12.5 }}>The first tap on a new tag asks where it is. A tag nobody taps for 3 days turns red.</p>
+        {data.field.length === 0 && <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, color: 'var(--muted)', fontSize: 13 }}>No live tags yet.</div>}
+        {data.field.map((t) => {
+          const stale = t.status === 'active' && (!t.last_tap_at || Date.now() - new Date(t.last_tap_at).getTime() > 3 * 86400000);
+          const lastTap = t.last_tap_at ? new Date(t.last_tap_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Never';
+          return (
+            <article key={t.id} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, background: 'var(--shell)', display: 'flex', flexDirection: 'column', gap: 8, opacity: t.status === 'off' ? 0.55 : 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <strong style={{ fontFamily: MONO }}>{t.label}</strong>
+                {t.status === 'off' && <Chip>OFF</Chip>}
+              </div>
+              <div style={{ fontWeight: 700 }}>{t.restaurant}</div>
+              <div style={{ color: t.spot ? 'var(--muted)' : 'var(--amber)', fontSize: 13 }}>{t.spot || 'Not placed yet'}</div>
+              <div style={{ fontFamily: MONO, fontSize: 11.5, color: stale ? 'var(--red)' : 'var(--muted)' }}>Last tap · {lastTap}</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {t.spot && <button type="button" className="om-btn" style={{ minHeight: 40 }} disabled={busy} onClick={() => act({ action: 'clear-spot', tagId: t.id })}>Ask spot again</button>}
+                <button type="button" className="om-btn" style={{ minHeight: 40 }} disabled={busy} onClick={() => act({ action: 'tag-status', tagId: t.id, status: t.status === 'off' ? 'active' : 'off' })}>{t.status === 'off' ? 'Turn on' : 'Turn off'}</button>
+                <button type="button" className="om-btn" style={{ minHeight: 40 }} onClick={() => setDialog({ type: 'kit', kitId: null, preset: { restaurantId: t.restaurant_id, kind: 'replacement' } })}>Replace</button>
+              </div>
+            </article>
+          );
+        })}
       </section>
 
       {dialog?.type === 'kit' && <KitDialog kitId={dialog.kitId} preset={dialog.preset} data={data} onClose={() => { setDialog(null); load(); }} />}
@@ -275,7 +335,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
   const title = kit ? `${kit.restaurant?.name || ''} · ${KIND[kit.kit.kind]}` : 'Start a kit';
 
   return (
-    <Dialog title={title} onClose={onClose} width={680}>
+    <Dialog title={title} onClose={onClose} width={680} fullScreen>
       {step == null ? <LoadingState /> : (
         <>
           <ol aria-label="Steps" style={{ display: 'flex', gap: 8, listStyle: 'none', margin: 0, padding: 0 }}>
@@ -328,7 +388,12 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
                     <span style={{ fontFamily: MONO, fontWeight: 700, width: 70 }}>{t.label}</span>
                     <span style={{ fontFamily: MONO, fontSize: 12.5, flex: '1 1 220px' }}>https://{t.url}</span>
                     <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => navigator.clipboard?.writeText(`https://${t.url}`)}>Copy link</button>
-                    <Chip bg={s[1]} fg={s[2]}>{s[0]}</Chip>
+                    {isPhone && t.written_at && !t.confirmed_at ? (
+                      <div style={{ flex: '1 1 100%', border: '1px solid var(--amber)', borderRadius: 12, padding: 18, background: 'var(--amber-tint)', textAlign: 'center', color: 'var(--text)' }}>
+                        <div style={{ fontSize: 18, fontWeight: 800 }}>Waiting for a tap…</div>
+                        <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--muted)' }}>Tap this tag with your phone to confirm it.</div>
+                      </div>
+                    ) : <Chip bg={s[1]} fg={s[2]}>{s[0]}</Chip>}
                     {!t.written_at && !t.confirmed_at && <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => run({ action: 'mark-written', tagId: t.id })}>I wrote it</button>}
                     {t.written_at && !t.confirmed_at && <button type="button" onClick={() => run({ action: 'confirm', tagId: t.id })} disabled={busy} style={{ border: 0, background: 'none', color: 'var(--muted)', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}>Confirm without a tap</button>}
                   </div>
@@ -380,7 +445,7 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
 
           {err && <div style={{ fontSize: 13, color: 'var(--red)' }}>{err}</div>}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap', ...(useIsPhone() ? { position: 'sticky', bottom: 0, marginTop: 'auto', paddingTop: 10, background: 'var(--shell)' } : {}) }}>
             <div>
               {kit && !kit.kit.packed_at && (
                 <button type="button" onClick={() => setAskCancel(true)}
