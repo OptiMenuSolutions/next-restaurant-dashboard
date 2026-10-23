@@ -9,6 +9,7 @@ import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/Ad
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, shortDate } from '../../components/admin/ui';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 const ST = {
   'not asked': ['NOT ASKED', 'var(--panel)', 'var(--muted)'],
@@ -23,13 +24,16 @@ function askText(q) {
 }
 
 function TestimonialsPage() {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
+  const [view, setView] = useState('quotes');
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState(false);
   const [edit, setEdit] = useState(null);
+  const [more, setMore] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -76,13 +80,28 @@ function TestimonialsPage() {
       <PageHead kicker="SALES" title="Testimonials" sub="Quotes saved from the Support inbox, and results you can point to. Ask before anything goes on the website.">
         <button type="button" className="om-pri" onClick={() => setEdit({})}>Add a quote</button>
       </PageHead>
-      <Pills label="Filter" value={filter} onChange={setFilter} options={[
-        { key: 'all', label: 'All', n: data.quotes.length }, { key: 'not asked', label: 'Not asked', n: n('not asked') },
-        { key: 'asked', label: 'Waiting', n: n('asked') }, { key: 'yes', label: 'OK to use', n: n('yes') }, { key: 'no', label: 'Said no', n: n('no') },
-      ]} />
+      {isPhone && (
+        <Pills label="Testimonials" value={view} onChange={setView} options={[
+          { key: 'quotes', label: 'Quotes', n: data.quotes.length },
+          { key: 'proof', label: 'Proof points', n: data.proof.length },
+        ]} />
+      )}
+      {isPhone && (
+        <Pills label="Testimonials" value={view} onChange={setView} options={[
+          { key: 'quotes', label: 'Quotes', n: data.quotes.length },
+          { key: 'proof', label: 'Proof points', n: data.proof.length },
+        ]} />
+      )}
+      {(!isPhone || view === 'quotes') && (
+        <Pills label="Filter" value={filter} onChange={setFilter} options={[
+          { key: 'all', label: 'All', n: data.quotes.length }, { key: 'not asked', label: 'Not asked', n: n('not asked') },
+          { key: 'asked', label: 'Waiting', n: n('asked') }, { key: 'yes', label: 'OK to use', n: n('yes') }, { key: 'no', label: 'Said no', n: n('no') },
+        ]} />
+      )}
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+      {(!isPhone || view === 'quotes') && (
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
         {quotes.length === 0 && <div style={{ fontSize: 13.5, color: 'var(--muted)' }}>No quotes here yet. In the Support inbox, use Save as testimonial on a message.</div>}
         {quotes.map((q) => {
           const [label, bg, fg] = q.on_website ? ['ON THE WEBSITE', 'var(--green-tint)', 'var(--green)'] : ST[q.permission] || ST['not asked'];
@@ -97,30 +116,49 @@ function TestimonialsPage() {
                 {[q.person, q.restaurant].filter(Boolean).join(', ') || 'No name yet'}
                 {q.thread_id && <> · <Link href={`/admin/support?thread=${q.thread_id}`} style={{ color: 'var(--accent-deep)' }}>Open the message</Link></>}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {q.permission === 'not asked' && <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={async () => { await copy(askText(q), 'Copied a request you can send them. Marked as asked.'); post({ action: 'permission', id: q.id, permission: 'asked' }); }}>Ask permission</button>}
-                {q.permission === 'asked' && <>
-                  <button type="button" className="om-pri" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
-                  <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'no' })}>They said no</button>
-                </>}
-                {q.permission === 'yes' && (
-                  <button type="button" aria-pressed={!!q.on_website} className="om-btn" style={{ minHeight: 30, borderColor: q.on_website ? 'var(--green)' : 'var(--line)', color: q.on_website ? 'var(--green)' : 'var(--text)' }} disabled={busy}
-                    onClick={() => post({ action: 'website', id: q.id, on: !q.on_website })}>{q.on_website ? 'On the website ✓' : 'Mark as on the website'}</button>
-                )}
-                <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => copy(`“${q.quote}”${q.person ? ` (${[q.person, q.restaurant].filter(Boolean).join(', ')})` : ''}`, 'Quote copied.')}>Copy quote</button>
-                <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => setEdit(q)}>Edit</button>
-              </div>
+              {isPhone ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {q.permission === 'not asked' && (
+                    <button type="button" className="om-btn" style={{ flex: 1, minHeight: 38 }} disabled={busy} onClick={async () => { await copy(askText(q), 'Copied a request you can send them. Marked as asked.'); post({ action: 'permission', id: q.id, permission: 'asked' }); }}>Ask permission</button>
+                  )}
+                  {q.permission === 'asked' && (
+                    <button type="button" className="om-pri" style={{ flex: 1, minHeight: 38 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
+                  )}
+                  {q.permission === 'yes' && (
+                    <button type="button" aria-pressed={!!q.on_website} className="om-btn" style={{ flex: 1, minHeight: 38, borderColor: q.on_website ? 'var(--green)' : 'var(--line)', color: q.on_website ? 'var(--green)' : 'var(--text)' }} disabled={busy} onClick={() => post({ action: 'website', id: q.id, on: !q.on_website })}>
+                      {q.on_website ? 'Remove from site' : 'Mark as on the website'}
+                    </button>
+                  )}
+                  <button type="button" className="om-btn" aria-label="More quote actions" style={{ width: 40, minHeight: 38, padding: 0, justifyContent: 'center' }} onClick={() => setMore(q)}>⋯</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {q.permission === 'not asked' && <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={async () => { await copy(askText(q), 'Copied a request you can send them. Marked as asked.'); post({ action: 'permission', id: q.id, permission: 'asked' }); }}>Ask permission</button>}
+                  {q.permission === 'asked' && <>
+                    <button type="button" className="om-pri" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
+                    <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'no' })}>They said no</button>
+                  </>}
+                  {q.permission === 'yes' && (
+                    <button type="button" aria-pressed={!!q.on_website} className="om-btn" style={{ minHeight: 30, borderColor: q.on_website ? 'var(--green)' : 'var(--line)', color: q.on_website ? 'var(--green)' : 'var(--text)' }} disabled={busy}
+                      onClick={() => post({ action: 'website', id: q.id, on: !q.on_website })}>{q.on_website ? 'On the website ✓' : 'Mark as on the website'}</button>
+                  )}
+                  <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => copy(`“${q.quote}”${q.person ? ` (${[q.person, q.restaurant].filter(Boolean).join(', ')})` : ''}`, 'Quote copied.')}>Copy quote</button>
+                  <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => setEdit(q)}>Edit</button>
+                </div>
+              )}
             </article>
           );
         })}
-      </div>
+        </div>
+      )}
 
+      {(!isPhone || view === 'proof') && (
       <Card title="Proof points">
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Tonight’s Dish picks that sold at least 15% above a typical night for that weekday, last 30 nights. A restaurant’s name stays hidden until one of its quotes is OK to use.</div>
         {data.proofError && <div style={{ fontSize: 13, color: 'var(--red)' }}>{data.proofError}</div>}
         {data.proof.length === 0 && !data.proofError && <div style={{ fontSize: 13, color: 'var(--muted)' }}>None yet. These need POS sales and a few weeks of picks.</div>}
         {data.proof.map((p, i) => (
-          <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--line-soft)' }}>
+          <div key={i} style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', gap: 8, alignItems: isPhone ? 'stretch' : 'center', padding: '9px 0', borderTop: '1px solid var(--line-soft)' }}>
             <span style={{ fontFamily: MONO, fontWeight: 700, color: 'var(--green)', width: 64 }}>+{Math.round(p.lift * 100)}%</span>
             <span style={{ flex: 1, fontSize: 13.5 }}>{p.text}</span>
             <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>{shortDate(p.when)}</span>
@@ -128,8 +166,18 @@ function TestimonialsPage() {
           </div>
         ))}
       </Card>
+      )}
 
       {edit && <EditDialog q={edit} restaurants={data.restaurants} busy={busy} onClose={() => setEdit(null)} post={post} />}
+      {more && (
+        <Dialog title="Quote actions" onClose={() => setMore(null)} width={420}>
+          <button type="button" className="om-btn" onClick={() => { copy(`“${more.quote}”${more.person ? ` (${[more.person, more.restaurant].filter(Boolean).join(', ')})` : ''}`, 'Quote copied.'); setMore(null); }}>Copy quote</button>
+          {more.permission === 'asked' && (
+            <button type="button" className="om-btn" disabled={busy} onClick={() => { post({ action: 'permission', id: more.id, permission: 'no' }); setMore(null); }}>They said no</button>
+          )}
+          <button type="button" className="om-btn" onClick={() => { setEdit(more); setMore(null); }}>Edit quote</button>
+        </Dialog>
+      )}
     </>
   );
 }
