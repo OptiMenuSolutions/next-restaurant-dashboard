@@ -1,7 +1,8 @@
 // pages/admin/calendar.js
-// Calendar: a month of your plans (events and day notes), deadlines, sales
-// touches and follow-ups, and what the platform did. Click a day to see it
-// all, write the day's note and add events. Today's events show on Today.
+// Calendar: a month of your plans (events and notes), hours worked, deadlines,
+// sales touches and follow-ups, and what the platform did. Each day shows its
+// hours in the corner; click it to see the work. The panel on the right adds
+// notes, events and time for the selected day. Today's events show on Today.
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -9,6 +10,7 @@ import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Card } from '../../components/admin/ui';
+import CalendarDayPanel, { hoursText } from '../../components/admin/CalendarDayPanel';
 
 const KIND = {
   plan: ['var(--panel)', 'var(--text)', 'Your plans'],
@@ -29,7 +31,7 @@ function time12(t) {
 function chipsFor(d) {
   if (!d) return [];
   const out = [];
-  if (d.note) out.push(['plan', d.note.split('\n')[0]]);
+  for (const n of d.notes || []) out.push(['plan', n.note.split('\n')[0]]);
   for (const e of d.events) out.push(['plan', `${e.time ? time12(e.time) + ' ' : ''}${e.title}`]);
   for (const x of d.deadlines) out.push(['deadline', `${x.done ? '✓ ' : ''}${x.title}`]);
   for (const s of d.sales) out.push(['sales', s.text]);
@@ -46,8 +48,7 @@ function CalendarPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [sel, setSel] = useState(null);
-  const [note, setNote] = useState('');
-  const [ev, setEv] = useState({ time: '', title: '' });
+  const [timeFor, setTimeFor] = useState(null); // day whose hours pill was clicked
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState('');
 
@@ -64,7 +65,6 @@ function CalendarPage() {
     }
   }, [adminFetch, month]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setNote(data?.days?.[sel]?.note || ''); setEv({ time: '', title: '' }); }, [sel, data]);
 
   const post = async (body, ok) => {
     setBusy(true);
@@ -90,12 +90,18 @@ function CalendarPage() {
   const lead = new Date(data.first + 'T12:00:00Z').getUTCDay();
   const count = Number(data.last.slice(8));
   const cells = [...Array(lead).fill(null), ...Array.from({ length: count }, (_, i) => `${data.month}-${String(i + 1).padStart(2, '0')}`)];
-  const d = data.days[sel] || { note: '', events: [], deadlines: [], sales: [], activity: [] };
+  const d = data.days[sel] || { notes: [], events: [], time: [], hours: 0, deadlines: [], sales: [], activity: [] };
   const isToday = sel === data.today;
+  const monthHours = Object.entries(data.days)
+    .filter(([k]) => k >= data.first && k <= data.last)
+    .reduce((s, [, v]) => s + (v.hours || 0), 0);
 
   return (
     <>
       <PageHead kicker="CALENDAR" title={fmt(data.first, { month: 'long', year: 'numeric' })}>
+        <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.08em', color: 'var(--muted)', alignSelf: 'center', marginRight: 6 }}>
+          {hoursText(monthHours)} IN {fmt(data.first, { month: 'long' }).toUpperCase()}
+        </span>
         <button type="button" className="om-btn" aria-label="Previous month" onClick={() => setMonth(shift(data.month, -1))}>‹</button>
         <button type="button" className="om-btn" onClick={() => { setMonth(data.today.slice(0, 7)); setSel(data.today); }}>Today</button>
         <button type="button" className="om-btn" aria-label="Next month" onClick={() => setMonth(shift(data.month, 1))}>›</button>
@@ -117,44 +123,33 @@ function CalendarPage() {
               if (!c) return <div key={`b${i}`} style={{ minHeight: 104, borderRadius: 8, background: 'var(--panel)', opacity: 0.5 }} />;
               const chips = chipsFor(data.days[c]);
               const on = c === sel;
+              const hrs = data.days[c]?.hours || 0;
               return (
-                <button key={c} type="button" aria-pressed={on} aria-label={fmt(c, { weekday: 'long', month: 'long', day: 'numeric' })} onClick={() => setSel(c)}
+                <div key={c} role="button" tabIndex={0} aria-pressed={on} aria-label={fmt(c, { weekday: 'long', month: 'long', day: 'numeric' })} onClick={() => setSel(c)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(c); } }}
                   style={{ minHeight: 104, borderRadius: 8, border: '1px solid var(--line)', background: on ? 'var(--accent-tint)' : 'var(--shell)', boxShadow: on ? 'inset 0 0 0 2px var(--accent)' : 'none', padding: 6, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--text)', minWidth: 0 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: c === data.today ? 'var(--accent-deep)' : 'var(--text)' }}>{Number(c.slice(8))}{c === data.today ? ' · today' : ''}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: c === data.today ? 'var(--accent-deep)' : 'var(--text)', whiteSpace: 'nowrap' }}>{Number(c.slice(8))}{c === data.today ? ' · today' : ''}</span>
+                    {hrs > 0 && (
+                      <button type="button" title="See what you worked on" aria-label={`${hoursText(hrs)} worked. See what you worked on`}
+                        onClick={(e) => { e.stopPropagation(); setSel(c); setTimeFor(c); }}
+                        style={{ border: 0, borderRadius: 999, padding: '1px 7px', background: 'var(--text)', color: 'var(--shell)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.6, flexShrink: 0 }}>
+                        {hoursText(hrs)}
+                      </button>
+                    )}
+                  </span>
                   {chips.slice(0, 3).map(([k, text], j) => (
                     <span key={j} style={{ fontSize: 10.5, fontWeight: 600, background: KIND[k][0], color: KIND[k][1], borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
                   ))}
                   {chips.length > 3 && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+{chips.length - 3} more</span>}
-                </button>
+                </div>
               );
             })}
           </div>
         </div>
 
         <Card title={fmt(sel, { month: 'long', day: 'numeric' })} style={{ flex: '1 1 320px' }} right={<span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{fmt(sel, { weekday: 'long' }).toUpperCase()}{isToday ? ' · TODAY' : ''}</span>}>
-          <div>
-            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 4 }}>DAY NOTES</div>
-            <textarea className="om-field" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What matters today" style={{ padding: 8, resize: 'vertical' }} />
-            <button type="button" className="om-btn" style={{ marginTop: 6, minHeight: 30 }} disabled={busy || note === (d.note || '')} onClick={() => post({ action: 'note', day: sel, note }, 'Note saved.')}>Save note</button>
-          </div>
-
-          <div>
-            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 4 }}>SCHEDULED</div>
-            {d.events.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing scheduled.</div>}
-            {d.events.map((e) => (
-              <div key={e.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '5px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5 }}>
-                <span style={{ fontFamily: MONO, fontSize: 12, width: 66, color: 'var(--muted)' }}>{time12(e.time) || 'Any time'}</span>
-                <span style={{ flex: 1 }}>{e.title}</span>
-                <button type="button" aria-label={`Remove ${e.title}`} disabled={busy} onClick={() => post({ action: 'event-delete', id: e.id })} style={{ border: 0, background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 16 }}>×</button>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <input className="om-field" type="time" aria-label="Time" value={ev.time} onChange={(e) => setEv({ ...ev, time: e.target.value })} style={{ width: 120 }} />
-              <input className="om-field" aria-label="What" placeholder="Add an event" value={ev.title} onChange={(e) => setEv({ ...ev, title: e.target.value })}
-                onKeyDown={async (e) => { if (e.key === 'Enter' && ev.title.trim() && await post({ action: 'event', day: sel, ...ev })) setEv({ time: '', title: '' }); }} />
-              <button type="button" className="om-pri" disabled={busy || !ev.title.trim()} onClick={async () => { if (await post({ action: 'event', day: sel, ...ev })) setEv({ time: '', title: '' }); }}>Add</button>
-            </div>
-          </div>
+          <CalendarDayPanel day={sel} d={d} busy={busy} post={post} openTime={timeFor === sel} onTimeShown={() => setTimeFor(null)} />
 
           {d.deadlines.length > 0 && (
             <div>

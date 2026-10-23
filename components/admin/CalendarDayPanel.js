@@ -1,0 +1,200 @@
+// components/admin/CalendarDayPanel.js
+// The selected day on the admin calendar: hours worked with what was done,
+// separate notes, and events with a start and end time. Each has its own add
+// button, and every entry has its own edit and delete.
+
+import { useEffect, useRef, useState } from 'react';
+import { MONO } from '../client/ClientChrome';
+import { Confirm } from './AdminShell';
+
+export const TIME_CATEGORIES = ['Development', 'Certification', 'Sales', 'Support', 'Admin', 'Other'];
+export const hoursText = (h) => `${Number(Number(h || 0).toFixed(2))}h`;
+
+const label = { fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' };
+const row = { display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5 };
+const editBtn = { border: 0, background: 'none', padding: 0, color: 'var(--accent-deep)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 };
+const xBtn = { border: 0, background: 'none', padding: '0 2px', color: 'var(--muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1 };
+
+function t12(t) {
+  if (!t) return '';
+  const [h, m] = String(t).split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '');
+
+function Actions({ onEdit, onDelete, busy, what }) {
+  return (
+    <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
+      <button type="button" style={editBtn} disabled={busy} onClick={onEdit}>Edit</button>
+      <button type="button" style={xBtn} aria-label={`Delete ${what}`} disabled={busy} onClick={onDelete}>×</button>
+    </span>
+  );
+}
+
+export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeShown }) {
+  const [mode, setMode] = useState(null); // 'note' | 'event' | 'time'
+  const [edit, setEdit] = useState(null); // id of the entry being edited
+  const [form, setForm] = useState({});
+  const [del, setDel] = useState(null);
+  const timeRef = useRef(null);
+
+  function open(m, item) {
+    setMode(m);
+    setEdit(item?.id || null);
+    if (m === 'note') setForm({ note: item?.note || '' });
+    if (m === 'event') setForm({ title: item?.title || '', allDay: item ? !item.time : false, time: hhmm(item?.time), end_time: hhmm(item?.end_time), details: item?.details || '' });
+    if (m === 'time') setForm({ hours: item ? String(item.hours) : '', category: item?.category || '', description: item?.description || '' });
+  }
+  const close = () => { setMode(null); setEdit(null); };
+  const set = (k) => (e) => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; setForm((f) => ({ ...f, [k]: v })); };
+
+  useEffect(() => { close(); }, [day]);
+  useEffect(() => {
+    if (!openTime) return;
+    if (d.time.length) timeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    else open('time');
+    onTimeShown?.();
+  }, [openTime]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const badRange = mode === 'event' && !form.allDay && form.time && form.end_time && form.end_time <= form.time;
+  const canSave = mode === 'note' ? !!form.note?.trim()
+    : mode === 'event' ? !!form.title?.trim() && (form.allDay || !!form.time) && !badRange
+    : mode === 'time' ? Number(form.hours) > 0 && Number(form.hours) <= 24
+    : false;
+
+  async function save() {
+    if (!canSave || busy) return;
+    const body = mode === 'note' ? { action: 'note', id: edit, day, note: form.note }
+      : mode === 'event' ? { action: 'event', id: edit, day, title: form.title, time: form.allDay ? '' : form.time, end_time: form.allDay ? '' : form.end_time, details: form.details }
+      : { action: 'time', id: edit, day, hours: form.hours, category: form.category, description: form.description };
+    const done = { note: edit ? 'Note updated.' : 'Note added.', event: edit ? 'Event updated.' : 'Event added.', time: edit ? 'Time updated.' : 'Time logged.' }[mode];
+    if (await post(body, done)) close();
+  }
+  const onKey = (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); }
+    if (e.key === 'Escape') close();
+  };
+
+  const total = d.time.reduce((s, t) => s + Number(t.hours || 0), 0);
+  const addBtn = (m, text) => (
+    <button type="button" className="om-btn" aria-pressed={mode === m && !edit} onClick={() => (mode === m && !edit ? close() : open(m))} style={{ minHeight: 32, flex: '1 1 0', fontWeight: 700 }}>{text}</button>
+  );
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {addBtn('note', '+ Note')}
+        {addBtn('event', '+ Event')}
+        {addBtn('time', '+ Log time')}
+      </div>
+
+      {mode && (
+        <div onKeyDown={onKey} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel)' }}>
+          <div style={label}>{{ note: edit ? 'EDIT NOTE' : 'NEW NOTE', event: edit ? 'EDIT EVENT' : 'NEW EVENT', time: edit ? 'EDIT TIME' : 'LOG TIME' }[mode]}</div>
+
+          {mode === 'note' && (
+            <textarea className="om-field" rows={3} autoFocus value={form.note} onChange={set('note')} placeholder="Write a note" style={{ padding: 8, resize: 'vertical' }} />
+          )}
+
+          {mode === 'event' && (
+            <>
+              <input className="om-field" autoFocus placeholder="What is it?" value={form.title} onChange={set('title')} />
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+                <input type="checkbox" checked={form.allDay} onChange={set('allDay')} /> All day
+              </label>
+              {!form.allDay && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input className="om-field" type="time" aria-label="Starts" value={form.time} onChange={set('time')} style={{ flex: 1 }} />
+                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>to</span>
+                  <input className="om-field" type="time" aria-label="Ends" value={form.end_time} onChange={set('end_time')} style={{ flex: 1 }} />
+                </div>
+              )}
+              {badRange && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>The end time is before the start.</div>}
+              <textarea className="om-field" rows={2} placeholder="Details (optional)" value={form.details} onChange={set('details')} style={{ padding: 8, resize: 'vertical' }} />
+            </>
+          )}
+
+          {mode === 'time' && (
+            <>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input className="om-field" type="number" inputMode="decimal" min="0.25" max="24" step="0.25" autoFocus aria-label="Hours" placeholder="0" value={form.hours} onChange={set('hours')} style={{ width: 96 }} />
+                <span style={{ fontSize: 13, color: 'var(--muted)' }}>hours</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {TIME_CATEGORIES.map((c) => {
+                  const on = form.category === c;
+                  return (
+                    <button key={c} type="button" aria-pressed={on} onClick={() => setForm((f) => ({ ...f, category: on ? '' : c }))}
+                      style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '3px 10px', fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--shell)', color: on ? 'var(--accent-deep)' : 'var(--text)', fontWeight: on ? 700 : 500 }}>{c}</button>
+                  );
+                })}
+              </div>
+              <textarea className="om-field" rows={3} placeholder="What did you work on?" value={form.description} onChange={set('description')} style={{ padding: 8, resize: 'vertical' }} />
+            </>
+          )}
+
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button type="button" className="om-pri" disabled={busy || !canSave} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="om-btn" disabled={busy} onClick={close}>Cancel</button>
+            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)' }}>⌘↵ to save · Esc to cancel</span>
+          </div>
+        </div>
+      )}
+
+      <div ref={timeRef}>
+        <div style={{ ...label, display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+          <span>TIME</span>
+          {total > 0 && <span style={{ color: 'var(--text)', fontWeight: 700 }}>{hoursText(total)}</span>}
+        </div>
+        {d.time.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No time logged.</div>}
+        {d.time.map((t) => (
+          <div key={t.id} style={row}>
+            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, width: 48, flexShrink: 0 }}>{hoursText(t.hours)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              {t.category && <span style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: 'var(--accent-deep)', background: 'var(--accent-tint)', borderRadius: 4, padding: '1px 6px', marginRight: 6 }}>{t.category}</span>}
+              {t.description ? <span style={{ whiteSpace: 'pre-wrap' }}>{t.description}</span> : <span style={{ color: 'var(--muted)' }}>No description</span>}
+            </span>
+            <Actions busy={busy} what="this time entry" onEdit={() => open('time', t)}
+              onDelete={() => setDel({ body: { action: 'time-delete', id: t.id }, title: 'Delete this time entry?', sub: `${hoursText(t.hours)}${t.description ? ' · ' + t.description.slice(0, 80) : ''}` })} />
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <div style={{ ...label, marginBottom: 4 }}>NOTES</div>
+        {d.notes.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No notes.</div>}
+        {d.notes.map((n) => (
+          <div key={n.id} style={row}>
+            <span style={{ flex: 1, minWidth: 0, whiteSpace: 'pre-wrap' }}>{n.note}</span>
+            <Actions busy={busy} what="this note" onEdit={() => open('note', n)}
+              onDelete={() => setDel({ body: { action: 'note-delete', id: n.id }, title: 'Delete this note?', sub: n.note.slice(0, 120) })} />
+          </div>
+        ))}
+      </div>
+
+      <div>
+        <div style={{ ...label, marginBottom: 4 }}>SCHEDULED</div>
+        {d.events.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing scheduled.</div>}
+        {d.events.map((e) => (
+          <div key={e.id} style={row}>
+            <span style={{ fontFamily: MONO, fontSize: 12, width: 70, flexShrink: 0, color: 'var(--muted)', lineHeight: 1.5 }}>
+              {e.time ? t12(e.time) : 'All day'}
+              {e.time && e.end_time && <><br />{t12(e.end_time)}</>}
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ fontWeight: 600 }}>{e.title}</span>
+              {e.details && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{e.details}</span>}
+            </span>
+            <Actions busy={busy} what={e.title} onEdit={() => open('event', e)}
+              onDelete={() => setDel({ body: { action: 'event-delete', id: e.id }, title: 'Delete this event?', sub: e.title })} />
+          </div>
+        ))}
+      </div>
+
+      {del && (
+        <Confirm title={del.title} sub={del.sub} yes="Delete" danger busy={busy}
+          onYes={async () => { if (await post(del.body)) setDel(null); }} onClose={() => setDel(null)} />
+      )}
+    </>
+  );
+}

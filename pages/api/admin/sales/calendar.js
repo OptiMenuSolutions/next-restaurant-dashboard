@@ -4,9 +4,12 @@
 // Tonight's Dish runs, support messages, new accounts, job problems).
 //
 // GET ?month=YYYY-MM
-// POST { action: 'note', day, note }            empty note deletes it
-// POST { action: 'event', id?, day, time, title }
+// POST { action: 'note', id?, day, note }                         add or edit one note
+// POST { action: 'note-delete', id }
+// POST { action: 'event', id?, day, time, end_time, title, details }
 // POST { action: 'event-delete', id }
+// POST { action: 'time', id?, day, hours, category, description } log or edit hours worked
+// POST { action: 'time-delete', id }
 
 import { adminDb as db, requireAdmin, etDate, addDays, TOUR_RESTAURANT_ID } from '../../../../lib/admin/requireAdmin';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
@@ -28,9 +31,10 @@ export default async function handler(req, res) {
       const from = addDays(first, -1);
       const to = addDays(last, 2);
 
-      const [notes, events, deadlines, touches, follow, runs, invoices, recs, msgs, accounts] = await Promise.all([
-        db.from('admin_day_notes').select('day, note').gte('day', first).lte('day', last),
-        db.from('admin_events').select('id, day, time, title').gte('day', first).lte('day', last).order('time', { ascending: true, nullsFirst: true }),
+      const [notes, events, timeRows, deadlines, touches, follow, runs, invoices, recs, msgs, accounts] = await Promise.all([
+        db.from('admin_day_notes').select('id, day, note, created_at').gte('day', first).lte('day', last).order('created_at'),
+        db.from('admin_events').select('id, day, time, end_time, title, details').gte('day', first).lte('day', last).order('time', { ascending: true, nullsFirst: true }),
+        db.from('admin_time_entries').select('id, day, hours, category, description').gte('day', first).lte('day', last).order('created_at'),
         db.from('admin_deadlines').select('id, title, due_on, status').gte('due_on', first).lte('due_on', last),
         db.from('sales_touches').select('id, kind, text, happened_on, sales_prospects(id, name)').gte('happened_on', first).lte('happened_on', last).neq('kind', 'Stage'),
         db.from('sales_prospects').select('id, name, next_step, due_on, stage').gte('due_on', first).lte('due_on', last).not('stage', 'in', '("Lost","Live")'),
@@ -42,10 +46,15 @@ export default async function handler(req, res) {
       ]);
 
       const days = {};
-      const day = (d) => (days[d] = days[d] || { note: '', events: [], deadlines: [], sales: [], activity: [] });
+      const day = (d) => (days[d] = days[d] || { notes: [], events: [], time: [], hours: 0, deadlines: [], sales: [], activity: [] });
       const inMonth = (d) => d >= first && d <= last;
-      for (const n of notes.data || []) day(n.day).note = n.note;
+      for (const n of notes.data || []) day(n.day).notes.push({ id: n.id, note: n.note });
       for (const e of events.data || []) day(e.day).events.push(e);
+      for (const t of timeRows.data || []) {
+        const x = day(t.day);
+        x.time.push({ ...t, hours: Number(t.hours) });
+        x.hours = Math.round((x.hours + Number(t.hours)) * 100) / 100;
+      }
       for (const d of deadlines.data || []) day(d.due_on).deadlines.push({ id: d.id, title: d.title, done: d.status === 'done' });
       for (const t of touches.data || []) day(t.happened_on).sales.push({ id: t.id, text: `${t.kind} · ${t.sales_prospects?.name || 'Prospect'}`, detail: t.text, prospect: t.sales_prospects?.id || null });
       for (const p of follow.data || []) day(p.due_on).sales.push({ id: `due-${p.id}`, text: `Follow up · ${p.name}`, detail: p.next_step || '', prospect: p.id, due: true });
@@ -77,21 +86,31 @@ export default async function handler(req, res) {
     const b = req.body || {};
 
     if (b.action === 'note') {
-      if (!isDay(b.day)) return res.status(400).json({ error: 'Bad day' });
       const note = String(b.note || '').trim();
-      const q = note
-        ? db.from('admin_day_notes').upsert({ day: b.day, note, updated_at: new Date().toISOString() })
-        : db.from('admin_day_notes').delete().eq('day', b.day);
+      if (!isDay(b.day) || !note) return res.status(400).json({ error: 'A day and a note are needed' });
+      const now = new Date().toISOString();
+      const q = b.id
+        ? db.from('admin_day_notes').update({ note, updated_at: now }).eq('id', b.id)
+        : db.from('admin_day_notes').insert({ day: b.day, note, updated_at: now });
       const { error } = await q;
+      if (error) throw new Error(error.message);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (b.action === 'note-delete') {
+      const { error } = await db.from('admin_day_notes').delete().eq('id', b.id);
       if (error) throw new Error(error.message);
       return res.status(200).json({ ok: true });
     }
 
     if (b.action === 'event') {
       const title = String(b.title || '').trim();
-      const time = /^\d{1,2}:\d{2}$/.test(String(b.time || '')) ? String(b.time).padStart(5, '0') : null;
+      const hm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || '')) ? String(v).padStart(5, '0') : null);
+      const time = hm(b.time);
+      const endTime = time ? hm(b.end_time) : null;
       if (!isDay(b.day) || !title) return res.status(400).json({ error: 'A day and a title are needed' });
-      const row = { day: b.day, time, title };
+      if (endTime && endTime <= time) return res.status(400).json({ error: 'The end time is before the start' });
+      const row = { day: b.day, time, end_time: endTime, title, details: String(b.details || '').trim() || null };
       const q = b.id ? db.from('admin_events').update(row).eq('id', b.id) : db.from('admin_events').insert(row);
       const { error } = await q;
       if (error) throw new Error(error.message);
@@ -99,7 +118,30 @@ export default async function handler(req, res) {
     }
 
     if (b.action === 'event-delete') {
-      await db.from('admin_events').delete().eq('id', b.id);
+      const { error } = await db.from('admin_events').delete().eq('id', b.id);
+      if (error) throw new Error(error.message);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (b.action === 'time') {
+      const hours = Math.round(Number(b.hours) * 100) / 100;
+      if (!isDay(b.day) || !(hours > 0 && hours <= 24)) return res.status(400).json({ error: 'Hours must be more than 0 and at most 24' });
+      const row = {
+        day: b.day,
+        hours,
+        category: String(b.category || '').trim() || null,
+        description: String(b.description || '').trim() || null,
+        updated_at: new Date().toISOString(),
+      };
+      const q = b.id ? db.from('admin_time_entries').update(row).eq('id', b.id) : db.from('admin_time_entries').insert(row);
+      const { error } = await q;
+      if (error) throw new Error(error.message);
+      return res.status(200).json({ ok: true });
+    }
+
+    if (b.action === 'time-delete') {
+      const { error } = await db.from('admin_time_entries').delete().eq('id', b.id);
+      if (error) throw new Error(error.message);
       return res.status(200).json({ ok: true });
     }
 
