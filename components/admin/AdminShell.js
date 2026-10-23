@@ -336,9 +336,13 @@ export function PageHead({ kicker, title, sub, children }) {
 
   childList.forEach((node) => {
     if (isAction(node)) {
-      if (shownActionCount < 2) visibleChildren.push(node);
-      else overflowActions.push(node);
-      shownActionCount += 1;
+      if (node.props?.['data-mobile-overflow']) {
+        overflowActions.push(node);
+      } else {
+        if (shownActionCount < 2) visibleChildren.push(node);
+        else overflowActions.push(node);
+        shownActionCount += 1;
+      }
     } else {
       visibleChildren.push(node);
     }

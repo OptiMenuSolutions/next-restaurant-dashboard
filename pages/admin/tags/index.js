@@ -72,9 +72,9 @@ function TagsPage() {
   return (
     <>
       <PageHead kicker="CUSTOMERS" title="Tag kits" sub="Every plan ships with 3 NFC tags. Extra tags are a paid add-on. Start a kit to write, pack and ship it in one go.">
-        <button type="button" className="om-btn" onClick={() => setDialog({ type: 'restock' })}>Log a restock</button>
-        <button type="button" className="om-btn" onClick={() => setDialog({ type: 'sell' })}>Sell extra tags</button>
         <button type="button" className="om-pri" onClick={() => setDialog({ type: 'kit', kitId: null })}>Start a kit</button>
+        <button type="button" className="om-btn" data-mobile-overflow onClick={() => setDialog({ type: 'restock' })}>Log a restock</button>
+        <button type="button" className="om-btn" data-mobile-overflow onClick={() => setDialog({ type: 'sell' })}>Sell extra tags</button>
       </PageHead>
 
       <section aria-labelledby="shelf" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
