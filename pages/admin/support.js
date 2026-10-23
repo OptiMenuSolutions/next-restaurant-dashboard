@@ -87,7 +87,7 @@ function SupportPage() {
 
   return (
     <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
+      <div style={{ display: isPhone && typeof router.query.thread === 'string' ? 'none' : 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
         <div style={{ flex: '1 1 320px' }}>
           <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.16em', color: 'var(--muted)' }}>RESTAURANTS</div>
           <h1 style={{ margin: '6px 0 0', fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em' }}>Support inbox</h1>
@@ -96,7 +96,7 @@ function SupportPage() {
         <button type="button" className="om-pri" onClick={() => setStartOpen(true)}>New message</button>
       </div>
 
-      <div style={{ display: 'flex', gap: 18, alignItems: 'stretch', flexWrap: 'wrap', minHeight: 560 }}>
+      <div style={{ display: 'flex', gap: 18, alignItems: 'stretch', flexWrap: 'wrap', minHeight: isPhone && typeof router.query.thread === 'string' ? 0 : 560 }}>
         {/* Thread list */}
         <section aria-label="Conversations" style={{ display: isPhone && typeof router.query.thread === 'string' ? 'none' : 'flex', flex: '1 1 300px', maxWidth: 380, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--line)' }}>
