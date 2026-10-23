@@ -305,7 +305,7 @@ function BillingPage({ id }) {
           <button type="button" className="om-pri" disabled={busy || !st.subscriptionId || !data.perMonth}
             onClick={() => setAsk({ title: `Comp a month for ${r.name}?`, sub: `Adds a ${money(data.perMonth)} credit to their Stripe balance. Their next invoice uses it first.`, yes: `Credit ${money(data.perMonth)}`, body: { action: 'comp-month' } })}
             style={{ flex: 1 }}>Comp a month</button>
-          <button type="button" className="om-btn" aria-label="More billing actions" onClick={() => setPhoneActionsOpen(true)} style={{ width: 44, flexShrink: 0 }}>•••</button>
+          <button type="button" className="om-btn" aria-label="More billing actions" onClick={() => setPhoneActionsOpen(true)} style={{ width: 44, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>•••</button>
         </div>
       )}
       {phoneActionsOpen && (
