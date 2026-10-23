@@ -349,25 +349,35 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
           </ol>
 
           {step === 1 && (
-            <>
-              <label style={label}>Restaurant
-                <select className="om-field" value={form.restaurantId} onChange={(e) => setForm({ ...form, restaurantId: e.target.value })}>
-                  {data.restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </label>
-              <div role="radiogroup" aria-label="Kit" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Choice on={form.kind === 'plan'} onClick={() => setForm({ ...form, kind: 'plan' })} title="Plan kit" sub={`3 tags, included in the plan · costs you ${money(data.settings.kit_cost)}`} />
-                <Choice on={form.kind === 'replacement'} onClick={() => setForm({ ...form, kind: 'replacement' })} title="Replacement tag" sub={`1 tag for a lost or broken one · ${money(data.settings.tag_cost)}`} />
+            kitId && kit ? (
+              <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 14, background: 'var(--panel)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>RESTAURANT</div><div style={{ fontWeight: 700 }}>{kit.restaurant?.name || 'Unknown restaurant'}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>KIT</div><div style={{ fontWeight: 700 }}>{KIND[kit.kit.kind] || kit.kit.kind}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>DELIVERY</div><div style={{ fontWeight: 700 }}>{kit.kit.delivery === 'mail' ? 'Mail it' : 'Hand deliver'}</div></div>
+                {kit.kit.delivery === 'mail' && kit.kit.ship_to && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MAIL TO</div><div style={{ whiteSpace: 'pre-wrap' }}>{kit.kit.ship_to}</div></div>}
+                {kit.kit.notes && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>NOTE</div><div>{kit.kit.notes}</div></div>}
               </div>
-              <div role="radiogroup" aria-label="Delivery" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Choice on={form.delivery === 'mail'} onClick={() => setForm({ ...form, delivery: 'mail' })} title="Mail it" sub="Print a 4 × 6 label at the end" />
-                <Choice on={form.delivery === 'hand'} onClick={() => setForm({ ...form, delivery: 'hand' })} title="Hand deliver" sub="Bring it on your next visit" />
-              </div>
-              {form.delivery === 'mail' && (
-                <label style={label}>Mail to<textarea className="om-field" rows={3} value={form.shipTo} onChange={(e) => setForm({ ...form, shipTo: e.target.value })} placeholder={'Owner name\nStreet\nTown, NJ 07000'} style={{ padding: '8px 10px' }} /></label>
-              )}
-              <label style={label}>Note (optional)<input className="om-field" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
-            </>
+            ) : (
+              <>
+                <label style={label}>Restaurant
+                  <select className="om-field" value={form.restaurantId} onChange={(e) => setForm({ ...form, restaurantId: e.target.value })}>
+                    {data.restaurants.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </label>
+                <div role="radiogroup" aria-label="Kit" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Choice on={form.kind === 'plan'} onClick={() => setForm({ ...form, kind: 'plan' })} title="Plan kit" sub={`3 tags, included in the plan · costs you ${money(data.settings.kit_cost)}`} />
+                  <Choice on={form.kind === 'replacement'} onClick={() => setForm({ ...form, kind: 'replacement' })} title="Replacement tag" sub={`1 tag for a lost or broken one · ${money(data.settings.tag_cost)}`} />
+                </div>
+                <div role="radiogroup" aria-label="Delivery" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Choice on={form.delivery === 'mail'} onClick={() => setForm({ ...form, delivery: 'mail' })} title="Mail it" sub="Print a 4 × 6 label at the end" />
+                  <Choice on={form.delivery === 'hand'} onClick={() => setForm({ ...form, delivery: 'hand' })} title="Hand deliver" sub="Bring it on your next visit" />
+                </div>
+                {form.delivery === 'mail' && (
+                  <label style={label}>Mail to<textarea className="om-field" rows={3} value={form.shipTo} onChange={(e) => setForm({ ...form, shipTo: e.target.value })} placeholder={'Owner name\nStreet\nTown, NJ 07000'} style={{ padding: '8px 10px' }} /></label>
+                )}
+                <label style={label}>Note (optional)<input className="om-field" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
+              </>
+            )
           )}
 
           {step === 2 && (
@@ -454,9 +464,9 @@ function KitDialog({ kitId: startId, preset, data, onClose }) {
               )}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {step > 2 && !(step === 4 && kit?.kit.sent_at) && !(step === 4 && kit?.kit.packed_at) && <button type="button" className="om-btn" onClick={() => setStep(step - 1)}>Back</button>}
+              {step > 1 && <button type="button" className="om-btn" onClick={() => setStep(step - 1)}>Back</button>}
               <button type="button" className="om-btn" onClick={onClose}>{step === 4 && kit?.kit.sent_at ? 'Close' : 'Save and close'}</button>
-              {step === 1 && <button type="button" className="om-pri" disabled={busy || !form.restaurantId} onClick={create}>{busy ? 'Creating…' : 'Next: write tags'}</button>}
+              {step === 1 && <button type="button" className="om-pri" disabled={busy || (!kitId && !form.restaurantId)} onClick={() => { if (kitId) setStep(2); else create(); }}>{busy ? 'Creating…' : kitId ? 'Return to write tags' : 'Next: write tags'}</button>}
               {step === 2 && <button type="button" className="om-pri" disabled={!allConfirmed} onClick={() => setStep(3)}>{allConfirmed ? 'Next: pack' : 'Confirm every tag to continue'}</button>}
               {step === 3 && <button type="button" className="om-pri" disabled={busy || !pack.every(Boolean)} onClick={() => run({ action: 'pack' }, 4)}>{pack.every(Boolean) ? 'Next: ship' : 'Check everything off'}</button>}
               {step === 4 && kit && !kit.kit.sent_at && (isMail
