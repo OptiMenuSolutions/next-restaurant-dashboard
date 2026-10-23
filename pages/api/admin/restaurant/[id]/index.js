@@ -124,13 +124,19 @@ async function activity(id) {
   return { activity: out.slice(0, 150).map((a) => ({ ...a, when: when(a.ts) })) };
 }
 
-async function menu(id) {
+async function menu(id, dishId) {
   const today = etDate();
   const [rest, items, recs, days] = await Promise.all([
     db.from('restaurants').select('target_food_cost').eq('id', id).single(),
     fetchAll(() => db.from('menu_items').select(`
       id, name, price, category,
-      menu_item_components ( component_ingredients ( quantity, unit, ingredients:ingredient_id ( name, unit, last_price, is_estimated, price_approved_at ) ) )
+      menu_item_components (
+        id, name,
+        component_ingredients (
+          id, quantity, unit,
+          ingredients:ingredient_id ( id, name, unit, last_price, is_estimated, price_approved_at )
+        )
+      )
     `).eq('restaurant_id', id).is('archived_at', null).order('id')),
     db.from('ai_recommendations').select('recommendations').eq('restaurant_id', id).gte('generated_date', addDays(today, -30)),
     salesByDay(id, addDays(today, -7)),
@@ -172,7 +178,13 @@ async function menu(id) {
     };
   }).sort((a, b) => a.cat.localeCompare(b.cat) || a.name.localeCompare(b.name));
 
-  return { menu: rows, target };
+  const recipeRow = dishId ? items.find((m) => String(m.id) === String(dishId)) : null;
+  return {
+    menu: rows,
+    target,
+    recipeFor: recipeRow ? String(recipeRow.id) : null,
+    recipeComponents: recipeRow ? (recipeRow.menu_item_components || []) : null,
+  };
 }
 
 async function invoices(id) {
@@ -204,7 +216,7 @@ export default async function handler(req, res) {
   try {
     let out;
     if (part === 'activity') out = await activity(id);
-    else if (part === 'menu') out = await menu(id);
+    else if (part === 'menu') out = await menu(id, typeof req.query.dish === 'string' ? req.query.dish : null);
     else if (part === 'invoices') out = await invoices(id);
     else out = await overview(id);
     if (!out) return res.status(404).json({ error: 'Restaurant not found' });

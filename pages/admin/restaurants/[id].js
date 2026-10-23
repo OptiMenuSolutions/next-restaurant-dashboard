@@ -364,7 +364,11 @@ function Activity({ id }) {
 }
 
 function Menu({ id }) {
-  const { data, error, load } = useLoad(`/api/admin/restaurant/${id}?part=menu`);
+  const isPhone = useIsPhone();
+  const router = useRouter();
+  const dishId = typeof router.query.dish === 'string' ? router.query.dish : '';
+  const menuUrl = `/api/admin/restaurant/${id}?part=menu${dishId ? `&dish=${encodeURIComponent(dishId)}` : ''}`;
+  const { data, error, load } = useLoad(menuUrl);
   const [f, setF] = useState('ALL');
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <LoadingState label="Loading menu…" />;
@@ -375,10 +379,67 @@ function Menu({ id }) {
   const waiting = rows.filter((m) => m.recipe !== 'PRICED');
   const shown = f === 'OVER' ? over : f === 'WAITING' ? waiting : rows;
   const avg = priced.length ? priced.reduce((a, m) => a + m.pct, 0) / priced.length : null;
+  const selectedDish = dishId ? rows.find((m) => String(m.id) === dishId) : null;
+
+  function closeRecipe() {
+    const query = { ...router.query };
+    delete query.dish;
+    router.push({ pathname: router.pathname, query }, undefined, { shallow: true });
+  }
+
+  if (isPhone && dishId) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <button type="button" className="om-btn" onClick={closeRecipe} style={{ alignSelf: 'flex-start' }}>← Menu</button>
+        {!selectedDish ? (
+          <Card title="Dish not found">
+            <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>This dish is no longer on the active menu.</p>
+          </Card>
+        ) : (
+          <Card title={selectedDish.name} right={<Chip>{selectedDish.recipe}</Chip>}>
+            <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{selectedDish.cat}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, margin: '12px 0 16px' }}>
+              {[
+                ['PRICE', money(selectedDish.price)],
+                ['PLATE COST', money(selectedDish.cost)],
+                ['FOOD COST', selectedDish.pct != null ? `${selectedDish.pct.toFixed(1)}%` : '—'],
+                ['MARGIN', money(selectedDish.margin)],
+              ].map(([label, value]) => (
+                <div key={label} style={{ minWidth: 0 }}>
+                  <div style={{ color: 'var(--muted)', fontFamily: MONO, fontSize: 10, letterSpacing: '0.1em' }}>{label}</div>
+                  <div style={{ marginTop: 3, fontFamily: MONO, fontWeight: 700 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            {data.recipeFor !== dishId ? (
+              <div style={{ color: 'var(--muted)', fontSize: 13 }}>Loading recipe…</div>
+            ) : data.recipeComponents?.length ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {data.recipeComponents.map((component, i) => (
+                  <section key={component.id || i} style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 10 }}>
+                    <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 800 }}>{component.name || `Component ${i + 1}`}</h3>
+                    {(component.component_ingredients || []).length ? component.component_ingredients.map((line, j) => (
+                      <div key={line.id || j} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 0', borderTop: j ? '1px solid var(--line-soft)' : 0, fontSize: 13 }}>
+                        <span>{[line.quantity, line.unit || line.ingredients?.unit, line.ingredients?.name].filter(Boolean).join(' ') || 'Ingredient'}</span>
+                      </div>
+                    )) : <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>No ingredients in this component.</div>}
+                  </section>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+                {data.recipeFor === dishId ? 'No recipe details are available for this dish.' : 'Loading recipe…'}
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <section aria-label="Menu summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+       <section aria-label="Menu summary" style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
         {[
           ['ITEMS', rows.length, `${priced.length} fully priced`],
           ['AVG FOOD COST', avg != null ? `${avg.toFixed(1)}%` : '—', `Target ${data.target}%`],
@@ -397,7 +458,42 @@ function Menu({ id }) {
         { key: 'OVER', label: 'Over target', n: over.length },
         { key: 'WAITING', label: 'Waiting on prices', n: waiting.length },
       ]} />
-      <section style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <section style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: isPhone ? 'visible' : 'auto' }}>
+        {isPhone ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {shown.map((m, i) => (
+              <button key={m.id} type="button"
+                onClick={() => router.push({ pathname: router.pathname, query: { ...router.query, dish: String(m.id) } }, undefined, { shallow: true })}
+                aria-label={`View recipe for ${m.name}`}
+                style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, padding: 14, textAlign: 'left', border: 0, borderTop: i ? '1px solid var(--line-soft)' : 0, background: 'var(--shell)', color: 'var(--text)', font: 'inherit', cursor: 'pointer' }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: 15 }}>{m.name}</strong>
+                    <span style={{ display: 'block', color: 'var(--muted)', fontSize: 12 }}>{m.cat}</span>
+                  </span>
+                  <strong style={{ flexShrink: 0, fontFamily: MONO }}>{money(m.price)}</strong>
+                </span>
+                <span style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, width: '100%' }}>
+                  {[
+                    ['PLATE COST', money(m.cost)],
+                    ['MARGIN', money(m.margin)],
+                    ['FOOD COST', m.pct != null ? `${m.pct.toFixed(1)}%` : '—'],
+                    ['SOLD · 7 DAYS', m.sold == null ? '—' : Math.round(m.sold)],
+                  ].map(([label, value]) => (
+                    <span key={label} style={{ minWidth: 0 }}>
+                      <span style={{ display: 'block', color: 'var(--muted)', fontFamily: MONO, fontSize: 10 }}>{label}</span>
+                      <strong style={{ display: 'block', marginTop: 2, fontFamily: MONO, fontSize: 12.5, color: label === 'FOOD COST' && m.pct > data.target ? 'var(--red)' : 'var(--text)' }}>{value}</strong>
+                    </span>
+                  ))}
+                </span>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, width: '100%' }}>
+                  <Chip bg={m.recipe === 'PRICED' ? 'var(--green-tint)' : m.recipe === 'NO RECIPE' ? 'var(--panel)' : 'var(--amber-tint)'} fg={m.recipe === 'PRICED' ? 'var(--green)' : m.recipe === 'NO RECIPE' ? 'var(--muted)' : 'var(--amber)'}>{m.recipe}</Chip>
+                  <span style={{ color: 'var(--accent-deep)', fontSize: 12.5, fontWeight: 700 }}>View recipe →</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 900 }}>
           <thead>
             <tr>
@@ -429,6 +525,7 @@ function Menu({ id }) {
             ))}
           </tbody>
         </table>
+        )}
       </section>
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>Plate cost only uses invoice prices and approved estimates, the same rule the owner sees. Picked counts how often Tonight’s Dish chose the dish in the last 30 days.</p>
     </div>
