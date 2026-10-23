@@ -134,6 +134,7 @@ function RestaurantPage({ id }) {
         gap: 22,
         borderBottom: '1px solid var(--line)',
         overflowX: isPhone ? 'auto' : 'visible',
+        overflowY: isPhone ? 'hidden' : 'visible',
         flexWrap: isPhone ? 'nowrap' : 'wrap',
         position: isPhone ? 'sticky' : 'static',
         top: isPhone ? 48 : undefined,
