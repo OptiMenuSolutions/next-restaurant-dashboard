@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, SearchIcon } from '../client/ClientChrome';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 const RECENT_KEY = 'om_admin_recent';
 
@@ -49,6 +50,7 @@ function saveRecent(item) {
 }
 
 export default function AdminSearch({ open, onClose, onToggleTheme }) {
+  const isPhone = useIsPhone();
   const router = useRouter();
   const { adminFetch } = useAdminFetch();
   const inputRef = useRef(null);
@@ -124,17 +126,23 @@ export default function AdminSearch({ open, onClose, onToggleTheme }) {
 
   return (
     <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(17,24,25,0.42)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '90px 16px' }}>
+      style={isPhone
+        ? { position: 'fixed', inset: 0, zIndex: 400, background: 'var(--ground)', display: 'flex', flexDirection: 'column', padding: 'env(safe-area-inset-top) 0 env(safe-area-inset-bottom)' }
+        : { position: 'fixed', inset: 0, zIndex: 400, background: 'rgba(17,24,25,0.42)', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '90px 16px' }}>
       <div role="dialog" aria-modal="true" aria-label="Search"
-        style={{ width: '100%', maxWidth: 620, background: 'var(--shell)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '70vh' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
+        style={isPhone
+          ? { width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', background: 'var(--shell)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }
+          : { width: '100%', maxWidth: 620, background: 'var(--shell)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '70vh' }}>
+        <div style={{ minHeight: isPhone ? 48 : undefined, display: 'flex', alignItems: 'center', gap: 10, padding: isPhone ? '0 16px' : '14px 16px', borderBottom: '1px solid var(--line)' }}>
           <SearchIcon size={16} />
           <input ref={inputRef} value={q} onChange={(e) => { setQ(e.target.value); setActive(0); }} onKeyDown={onKey}
             placeholder="Restaurant, OM-0004, invoice number, page…" aria-label="Search"
-            style={{ flex: 1, border: 0, outline: 'none', background: 'transparent', color: 'var(--text)', font: "500 15px 'Manrope', sans-serif" }} />
-          <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 5px' }}>ESC</span>
+            style={{ flex: 1, minWidth: 0, border: 0, outline: 'none', background: 'transparent', color: 'var(--text)', font: `500 ${isPhone ? 16 : 15}px 'Manrope', sans-serif` }} />
+          {isPhone
+            ? <button type="button" onClick={onClose} style={{ minHeight: 44, padding: '0 4px', border: 0, background: 'transparent', color: 'var(--accent-deep)', font: "600 14px 'Manrope', sans-serif" }}>Cancel</button>
+            : <span style={{ fontFamily: MONO, fontSize: 10.5, color: 'var(--faint)', border: '1px solid var(--line)', borderRadius: 4, padding: '2px 5px' }}>ESC</span>}
         </div>
-        <div style={{ overflowY: 'auto', padding: '6px 0 10px' }}>
+        <div style={{ overflowY: 'auto', padding: '6px 0 10px', flex: 1 }}>
           {groups.length === 0 && (
             <div style={{ padding: '22px 18px', fontSize: 13.5, color: 'var(--muted)' }}>No matches.</div>
           )}
@@ -147,7 +155,7 @@ export default function AdminSearch({ open, onClose, onToggleTheme }) {
                 const on = i === active;
                 return (
                   <button key={item.id} type="button" onMouseEnter={() => setActive(i)} onClick={() => pick(item)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 18px', border: 0, cursor: 'pointer', textAlign: 'left', background: on ? 'var(--accent-tint)' : 'transparent', boxShadow: on ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
+                    style={{ width: '100%', minHeight: 48, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 18px', border: 0, cursor: 'pointer', textAlign: 'left', background: on ? 'var(--accent-tint)' : 'transparent', boxShadow: on ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
                     <span style={{ fontSize: 14, fontWeight: 700, flexShrink: 0 }}>{item.title}</span>
                     <span style={{ fontSize: 12.5, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.sub}</span>
                   </button>
