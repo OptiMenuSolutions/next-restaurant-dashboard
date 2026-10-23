@@ -47,8 +47,15 @@ function useLoad(url) {
 
 function RestaurantPage({ id }) {
   const isPhone = useIsPhone();
+  const router = useRouter();
   const { adminFetch } = useAdminFetch();
   const [tab, setTab] = useState('Overview');
+
+  useEffect(() => {
+    if (isPhone && typeof router.query.tab === 'string' && TABS.includes(router.query.tab)) {
+      setTab(router.query.tab);
+    }
+  }, [isPhone, router.query.tab]);
   const { data, error, load } = useLoad(`/api/admin/restaurant/${id}`);
   const [running, setRunning] = useState(false);
   const [flash, setFlash] = useState('');
@@ -142,7 +149,14 @@ function RestaurantPage({ id }) {
         background: isPhone ? 'var(--shell)' : undefined,
       }}>
         {TABS.map((t) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
+          <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => {
+            setTab(t);
+            if (isPhone) {
+              const query = { ...router.query, tab: t };
+              if (t !== 'Menu') delete query.dish;
+              router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
+            }
+          }}
             style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === t ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === t ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t}
           </button>
@@ -533,6 +547,7 @@ function Menu({ id }) {
 }
 
 function Invoices({ id }) {
+  const isPhone = useIsPhone();
   const { data, error, load } = useLoad(`/api/admin/restaurant/${id}?part=invoices`);
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <LoadingState label="Loading invoices…" />;
@@ -543,7 +558,7 @@ function Invoices({ id }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      <section style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
         {[
           ['INVOICES', list.length, 'Real ones, samples left out'],
           ['TO CHECK', toCheck, 'Not reviewed by you yet'],
@@ -557,7 +572,36 @@ function Invoices({ id }) {
           </div>
         ))}
       </section>
-      <section style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <section style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: isPhone ? 'visible' : 'auto' }}>
+        {isPhone ? (
+          list.length === 0 ? (
+            <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13.5 }}>No invoices yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {list.map((i, index) => (
+                <Link key={i.id} href={`/admin/review?restaurant=${encodeURIComponent(id)}&invoice=${encodeURIComponent(i.id)}`}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, borderTop: index ? '1px solid var(--line-soft)' : 0, textDecoration: 'none', color: 'var(--text)' }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ minWidth: 0 }}>
+                      <strong style={{ display: 'block', fontSize: 15 }}>{i.vendor}</strong>
+                      <span style={{ display: 'block', color: 'var(--muted)', fontSize: 12.5 }}>{shortDate(i.date)}{i.number ? ` · #${i.number}` : ''}</span>
+                    </span>
+                    <strong style={{ flexShrink: 0, fontFamily: MONO }}>{money(i.total)}</strong>
+                  </span>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: 12.5 }}>{i.lines ?? '—'} lines · Uploaded {i.uploaded}</span>
+                    {i.parse === 'failed'
+                      ? <Chip bg="var(--red-tint)" fg="var(--red)">COULD NOT READ</Chip>
+                      : i.reviewed
+                        ? <Chip bg="var(--green-tint)" fg="var(--green)">REVIEWED</Chip>
+                        : <Chip bg="var(--accent-tint)" fg="var(--accent-deep)">TO CHECK</Chip>}
+                  </span>
+                  <span style={{ alignSelf: 'flex-end', color: 'var(--accent-deep)', fontSize: 12.5, fontWeight: 700 }}>Review invoice →</span>
+                </Link>
+              ))}
+            </div>
+          )
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 820 }}>
           <thead>
             <tr>
@@ -591,6 +635,7 @@ function Invoices({ id }) {
             ))}
           </tbody>
         </table>
+        )}
       </section>
     </div>
   );

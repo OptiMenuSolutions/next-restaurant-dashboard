@@ -15,6 +15,7 @@ import AdminShell, { PageHead, Confirm } from '../../components/admin/AdminShell
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, money, shortDate } from '../../components/admin/ui';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 // Each panel is at most one screen tall and scrolls on its own, so a long
 // queue or a long invoice never stretches the page.
@@ -44,14 +45,21 @@ function ReviewPage() {
             style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>{l}</button>
         ))}
       </div>
-      {tab === 'invoices' ? <Invoices initialRestaurant={typeof router.query.restaurant === 'string' ? router.query.restaurant : null} /> : <Menus />}
+      {tab === 'invoices' ? (
+        <Invoices
+          initialRestaurant={typeof router.query.restaurant === 'string' ? router.query.restaurant : null}
+          initialInvoice={typeof router.query.invoice === 'string' ? router.query.invoice : null}
+        />
+      ) : <Menus />}
     </>
   );
 }
 
 // ── Scanned invoices ──────────────────────────────────────────────────────────
 
-function Invoices({ initialRestaurant }) {
+function Invoices({ initialRestaurant, initialInvoice }) {
+  const isPhone = useIsPhone();
+  const router = useRouter();
   const api = useApi();
   const [list, setList] = useState(null);
   const [error, setError] = useState('');
@@ -63,6 +71,7 @@ function Invoices({ initialRestaurant }) {
       const json = await api('/api/admin/review/invoices');
       setList(json.invoices);
       setOpenId((cur) => {
+        if (initialInvoice) return initialInvoice;
         if (cur && json.invoices.some((i) => i.id === cur)) return cur;
         const first = json.invoices.find((i) => !initialRestaurant || i.restaurant_id === initialRestaurant) || json.invoices[0];
         return first ? first.id : null;
@@ -70,7 +79,7 @@ function Invoices({ initialRestaurant }) {
     } catch (e) {
       setError(e.message);
     }
-  }, [api, initialRestaurant]);
+  }, [api, initialRestaurant, initialInvoice]);
   useEffect(() => { load(); }, [load]);
 
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -93,7 +102,12 @@ function Invoices({ initialRestaurant }) {
             {g.items.map((i) => {
               const on = i.id === openId;
               return (
-                <button key={i.id} type="button" onClick={() => setOpenId(i.id)}
+                <button key={i.id} type="button" onClick={() => {
+                  setOpenId(i.id);
+                  if (isPhone) {
+                    router.replace({ pathname: router.pathname, query: { ...router.query, invoice: i.id } }, undefined, { shallow: true });
+                  }
+                }}
                   style={{ width: '100%', textAlign: 'left', padding: '10px 14px', border: 0, borderTop: '1px solid var(--line-soft)', cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'transparent', boxShadow: on ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
                   <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>{i.supplier || 'Unknown supplier'}</span>
                   <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{shortDate(i.date || i.created_at)} · {i.lines} lines · {money(i.total)}</span>
@@ -525,8 +539,12 @@ function DishCard({ dish, ingredients, api, onSaved, onChecked }) {
 }
 
 export default function Page() {
+  const router = useRouter();
+  const restaurant = typeof router.query.restaurant === 'string' ? router.query.restaurant : null;
+
   return (
-    <AdminShell section="Data quality" sub="Review queue" title="Review queue">
+    <AdminShell section="Data quality" sub="Review queue" title="Review queue"
+      back={restaurant ? { label: 'Restaurant invoices', href: `/admin/restaurants/${restaurant}?tab=Invoices` } : undefined}>
       <ReviewPage />
     </AdminShell>
   );
