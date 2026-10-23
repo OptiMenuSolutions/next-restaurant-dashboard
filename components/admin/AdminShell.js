@@ -117,7 +117,8 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
       </Head>
       <style>{CSS + ADMIN_CSS}</style>
 
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: `9px ${PAGE_PAD}`, borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
+      {!isPhone && (
+        <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: `9px ${PAGE_PAD}`, borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flexWrap: 'wrap' }}>
           <Link href="/admin" style={{ display: 'flex' }} aria-label="Admin home">
             <img className="om-logo-light" src="/landing/logo.png" alt="optiMenu Solutions" style={{ height: 22, width: 'auto' }} />
@@ -173,6 +174,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
           </div>
         </div>
       </header>
+      )}
 
       {isPhone && (back ? (
         <header style={{ height: 48, minHeight: 48, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', position: 'sticky', top: 0, zIndex: 110, background: 'var(--shell)', borderBottom: '1px solid var(--line)' }}>
