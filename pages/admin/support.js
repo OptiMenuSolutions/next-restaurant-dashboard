@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AdminShell, { Dialog } from '../../components/admin/AdminShell';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Dot, StatusChip, Chip, Pills, shortDate, HEALTH_WORD } from '../../components/admin/ui';
@@ -30,6 +31,7 @@ const stamp = (ts) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_
 
 function SupportPage() {
   const router = useRouter();
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -71,8 +73,12 @@ function SupportPage() {
 
   // Open the first thread in view when nothing is open.
   useEffect(() => {
-    if (!openId && threads.length) setOpenId(threads[0].id);
-  }, [threads, openId]);
+    if (typeof router.query.thread === 'string') {
+      setOpenId(router.query.thread);
+    } else if (!isPhone && !openId && threads.length) {
+      setOpenId(threads[0].id);
+    }
+  }, [threads, openId, isPhone, router.query.thread]);
 
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <LoadingState label="Loading inbox…" />;
@@ -99,7 +105,7 @@ function SupportPage() {
               { key: 'new', label: 'Needs you', n: data.counts.new },
               { key: 'waiting', label: 'Waiting', n: data.counts.waiting },
               { key: 'done', label: 'Done', n: data.counts.done },
-              { key: 'all', label: 'All', n: data.counts.all },
+              ...(!isPhone ? [{ key: 'all', label: 'All', n: data.counts.all }] : []),
             ]} />
             {restName && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
@@ -113,11 +119,17 @@ function SupportPage() {
             {threads.map((t) => {
               const on = t.id === openId;
               return (
-                <button key={t.id} type="button" onClick={() => setOpenId(t.id)}
-                  style={{ width: '100%', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 3, padding: '11px 14px', border: 0, borderBottom: '1px solid var(--line-soft)', cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'transparent', boxShadow: on ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
-                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5 }}>
+                <button key={t.id} type="button" onClick={() => {
+                  setOpenId(t.id);
+                  if (isPhone) router.push({ pathname: '/admin/support', query: { thread: t.id } }, undefined, { shallow: true });
+                }}
+                  style={{ width: '100%', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 3, padding: isPhone ? 14 : '11px 14px', border: 0, borderBottom: isPhone ? 0 : '1px solid var(--line-soft)', borderRadius: isPhone ? 12 : 0, cursor: 'pointer', background: isPhone ? 'var(--panel)' : on ? 'var(--accent-tint)' : 'transparent', boxShadow: on && !isPhone ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
                     <span style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.restaurant_name}</span>
-                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{when(t.last_message_at)}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      {isPhone && <StatusChip status={t.status} />}
+                      <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{when(t.last_message_at)}</span>
+                    </span>
                   </span>
                   <span style={{ fontSize: 13, fontWeight: t.status === 'new' ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</span>
                   <span style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.preview}</span>
