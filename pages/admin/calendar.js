@@ -128,7 +128,7 @@ function CalendarPage() {
           <div role="grid" aria-label="Month" style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(7, minmax(0, 1fr))' : 'repeat(7, minmax(92px, 1fr))', gap: isPhone ? 3 : 4, minWidth: isPhone ? 0 : 660 }}>
             {DOW.map((w) => <div key={w} style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', padding: '4px 6px' }}>{w}</div>)}
             {cells.map((c, i) => {
-              if (!c) return <div key={`b${i}`} style={{ minHeight: 104, borderRadius: 8, background: 'var(--panel)', opacity: 0.5 }} />;
+              if (!c) return <div key={`b${i}`} style={{ minHeight: isPhone ? 46 : 104, borderRadius: 8, background: 'var(--panel)', opacity: 0.5 }} />;
               const chips = chipsFor(data.days[c]);
               const on = c === sel;
               const hrs = data.days[c]?.hours || 0;
