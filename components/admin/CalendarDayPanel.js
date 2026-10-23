@@ -5,7 +5,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { MONO } from '../client/ClientChrome';
-import { Confirm } from './AdminShell';
+import { Confirm, Dialog } from './AdminShell';
+import useIsPhone from '../../lib/admin/useIsPhone';
 
 export const TIME_CATEGORIES = ['Development', 'Certification', 'Sales', 'Support', 'Admin', 'Other'];
 export const hoursText = (h) => `${Number(Number(h || 0).toFixed(2))}h`;
@@ -58,6 +59,7 @@ function Actions({ onEdit, onDelete, busy, what }) {
 }
 
 export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeShown }) {
+  const isPhone = useIsPhone();
   const [mode, setMode] = useState(null); // 'note' | 'event' | 'time'
   const [edit, setEdit] = useState(null); // id of the entry being edited
   const [form, setForm] = useState({});
@@ -104,8 +106,12 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
   const total = d.time.reduce((s, t) => s + Number(t.hours || 0), 0);
   const addBtn = (m, text) => (
     <button type="button" className="om-btn" aria-pressed={mode === m && !edit} onClick={() => (mode === m && !edit ? close() : open(m))}
-      style={{ minHeight: 32, flex: '1 1 0', fontWeight: 700, color: CAL[m].fg, borderColor: CAL[m].fg, background: mode === m && !edit ? CAL[m].bg : undefined }}>{text}</button>
+      style={{ minHeight: isPhone ? 44 : 32, flex: '1 1 0', fontWeight: 700, color: CAL[m].fg, borderColor: CAL[m].fg, background: mode === m && !edit ? CAL[m].bg : undefined }}>{text}</button>
   );
+  const FormShell = isPhone ? Dialog : 'div';
+  const formShellProps = isPhone
+    ? { title: { note: edit ? 'Edit note' : 'Add a note', event: edit ? 'Edit event' : 'Add an event', time: edit ? 'Edit time' : 'Log time' }[mode], onClose: close }
+    : { style: { border: `1px solid ${CAL[mode]?.fg}`, borderLeft: `3px solid ${CAL[mode]?.fg}`, borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel)' } };
 
   return (
     <>
@@ -116,56 +122,61 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
       </div>
 
       {mode && (
-        <div onKeyDown={onKey} style={{ border: `1px solid ${CAL[mode].fg}`, borderLeft: `3px solid ${CAL[mode].fg}`, borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel)' }}>
-          <div style={{ ...label, fontWeight: 700, color: CAL[mode].fg }}>{{ note: edit ? 'EDIT NOTE' : 'NEW NOTE', event: edit ? 'EDIT EVENT' : 'NEW EVENT', time: edit ? 'EDIT TIME' : 'LOG TIME' }[mode]}</div>
+        <FormShell {...formShellProps}>
+          <div onKeyDown={onKey} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ ...label, fontWeight: 700, color: CAL[mode].fg }}>{{ note: edit ? 'EDIT NOTE' : 'NEW NOTE', event: edit ? 'EDIT EVENT' : 'NEW EVENT', time: edit ? 'EDIT TIME' : 'LOG TIME' }[mode]}</div>
 
-          {mode === 'note' && (
-            <textarea className="om-field" rows={3} autoFocus value={form.note} onChange={set('note')} placeholder="Write a note" style={{ padding: 8, resize: 'vertical' }} />
-          )}
+            {mode === 'note' && (
+              <textarea className="om-field" rows={3} autoFocus value={form.note} onChange={set('note')} placeholder="Write a note" style={{ padding: 8, resize: 'vertical' }} />
+            )}
 
-          {mode === 'event' && (
-            <>
-              <input className="om-field" autoFocus placeholder="What is it?" value={form.title} onChange={set('title')} />
-              <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-                <input type="checkbox" checked={form.allDay} onChange={set('allDay')} /> All day
-              </label>
-              {!form.allDay && (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input className="om-field" type="time" aria-label="Starts" value={form.time} onChange={set('time')} style={{ flex: 1 }} />
-                  <span style={{ color: 'var(--muted)', fontSize: 13 }}>to</span>
-                  <input className="om-field" type="time" aria-label="Ends" value={form.end_time} onChange={set('end_time')} style={{ flex: 1 }} />
+            {mode === 'event' && (
+              <>
+                <input className="om-field" autoFocus placeholder="What is it?" value={form.title} onChange={set('title')} />
+                <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+                  <input type="checkbox" checked={form.allDay} onChange={set('allDay')} /> All day
+                </label>
+                {!form.allDay && (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input className="om-field" type="time" aria-label="Starts" value={form.time} onChange={set('time')} style={{ flex: 1 }} />
+                    <span style={{ color: 'var(--muted)', fontSize: 13 }}>to</span>
+                    <input className="om-field" type="time" aria-label="Ends" value={form.end_time} onChange={set('end_time')} style={{ flex: 1 }} />
+                  </div>
+                )}
+                {badRange && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>The end time is before the start.</div>}
+                <textarea className="om-field" rows={2} placeholder="Details (optional)" value={form.details} onChange={set('details')} style={{ padding: 8, resize: 'vertical' }} />
+              </>
+            )}
+
+            {mode === 'time' && (
+              <>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {isPhone && <button type="button" className="om-btn" aria-label="Subtract 0.25 hours" onClick={() => setForm((f) => ({ ...f, hours: String(Math.max(0, (Number(f.hours) || 0) - 0.25)) }))}>−</button>}
+                  <input className="om-field" type="number" inputMode="decimal" min="0.25" max="24" step="0.25" autoFocus aria-label="Hours" placeholder="0" value={form.hours} onChange={set('hours')} style={{ width: 96 }} />
+                  {isPhone && <button type="button" className="om-btn" aria-label="Add 0.25 hours" onClick={() => setForm((f) => ({ ...f, hours: String(Math.min(24, (Number(f.hours) || 0) + 0.25)) }))}>+</button>}
+                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>hours</span>
                 </div>
-              )}
-              {badRange && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>The end time is before the start.</div>}
-              <textarea className="om-field" rows={2} placeholder="Details (optional)" value={form.details} onChange={set('details')} style={{ padding: 8, resize: 'vertical' }} />
-            </>
-          )}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {TIME_CATEGORIES.map((c) => {
+                    const on = form.categories.includes(c);
+                    return (
+                      <button key={c} type="button" aria-pressed={on} onClick={() => setForm((f) => ({ ...f, categories: on ? f.categories.filter((x) => x !== c) : [...f.categories, c] }))}
+                        style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '3px 10px', fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--shell)', color: on ? 'var(--accent-deep)' : 'var(--text)', fontWeight: on ? 700 : 500 }}>{c}</button>
+                    );
+                  })}
+                </div>
+                <textarea className="om-field" rows={3} placeholder="What did you work on?" value={form.description} onChange={set('description')} style={{ padding: 8, resize: 'vertical' }} />
+              </>
+            )}
 
-          {mode === 'time' && (
-            <>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input className="om-field" type="number" inputMode="decimal" min="0.25" max="24" step="0.25" autoFocus aria-label="Hours" placeholder="0" value={form.hours} onChange={set('hours')} style={{ width: 96 }} />
-                <span style={{ fontSize: 13, color: 'var(--muted)' }}>hours</span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {TIME_CATEGORIES.map((c) => {
-                  const on = form.categories.includes(c);
-                  return (
-                    <button key={c} type="button" aria-pressed={on} onClick={() => setForm((f) => ({ ...f, categories: on ? f.categories.filter((x) => x !== c) : [...f.categories, c] }))}
-                      style={{ border: '1px solid var(--line)', borderRadius: 999, padding: '3px 10px', fontSize: 12.5, cursor: 'pointer', background: on ? 'var(--accent-tint)' : 'var(--shell)', color: on ? 'var(--accent-deep)' : 'var(--text)', fontWeight: on ? 700 : 500 }}>{c}</button>
-                  );
-                })}
-              </div>
-              <textarea className="om-field" rows={3} placeholder="What did you work on?" value={form.description} onChange={set('description')} style={{ padding: 8, resize: 'vertical' }} />
-            </>
-          )}
-
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button type="button" className="om-pri" disabled={busy || !canSave} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
-            <button type="button" className="om-btn" disabled={busy} onClick={close}>Cancel</button>
-            <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)' }}>⌘↵ to save · Esc to cancel</span>
+            <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', gap: 6, alignItems: isPhone ? 'stretch' : 'center' }}>
+              <button type="button" className="om-pri" disabled={busy || !canSave} onClick={save}
+                style={isPhone ? { background: CAL[mode].fg, minHeight: 44, justifyContent: 'center', color: 'var(--shell)' } : undefined}>{busy ? 'Saving…' : 'Save'}</button>
+              <button type="button" className="om-btn" disabled={busy} onClick={close} style={isPhone ? { minHeight: 44, justifyContent: 'center' } : undefined}>Cancel</button>
+              {!isPhone && <span style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)' }}>⌘↵ to save · Esc to cancel</span>}
+            </div>
           </div>
-        </div>
+        </FormShell>
       )}
 
       <Section kind="time" innerRef={timeRef} title="TIME" right={total > 0 ? <span style={{ color: 'var(--text)' }}>{hoursText(total)}</span> : null}>

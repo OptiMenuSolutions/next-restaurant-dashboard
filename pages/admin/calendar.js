@@ -10,6 +10,7 @@ import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Card } from '../../components/admin/ui';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import CalendarDayPanel, { hoursText, CAL, Section } from '../../components/admin/CalendarDayPanel';
 
 // Chip colors come from the day panel so the calendar and the panel match.
@@ -38,6 +39,7 @@ function chipsFor(d) {
 }
 
 function CalendarPage() {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [month, setMonth] = useState(null);
   const [data, setData] = useState(null);
@@ -93,13 +95,24 @@ function CalendarPage() {
 
   return (
     <>
-      <PageHead kicker="CALENDAR" title={fmt(data.first, { month: 'long', year: 'numeric' })}>
-        <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.08em', color: 'var(--muted)', alignSelf: 'center', marginRight: 6 }}>
-          {hoursText(monthHours)} IN {fmt(data.first, { month: 'long' }).toUpperCase()}
-        </span>
-        <button type="button" className="om-btn" aria-label="Previous month" onClick={() => setMonth(shift(data.month, -1))}>‹</button>
-        <button type="button" className="om-btn" onClick={() => { setMonth(data.today.slice(0, 7)); setSel(data.today); }}>Today</button>
-        <button type="button" className="om-btn" aria-label="Next month" onClick={() => setMonth(shift(data.month, 1))}>›</button>
+      <PageHead kicker={isPhone ? `${hoursText(monthHours).toUpperCase()} IN ${fmt(data.first, { month: 'long' }).toUpperCase()}` : 'CALENDAR'} title={fmt(data.first, { month: 'long', year: 'numeric' })}>
+        {!isPhone && (
+          <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '0.08em', color: 'var(--muted)', alignSelf: 'center', marginRight: 6 }}>
+            {hoursText(monthHours)} IN {fmt(data.first, { month: 'long' }).toUpperCase()}
+          </span>
+        )}
+        {isPhone ? (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" className="om-btn" aria-label="Previous month" style={{ minHeight: 40 }} onClick={() => setMonth(shift(data.month, -1))}>‹</button>
+            <button type="button" className="om-btn" aria-label="Next month" style={{ minHeight: 40 }} onClick={() => setMonth(shift(data.month, 1))}>›</button>
+          </div>
+        ) : (
+          <>
+            <button type="button" className="om-btn" aria-label="Previous month" onClick={() => setMonth(shift(data.month, -1))}>‹</button>
+            <button type="button" className="om-btn" aria-label="Next month" onClick={() => setMonth(shift(data.month, 1))}>›</button>
+          </>
+        )}
+        <button type="button" className="om-btn" style={isPhone ? { minHeight: 40 } : undefined} onClick={() => { setMonth(data.today.slice(0, 7)); setSel(data.today); }}>Today</button>
       </PageHead>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
         {Object.values(KIND).map(([bg, , label]) => (
@@ -110,9 +123,9 @@ function CalendarPage() {
       </div>
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{ flex: '2 1 620px', minWidth: 0, overflowX: 'auto' }}>
-          <div role="grid" aria-label="Month" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(92px, 1fr))', gap: 4, minWidth: 660 }}>
+      <div style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', flexWrap: isPhone ? 'nowrap' : 'wrap', gap: 18, alignItems: 'flex-start' }}>
+        <div style={{ width: isPhone ? '100%' : undefined, flex: isPhone ? 'none' : '2 1 620px', minWidth: 0, overflowX: isPhone ? 'visible' : 'auto' }}>
+          <div role="grid" aria-label="Month" style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(7, minmax(0, 1fr))' : 'repeat(7, minmax(92px, 1fr))', gap: isPhone ? 3 : 4, minWidth: isPhone ? 0 : 660 }}>
             {DOW.map((w) => <div key={w} style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', padding: '4px 6px' }}>{w}</div>)}
             {cells.map((c, i) => {
               if (!c) return <div key={`b${i}`} style={{ minHeight: 104, borderRadius: 8, background: 'var(--panel)', opacity: 0.5 }} />;
@@ -122,10 +135,10 @@ function CalendarPage() {
               return (
                 <div key={c} role="button" tabIndex={0} aria-pressed={on} aria-label={fmt(c, { weekday: 'long', month: 'long', day: 'numeric' })} onClick={() => setSel(c)}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSel(c); } }}
-                  style={{ minHeight: 104, borderRadius: 8, border: '1px solid var(--line)', background: on ? 'var(--accent-tint)' : 'var(--shell)', boxShadow: on ? 'inset 0 0 0 2px var(--accent)' : 'none', padding: 6, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--text)', minWidth: 0 }}>
+                  style={{ minHeight: isPhone ? 46 : 104, borderRadius: 8, border: '1px solid var(--line)', background: on ? 'var(--accent-tint)' : 'var(--shell)', boxShadow: on ? 'inset 0 0 0 2px var(--accent)' : 'none', padding: isPhone ? 4 : 6, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 3, color: 'var(--text)', minWidth: 0 }}>
                   <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: c === data.today ? 'var(--accent-deep)' : 'var(--text)', whiteSpace: 'nowrap' }}>{Number(c.slice(8))}{c === data.today ? ' · today' : ''}</span>
-                    {hrs > 0 && (
+                    <span style={{ fontSize: isPhone ? 11 : 12.5, fontWeight: 700, color: c === data.today ? 'var(--accent-deep)' : 'var(--text)', whiteSpace: 'nowrap' }}>{Number(c.slice(8))}{c === data.today && !isPhone ? ' · today' : ''}</span>
+                    {hrs > 0 && !isPhone && (
                       <button type="button" title="See what you worked on" aria-label={`${hoursText(hrs)} worked. See what you worked on`}
                         onClick={(e) => { e.stopPropagation(); setSel(c); setTimeFor(c); }}
                         style={{ border: 0, borderRadius: 999, padding: '1px 7px', background: CAL.time.fg, color: '#fff', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.6, flexShrink: 0 }}>
@@ -133,17 +146,34 @@ function CalendarPage() {
                       </button>
                     )}
                   </span>
-                  {chips.slice(0, 3).map(([k, text], j) => (
-                    <span key={j} style={{ fontSize: 10.5, fontWeight: 600, background: KIND[k][0], color: KIND[k][1], borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
-                  ))}
-                  {chips.length > 3 && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+{chips.length - 3} more</span>}
+                  {isPhone ? (
+                    <span style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {chips.slice(0, 4).map(([k], j) => <span key={j} aria-hidden="true" style={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', background: KIND[k][1] }} />)}
+                      </span>
+                      {hrs > 0 && (
+                        <button type="button" title="See what you worked on" aria-label={`${hoursText(hrs)} worked. See what you worked on`}
+                          onClick={(e) => { e.stopPropagation(); setSel(c); setTimeFor(c); }}
+                          style={{ border: 0, borderRadius: 999, padding: '1px 4px', background: CAL.time.fg, color: '#fff', fontFamily: MONO, fontSize: 9, fontWeight: 700, cursor: 'pointer', lineHeight: 1.4, flexShrink: 0 }}>
+                          {hoursText(hrs)}
+                        </button>
+                      )}
+                    </span>
+                  ) : (
+                    <>
+                      {chips.slice(0, 3).map(([k, text], j) => (
+                        <span key={j} style={{ fontSize: 10.5, fontWeight: 600, background: KIND[k][0], color: KIND[k][1], borderRadius: 4, padding: '2px 5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+                      ))}
+                      {chips.length > 3 && <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>+{chips.length - 3} more</span>}
+                    </>
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
 
-        <Card title={fmt(sel, { month: 'long', day: 'numeric' })} style={{ flex: '1 1 320px' }} right={<span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{fmt(sel, { weekday: 'long' }).toUpperCase()}{isToday ? ' · TODAY' : ''}</span>}>
+        <Card title={fmt(sel, { month: 'long', day: 'numeric' })} style={{ width: isPhone ? '100%' : undefined, flex: isPhone ? 'none' : '1 1 320px' }} right={<span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{fmt(sel, { weekday: 'long' }).toUpperCase()}{isToday ? ' · TODAY' : ''}</span>}>
           <CalendarDayPanel day={sel} d={d} busy={busy} post={post} openTime={timeFor === sel} onTimeShown={() => setTimeFor(null)} />
 
           {d.deadlines.length > 0 && (
