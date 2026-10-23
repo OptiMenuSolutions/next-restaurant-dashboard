@@ -10,6 +10,32 @@ import { Confirm } from './AdminShell';
 export const TIME_CATEGORIES = ['Development', 'Certification', 'Sales', 'Support', 'Admin', 'Other'];
 export const hoursText = (h) => `${Number(Number(h || 0).toFixed(2))}h`;
 
+// One color per kind of thing on a day. The calendar's chips, its legend and
+// the day panel's sections all use these, so a color means the same everywhere.
+// bg/fg are the chip colors; tint/line are the panel section's box and stripe.
+export const CAL = {
+  event:    { bg: 'rgba(47,111,179,0.14)', fg: '#2f6fb3', label: 'Scheduled' },
+  note:     { bg: 'rgba(196,138,28,0.16)', fg: '#a8740f', label: 'Notes' },
+  time:     { bg: 'rgba(124,92,214,0.14)', fg: '#7c5cd6', label: 'Time' },
+  deadline: { bg: 'var(--text)', fg: 'var(--shell)', label: 'Deadlines', tint: 'rgba(128,128,128,0.10)', line: 'var(--text)' },
+  sales:    { bg: 'var(--green-tint)', fg: 'var(--green)', label: 'Sales' },
+  activity: { bg: 'var(--accent-tint)', fg: 'var(--accent-deep)', label: 'Platform activity' },
+  bad:      { bg: 'var(--red-tint)', fg: 'var(--red)', label: 'Problems' },
+};
+
+export function Section({ kind, title, right, children, innerRef }) {
+  const k = CAL[kind];
+  const line = k.line || k.fg;
+  return (
+    <div ref={innerRef} style={{ background: k.tint || k.bg, borderLeft: `3px solid ${line}`, borderRadius: 8, padding: '8px 10px' }}>
+      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', fontWeight: 700, color: line, display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span>{title}</span>{right}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 const label = { fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' };
 const row = { display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13.5 };
 const editBtn = { border: 0, background: 'none', padding: 0, color: 'var(--accent-deep)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 };
@@ -77,7 +103,8 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
 
   const total = d.time.reduce((s, t) => s + Number(t.hours || 0), 0);
   const addBtn = (m, text) => (
-    <button type="button" className="om-btn" aria-pressed={mode === m && !edit} onClick={() => (mode === m && !edit ? close() : open(m))} style={{ minHeight: 32, flex: '1 1 0', fontWeight: 700 }}>{text}</button>
+    <button type="button" className="om-btn" aria-pressed={mode === m && !edit} onClick={() => (mode === m && !edit ? close() : open(m))}
+      style={{ minHeight: 32, flex: '1 1 0', fontWeight: 700, color: CAL[m].fg, borderColor: CAL[m].fg, background: mode === m && !edit ? CAL[m].bg : undefined }}>{text}</button>
   );
 
   return (
@@ -89,8 +116,8 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
       </div>
 
       {mode && (
-        <div onKeyDown={onKey} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel)' }}>
-          <div style={label}>{{ note: edit ? 'EDIT NOTE' : 'NEW NOTE', event: edit ? 'EDIT EVENT' : 'NEW EVENT', time: edit ? 'EDIT TIME' : 'LOG TIME' }[mode]}</div>
+        <div onKeyDown={onKey} style={{ border: `1px solid ${CAL[mode].fg}`, borderLeft: `3px solid ${CAL[mode].fg}`, borderRadius: 10, padding: 10, display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel)' }}>
+          <div style={{ ...label, fontWeight: 700, color: CAL[mode].fg }}>{{ note: edit ? 'EDIT NOTE' : 'NEW NOTE', event: edit ? 'EDIT EVENT' : 'NEW EVENT', time: edit ? 'EDIT TIME' : 'LOG TIME' }[mode]}</div>
 
           {mode === 'note' && (
             <textarea className="om-field" rows={3} autoFocus value={form.note} onChange={set('note')} placeholder="Write a note" style={{ padding: 8, resize: 'vertical' }} />
@@ -141,29 +168,24 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
         </div>
       )}
 
-      <div ref={timeRef}>
-        <div style={{ ...label, display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-          <span>TIME</span>
-          {total > 0 && <span style={{ color: 'var(--text)', fontWeight: 700 }}>{hoursText(total)}</span>}
-        </div>
+      <Section kind="time" innerRef={timeRef} title="TIME" right={total > 0 ? <span style={{ color: 'var(--text)' }}>{hoursText(total)}</span> : null}>
         {d.time.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No time logged.</div>}
         {d.time.map((t) => (
           <div key={t.id} style={row}>
-            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, width: 48, flexShrink: 0 }}>{hoursText(t.hours)}</span>
+            <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 700, width: 48, flexShrink: 0, color: CAL.time.fg }}>{hoursText(t.hours)}</span>
             <span style={{ flex: 1, minWidth: 0 }}>
               {(t.categories || []).map((c) => (
-                <span key={c} style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: 'var(--accent-deep)', background: 'var(--accent-tint)', borderRadius: 4, padding: '1px 6px', marginRight: 4, marginBottom: 2 }}>{c}</span>
+                <span key={c} style={{ display: 'inline-block', fontSize: 11, fontWeight: 700, color: CAL.time.fg, background: 'var(--shell)', border: `1px solid ${CAL.time.fg}`, borderRadius: 4, padding: '0 6px', marginRight: 4, marginBottom: 3 }}>{c}</span>
               ))}
-              {t.description ? <span style={{ whiteSpace: 'pre-wrap' }}>{t.description}</span> : <span style={{ color: 'var(--muted)' }}>No description</span>}
+              {t.description ? <span style={{ display: 'block', whiteSpace: 'pre-wrap' }}>{t.description}</span> : <span style={{ display: 'block', color: 'var(--muted)' }}>No description</span>}
             </span>
             <Actions busy={busy} what="this time entry" onEdit={() => open('time', t)}
               onDelete={() => setDel({ body: { action: 'time-delete', id: t.id }, title: 'Delete this time entry?', sub: `${hoursText(t.hours)}${t.description ? ' · ' + t.description.slice(0, 80) : ''}` })} />
           </div>
         ))}
-      </div>
+      </Section>
 
-      <div>
-        <div style={{ ...label, marginBottom: 4 }}>NOTES</div>
+      <Section kind="note" title="NOTES">
         {d.notes.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No notes.</div>}
         {d.notes.map((n) => (
           <div key={n.id} style={row}>
@@ -172,14 +194,13 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
               onDelete={() => setDel({ body: { action: 'note-delete', id: n.id }, title: 'Delete this note?', sub: n.note.slice(0, 120) })} />
           </div>
         ))}
-      </div>
+      </Section>
 
-      <div>
-        <div style={{ ...label, marginBottom: 4 }}>SCHEDULED</div>
+      <Section kind="event" title="SCHEDULED">
         {d.events.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing scheduled.</div>}
         {d.events.map((e) => (
           <div key={e.id} style={row}>
-            <span style={{ fontFamily: MONO, fontSize: 12, width: 70, flexShrink: 0, color: 'var(--muted)', lineHeight: 1.5 }}>
+            <span style={{ fontFamily: MONO, fontSize: 12, width: 70, flexShrink: 0, color: CAL.event.fg, fontWeight: 700, lineHeight: 1.5 }}>
               {e.time ? t12(e.time) : 'All day'}
               {e.time && e.end_time && <><br />{t12(e.end_time)}</>}
             </span>
@@ -191,7 +212,7 @@ export default function CalendarDayPanel({ day, d, busy, post, openTime, onTimeS
               onDelete={() => setDel({ body: { action: 'event-delete', id: e.id }, title: 'Delete this event?', sub: e.title })} />
           </div>
         ))}
-      </div>
+      </Section>
 
       {del && (
         <Confirm title={del.title} sub={del.sub} yes="Delete" danger busy={busy}

@@ -10,15 +10,10 @@ import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Card } from '../../components/admin/ui';
-import CalendarDayPanel, { hoursText } from '../../components/admin/CalendarDayPanel';
+import CalendarDayPanel, { hoursText, CAL, Section } from '../../components/admin/CalendarDayPanel';
 
-const KIND = {
-  plan: ['var(--panel)', 'var(--text)', 'Your plans'],
-  deadline: ['var(--text)', 'var(--shell)', 'Deadlines'],
-  sales: ['var(--green-tint)', 'var(--green)', 'Sales'],
-  activity: ['var(--accent-tint)', 'var(--accent-deep)', 'Platform activity'],
-  bad: ['var(--red-tint)', 'var(--red)', 'Problems'],
-};
+// Chip colors come from the day panel so the calendar and the panel match.
+const KIND = Object.fromEntries(Object.entries(CAL).map(([k, v]) => [k, [v.bg, v.fg, v.label]]));
 const DOW = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const shift = (m, n) => { const [y, mo] = m.split('-').map(Number); return new Date(Date.UTC(y, mo - 1 + n, 1)).toISOString().slice(0, 7); };
 const fmt = (d, opts) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...opts }).format(new Date(d + 'T12:00:00Z'));
@@ -31,8 +26,8 @@ function time12(t) {
 function chipsFor(d) {
   if (!d) return [];
   const out = [];
-  for (const n of d.notes || []) out.push(['plan', n.note.split('\n')[0]]);
-  for (const e of d.events) out.push(['plan', `${e.time ? time12(e.time) + ' ' : ''}${e.title}`]);
+  for (const e of d.events) out.push(['event', `${e.time ? time12(e.time) + ' ' : ''}${e.title}`]);
+  for (const n of d.notes || []) out.push(['note', n.note.split('\n')[0]]);
   for (const x of d.deadlines) out.push(['deadline', `${x.done ? '✓ ' : ''}${x.title}`]);
   for (const s of d.sales) out.push(['sales', s.text]);
   const bad = d.activity.filter((a) => a.tone === 'bad');
@@ -133,7 +128,7 @@ function CalendarPage() {
                     {hrs > 0 && (
                       <button type="button" title="See what you worked on" aria-label={`${hoursText(hrs)} worked. See what you worked on`}
                         onClick={(e) => { e.stopPropagation(); setSel(c); setTimeFor(c); }}
-                        style={{ border: 0, borderRadius: 999, padding: '1px 7px', background: 'var(--text)', color: 'var(--shell)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.6, flexShrink: 0 }}>
+                        style={{ border: 0, borderRadius: 999, padding: '1px 7px', background: CAL.time.fg, color: '#fff', fontFamily: MONO, fontSize: 10.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.6, flexShrink: 0 }}>
                         {hoursText(hrs)}
                       </button>
                     )}
@@ -152,31 +147,28 @@ function CalendarPage() {
           <CalendarDayPanel day={sel} d={d} busy={busy} post={post} openTime={timeFor === sel} onTimeShown={() => setTimeFor(null)} />
 
           {d.deadlines.length > 0 && (
-            <div>
-              <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 4 }}>DEADLINES</div>
+            <Section kind="deadline" title="DEADLINES">
               {d.deadlines.map((x) => <div key={x.id} style={{ fontSize: 13.5, padding: '4px 0', textDecoration: x.done ? 'line-through' : 'none', color: x.done ? 'var(--muted)' : 'var(--text)' }}>{x.title}</div>)}
               <Link href="/admin/finances" style={{ fontSize: 12.5, color: 'var(--accent-deep)' }}>Expenses & deadlines</Link>
-            </div>
+            </Section>
           )}
 
           {d.sales.length > 0 && (
-            <div>
-              <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 4 }}>SALES</div>
+            <Section kind="sales" title="SALES">
               {d.sales.map((s) => (
                 <div key={s.id} style={{ fontSize: 13.5, padding: '4px 0' }}>
                   <b style={{ color: s.due ? 'var(--green)' : 'var(--text)' }}>{s.text}</b>
                   {s.detail && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)' }}>{s.detail}</span>}
                 </div>
               ))}
-              <Link href="/admin/pipeline" style={{ fontSize: 12.5, color: 'var(--accent-deep)' }}>Pipeline</Link>
-            </div>
+              <Link href="/admin/pipeline" style={{ fontSize: 12.5, color: 'var(--green)' }}>Pipeline</Link>
+            </Section>
           )}
 
-          <div>
-            <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)', marginBottom: 4 }}>PLATFORM ACTIVITY</div>
+          <Section kind={d.activity.some((a) => a.tone === 'bad') ? 'bad' : 'activity'} title="PLATFORM ACTIVITY">
             {d.activity.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing logged.</div>}
-            {d.activity.map((a, i) => <div key={i} style={{ fontSize: 13, padding: '3px 0', color: a.tone === 'bad' ? 'var(--red)' : 'var(--text)' }}>{a.text}</div>)}
-          </div>
+            {d.activity.map((a, i) => <div key={i} style={{ fontSize: 13, padding: '3px 0', color: a.tone === 'bad' ? 'var(--red)' : 'var(--text)', fontWeight: a.tone === 'bad' ? 600 : 400 }}>{a.text}</div>)}
+          </Section>
         </Card>
       </div>
     </>
