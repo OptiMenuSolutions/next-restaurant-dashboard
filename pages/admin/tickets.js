@@ -10,7 +10,6 @@ import NoteDialog from '../../components/admin/NoteDialog';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState } from '../../components/client/ClientChrome';
 import useIsPhone from '../../lib/admin/useIsPhone';
-import useIsPhone from '../../lib/admin/useIsPhone';
 
 const FILTERS = ['ALL', 'JOB', 'BILLING', 'SUPPORT', 'REVIEW', 'COSTS', 'NOTE'];
 const NICE = { ALL: 'All', JOB: 'Jobs', BILLING: 'Billing', SUPPORT: 'Support', REVIEW: 'Review', COSTS: 'Costs', NOTE: 'Notes' };
