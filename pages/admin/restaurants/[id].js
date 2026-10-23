@@ -9,6 +9,7 @@ import AdminShell, { Confirm } from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Dot, StatusChip, Chip, Pills, Card, th, td, money, shortDate, HEALTH_WORD, DOT } from '../../../components/admin/ui';
+import useIsPhone from '../../../lib/admin/useIsPhone';
 
 const TABS = ['Overview', 'Activity', 'Menu', 'Invoices', 'Billing'];
 const STEP_NAMES = ['Menu parsed', 'First invoice', 'POS connected', 'Tags placed', 'Scanner added'];
@@ -45,6 +46,7 @@ function useLoad(url) {
 }
 
 function RestaurantPage({ id }) {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [tab, setTab] = useState('Overview');
   const { data, error, load } = useLoad(`/api/admin/restaurant/${id}`);
@@ -80,7 +82,7 @@ function RestaurantPage({ id }) {
 
   return (
     <>
-      <Link href="/admin/restaurants" style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← All restaurants</Link>
+      {!isPhone && <Link href="/admin/restaurants" style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← All restaurants</Link>}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
         <div style={{ flex: '1 1 360px' }}>
@@ -127,10 +129,20 @@ function RestaurantPage({ id }) {
         </div>
       </section>
 
-      <div role="tablist" aria-label="Restaurant sections" style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
+      <div role="tablist" aria-label="Restaurant sections" style={{
+        display: 'flex',
+        gap: 22,
+        borderBottom: '1px solid var(--line)',
+        overflowX: isPhone ? 'auto' : 'visible',
+        flexWrap: isPhone ? 'nowrap' : 'wrap',
+        position: isPhone ? 'sticky' : 'static',
+        top: isPhone ? 48 : undefined,
+        zIndex: isPhone ? 30 : undefined,
+        background: isPhone ? 'var(--shell)' : undefined,
+      }}>
         {TABS.map((t) => (
           <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
-            style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === t ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === t ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
+            style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === t ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === t ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === t ? 'var(--accent)' : 'transparent'}`, marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t}
           </button>
         ))}
@@ -486,7 +498,8 @@ export default function Page() {
   const router = useRouter();
   const { id } = router.query;
   return (
-    <AdminShell section="Restaurants" sub="All restaurants" title="Restaurant">
+    <AdminShell section="Restaurants" sub="All restaurants" title="Restaurant"
+      back={{ label: 'Restaurants', href: '/admin/restaurants' }}>
       {id ? <RestaurantPage id={id} /> : <LoadingState />}
     </AdminShell>
   );

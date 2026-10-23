@@ -205,7 +205,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
               </button>
             </div>
           </header>
-          {cur?.subs?.length > 0 && (
+          {!back && cur?.subs?.length > 0 && (
             <nav aria-label="Section pages" className="om-mobile-subnav"
               style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 16px', position: 'sticky', top: 48, zIndex: 109, overflowX: 'auto', flexWrap: 'nowrap', whiteSpace: 'nowrap', background: 'var(--shell)', borderBottom: '1px solid var(--line)' }}>
               {cur.subs.map(([label, href]) => {
