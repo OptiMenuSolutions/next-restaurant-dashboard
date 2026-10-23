@@ -79,13 +79,13 @@ function TagsPage() {
 
       <section aria-labelledby="shelf" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h2 id="shelf" style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>On the shelf</h2>
-        <div style={{ display: isPhone ? 'flex' : 'grid', gridTemplateColumns: isPhone ? undefined : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, overflowX: isPhone ? 'auto' : 'visible', flexWrap: isPhone ? 'nowrap' : undefined, paddingBottom: isPhone ? 2 : 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
           {data.stock.map((s) => {
             const low = s.on_hand <= s.reorder_at;
             const pct = Math.min(100, Math.round((s.on_hand / Math.max(1, s.reorder_at * 3)) * 100));
             return (
               <button key={s.item} type="button" onClick={() => setDialog({ type: 'stock', item: s })} title="Edit count"
-                style={{ flex: isPhone ? '0 0 170px' : undefined, minWidth: isPhone ? 170 : undefined, textAlign: 'left', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', background: 'var(--shell)', cursor: 'pointer', color: 'var(--text)', fontFamily: "'Manrope', sans-serif", display: 'flex', flexDirection: 'column', gap: 6 }}>
+                style={{ width: '100%', minWidth: 0, textAlign: 'left', border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px', background: 'var(--shell)', cursor: 'pointer', color: 'var(--text)', fontFamily: "'Manrope', sans-serif", display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>{s.name}</span>
                   <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: low ? 'var(--amber)' : 'var(--green)' }}>{low ? 'REORDER' : 'OK'}</span>

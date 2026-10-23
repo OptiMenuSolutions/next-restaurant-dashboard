@@ -400,14 +400,14 @@ export function Dialog({ title, sub, onClose, children, width = 460, fullScreen 
         ? { position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: fullScreen ? 'stretch' : 'flex-end', justifyContent: 'center', padding: 0, overflow: 'hidden', background: fullScreen ? 'var(--shell)' : 'color-mix(in srgb, var(--text) 42%, transparent)' }
         : { position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '70px 20px', overflowY: 'auto', background: 'rgba(17,24,25,0.42)' }}>
       <div role="dialog" aria-modal="true" aria-label={title}
-        onTouchStart={(e) => { swipeStartY.current = e.touches?.[0]?.clientY ?? null; }}
+        onTouchStart={(e) => { swipeStartY.current = e.target.closest?.('[data-sheet-handle]') ? (e.touches?.[0]?.clientY ?? null) : null; }}
         onTouchEnd={onTouchEnd}
         style={isPhone
           ? fullScreen
             ? { width: '100%', maxWidth: '100%', height: '100dvh', maxHeight: '100dvh', overflowY: 'auto', background: 'var(--shell)', borderRadius: 0, boxShadow: 'none', padding: '12px 16px calc(16px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: 16, touchAction: 'pan-y' }
             : { width: '100%', maxWidth: width, maxHeight: '90dvh', overflowY: 'auto', background: 'var(--shell)', borderRadius: '20px 20px 0 0', boxShadow: 'var(--shadow-lg)', padding: '12px 16px calc(16px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: 16, touchAction: 'pan-y' }
           : { width: '100%', maxWidth: width, background: 'var(--shell)', borderRadius: 16, boxShadow: 'var(--shadow-lg)', padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {isPhone && !fullScreen && <div aria-hidden="true" style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--faint)', opacity: 0.55, alignSelf: 'center', marginBottom: 2 }} />}
+        {isPhone && !fullScreen && <div data-sheet-handle="" aria-hidden="true" style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--faint)', opacity: 0.55, alignSelf: 'center', marginBottom: 2 }} />}
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{title}</h2>
           {sub && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>{sub}</p>}
