@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AdminShell, { Dialog, Confirm } from '../../../components/admin/AdminShell';
+import useIsPhone from '../../../lib/admin/useIsPhone';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../../components/client/ClientChrome';
 import { Chip, Card, th, td, money, shortDate } from '../../../components/admin/ui';
@@ -16,10 +17,12 @@ const PAY_TONE = { PAID: 'var(--green)', FAILED: 'var(--red)', DUE: 'var(--amber
 const BILLING_LINK = 'https://www.opti-menu.com/client/billing';
 
 function BillingPage({ id }) {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(null);
+  const [phoneActionsOpen, setPhoneActionsOpen] = useState(false);
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState(false);
   const [ask, setAsk] = useState(null);
@@ -69,7 +72,7 @@ function BillingPage({ id }) {
 
   return (
     <>
-      <Link href={`/admin/restaurants/${r.id}`} style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← {r.name}</Link>
+      {!isPhone && <Link href={`/admin/restaurants/${r.id}`} style={{ fontSize: 13, fontWeight: 700, alignSelf: 'flex-start' }}>← {r.name}</Link>}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', gap: 16 }}>
         <div style={{ flex: '1 1 360px' }}>
@@ -82,14 +85,14 @@ function BillingPage({ id }) {
             {data.facts[0][1]} · customer since {shortDate(r.created_at)}, {new Date(r.created_at).getFullYear()} · <Link href={`/admin/restaurants/${r.id}`} style={{ fontWeight: 700 }}>Open restaurant page</Link>
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!isPhone && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {stripeUrl && <a className="om-btn" href={stripeUrl} target="_blank" rel="noopener noreferrer">Open in Stripe ↗</a>}
           <button type="button" className="om-btn" disabled={busy || !st.subscriptionId || !data.perMonth} onClick={() => setAsk({ title: `Comp a month for ${r.name}?`, sub: `Adds a ${money(data.perMonth)} credit to their Stripe balance. Their next invoice uses it first.`, yes: `Credit ${money(data.perMonth)}`, body: { action: 'comp-month' } })}>Comp a month</button>
           <button type="button" className="om-btn" disabled={busy || !data.refundable.length} onClick={() => setDialog('refund')}>Refund</button>
           {st.subscriptionId && <a className="om-btn" href={`https://dashboard.stripe.com/subscriptions/${st.subscriptionId}`} target="_blank" rel="noopener noreferrer">Change plan ↗</a>}
           <button type="button" className="om-btn" disabled={busy} onClick={() => setDialog('email')}>Email the owner</button>
           <button type="button" className="om-btn" disabled={busy || st.cancelAtPeriodEnd || r.closed} onClick={() => setDialog('cancel')} style={{ color: 'var(--red)' }}>Cancel plan</button>
-        </div>
+        </div>}
       </div>
 
       {flash && <div style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
@@ -109,7 +112,7 @@ function BillingPage({ id }) {
         </div>
       )}
 
-      <section aria-label="Client numbers" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
+      {!isPhone && <section aria-label="Client numbers" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
         {[
           ['PAYS YOU / MO', money(data.perMonth), data.facts[0][1], 'var(--text)'],
           ['PAID SO FAR', money(total.paid), `${months.filter((m) => m.paid > 0).length} of ${months.length} months paid`, 'var(--text)'],
@@ -123,10 +126,10 @@ function BillingPage({ id }) {
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s}</div>
           </div>
         ))}
-      </section>
+      </section>}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'stretch' }}>
-        <Card title="What they paid vs what they cost, by month" style={{ flex: '2 1 560px' }}
+        {!isPhone && <Card title="What they paid vs what they cost, by month" style={{ flex: '2 1 560px' }}
           right={<span style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--muted)' }}><Legend c="var(--accent)" t="Paid" /><Legend c="var(--amber)" t="Cost" /></span>}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, height: 170, borderBottom: '1px solid var(--line)', padding: '0 8px', overflowX: 'auto' }}>
             {months.map((m) => (
@@ -146,7 +149,7 @@ function BillingPage({ id }) {
             {months.map((m) => <span key={m.key} style={{ flex: '1 0 44px', textAlign: 'center' }}>{m.label.slice(0, 3).toUpperCase()}</span>)}
           </div>
           <style>{'.om-tip{display:none;position:absolute;z-index:5;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);width:160px;background:var(--text);color:var(--shell);font:500 12px/1.5 Manrope,sans-serif;padding:9px 11px;border-radius:8px;pointer-events:none}.om-mbar:hover .om-tip,.om-mbar:focus .om-tip{display:block}'}</style>
-        </Card>
+        </Card>}
 
         <Card title="Plan and payment" style={{ flex: '1 1 320px' }}>
           {data.facts.map(([k, v]) => (
@@ -157,11 +160,26 @@ function BillingPage({ id }) {
         </Card>
       </div>
 
-      <section aria-label="Profit and loss by month" style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
+      <section aria-label="Profit and loss by month" style={{ border: '1px solid var(--line)', borderRadius: 12, overflowX: isPhone ? 'visible' : 'auto' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Profit and loss by month</h2>
           <button type="button" className="om-btn" style={{ minHeight: 32 }} onClick={() => exportCsv(r.name, months, total)}>Export CSV</button>
         </div>
+        {isPhone ? (
+          <div>
+            {[...months, { ...total, key: 'total', label: 'Total so far', isTotal: true }].map((m, i) => (
+              <div key={m.key} style={{ padding: 12, borderTop: i ? '1px solid var(--line-soft)' : 0 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                  <strong>{m.label}</strong>
+                  <strong style={{ color: m.profit < 0 ? 'var(--red)' : 'var(--green)' }}>{money(m.profit)}</strong>
+                </div>
+                <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, lineHeight: 1.5 }}>
+                  Paid {money(m.paid)} · AI {money(m.ai)} · Hosting {money(m.host)} · Fee {money(m.fee)} · One-offs {money(m.oneoff)} · Refunds {money(m.refunds)}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 980 }}>
           <thead>
             <tr>
@@ -183,14 +201,34 @@ function BillingPage({ id }) {
             ))}
           </tbody>
         </table>
-        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--line-soft)', fontSize: 12, color: 'var(--muted)' }}>
+        )}
+        {!isPhone && <div style={{ padding: '10px 18px', borderTop: '1px solid var(--line-soft)', fontSize: 12, color: 'var(--muted)' }}>
           Hosting share is your monthly hosting cost split across {data.liveCount} live restaurant{data.liveCount === 1 ? '' : 's'} ({money(data.hostShare)} each). Stripe fees are the real fees Stripe took. One-off costs count in the month they were spent.
-        </div>
+        </div>}
       </section>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
         <section style={{ flex: '1 1 520px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)' }}><h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Payments</h2></div>
+          {isPhone ? (
+            <div>
+              {data.payments.length === 0 ? (
+                <div style={{ padding: 14, color: 'var(--muted)', fontSize: 13 }}>No payments yet.</div>
+              ) : data.payments.map((p, i) => (
+                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 12, borderTop: i ? '1px solid var(--line-soft)' : 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <span style={{ color: 'var(--muted)', fontFamily: MONO, fontSize: 12 }}>{shortDate(p.ts)}</span>
+                    <strong>{money(p.amount)}</strong>
+                  </div>
+                  <div style={{ fontSize: 13.5 }}>{p.what}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: PAY_TONE[p.status] || 'var(--muted)', fontFamily: MONO, fontSize: 10.5, fontWeight: 700 }}>{p.status}</span>
+                    {p.receipt && <a href={p.receipt} target="_blank" rel="noopener noreferrer" style={{ minHeight: 40, display: 'inline-flex', alignItems: 'center', fontWeight: 700, fontSize: 12.5 }}>View receipt ↗</a>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 520 }}>
             <thead>
               <tr>
@@ -211,13 +249,33 @@ function BillingPage({ id }) {
               ))}
             </tbody>
           </table>
+          )}
         </section>
 
         <section style={{ flex: '1 1 420px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflowX: 'auto' }}>
           <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>One-off costs for this client</h2>
-            <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => setDialog('cost')}>Add a cost</button>
+            {!isPhone && <button type="button" className="om-btn" style={{ minHeight: 30 }} onClick={() => setDialog('cost')}>Add a cost</button>}
           </div>
+          {isPhone ? (
+            <div>
+              {data.oneoffs.length === 0 ? (
+                <div style={{ padding: 14, color: 'var(--muted)', fontSize: 13 }}>None yet. Tag kits land here once Tag kits is built.</div>
+              ) : data.oneoffs.map((o) => (
+                <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: 12, borderTop: '1px solid var(--line-soft)' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ display: 'block', fontSize: 13.5 }}>{o.what}</strong>
+                    <span style={{ display: 'block', color: 'var(--muted)', fontSize: 12 }}>{shortDate(o.date)}{o.source ? ` · ${o.source}` : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontFamily: MONO, fontSize: 12.5 }}>{money(o.amount)}</strong>
+                    <button type="button" aria-label={`Delete ${o.what}`} onClick={() => setAsk({ title: `Delete ${o.what}?`, sub: `${money(o.amount)} from ${shortDate(o.date)} comes off their costs.`, yes: 'Delete cost', danger: true, body: { action: 'delete-cost', costId: o.id } })}
+                      style={{ width: 40, height: 40, flexShrink: 0, border: 0, background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13 }}>✕</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 420 }}>
             <thead>
               <tr><th style={{ ...th, paddingLeft: 18 }}>DATE</th><th style={th}>WHAT</th><th style={{ ...th, textAlign: 'right' }}>AMOUNT</th><th style={{ ...th, paddingRight: 18 }} /></tr>
@@ -236,9 +294,29 @@ function BillingPage({ id }) {
               ))}
             </tbody>
           </table>
+          )}
         </section>
       </div>
 
+      {isPhone && <div aria-hidden="true" style={{ height: 64 }} />}
+      {isPhone && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 'calc(64px + env(safe-area-inset-bottom))', zIndex: 100, display: 'flex', gap: 8, padding: '8px 12px', background: 'var(--shell)', borderTop: '1px solid var(--line)', boxShadow: 'var(--shadow-lg)' }}>
+          <button type="button" className="om-btn" onClick={() => setDialog('cost')} style={{ flex: 1 }}>Add cost</button>
+          <button type="button" className="om-pri" disabled={busy || !st.subscriptionId || !data.perMonth}
+            onClick={() => setAsk({ title: `Comp a month for ${r.name}?`, sub: `Adds a ${money(data.perMonth)} credit to their Stripe balance. Their next invoice uses it first.`, yes: `Credit ${money(data.perMonth)}`, body: { action: 'comp-month' } })}
+            style={{ flex: 1 }}>Comp a month</button>
+          <button type="button" className="om-btn" aria-label="More billing actions" onClick={() => setPhoneActionsOpen(true)} style={{ width: 44, flexShrink: 0 }}>•••</button>
+        </div>
+      )}
+      {phoneActionsOpen && (
+        <Dialog title="More billing actions" onClose={() => setPhoneActionsOpen(false)}>
+          {stripeUrl && <a className="om-btn" href={stripeUrl} target="_blank" rel="noopener noreferrer" style={{ justifyContent: 'flex-start' }}>Open in Stripe ↗</a>}
+          {st.subscriptionId && <a className="om-btn" href={`https://dashboard.stripe.com/subscriptions/${st.subscriptionId}`} target="_blank" rel="noopener noreferrer" style={{ justifyContent: 'flex-start' }}>Change plan ↗</a>}
+          <button type="button" className="om-btn" disabled={!data.refundable.length} onClick={() => { setPhoneActionsOpen(false); setDialog('refund'); }} style={{ justifyContent: 'flex-start' }}>Refund</button>
+          <button type="button" className="om-btn" disabled={busy} onClick={() => { setPhoneActionsOpen(false); setDialog('email'); }} style={{ justifyContent: 'flex-start' }}>Email the owner</button>
+          <button type="button" className="om-btn" disabled={busy || st.cancelAtPeriodEnd || r.closed} onClick={() => { setPhoneActionsOpen(false); setDialog('cancel'); }} style={{ justifyContent: 'flex-start' }}>Cancel plan</button>
+        </Dialog>
+      )}
       {dialog === 'cancel' && <CancelDialog name={r.name} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'cancel', ...v })} />}
       {dialog === 'refund' && <RefundDialog charges={data.refundable} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'refund', ...v })} />}
       {dialog === 'email' && <EmailDialog r={r} owner={data.owner} failed={failed} busy={busy} onClose={() => setDialog(null)} onSave={(v) => act({ action: 'email', ...v })} />}
@@ -363,7 +441,8 @@ function CostDialog({ kitCost, busy, onClose, onSave }) {
 export default function Page() {
   const { id } = useRouter().query;
   return (
-    <AdminShell section="Business" sub="Revenue & billing" title="Client billing">
+    <AdminShell section="Business" sub="Revenue & billing" title="Client billing"
+      back={typeof id === 'string' ? { label: 'Restaurant', href: `/admin/restaurants/${id}` } : undefined}>
       {id ? <BillingPage id={id} /> : <LoadingState />}
     </AdminShell>
   );
