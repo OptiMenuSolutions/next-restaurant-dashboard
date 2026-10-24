@@ -205,9 +205,9 @@ function InvoiceEditor({ id, onDone }) {
   }, [api, id]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    if (data?.lines?.length && !sel) setSel(data.lines[0].id);
-  }, [data, sel]);
-
+    if (!isPhone && data?.lines?.length && !sel) setSel(data.lines[0].id);
+  }, [data, isPhone, sel]);
+  
   const dirty = useMemo(() => {
     if (!data) return [];
     return lines.filter((l) => {
