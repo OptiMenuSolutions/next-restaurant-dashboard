@@ -5,8 +5,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import AdminShell, { PageHead } from '../../components/admin/AdminShell';
+import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Card, th, td, money, shortDate } from '../../components/admin/ui';
 
@@ -21,10 +22,12 @@ const shift = (m, n) => { const [y, mo] = m.split('-').map(Number); return new D
 
 function AiPage() {
   const { adminFetch } = useAdminFetch();
+  const isPhone = useIsPhone();
   const [month, setMonth] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [limit, setLimit] = useState('');
+  const [limitOpen, setLimitOpen] = useState(false);
   const [flash, setFlash] = useState('');
 
   const load = useCallback(async () => {
@@ -46,7 +49,10 @@ function AiPage() {
     const res = await adminFetch('/api/admin/platform/ai', { method: 'POST', body: JSON.stringify({ action: 'limit', value: limit }) });
     const json = await res.json();
     setFlash(res.ok ? 'Daily line saved.' : json.error || 'Could not save');
-    if (res.ok) load();
+    if (res.ok) {
+      await load();
+      setLimitOpen(false);
+    }
   };
 
   if (error) return <ErrorState message={error} onRetry={load} />;
@@ -66,26 +72,37 @@ function AiPage() {
       </PageHead>
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
-        <Tile k={`SPEND · ${monthLabel(m).toUpperCase()}`} v={money(data.spend)} s={change == null ? `${data.calls} calls` : `${data.calls} calls · ${change >= 0 ? '+' : ''}${Math.round(change * 100)}% vs last month`} />
-        <Tile k="SPEND · TODAY" v={data.isThisMonth ? money(data.todaySpend) : '—'} s={`Daily line ${money(data.limit)}${data.daysOver ? ` · crossed on ${data.daysOver} day${data.daysOver === 1 ? '' : 's'}` : ''}`} />
-        <Tile k="PARSE ACCURACY" v={pct(a.clean, a.lines)} s={`Invoice lines you did not change, of ${a.lines} reviewed in the last 90 days`} />
-        <Tile k="PER RESTAURANT" v={data.restaurants.length ? money(data.spend / data.restaurants.length) : '—'} s={`Average AI spend across ${data.restaurants.length} restaurant${data.restaurants.length === 1 ? '' : 's'} this month`} />
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
+        <Tile isPhone={isPhone} k={`SPEND · ${monthLabel(m).toUpperCase()}`} v={money(data.spend)} s={change == null ? `${data.calls} calls` : `${data.calls} calls · ${change >= 0 ? '+' : ''}${Math.round(change * 100)}% vs last month`} />
+        <Tile isPhone={isPhone} k="SPEND · TODAY" v={data.isThisMonth ? money(data.todaySpend) : '—'} s={`Daily line ${money(data.limit)}${data.daysOver ? ` · crossed on ${data.daysOver} day${data.daysOver === 1 ? '' : 's'}` : ''}`} />
+        <Tile isPhone={isPhone} k="PARSE ACCURACY" v={pct(a.clean, a.lines)} s={`Invoice lines you did not change, of ${a.lines} reviewed in the last 90 days`} />
+        <Tile isPhone={isPhone} k="PER RESTAURANT" v={data.restaurants.length ? money(data.spend / data.restaurants.length) : '—'} s={`Average AI spend across ${data.restaurants.length} restaurant${data.restaurants.length === 1 ? '' : 's'} this month`} />
       </div>
 
-      <Card title={`Spend per day · ${monthLabel(m)}`} right={
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-          Daily line $<input className="om-field" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} style={{ width: 70, minHeight: 30 }} />
-          <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={Number(limit) === data.limit} onClick={saveLimit}>Save</button>
-        </label>
-      }>
-        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Hover a bar for that day’s calls. The dashed line is your daily line; days over it are marked.</div>
+      <Card title={`Spend per day · ${monthLabel(m)}`} right={isPhone
+        ? <button type="button" className="om-btn" onClick={() => setLimitOpen(true)}>Change</button>
+        : (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+            Daily line $<input className="om-field" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} style={{ width: 70, minHeight: 30 }} />
+            <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={Number(limit) === data.limit} onClick={saveLimit}>Save</button>
+          </label>
+        )}>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>{isPhone ? 'Tap a bar to see that day’s spend and calls. The dashed line is your daily line.' : 'Hover a bar for that day’s calls. The dashed line is your daily line; days over it are marked.'}</div>
         <DayBars days={data.days} limit={data.limit} />
       </Card>
+      {isPhone && limitOpen && (
+        <Dialog title="Daily spend line" sub="Set the spend level shown on the chart." onClose={() => setLimitOpen(false)}>
+          <label style={{ display: 'grid', gap: 6, fontSize: 13, fontWeight: 700 }}>
+            Daily line
+            <input className="om-field" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} />
+          </label>
+          <button type="button" className="om-pri" disabled={Number(limit) === data.limit} onClick={saveLimit} style={{ width: '100%', justifyContent: 'center' }}>Save daily line</button>
+        </Dialog>
+      )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
         <Card title="By job" style={{ flex: '1 1 420px' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ display: isPhone ? 'none' : undefined, width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead><tr><th style={th}>JOB</th><th style={{ ...th, textAlign: 'right' }}>RUNS</th><th style={{ ...th, textAlign: 'right' }}>EACH</th><th style={{ ...th, textAlign: 'right' }}>TOTAL</th></tr></thead>
             <tbody>
               {data.jobs.length === 0 && <tr><td colSpan={4} style={{ ...td, color: 'var(--muted)' }}>No AI calls this month.</td></tr>}
@@ -100,7 +117,24 @@ function AiPage() {
               {data.jobs.length > 0 && <tr><td style={{ ...td, fontWeight: 800 }}>Total</td><td style={td} /><td style={td} /><td style={{ ...td, textAlign: 'right', fontFamily: MONO, fontWeight: 800 }}>{money(jobsTotal)}</td></tr>}
             </tbody>
           </table>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>Claude only. Mistral (the text reader for photos and PDFs) is not logged yet, so its cost is not in these numbers.</div>
+          {isPhone && (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {data.jobs.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No AI calls this month.</div>}
+              {data.jobs.map((j) => (
+                <div key={j.key} style={{ minWidth: 0, paddingBottom: 9, borderBottom: '1px solid var(--line-soft)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{j.name}</b>
+                    <b style={{ flexShrink: 0, fontFamily: MONO }}>{money(j.total)}</b>
+                  </div>
+                  <div style={{ marginTop: 3, fontFamily: MONO, fontSize: 10.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{j.models.join(', ') || '—'}</div>
+                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--muted)' }}>{j.runs} runs · {cents(j.each)} each</div>
+                </div>
+              ))}
+              {data.jobs.length > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}>Total <span style={{ fontFamily: MONO }}>{money(jobsTotal)}</span></div>}
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>Claude only. Mistral (the text reader for photos and PDFs) is not logged yet, so its cost is not in these numbers.</div>
+            </div>
+          )}
+          <div style={{ display: isPhone ? 'none' : undefined, fontSize: 12, color: 'var(--muted)' }}>Claude only. Mistral (the text reader for photos and PDFs) is not logged yet, so its cost is not in these numbers.</div>
         </Card>
 
         <Card title="What you fix most" style={{ flex: '1 1 340px' }}>
@@ -119,7 +153,7 @@ function AiPage() {
 
       <Card title={`Spend by restaurant · ${monthLabel(m)}`}>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>What each restaurant costs you in AI, next to what they pay you.</div>
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ display: isPhone ? 'none' : undefined, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 720 }}>
             <thead><tr>
               <th style={th}>RESTAURANT</th><th style={{ ...th, textAlign: 'right' }}>INVOICES</th><th style={{ ...th, textAlign: 'right' }}>MENU CALLS</th><th style={{ ...th, textAlign: 'right' }}>DISH RUNS</th>
@@ -141,22 +175,47 @@ function AiPage() {
             </tbody>
           </table>
         </div>
+        {isPhone && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {data.restaurants.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No restaurant spend this month.</div>}
+            {data.restaurants.map((r) => (
+              <div key={r.id} style={{ minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: 12 }}>
+                <Link href={`/admin/restaurants/${r.id}`} style={{ color: 'var(--text)', fontWeight: 800, textDecoration: 'none', overflowWrap: 'anywhere' }}>{r.name}</Link>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10, marginTop: 10 }}>
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: 9.5, color: 'var(--muted)' }}>AI SPEND</div>
+                    <strong>{money(r.spend)}</strong>
+                  </div>
+                  <div>
+                    <div style={{ fontFamily: MONO, fontSize: 9.5, color: 'var(--muted)' }}>PAYS YOU / MO</div>
+                    <strong>{r.pays == null ? 'Not paying' : money(r.pays)}</strong>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>Invoices · {r.invoices}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>Menu calls · {r.menuCalls}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>Dish runs · {r.dishRuns}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>AI as % of plan · {r.pct == null ? '—' : `${(r.pct * 100).toFixed(1)}%`}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </>
   );
 }
 
-function Tile({ k, v, s }) {
+function Tile({ k, v, s, isPhone }) {
   return (
-    <div style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{k}</div>
-      <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4 }}>{v}</div>
+    <div style={{ minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: isPhone ? 11 : '14px 16px' }}>
+      <div style={{ fontFamily: MONO, fontSize: isPhone ? 9 : 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>{k}</div>
+      <div style={{ fontSize: isPhone ? 20 : 26, fontWeight: 800, letterSpacing: '-0.02em', marginTop: 4, overflowWrap: 'anywhere' }}>{v}</div>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s}</div>
     </div>
   );
 }
 
 function DayBars({ days, limit }) {
+  const isPhone = useIsPhone();
   const [hover, setHover] = useState(null);
   const box = useRef(null);
   if (!days.length) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>No days yet.</div>;
@@ -181,7 +240,7 @@ function DayBars({ days, limit }) {
           const over = x.spend > limit;
           const cx = L + slot * i + (slot - bw) / 2;
           return (
-            <g key={x.date} onMouseEnter={() => setHover(i)}>
+            <g key={x.date} onMouseEnter={() => setHover(i)} onClick={() => { if (isPhone) setHover(hover === i ? null : i); }}>
               <rect x={L + slot * i} y={T} width={slot} height={H - T - B} fill="transparent" />
               {h > 0 && <rect x={cx} y={y(x.spend)} width={bw} height={h} rx={Math.min(4, bw / 2)} fill={over ? 'var(--amber)' : 'var(--accent-deep)'} opacity={hover == null || hover === i ? 1 : 0.55} />}
               {over && <text x={cx + bw / 2} y={y(x.spend) - 4} textAnchor="middle" fontSize="10" fill="var(--amber)">!</text>}
@@ -194,7 +253,9 @@ function DayBars({ days, limit }) {
         <text x={W - R} y={H - 6} textAnchor="end" fontSize="10" fontFamily="IBM Plex Mono, monospace" fill="var(--muted)">{shortDate(days[n - 1].date).toUpperCase()}</text>
       </svg>
       {d && (
-        <div style={{ position: 'absolute', top: 0, left: `${Math.min(72, Math.max(0, ((L + slot * hover) / W) * 100 - 12))}%`, pointerEvents: 'none', background: 'var(--text)', color: 'var(--shell)', borderRadius: 8, padding: '8px 10px', fontSize: 12, minWidth: 170, boxShadow: 'var(--shadow-lg)' }}>
+        <div style={isPhone
+          ? { position: 'static', marginTop: 8, pointerEvents: 'none', background: 'var(--text)', color: 'var(--shell)', borderRadius: 8, padding: '8px 10px', fontSize: 12, minWidth: 0, boxShadow: 'var(--shadow-lg)' }
+          : { position: 'absolute', top: 0, left: `${Math.min(72, Math.max(0, ((L + slot * hover) / W) * 100 - 12))}%`, pointerEvents: 'none', background: 'var(--text)', color: 'var(--shell)', borderRadius: 8, padding: '8px 10px', fontSize: 12, minWidth: 170, boxShadow: 'var(--shadow-lg)' }}>
           <div style={{ fontFamily: MONO, fontSize: 10, opacity: 0.75 }}>{shortDate(d.date).toUpperCase()}</div>
           <div style={{ fontWeight: 800, fontSize: 14 }}>{money(d.spend)}{d.spend > limit ? ' · over the line' : ''}</div>
           <div style={{ opacity: 0.8 }}>{d.calls} call{d.calls === 1 ? '' : 's'}</div>
