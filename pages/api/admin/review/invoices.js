@@ -91,7 +91,7 @@ export default async function handler(req, res) {
         return res.status(200).json(out);
       }
       const { data: invs, error } = await db.from('invoices')
-        .select('id, restaurant_id, supplier, number, date, amount, created_at, parse_status, invoice_items(id, quantity, unit, unit_cost, amount, ingredient_id)')
+        .select('id, restaurant_id, supplier, number, date, amount, created_at, scanned_by_name, invoice_items(id, quantity, unit, unit_cost, amount, ingredient_id)')
         .eq('reviewed', false).eq('is_sample', false)
         .order('created_at', { ascending: true }).limit(500);
       if (error) throw new Error(error.message);
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
           return {
             id: i.id, restaurant_id: i.restaurant_id, restaurant: names.get(i.restaurant_id) || 'Unknown',
             supplier: i.supplier, number: i.number, date: i.date, total: i.total_amount ?? i.amount,
-            lines: i.invoice_items?.length ?? 0, flagged, parse_status: i.parse_status, created_at: i.created_at,
+            scanned_by_name: i.scanned_by_name, lines: i.invoice_items?.length ?? 0, flagged, created_at: i.created_at,
           };
         }),
       });

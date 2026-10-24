@@ -115,7 +115,7 @@ function Invoices({ initialRestaurant, initialInvoice }) {
                 <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{shortDate(i.date || i.created_at)}</span>
               </span>
               <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, color: 'var(--muted)' }}>
-                {i.supplier || 'Unknown supplier'} · {i.restaurant}
+                {i.supplier || 'Unknown supplier'} · {i.restaurant}{i.scanned_by_name ? ` · scanned by ${i.scanned_by_name}` : ''}
               </span>
               {i.parse_status === 'failed' && <span style={{ display: 'block', marginTop: 4, color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>Could not be read</span>}
               <span style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
