@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { MONO, ErrorState, LoadingState, SearchIcon } from '../../components/client/ClientChrome';
 import { Chip, Pills, th, td, money, shortDate } from '../../components/admin/ui';
 
@@ -43,6 +44,7 @@ function diffText(price, unit, g) {
 const diffColor = (d) => (d == null ? 'var(--muted)' : d > 0.05 ? 'var(--red)' : d < -0.05 ? 'var(--green)' : 'var(--muted)');
 
 function LibraryPage() {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -127,28 +129,33 @@ function LibraryPage() {
       <style>{PAGE_CSS}</style>
       <PageHead kicker="DATA QUALITY" title="Ingredient library"
         sub={isGlobal ? 'The shared list the menu and invoice readers match against, and what restaurants really pay.' : 'One restaurant’s own ingredients, what they pay, and which global each one is linked to.'}>
-        {isGlobal && <button type="button" className="om-btn" onClick={() => setDialog('import')}>Import CSV</button>}
+        {isGlobal && <button type="button" className="om-btn" data-mobile-overflow onClick={() => setDialog('import')}>Import CSV</button>}
         {isGlobal && <button type="button" className="om-pri" onClick={() => setDialog('add')}>Add global ingredient</button>}
       </PageHead>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-        <div role="group" aria-label="Library view" style={{ display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 19, overflow: 'hidden' }}>
-          {[['global', 'Global ingredients'], ['restaurant', 'One restaurant']].map(([k, l]) => (
+        <div role="group" aria-label="Library view"
+          style={isPhone
+            ? { display: 'flex', width: '100%', gap: 4, padding: 4, borderRadius: 12, background: 'var(--panel)' }
+            : { display: 'inline-flex', border: '1px solid var(--line)', borderRadius: 19, overflow: 'hidden' }}>
+          {[['global', 'Global'], ['restaurant', 'One restaurant']].map(([k, l]) => (
             <button key={k} type="button" aria-pressed={scope === k} onClick={() => switchScope(k)}
-              style={{ minHeight: 36, padding: '0 16px', border: 0, cursor: 'pointer', font: "700 12.5px 'Manrope',sans-serif", background: scope === k ? 'var(--text)' : 'var(--shell)', color: scope === k ? 'var(--shell)' : 'var(--text)' }}>{l}</button>
+              style={isPhone
+                ? { flex: 1, minWidth: 0, minHeight: 40, padding: '0 8px', border: 0, borderRadius: 9, cursor: 'pointer', font: `${scope === k ? 800 : 600} 13px 'Manrope',sans-serif`, background: scope === k ? 'var(--shell)' : 'transparent', color: scope === k ? 'var(--text)' : 'var(--muted)' }
+                : { minHeight: 36, padding: '0 16px', border: 0, cursor: 'pointer', font: "700 12.5px 'Manrope',sans-serif", background: scope === k ? 'var(--text)' : 'var(--shell)', color: scope === k ? 'var(--shell)' : 'var(--text)' }}>{l}</button>
           ))}
         </div>
         {!isGlobal && (
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ display: isPhone ? 'flex' : 'inline-flex', width: isPhone ? '100%' : undefined, alignItems: 'center', gap: 8 }}>
             <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>RESTAURANT</span>
-            <select className="om-field" style={{ width: 240 }} value={restId} onChange={(e) => { setRestId(e.target.value); setSel(null); }}>
+            <select className="om-field" style={{ width: isPhone ? '100%' : 240, flex: isPhone ? 1 : undefined }} value={restId} onChange={(e) => { setRestId(e.target.value); setSel(null); }}>
               {data.restaurants.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.n})</option>)}
             </select>
           </label>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
         {heads.map(([n, label]) => (
           <div key={label} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '12px 16px' }}>
             <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: '-0.02em' }}>{n}</div>
@@ -171,7 +178,74 @@ function LibraryPage() {
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
-        <section aria-label="Ingredients" style={{ flex: '1 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
+        {isPhone && (
+          <section aria-label="Ingredients" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {isGlobal ? (
+              globalRows.length === 0
+                ? <div style={{ padding: 18, border: '1px solid var(--line)', borderRadius: 12, color: 'var(--muted)', textAlign: 'center', fontSize: 13 }}>No global ingredients match.</div>
+                : globalRows.map((g) => {
+                  const on = g.id === sel;
+                  return (
+                    <button key={g.id} type="button" aria-pressed={on} onClick={() => setSel(g.id)}
+                      style={{ width: '100%', minWidth: 0, padding: 12, border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12, background: on ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', textAlign: 'left', cursor: 'pointer', fontFamily: "'Manrope', sans-serif" }}>
+                      <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                        <b style={{ minWidth: 0, fontSize: 14 }}>{g.name}</b>
+                        <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>per {g.unit}</span>
+                      </span>
+                      <span style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--muted)' }}>
+                        {g.aliases.length ? `${g.aliases.length} alias${g.aliases.length === 1 ? '' : 'es'}` : 'No aliases'} · Shelf life {g.shelfLife} days
+                      </span>
+                      <span style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
+                        {[
+                          ['REFERENCE', g.reference_price == null ? 'None' : per(g.reference_price, g.reference_unit || g.unit)],
+                          ['AVG PAID', g.avgPaid ? per(g.avgPaid.price, g.avgPaid.unit) : '—'],
+                          ['RESTAURANTS', g.restaurants || 'None'],
+                        ].map(([label, value]) => (
+                          <span key={label} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, overflowWrap: 'anywhere', fontFamily: MONO, fontSize: 11.5 }}>
+                            <span style={{ color: 'var(--muted)', fontSize: 9, letterSpacing: '0.05em' }}>{label}</span>
+                            <span>{value}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  );
+                })
+            ) : (
+              restRows.length === 0
+                ? <div style={{ padding: 18, border: '1px solid var(--line)', borderRadius: 12, color: 'var(--muted)', textAlign: 'center', fontSize: 13 }}>No ingredients match.</div>
+                : restRows.map((x) => {
+                  const on = x.id === sel;
+                  const g = x.link ? globalsById.get(x.link.id) : null;
+                  const df = diffText(x.status === 'INVOICE' || x.status === 'APPROVED' ? x.price : null, x.unit, g);
+                  return (
+                    <button key={x.id} type="button" aria-pressed={on} onClick={() => setSel(x.id)}
+                      style={{ width: '100%', minWidth: 0, padding: 12, border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12, background: on ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', textAlign: 'left', cursor: 'pointer', fontFamily: "'Manrope', sans-serif" }}>
+                      <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <b style={{ minWidth: 0, fontSize: 14 }}>{x.name}</b>
+                        <Chip bg={STATUS[x.status][0]} fg={STATUS[x.status][1]}>{x.status}</Chip>
+                      </span>
+                      <span style={{ display: 'block', marginTop: 4, fontSize: 12, color: 'var(--muted)' }}>
+                        {x.dishes ? `Used in ${x.dishes} dish${x.dishes === 1 ? '' : 'es'}` : 'Not used in a dish'} · {x.link ? `Linked to ${x.link.name}` : 'Not linked yet'}
+                      </span>
+                      <span style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
+                        {[
+                          ['THEY PAY', per(x.price, x.unit)],
+                          ['VS REF', df ? df.text : '—'],
+                          ['LAST BOUGHT', x.last ? shortDate(x.last) : '—'],
+                        ].map(([label, value]) => (
+                          <span key={label} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, overflowWrap: 'anywhere', fontFamily: MONO, fontSize: 11.5 }}>
+                            <span style={{ color: 'var(--muted)', fontSize: 9, letterSpacing: '0.05em' }}>{label}</span>
+                            <span style={{ color: label === 'VS REF' ? diffColor(df?.d) : 'var(--text)' }}>{value}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </button>
+                  );
+                })
+            )}
+          </section>
+        )}
+        {!isPhone && <section aria-label="Ingredients" style={{ flex: '1 1 560px', minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
           {isGlobal ? (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 640 }}>
               <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}><tr>
@@ -236,7 +310,7 @@ function LibraryPage() {
               </tbody>
             </table>
           )}
-        </section>
+        </section>}
 
         <aside aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto' }}>
           {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
