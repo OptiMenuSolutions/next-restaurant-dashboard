@@ -18,8 +18,11 @@
 //   (waste_risk_snapshots.sql).
 
 import { createClient } from '@supabase/supabase-js';
-import { computeWasteRisk } from '../../../lib/computeWasteRisk';
-import { rebuildCurrentInventory, loadLearnedShelfLives } from '../../../lib/currentInventory';
+import {
+  rebuildCurrentInventory,
+  calculateInventory,
+  readAllInventoryRows,
+} from '../../../lib/currentInventory';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
 
@@ -50,67 +53,29 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   // date math in computeWasteRisk isn't sensitive to timezone edge cases.
   const asOfDate = new Date(`${snapshotDate}T12:00:00`);
 
-  const lookbackFrom = new Date(asOfDate);
-  lookbackFrom.setDate(lookbackFrom.getDate() - LOOKBACK_DAYS);
-  const fromDate = lookbackFrom.toISOString().split('T')[0];
-
-  const [{ data: rest }, { data: invoices }, { data: invoiceItems }, { data: posSales }, { data: menuItems }] =
-    await Promise.all([
-      supabase
-        .from('restaurants')
-        .select('freezes_beef,freezes_poultry,freezes_pork,freezes_seafood,freezes_bakery')
-        .eq('id', restaurantId)
-        .single(),
-      supabase
-        .from('invoices')
-        .select('id,date')
-        .eq('restaurant_id', restaurantId)
-        .gte('date', fromDate)
-        .lte('date', snapshotDate),
-      supabase
-        .from('invoice_items')
-        .select('*,invoices!inner(id,date,restaurant_id),ingredients(id,name,unit)')
-        .eq('invoices.restaurant_id', restaurantId)
-        .gte('invoices.date', fromDate)
-        .lte('invoices.date', snapshotDate),
-      supabase
-        .from('pos_sales')
-        .select('item_name,quantity_sold,refunds,sale_date')
-        .eq('restaurant_id', restaurantId)
-        .gte('sale_date', fromDate)
-        .lte('sale_date', snapshotDate),
-      supabase
-        .from('menu_items')
-        .select('id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated)))')
-        .eq('restaurant_id', restaurantId)
-        .limit(500),
-    ]);
-
-  // Same freezer settings the dashboard uses. Without them, frozen proteins
-  // got fresh shelf lives here, aged out early, and triggered false
-  // "did you throw this out?" prompts.
-  const freezeSettings = {
-    beef: !!rest?.freezes_beef,
-    poultry: !!rest?.freezes_poultry,
-    pork: !!rest?.freezes_pork,
-    seafood: !!rest?.freezes_seafood,
-    bakery: !!rest?.freezes_bakery,
-  };
-
-  // The snapshot decides when a waste prompt is due, so it must use the same
-  // learned shelf lives as current_inventory, or prompts would fire early.
-  const learnedShelfLives = await loadLearnedShelfLives(supabase, restaurantId);
-
-  const wasteRisk = computeWasteRisk(
-    invoiceItems || [],
-    invoices || [],
-    posSales || [],
-    menuItems || [],
-    asOfDate,
-    freezeSettings,
-    new Set(),
-    learnedShelfLives
+  const {
+    risks: wasteRisk,
+    counts,
+  } = await calculateInventory(
+    supabase,
+    restaurantId,
+    snapshotDate
   );
+
+  const latestCounts = new Map();
+
+  const orderedCounts = [...counts].sort((a, b) =>
+    a.effective_date.localeCompare(b.effective_date) ||
+    (a.count_timing === 'after_closing' ? 1 : 0) -
+      (b.count_timing === 'after_closing' ? 1 : 0) ||
+    (Date.parse(a.submitted_at) || 0) -
+      (Date.parse(b.submitted_at) || 0) ||
+    a.id.localeCompare(b.id)
+  );
+
+  for (const line of orderedCounts) {
+    latestCounts.set(line.ingredient_id, line.id);
+  }
 
   const rows = wasteRisk
     .filter((r) => r.invoiceItemId) // unique constraint depends on this
@@ -118,6 +83,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
       restaurant_id:   restaurantId,
       snapshot_date:   snapshotDate,
       invoice_item_id: r.invoiceItemId,
+      inventory_count_line_id: r.inventoryCountLineId || null,
       invoice_id:      r.invoiceId || null,
       ingredient_name: r.name,
       delivery_date:   r.deliveryDate,
@@ -147,16 +113,27 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   prevDate.setDate(prevDate.getDate() - 1);
   const prevDateStr = prevDate.toISOString().split('T')[0];
 
-  const { data: prevRows } = await supabase
-    .from('waste_risk_snapshots')
-    .select('invoice_item_id,ingredient_name,remaining_qty,unit_cost,days_left,delivery_date')
-    .eq('restaurant_id', restaurantId)
-    .eq('snapshot_date', prevDateStr);
+  const prevRows = await readAllInventoryRows(
+    () => supabase
+      .from('waste_risk_snapshots')
+      .select('invoice_item_id,ingredient_name,remaining_qty,unit_cost,days_left,delivery_date,inventory_count_line_id,invoice_items(ingredient_id)')
+      .eq('restaurant_id', restaurantId)
+      .eq('snapshot_date', prevDateStr)
+      .order('id', { ascending: true }),
+    'previous waste snapshots'
+  );
 
   if (prevRows?.length) {
     const todaySet = new Set(rows.map((r) => r.invoice_item_id));
 
     const newlyWasted = prevRows.filter((p) => {
+      const countId =
+        latestCounts.get(p.invoice_items?.ingredient_id) || null;
+
+      if (countId !== (p.inventory_count_line_id || null)) {
+        return false;
+      }
+
       if (todaySet.has(p.invoice_item_id)) return false; // still on the list
       if (p.days_left > 0) return false;                 // wasn't expired yet as of last sighting
       const value = Number(p.remaining_qty) * Number(p.unit_cost);

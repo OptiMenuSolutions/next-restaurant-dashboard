@@ -32,11 +32,13 @@ const buttonStyle = {
 export default function InventoryCountReview({
   sessionId,
   request,
+  onSubmitting,
 }) {
   const [date, setDate] = useState("");
   const [timing, setTiming] = useState("");
   const [review, setReview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
@@ -54,6 +56,53 @@ export default function InventoryCountReview({
       mountedRef.current = false;
     };
   }, []);
+
+  async function submitCount() {
+    if (busyRef.current || !review) return;
+
+    if (
+      !window.confirm(
+        'Submit these saved quantities? This will update live inventory and make this count read-only.'
+      )
+    ) {
+      return;
+    }
+
+    busyRef.current = true;
+    setBusy(true);
+    setSubmitting(true);
+    onSubmitting(true);
+    setError('');
+
+    try {
+      await request('/api/inventory/count-submit', {
+        method: 'POST',
+        body: JSON.stringify({
+          session_id: sessionId,
+          expected_revision: String(review.revision),
+          effective_date: review.effective_date,
+          count_timing: review.count_timing,
+        }),
+      });
+
+      window.location.assign(
+        `/client/inventory-count?count=${encodeURIComponent(sessionId)}`
+      );
+    } catch (err) {
+      setError(
+        err.message ||
+        'Could not submit. Retry if the connection was interrupted.'
+      );
+    } finally {
+      busyRef.current = false;
+
+      if (mountedRef.current) {
+        setBusy(false);
+        setSubmitting(false);
+        onSubmitting(false);
+      }
+    }
+  }
 
   async function loadReview() {
     if (busyRef.current || !date || !timing) return;
@@ -210,7 +259,11 @@ export default function InventoryCountReview({
           opacity: busy || !date || !timing ? 0.5 : 1,
         }}
       >
-        {busy ? "Loading review…" : "Review saved quantities"}
+        {submitting
+          ? "Submitting…"
+          : busy
+            ? "Loading review…"
+            : "Review saved quantities"}
       </button>
 
       {review && (
@@ -256,6 +309,19 @@ export default function InventoryCountReview({
               </li>
             ))}
           </ul>
+
+          <button
+            type="button"
+            onClick={submitCount}
+            disabled={busy}
+            style={{
+              ...buttonStyle,
+              marginTop: 16,
+              opacity: busy ? 0.5 : 1,
+            }}
+          >
+            {submitting ? "Submitting count…" : "Submit count"}
+          </button>
         </div>
       )}
     </section>

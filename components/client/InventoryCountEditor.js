@@ -75,6 +75,7 @@ export default function InventoryCountEditor({ sessionId }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
   const savingRef = useRef(false);
 
   const dirtyCount = ingredients.filter(
@@ -247,7 +248,15 @@ export default function InventoryCountEditor({ sessionId }) {
   ).length;
 
   return (
-    <div style={{ marginTop: 22, minWidth: 0 }}>
+    <fieldset
+      disabled={submitting}
+      style={{
+        margin: "22px 0 0",
+        padding: 0,
+        border: 0,
+        minWidth: 0,
+      }}
+    >
       <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
         Enter what is physically on hand, using the unit shown.
         Blank means not counted. Zero means none on hand.
@@ -255,7 +264,9 @@ export default function InventoryCountEditor({ sessionId }) {
       </p>
 
       <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-        These are draft counts. They do not change live inventory.
+        {editable
+          ? "Saved draft quantities do not change live inventory until you submit the count."
+          : "This count is read-only. Submitted counts are included in live inventory."}
       </p>
 
       {error && (
@@ -304,6 +315,7 @@ export default function InventoryCountEditor({ sessionId }) {
               key={`${sessionId}:${reload}`}
               sessionId={sessionId}
               request={request}
+              onSubmitting={setSubmitting}
             />
           )}
 
@@ -440,6 +452,6 @@ export default function InventoryCountEditor({ sessionId }) {
           )}
         </>
       )}
-    </div>
+    </fieldset>
   );
 }
