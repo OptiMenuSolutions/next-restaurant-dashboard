@@ -1049,6 +1049,11 @@ export default function PassDashboard({
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+              {waste.length === 0 && (
+                <div style={{ padding: "14px 0", fontSize: "13px", color: "var(--muted)", borderTop: "1px solid var(--line-soft)" }}>
+                  Nothing at risk right now.
+                </div>
+              )}
               {visibleWaste.map((w) => {
                 const col = TONE[w.tone] || TONE.ok;
                 return (

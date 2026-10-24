@@ -188,19 +188,25 @@ function qtyLabelOf(w) {
 }
 
 function toWaste(wasteRisk) {
-  // Most urgent first, so the list reads top-down as "use this first".
+  // Only stock approaching its estimated shelf-life date belongs here.
+  // Keep overdue stock visible and sort the most urgent deliveries first.
   return (wasteRisk || [])
-    .slice()
-    .sort((a, b) => (a.daysLeft ?? 7) - (b.daysLeft ?? 7))
+    .filter((w) => (
+      w.daysLeft != null &&
+      Number.isFinite(Number(w.daysLeft)) &&
+      Number(w.daysLeft) <= 7 &&
+      Number(w.remainingQty) > 0
+    ))
+    .sort((a, b) => Number(a.daysLeft) - Number(b.daysLeft))
     .map((w) => {
-      const dl = w.daysLeft != null ? w.daysLeft : 7;
+      const dl = Number(w.daysLeft);
       const qty = qtyLabelOf(w);
       return {
         name: w.name,
         qty: qty ? qty + " remaining" : "",
         left: dl <= 0 ? "Use today" : dl === 1 ? "1 day left" : dl + " days left",
         tone: dl <= 1 ? "today" : dl <= 2 ? "soon" : "ok",
-        pct: w.shelfLife ? Math.min(100, Math.round(((w.shelfLife - dl) / w.shelfLife) * 100)) : 50,
+        pct: w.shelfLife ? Math.max(0, Math.min(100, Math.round(((w.shelfLife - dl) / w.shelfLife) * 100))) : 50,
       };
     });
 }
