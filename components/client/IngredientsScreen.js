@@ -281,7 +281,7 @@ export default function IngredientsScreen({
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileBackBar label="Ingredients" onBack={clear} title="Ingredient" />
-        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+        <div key={`mobile-ingredient-${selected.id}`} className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "0 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
           <div
             data-tour="ing-detail"
             style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}
