@@ -116,6 +116,14 @@ function LibraryPage() {
 
   const isGlobal = scope === 'global';
   const switchScope = (s) => { setScope(s); setSel(null); setFilter('all'); setQ(''); };
+  const selectIngredient = (id) => {
+    setSel(id);
+    if (isPhone) {
+      window.requestAnimationFrame(() => {
+        document.getElementById('ingredient-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
   const selGlobal = isGlobal ? globalsById.get(sel) || null : null;
   const selItem = !isGlobal ? restItems.find((x) => x.id === sel) || null : null;
 
@@ -129,7 +137,7 @@ function LibraryPage() {
       <style>{PAGE_CSS}</style>
       <PageHead kicker="DATA QUALITY" title="Ingredient library"
         sub={isGlobal ? 'The shared list the menu and invoice readers match against, and what restaurants really pay.' : 'One restaurant’s own ingredients, what they pay, and which global each one is linked to.'}>
-        {isGlobal && <button type="button" className="om-btn" data-mobile-overflow onClick={() => setDialog('import')}>Import CSV</button>}
+        {isGlobal && <button type="button" className="om-btn" onClick={() => setDialog('import')}>Import CSV</button>}
         {isGlobal && <button type="button" className="om-pri" onClick={() => setDialog('add')}>Add global ingredient</button>}
       </PageHead>
 
@@ -186,7 +194,7 @@ function LibraryPage() {
                 : globalRows.map((g) => {
                   const on = g.id === sel;
                   return (
-                    <button key={g.id} type="button" aria-pressed={on} onClick={() => setSel(g.id)}
+                    <button key={g.id} type="button" aria-pressed={on} onClick={() => selectIngredient(g.id)}
                       style={{ width: '100%', minWidth: 0, padding: 12, border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12, background: on ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', textAlign: 'left', cursor: 'pointer', fontFamily: "'Manrope', sans-serif" }}>
                       <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                         <b style={{ minWidth: 0, fontSize: 14 }}>{g.name}</b>
@@ -218,7 +226,7 @@ function LibraryPage() {
                   const g = x.link ? globalsById.get(x.link.id) : null;
                   const df = diffText(x.status === 'INVOICE' || x.status === 'APPROVED' ? x.price : null, x.unit, g);
                   return (
-                    <button key={x.id} type="button" aria-pressed={on} onClick={() => setSel(x.id)}
+                    <button key={x.id} type="button" aria-pressed={on} onClick={() => selectIngredient(x.id)}
                       style={{ width: '100%', minWidth: 0, padding: 12, border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12, background: on ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', textAlign: 'left', cursor: 'pointer', fontFamily: "'Manrope', sans-serif" }}>
                       <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <b style={{ minWidth: 0, fontSize: 14 }}>{x.name}</b>
@@ -312,7 +320,7 @@ function LibraryPage() {
           )}
         </section>}
 
-        <aside aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto' }}>
+        <aside id="ingredient-details" aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto', scrollMarginTop: 64 }}>
           {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
           {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
           {!(selGlobal || selItem) && <div style={{ color: 'var(--muted)', fontSize: 13.5, padding: '30px 0', textAlign: 'center' }}>Click an ingredient to see its price history and details.</div>}
