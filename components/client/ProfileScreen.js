@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
 import { useIsMobile, useInApp, MobileBackBar, MobileNav } from "./ClientChrome";
 import ScannersCard from "./ScannersCard";
 import SupportConversation from "./SupportConversation";
+import SupportConversations from "./SupportConversations";
 
 /**
  * ProfileScreen — ported from OptiMenu Profile.dc.html. Presentational;
@@ -45,10 +46,46 @@ export default function ProfileScreen({
     : null;
 
   const [activeTab, setActiveTab] = useState(initialTab);
+  const supportColumnRef = useRef(null);
+  const supportContactRef = useRef(null);
+  const [supportPanelHeight, setSupportPanelHeight] = useState(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  useEffect(() => {
+    if (activeTab !== "support" || !threadId || isMobile) return;
+
+    const column = supportColumnRef.current;
+    const contact = supportContactRef.current;
+    if (!column || !contact) return;
+
+    const measure = () => {
+      const height = Math.round(
+        contact.getBoundingClientRect().bottom -
+        column.getBoundingClientRect().top
+      );
+      if (height > 0) {
+        setSupportPanelHeight((current) => current === height ? current : height);
+      }
+    };
+
+    measure();
+
+    const observer = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(measure)
+      : null;
+
+    observer?.observe(column);
+    observer?.observe(contact);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [activeTab, threadId, isMobile]);
 
   function closeSupportConversation() {
     const { thread, ...query } = router.query;
@@ -477,7 +514,7 @@ export default function ProfileScreen({
 
           {activeTab === "support" && (
             <div style={{ display: !isMobile && threadId ? "grid" : "block", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.1fr)", gap: 20, alignItems: "start" }}>
-              <div style={{ minWidth: 0 }}>
+              <div ref={supportColumnRef} style={{ minWidth: 0 }}>
               <div onClick={onRestartTour} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", ...card, cursor: "pointer" }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>Restart tour</div>
                 <div style={{ color: "var(--faint)" }}>→</div>
@@ -495,10 +532,21 @@ export default function ProfileScreen({
                   >
                     {feedbackSent ? "✓ Sent — thank you!" : "Send feedback"}
                   </button>
+                  <SupportConversations
+                    selectedId={threadId}
+                    onOpen={(id) => router.push(
+                      {
+                        pathname: "/client/profile",
+                        query: { ...router.query, tab: "support", thread: id },
+                      },
+                      undefined,
+                      { shallow: true, scroll: false }
+                    )}
+                  />
                 </div>
               </div>
 
-              <div style={card}>
+              <div ref={supportContactRef} style={card}>
                 <div style={cardHead}>Contact</div>
                 <a href="mailto:support@opti-menu.com" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", borderBottom: "1px solid var(--line-soft)", color: "var(--text)" }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>Email support</div>
@@ -528,15 +576,15 @@ export default function ProfileScreen({
                     aria-modal={isMobile ? true : undefined}
                     aria-label="Support conversation"
                     style={{
-                      position: isMobile ? "fixed" : "sticky",
-                      top: isMobile ? undefined : 16,
+                      position: isMobile ? "fixed" : "relative",
+                      top: undefined,
                       left: isMobile ? 0 : undefined,
                       right: isMobile ? 0 : undefined,
                       bottom: isMobile ? 0 : undefined,
                       zIndex: isMobile ? 401 : undefined,
                       width: "100%",
                       minWidth: 0,
-                      height: isMobile ? "82dvh" : "min(680px, calc(100dvh - 96px))",
+                      height: isMobile ? "82dvh" : (supportPanelHeight || 480),
                       minHeight: 0,
                       border: "1px solid var(--line)",
                       borderRadius: isMobile ? "20px 20px 0 0" : 14,
