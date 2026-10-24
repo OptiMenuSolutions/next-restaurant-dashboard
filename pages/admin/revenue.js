@@ -156,7 +156,7 @@ function RevenuePage() {
               {data.rows.length === 0 && <tr><td colSpan={7} style={{ ...td, color: 'var(--muted)' }}>No restaurants yet.</td></tr>}
               {data.rows.map((r) => (
                 <tr key={r.id} className="om-prow" tabIndex={0} onClick={() => router.push(`/admin/billing/${r.id}`)} onKeyDown={(e) => { if (e.key === 'Enter') router.push(`/admin/billing/${r.id}`); }} style={{ cursor: 'pointer' }}>
-                  <td style={{ ...td, fontWeight: 700 }}>{r.name}</td>
+                  <td style={{ ...td, fontWeight: 700 }}>{r.name || 'Unnamed restaurant'}</td>
                   <td style={{ ...td, fontSize: 12.5 }}>{r.plan}</td>
                   <td style={td}><Chip bg={ST[r.state][0]} fg={ST[r.state][1]}>{r.state}</Chip>{r.ends && <span style={{ display: 'block', fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>Ends {shortDate(r.ends)}</span>}</td>
                   <td style={{ ...td, fontSize: 12.5 }}>{r.next ? shortDate(r.next) : '—'}</td>
@@ -164,7 +164,7 @@ function RevenuePage() {
                   <td style={{ ...td, textAlign: 'right', fontFamily: MONO, color: r.profit < 0 ? 'var(--red)' : 'var(--green)', position: 'relative' }}>
                     {money(r.profit)}
                     <span className="om-ptip" role="tooltip">
-                      <b>{r.name.toUpperCase()} · {mName.toUpperCase()}</b>
+                      <b>{String(r.name || 'Unnamed restaurant').toUpperCase()} · {mName.toUpperCase()}</b>
                       {[['Pays you', r.pays], ['AI', -r.ai], ['Hosting share', -r.host], ['Stripe fee', -r.fee], ['One-off costs', -r.other]].map(([k, v]) => (
                         <span key={k} className="om-pline"><span>{k}</span><span>{money(v)}</span></span>
                       ))}
@@ -183,7 +183,7 @@ function RevenuePage() {
             {data.rows.map((r) => (
               <div key={r.id} style={{ minWidth: 0, padding: '12px 0', borderBottom: '1px solid var(--line-soft)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <Link href={`/admin/billing/${r.id}`} style={{ minWidth: 0, color: 'var(--text)', fontWeight: 800, overflowWrap: 'anywhere' }}>{r.name}</Link>
+                  <Link href={`/admin/billing/${r.id}`} style={{ minWidth: 0, color: 'var(--text)', fontWeight: 800, overflowWrap: 'anywhere' }}>{r.name || 'Unnamed restaurant'}</Link>
                   <strong style={{ flexShrink: 0, fontFamily: MONO, color: r.profit < 0 ? 'var(--red)' : 'var(--green)' }}>{money(r.profit)}</strong>
                 </div>
                 <div style={{ marginTop: 4, fontSize: 11.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
