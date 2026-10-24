@@ -134,6 +134,7 @@ export default function InvoicesPage() {
   const tour = useTour("invoices");
   const router = useRouter();
   const fileInput = useRef(null);
+  const invoiceReturnRef = useRef(null);
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -562,6 +563,47 @@ export default function InvoicesPage() {
     clearCachedPages(AFFECTED_BY_INVOICES);
   }
 
+  function openInvoice(invoiceId) {
+    if (!router.isReady || invoiceId == null) return;
+    const id = String(invoiceId);
+    if (router.query.invoice === id) return;
+
+    invoiceReturnRef.current = router.query.invoice ? null : id;
+
+    router.push(
+      {
+        pathname: "/client/invoices",
+        query: { ...router.query, invoice: id },
+      },
+      undefined,
+      { shallow: true, scroll: false }
+    ).catch((err) => {
+      if (!err?.cancelled) {
+        setUploadError("Could not open that invoice. Please try again.");
+      }
+    });
+  }
+
+  function closeInvoice() {
+    if (!router.isReady || !router.query.invoice) return;
+
+    if (invoiceReturnRef.current === router.query.invoice) {
+      router.back();
+      return;
+    }
+
+    const { invoice, ...query } = router.query;
+    router.replace(
+      { pathname: "/client/invoices", query },
+      undefined,
+      { shallow: true, scroll: false }
+    ).catch((err) => {
+      if (!err?.cancelled) {
+        setUploadError("Could not return to the invoice list. Please try again.");
+      }
+    });
+  }
+
   return (
     <>
       <Head>
@@ -628,6 +670,8 @@ export default function InvoicesPage() {
         onRetry={() => router.reload()}
         onUpload={() => fileInput.current && fileInput.current.click()}
         onSelect={handleSelect}
+        onInvoiceChange={openInvoice}
+        onCloseInvoice={closeInvoice}
         ingredientOptions={ingredientOptions}
         onLinkLine={handleLinkLine}
         onMarkReviewed={tourMode ? null : handleMarkReviewed}

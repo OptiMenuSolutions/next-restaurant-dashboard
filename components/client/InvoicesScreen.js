@@ -129,6 +129,8 @@ export default function InvoicesScreen({
   onOpen,
   onFlag,
   onSelect,
+  onInvoiceChange,
+  onCloseInvoice,
   openInvoiceId = null,
   ingredientOptions = [],
   onLinkLine,
@@ -158,10 +160,14 @@ export default function InvoicesScreen({
 
   // Guided tour on phones: show the view a step needs (see lib/useTour.js).
   useEffect(() => {
-    const onView = (e) => { if (e.detail?.view === "list") setMobileDetail(false); };
+    const onView = (e) => {
+      if (e.detail?.view !== "list") return;
+      if (onCloseInvoice) onCloseInvoice();
+      else setMobileDetail(false);
+    };
     window.addEventListener("optimenu-tour-view", onView);
     return () => window.removeEventListener("optimenu-tour-view", onView);
-  }, []);
+  }, [onCloseInvoice]);
 
   const list = invoicesProp || DEMO_INVOICES;
   const rows = useMemo(
@@ -169,7 +175,9 @@ export default function InvoicesScreen({
     [list]
   );
 
-  const selected = rows.find((v) => v.id === selectedId) || rows[0];
+  const selected = openInvoiceId
+    ? rows.find((v) => String(v.id) === String(openInvoiceId))
+    : rows.find((v) => v.id === selectedId) || rows[0];
   const now = new Date();
   const monthSpend = rows
     .filter((v) => {
@@ -195,21 +203,32 @@ export default function InvoicesScreen({
   }, {});
 
   const pick = (v) => {
+    if (onInvoiceChange) {
+      onInvoiceChange(v.id);
+      return;
+    }
     setSelectedId(v.id);
     if (onSelect) onSelect(v);
   };
 
-  // Opened from a link elsewhere (/client/invoices?invoice=ID): select that
-  // invoice once the list has it, and on phones show its receipt. Runs once per ID.
+  // Follow URL changes from selection, browser Back/Forward and saved links.
   const [openedFromLink, setOpenedFromLink] = useState(null);
   useEffect(() => {
-    if (!openInvoiceId || openedFromLink === openInvoiceId) return;
+    if (!openInvoiceId) {
+      setOpenedFromLink(null);
+      setMobileDetail(false);
+      return;
+    }
+    if (openedFromLink === openInvoiceId) return;
+
     const target = rows.find((v) => String(v.id) === String(openInvoiceId));
     if (!target) return;
+
     setOpenedFromLink(openInvoiceId);
-    pick(target);
+    setSelectedId(target.id);
+    if (onSelect) onSelect(target);
     setMobileDetail(true);
-  }, [openInvoiceId, rows, openedFromLink]);
+  }, [openInvoiceId, rows, openedFromLink, onSelect]);
 
   const chrome = (
     <Header
@@ -237,6 +256,24 @@ export default function InvoicesScreen({
   if (loading) return page(<LoadingState label="Reading your invoices…" mobile={isMobile} />);
   if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
 
+  if (openInvoiceId && !selected) {
+    return page(
+      <EmptyState
+        kicker="Invoice unavailable"
+        title="We could not find that invoice"
+        body="It is not in your available invoices. Return to the list to choose another."
+      >
+        <button
+          type="button"
+          onClick={onCloseInvoice}
+          style={{ border: "1px solid var(--line)", borderRadius: 22, padding: "10px 18px", minHeight: 44, background: "var(--shell)", color: "var(--text)", fontFamily: SANS, fontWeight: 700, cursor: "pointer" }}
+        >
+          Back to invoices
+        </button>
+      </EmptyState>
+    );
+  }
+
   if (!rows.length) {
     return page(
         <EmptyState
@@ -252,10 +289,17 @@ export default function InvoicesScreen({
     );
   }
 
-  if (isMobile && mobileDetail && selected) {
+  if (isMobile && (onInvoiceChange ? !!openInvoiceId : mobileDetail) && selected) {
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
-        <MobileBackBar label="Invoices" onBack={() => setMobileDetail(false)} title={selected.number || "Invoice"} />
+        <MobileBackBar
+          label="Invoices"
+          onBack={() => {
+            if (onCloseInvoice) onCloseInvoice();
+            else setMobileDetail(false);
+          }}
+          title={selected.number || "Invoice"}
+        />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
           <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} />
         </div>
