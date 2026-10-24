@@ -129,6 +129,8 @@ export default function IngredientsScreen({
   error = null,
   onRetry,
   onOpenIngredient,
+  openIngredientId = null,
+  onCloseIngredient,
   onOpenMenuItem,
   onOpenInvoice,
   onUploadInvoice,
@@ -160,12 +162,31 @@ export default function IngredientsScreen({
   useEffect(() => {
     const onView = (e) => {
       const v = e.detail?.view;
-      if (v === "list") { setFilter("All"); setSelectedId(null); setMenuOpen(false); setInvoicesOpen(false); }
-      if (v === "detail") { setFilter("All"); setSelectedId((id) => id ?? firstIdRef.current); }
+
+      if (v === "list") {
+        setFilter("All");
+        setSelectedId(null);
+        setMenuOpen(false);
+        setInvoicesOpen(false);
+        if (onCloseIngredient) onCloseIngredient();
+      }
+
+      if (v === "detail") {
+        setFilter("All");
+
+        if (onOpenIngredient) {
+          if (!openIngredientId && firstIdRef.current != null) {
+            onOpenIngredient({ id: firstIdRef.current });
+          }
+        } else {
+          setSelectedId((id) => id ?? firstIdRef.current);
+        }
+      }
     };
+
     window.addEventListener("optimenu-tour-view", onView);
     return () => window.removeEventListener("optimenu-tour-view", onView);
-  }, []);
+  }, [onOpenIngredient, onCloseIngredient, openIngredientId]);
 
   const risers = all.filter((g) => g.pct != null && g.pct > 1.5);
   const fallers = all.filter((g) => g.pct != null && g.pct < -1.5);
@@ -177,13 +198,31 @@ export default function IngredientsScreen({
   const awaitingCount = all.filter((g) => g.awaiting).length;
 
   const shown = filter === "Use first" ? useFirst : filter === "Risers" ? risers : filter === "Needs price" ? unpriced : all;
-  // On a computer the card always shows something: the picked row, or the
-  // first one in the list. On a phone nothing opens until a row is tapped.
-  const picked = shown.find((g) => g.id === selectedId) || null;
+  // URL selection is independent of the filter so saved links and browser
+  // Back/Forward always open the requested ingredient.
+  const picked = onCloseIngredient
+    ? all.find((g) => String(g.id) === String(openIngredientId)) || null
+    : shown.find((g) => g.id === selectedId) || null;
   const selected = picked || (isMobile ? null : shown[0] || null);
 
-  const select = (g) => { setSelectedId(g.id); setMenuOpen(false); setInvoicesOpen(false); if (onOpenIngredient) onOpenIngredient(g); };
-  const clear = () => { setSelectedId(null); setMenuOpen(false); setInvoicesOpen(false); };
+  const select = (g) => {
+    setSelectedId(g.id);
+    setMenuOpen(false);
+    setInvoicesOpen(false);
+    if (onOpenIngredient) onOpenIngredient(g);
+  };
+
+  const clear = () => {
+    setSelectedId(null);
+    setMenuOpen(false);
+    setInvoicesOpen(false);
+    if (onCloseIngredient) onCloseIngredient();
+  };
+
+  useEffect(() => {
+    setMenuOpen(false);
+    setInvoicesOpen(false);
+  }, [openIngredientId]);
 
   const chrome = (
     <Header active="ingredients" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
@@ -199,6 +238,24 @@ export default function IngredientsScreen({
 
   if (loading) return page(<LoadingState label="Pricing your ingredients…" mobile={isMobile} />);
   if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
+
+  if (openIngredientId && !picked) {
+    return page(
+      <EmptyState
+        kicker="Ingredient unavailable"
+        title="We could not find that ingredient"
+        body="It is not in your available ingredients. Return to the list to choose another."
+      >
+        <button
+          type="button"
+          onClick={clear}
+          style={{ border: "1px solid var(--line)", borderRadius: 22, padding: "10px 18px", minHeight: 44, background: "var(--shell)", color: "var(--text)", fontFamily: SANS, fontWeight: 700, cursor: "pointer" }}
+        >
+          Back to ingredients
+        </button>
+      </EmptyState>
+    );
+  }
 
   if (!all.length) {
     return page(

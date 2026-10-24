@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -195,6 +195,8 @@ const NavLink = ({ href, style, className, children }) => (
 export default function IngredientsPage() {
   const tour = useTour("ingredients");
   const router = useRouter();
+  const ingredientReturnRef = useRef(null);
+  const [navigationError, setNavigationError] = useState("");
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -391,6 +393,49 @@ export default function IngredientsPage() {
 
   const initials = (userName || "Chef").split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
+  function openIngredient(ingredient) {
+    if (!router.isReady || ingredient?.id == null) return;
+    const id = String(ingredient.id);
+    if (router.query.open === id) return;
+
+    setNavigationError("");
+    ingredientReturnRef.current = router.query.open ? null : id;
+
+    router.push(
+      {
+        pathname: "/client/ingredients",
+        query: { ...router.query, open: id },
+      },
+      undefined,
+      { shallow: true, scroll: false }
+    ).catch((err) => {
+      if (!err?.cancelled) {
+        setNavigationError("Could not open that ingredient. Please try again.");
+      }
+    });
+  }
+
+  function closeIngredient() {
+    if (!router.isReady || !router.query.open) return;
+    setNavigationError("");
+
+    if (ingredientReturnRef.current === router.query.open) {
+      router.back();
+      return;
+    }
+
+    const { open, ...query } = router.query;
+    router.replace(
+      { pathname: "/client/ingredients", query },
+      undefined,
+      { shallow: true, scroll: false }
+    ).catch((err) => {
+      if (!err?.cancelled) {
+        setNavigationError("Could not return to the ingredient list. Please try again.");
+      }
+    });
+  }
+
   return (
     <>
       <Head>
@@ -400,8 +445,11 @@ export default function IngredientsPage() {
       <IngredientsScreen
         ingredients={ingredients}
         loading={loading}
-        error={error}
+        error={error || navigationError}
         onRetry={() => router.reload()}
+        openIngredientId={typeof router.query.open === "string" ? router.query.open : null}
+        onOpenIngredient={openIngredient}
+        onCloseIngredient={closeIngredient}
         summary={summary}
         onOpenMenuItem={(m) => m.id && router.push(`/client/menu-items?item=${m.id}`)}
         onOpenInvoice={(p) => p.invoiceId && router.push(`/client/invoices?invoice=${p.invoiceId}`)}
