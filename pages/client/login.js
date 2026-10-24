@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -31,34 +31,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [reactivatePrompt, setReactivatePrompt] = useState(null); // { onConfirm, onCancel } | null
 
-  useEffect(() => {
-    let active = true;
-
-    async function restoreAdminSession() {
-      try {
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-        if (!active || sessionError || !session?.user) return;
-
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", session.user.id)
-          .maybeSingle();
-
-        if (active && !profileError && profile?.role === "admin") {
-          router.replace("/admin");
-        }
-      } catch (error) {
-        console.error("[login] Could not restore admin session:", error);
-      }
-    }
-
-    restoreAdminSession();
-
-    return () => {
-      active = false;
-    };
-  }, [router]);
+  // Website login requires submitting the sign-in form.
+  // Automatic session restoration will be handled by the native app.
 
   // Promise-based stand-in for what window.confirm() used to do
   // synchronously — same pattern as onboarding.js's askDuplicateConfirm,
