@@ -166,11 +166,30 @@ function PosPage() {
         {data.runs.map((r) => {
           const [label, bg, fg] = RUN[r.status] || RUN.ok;
           return (
-            <div key={r.id} style={{ display: 'flex', gap: 12, alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }}>
-              <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)', width: 110, flexShrink: 0 }}>{shortDate(r.started_at)}, {clock(r.started_at)}</span>
-              <b style={{ width: 120, flexShrink: 0 }}>{r.name}</b>
-              <span style={{ flex: 1, minWidth: 0 }}>{r.summary}{r.details.map((d) => <span key={d} style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{d}</span>)}</span>
-              <Chip bg={bg} fg={fg}>{label}</Chip>
+            <div
+              key={r.id}
+              style={isPhone
+                ? { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '5px 10px', padding: '12px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }
+                : { display: 'flex', gap: 12, alignItems: 'baseline', padding: '8px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }}
+            >
+              {isPhone ? (
+                <>
+                  <span style={{ minWidth: 0, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>{shortDate(r.started_at)}, {clock(r.started_at)}</span>
+                  <Chip bg={bg} fg={fg}>{label}</Chip>
+                  <b style={{ gridColumn: '1 / -1', overflowWrap: 'anywhere' }}>{r.name}</b>
+                  <span style={{ gridColumn: '1 / -1', minWidth: 0, overflowWrap: 'anywhere' }}>
+                    {r.summary}
+                    {r.details.map((d) => <span key={d} style={{ display: 'block', marginTop: 3, fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{d}</span>)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)', width: 110, flexShrink: 0 }}>{shortDate(r.started_at)}, {clock(r.started_at)}</span>
+                  <b style={{ width: 120, flexShrink: 0 }}>{r.name}</b>
+                  <span style={{ flex: 1, minWidth: 0 }}>{r.summary}{r.details.map((d) => <span key={d} style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{d}</span>)}</span>
+                  <Chip bg={bg} fg={fg}>{label}</Chip>
+                </>
+              )}
             </div>
           );
         })}
