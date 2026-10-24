@@ -113,13 +113,17 @@ function FinancesPage() {
   if (isPhone) {
     return (
       <>
-        <PageHead kicker="BUSINESS · OPTIMENU SOLUTIONS LLC" title="Expenses & deadlines">
-          <div role="group" aria-label="Choose year" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button type="button" className="om-btn" aria-label="Previous year" disabled={Number(data.year) <= Number(data.today.slice(0, 4)) - 3} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) - 1)); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>‹</button>
-            <strong style={{ minWidth: 54, textAlign: 'center' }}>{data.year}</strong>
-            <button type="button" className="om-btn" aria-label="Next year" disabled={Number(data.year) >= Number(data.today.slice(0, 4))} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) + 1)); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>›</button>
+        <div>
+          <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.16em', color: 'var(--muted)' }}>BUSINESS · OPTIMENU SOLUTIONS LLC</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginTop: 6 }}>
+            <h1 style={{ minWidth: 0, margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: '-0.04em', whiteSpace: 'nowrap' }}>Expenses &amp; deadlines</h1>
+            <div role="group" aria-label="Choose year" style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+              <button type="button" className="om-btn" aria-label="Previous year" disabled={Number(data.year) <= Number(data.today.slice(0, 4)) - 3} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) - 1)); }} style={{ width: 34, minHeight: 36, padding: 0, justifyContent: 'center' }}>‹</button>
+              <strong style={{ minWidth: 42, textAlign: 'center', fontSize: 13 }}>{data.year}</strong>
+              <button type="button" className="om-btn" aria-label="Next year" disabled={Number(data.year) >= Number(data.today.slice(0, 4))} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) + 1)); }} style={{ width: 34, minHeight: 36, padding: 0, justifyContent: 'center' }}>›</button>
+            </div>
           </div>
-        </PageHead>
+        </div>
 
         {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
         {data.stripeError && <div style={{ background: 'var(--red-tint)', color: 'var(--red)', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>Stripe did not answer: {data.stripeError}. Plans and money below may be missing.</div>}
@@ -371,6 +375,9 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
   const [uploading, setUploading] = useState(false);
   const [askDel, setAskDel] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+  const phoneFieldStyle = isPhone
+    ? { width: '100%', minWidth: 0, maxWidth: '100%', height: 44, minHeight: 44, boxSizing: 'border-box' }
+    : undefined;
 
   useEffect(() => {
     if (!e.pickReceipt) return undefined;
@@ -403,23 +410,36 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
 
   return (
     <Dialog title={e.id ? 'Edit expense' : e.again ? `Log ${e.vendor} again` : 'Add an expense'} onClose={onClose} width={520}>
-      <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : undefined, gap: 10 }}>
-        <Field label="Date"><input className="om-field" type="date" value={f.spent_on} onChange={(x) => set('spent_on', x.target.value)} /></Field>
-        <Field label="Amount"><input className="om-field" inputMode="decimal" placeholder="$0.00" value={f.amount} onChange={(x) => set('amount', x.target.value)} /></Field>
+      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1.1fr) minmax(0, 0.9fr)' : undefined, gap: 10 }}>
+        <Field label="Date"><input className="om-field" type="date" value={f.spent_on} onChange={(x) => set('spent_on', x.target.value)} style={isPhone ? { ...phoneFieldStyle, padding: '0 6px' } : undefined} /></Field>
+        <Field label="Amount"><input className="om-field" inputMode="decimal" placeholder="$0.00" value={f.amount} onChange={(x) => set('amount', x.target.value)} style={phoneFieldStyle} /></Field>
       </div>
-      <Field label="Vendor"><input className="om-field" autoFocus={!e.id} value={f.vendor} onChange={(x) => set('vendor', x.target.value)} placeholder="e.g. Vercel" /></Field>
+      <Field label="Vendor"><input className="om-field" autoFocus={!e.id} value={f.vendor} onChange={(x) => set('vendor', x.target.value)} placeholder="e.g. Vercel" style={phoneFieldStyle} /></Field>
       <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : undefined, gap: 10 }}>
         <Field label="Category">
-          <input className="om-field" list="om-cats" value={f.category} onChange={(x) => set('category', x.target.value)} />
+          <input className="om-field" list="om-cats" value={f.category} onChange={(x) => set('category', x.target.value)} style={phoneFieldStyle} />
           <datalist id="om-cats">{CATS.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
+        {!isPhone && (
+          <Field label="Repeats">
+            <select className="om-field" value={f.repeats} onChange={(x) => set('repeats', x.target.value)}>
+              {Object.entries(REP).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+      {isPhone && (
         <Field label="Repeats">
-          <select className="om-field" value={f.repeats} onChange={(x) => set('repeats', x.target.value)}>
+          <select className="om-field" value={f.repeats} onChange={(x) => set('repeats', x.target.value)} style={phoneFieldStyle}>
             {Object.entries(REP).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </Field>
-      </div>
-      <Field label="Note (optional)"><input className="om-field" value={f.note} onChange={(x) => set('note', x.target.value)} /></Field>
+      )}
+      <Field label="Note (optional)">
+        {isPhone
+          ? <textarea className="om-field" rows={3} value={f.note} onChange={(x) => set('note', x.target.value)} style={{ width: '100%', minHeight: 84, height: 84, boxSizing: 'border-box', padding: '8px 10px', resize: 'vertical' }} />
+          : <input className="om-field" value={f.note} onChange={(x) => set('note', x.target.value)} />}
+      </Field>
       <Field label={e.receipt_path ? 'Receipt (attached; pick a file to replace it)' : 'Take photo or choose a receipt'}>
         <input ref={receiptInput} type="file" accept="image/*,application/pdf" capture={isPhone ? 'environment' : undefined} onChange={(x) => setFile(x.target.files?.[0] || null)} />
       </Field>
