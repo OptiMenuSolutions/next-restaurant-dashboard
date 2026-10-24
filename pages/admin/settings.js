@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, shortDate } from '../../components/admin/ui';
 
@@ -33,6 +34,7 @@ const when = (ts) => `${shortDate(ts)} · ${new Intl.DateTimeFormat('en-US', { t
 const NOISE = /^(GET|POST|PUT|PATCH|DELETE) \/api\//;
 
 function SettingsPage() {
+  const isPhone = useIsPhone();
   const router = useRouter();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
@@ -46,7 +48,9 @@ function SettingsPage() {
   const [q, setQ] = useState('');
   const [hideNoise, setHideNoise] = useState(true);
 
-  useEffect(() => { if (router.query.tab && TABS.includes(router.query.tab)) setTab(router.query.tab); }, [router.query.tab]);
+  useEffect(() => {
+    setTab(TABS.includes(router.query.tab) ? router.query.tab : TABS[0]);
+  }, [router.query.tab]);
 
   const load = useCallback(async () => {
     setError('');
@@ -93,7 +97,24 @@ function SettingsPage() {
   return (
     <>
       <PageHead kicker="BUSINESS" title="Settings" />
-      <Pills label="Settings section" value={tab} onChange={(t) => { setTab(t); setFlash(''); }} options={TABS.map((t) => ({ key: t, label: t }))} />
+      {isPhone ? (
+        <select
+          className="om-field"
+          aria-label="Settings section"
+          value={tab}
+          onChange={(e) => {
+            const nextTab = e.target.value;
+            setTab(nextTab);
+            setFlash('');
+            router.push({ pathname: router.pathname, query: { ...router.query, tab: nextTab } }, undefined, { shallow: true, scroll: false });
+          }}
+          style={{ width: '100%', minHeight: 44, minWidth: 0, boxSizing: 'border-box' }}
+        >
+          {TABS.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      ) : (
+        <Pills label="Settings section" value={tab} onChange={(t) => { setTab(t); setFlash(''); }} options={TABS.map((t) => ({ key: t, label: t }))} />
+      )}
       {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
       {tab === 'Plans & limits' && (
@@ -103,17 +124,17 @@ function SettingsPage() {
             <div key={group} style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.14em', color: 'var(--muted)', margin: '10px 0 4px' }}>{group}</div>
               {list.map(([key, label, kind, help]) => (
-                <label key={key} style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
-                  <span style={{ flex: '1 1 260px' }}>
+                <label key={key} style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', flexWrap: 'wrap', gap: isPhone ? 8 : '6px 16px', alignItems: isPhone ? 'stretch' : 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
+                  <span style={{ flex: isPhone ? undefined : '1 1 260px', minWidth: isPhone ? 0 : undefined }}>
                     <b style={{ fontSize: 13.5 }}>{label}</b>
                     <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{help}</span>
                   </span>
                   {kind === 'text'
-                    ? <textarea className="om-field" rows={3} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ flex: '0 1 320px', padding: 8, resize: 'vertical' }} />
+                    ? <textarea className="om-field" rows={3} value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ flex: isPhone ? undefined : '0 1 320px', width: isPhone ? '100%' : undefined, minWidth: isPhone ? 0 : undefined, boxSizing: isPhone ? 'border-box' : undefined, padding: 8, resize: 'vertical' }} />
                     : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, width: isPhone ? '100%' : undefined, minWidth: isPhone ? 0 : undefined }}>
                         {kind === '$' && <span style={{ fontFamily: MONO, color: 'var(--muted)' }}>$</span>}
-                        <input className="om-field" inputMode="decimal" value={form[key]} placeholder={settingHint(data, key)} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ width: 110, fontFamily: MONO }} />
+                        <input className="om-field" inputMode="decimal" value={form[key]} placeholder={settingHint(data, key)} onChange={(e) => setForm({ ...form, [key]: e.target.value })} style={{ width: isPhone ? '100%' : 110, minWidth: isPhone ? 0 : undefined, minHeight: isPhone ? 44 : undefined, boxSizing: isPhone ? 'border-box' : undefined, fontFamily: MONO }} />
                       </span>
                     )}
                 </label>
@@ -130,8 +151,8 @@ function SettingsPage() {
           {data.flagsError && <div style={{ fontSize: 13, color: 'var(--red)' }}>{data.flagsError}</div>}
           {data.flags.length === 0 && !data.flagsError && <div style={{ fontSize: 13, color: 'var(--muted)' }}>No switches yet.</div>}
           {data.flags.map((f) => (
-            <div key={f.id} style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
-              <span style={{ flex: 1, minWidth: 0 }}>
+            <div key={f.id} style={{ display: 'flex', flexWrap: isPhone ? 'wrap' : undefined, gap: isPhone ? 10 : 14, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
+              <span style={{ flex: isPhone ? '1 1 100%' : 1, minWidth: 0, overflowWrap: isPhone ? 'anywhere' : undefined }}>
                 <b style={{ fontSize: 13.5 }}>{f.label}</b> <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{f.key}</span>
                 {f.description && <span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)' }}>{f.description}</span>}
               </span>
@@ -168,7 +189,7 @@ function SettingsPage() {
           {data.admins.map((a) => (
             <div key={a.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
               <span style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-deep)', color: 'var(--on-accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>{String(a.full_name || a.email || 'A')[0].toUpperCase()}</span>
-              <span style={{ flex: 1 }}><b>{a.full_name || a.email}</b><span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)' }}>{a.email}</span></span>
+              <span style={{ flex: 1, minWidth: isPhone ? 0 : undefined, overflowWrap: isPhone ? 'anywhere' : undefined }}><b>{a.full_name || a.email}</b><span style={{ display: 'block', fontSize: 12.5, color: 'var(--muted)' }}>{a.email}</span></span>
               <Chip bg="var(--accent-tint)" fg="var(--accent-deep)">ADMIN</Chip>
             </div>
           ))}
@@ -185,12 +206,12 @@ function SettingsPage() {
           </div>
           {audit.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing matches.</div>}
           {audit.slice(0, 200).map((a) => (
-            <div key={a.id} style={{ display: 'flex', gap: 14, padding: '8px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }}>
-              <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)', width: 130, flexShrink: 0 }}>{when(a.created_at)}</span>
+            <div key={a.id} style={{ display: 'flex', flexDirection: isPhone ? 'column' : 'row', gap: isPhone ? 5 : 14, padding: isPhone ? '12px 0' : '8px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }}>
+              <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)', width: isPhone ? undefined : 130, flexShrink: 0 }}>{when(a.created_at)}</span>
               <span style={{ flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
                 {a.action}{a.target_restaurant_name ? <span style={{ color: 'var(--muted)' }}> · {a.target_restaurant_name}</span> : null}{a.reason ? <span style={{ color: 'var(--muted)' }}> · reason: {a.reason}</span> : null}
               </span>
-              <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0 }}>{a.admin_name}</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', flexShrink: 0, overflowWrap: isPhone ? 'anywhere' : undefined }}>{a.admin_name}</span>
             </div>
           ))}
         </Card>
