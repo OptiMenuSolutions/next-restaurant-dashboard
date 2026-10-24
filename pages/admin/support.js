@@ -375,7 +375,7 @@ function Thread({ id, replies, onChanged }) {
       )}
 
       {quoteOpen && (
-        <QuoteDialog initial={firstIn?.body || ''} person={data.owner ? `${data.owner.name}, ${r?.name || ''}` : r?.name || ''} busy={busy}
+        <QuoteDialog initial={firstIn?.body || ''} person={data.owner?.name || ''} busy={busy}
           onClose={() => setQuoteOpen(false)} onSave={async (v) => { if (await act({ action: 'testimonial', ...v })) setQuoteOpen(false); }} />
       )}
     </>

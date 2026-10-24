@@ -111,8 +111,13 @@ export default async function handler(req, res) {
       const token = randomBytes(32).toString('hex');
       const tokenHash = createHash('sha256').update(token).digest('hex');
       const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-      const attribution = q.person || owner.name;
       const restaurantName = restaurant?.name || 'your restaurant';
+      let attribution = String(q.person || owner.name).trim();
+      const restaurantSuffix = `, ${restaurantName}`;
+      while (attribution.toLowerCase().endsWith(restaurantSuffix.toLowerCase())) {
+        attribution = attribution.slice(0, -restaurantSuffix.length).trim();
+      }
+      attribution = attribution || owner.name;
       const approvalUrl = `https://www.opti-menu.com/testimonial-approval#token=${token}`;
 
       let claim = db.from('admin_testimonials')
