@@ -64,10 +64,11 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
 
   /* Use first: red only for use it or lose it. */
   const dl = g.daysLeft;
-  const useFirst = dl != null && dl <= 3 && onHand > 0;
+  const expiryKnownOnHand = Number(g.expiryKnownOnHand ?? onHand) || 0;
+  const useFirst = Number.isFinite(dl) && dl <= 3 && expiryKnownOnHand > 0;
   const perDay = weekUse / 7;
   const usedBy = perDay * Math.max(dl || 0, 1);
-  const atRiskQty = Math.max(0, onHand - usedBy);
+  const atRiskQty = Math.max(0, expiryKnownOnHand - usedBy);
   const atRiskDollars = g.price ? atRiskQty * g.price : null;
   const leftLabel = dl <= 0 ? "USE TODAY" : dl === 1 ? "1 DAY LEFT" : dl + " DAYS LEFT";
 
@@ -125,7 +126,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
         {useFirst && (
           <div style={{ flexShrink: 0, border: "1px dashed var(--red)", borderRadius: 6, padding: "9px 12px", fontSize: 12, lineHeight: 1.5 }}>
             <span style={{ fontFamily: MONO, color: "var(--red)", fontWeight: 500, letterSpacing: "0.06em" }}>▲ USE FIRST · {leftLabel}.</span>{" "}
-            {qtyLabel(onHand, g.unit)} on hand
+            {qtyLabel(expiryKnownOnHand, g.unit)} with an estimated expiry
             {weekUse > 0 ? (
               atRiskQty > 0 ? (
                 <>
@@ -138,6 +139,26 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
             ) : (
               <>. Push a dish below to move it.</>
             )}
+          </div>
+        )}
+
+        {Number(g.unknownAgeQty) > 0 && (
+          <div
+            style={{
+              flexShrink: 0,
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              padding: "10px 12px",
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: "var(--muted)",
+            }}
+          >
+            <strong style={{ color: "var(--text)" }}>
+              {qtyLabel(g.unknownAgeQty, g.unit)} with unknown age.
+            </strong>{" "}
+            Included in your on-hand total. No expiry date is assumed
+            for this stock.
           </div>
         )}
 
@@ -287,10 +308,11 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
   const noteColor = !g.awaiting && !g.estimated && g.pct != null && g.pct > 1.5 ? "var(--amber)" : "var(--muted)";
 
   const dl = g.daysLeft;
-  const useFirst = dl != null && dl <= 3 && onHand > 0;
+  const expiryKnownOnHand = Number(g.expiryKnownOnHand ?? onHand) || 0;
+  const useFirst = Number.isFinite(dl) && dl <= 3 && expiryKnownOnHand > 0;
   const perDay = weekUse / 7;
   const usedBy = perDay * Math.max(dl || 0, 1);
-  const atRiskQty = Math.max(0, onHand - usedBy);
+  const atRiskQty = Math.max(0, expiryKnownOnHand - usedBy);
   const atRiskDollars = g.price ? atRiskQty * g.price : null;
   const leftLabel = dl <= 0 ? "USE TODAY" : dl === 1 ? "1 DAY LEFT" : dl + " DAYS LEFT";
 
@@ -361,7 +383,7 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
         <div style={{ background: "color-mix(in srgb, var(--red) 8%, var(--shell))", border: "1px dashed var(--red)", borderRadius: 12, padding: "12px 14px", fontSize: 13.5, lineHeight: 1.5 }}>
           <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", fontWeight: 500, color: "var(--red)" }}>▲ USE FIRST · {leftLabel}</div>
           <div style={{ marginTop: 4 }}>
-            {qtyLabel(onHand, g.unit)} on hand
+            {qtyLabel(expiryKnownOnHand, g.unit)} with an estimated expiry
             {weekUse > 0 ? (
               atRiskQty > 0 ? (
                 <>
@@ -375,6 +397,24 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
               <>. Push a dish below to move it.</>
             )}
           </div>
+        </div>
+      )}
+
+      {Number(g.unknownAgeQty) > 0 && (
+        <div
+          style={{
+            ...card,
+            padding: "12px 14px",
+            fontSize: 13,
+            lineHeight: 1.6,
+            color: "var(--muted)",
+          }}
+        >
+          <strong style={{ color: "var(--text)" }}>
+            {qtyLabel(g.unknownAgeQty, g.unit)} with unknown age.
+          </strong>{" "}
+          Included in your on-hand total. No expiry date is assumed
+          for this stock.
         </div>
       )}
 

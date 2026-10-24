@@ -59,7 +59,13 @@ function isEntreeCategory(category) {
 async function getExpiringIngredients(restaurantId) {
   const inventory = await loadCurrentInventory(supabase, restaurantId);
   return inventory
-    .filter((r) => r.remainingQty > 0 && r.daysLeft <= 5 && r.daysLeft >= -2)
+    .filter(
+      (r) =>
+        r.remainingQty > 0 &&
+        Number.isFinite(r.daysLeft) &&
+        r.daysLeft <= 5 &&
+        r.daysLeft >= -2
+    )
     .map((r) => ({
       name: r.name,
       daysLeft: r.daysLeft,

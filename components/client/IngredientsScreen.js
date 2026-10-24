@@ -306,7 +306,12 @@ export default function IngredientsScreen({
     const uf = useFirst[0];
     const ufLeft = uf ? (uf.daysLeft <= 0 ? "USE TODAY" : uf.daysLeft === 1 ? "1 DAY LEFT" : uf.daysLeft + " DAYS LEFT") : "";
     const ufRisk = uf && uf.price
-      ? Math.max(0, (Number(uf.onHand) || 0) - ((Number(uf.boughtPerWeek) || 0) / 7) * Math.max(uf.daysLeft || 0, 1)) * uf.price
+      ? Math.max(
+          0,
+          (Number(uf.expiryKnownOnHand ?? uf.onHand) || 0) -
+            ((Number(uf.boughtPerWeek) || 0) / 7) *
+              Math.max(uf.daysLeft || 0, 1)
+        ) * uf.price
       : 0;
 
     return (
@@ -346,7 +351,7 @@ export default function IngredientsScreen({
                 </span>
                 {useFirst.length === 1 && (
                   <span style={{ display: "block", fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-                    {qtyLabel(Number(uf.onHand) || 0, uf.unit)} on hand{ufRisk >= 1 ? ` · roughly ${money(ufRisk, 0)} at risk` : ""}
+                    {qtyLabel(Number(uf.expiryKnownOnHand ?? uf.onHand) || 0, uf.unit)} with an estimated expiry{ufRisk >= 1 ? ` · roughly ${money(ufRisk, 0)} at risk` : ""}
                   </span>
                 )}
               </span>

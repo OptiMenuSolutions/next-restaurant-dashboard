@@ -73,7 +73,22 @@ function firstWeekdayIndex(date) {
 function toTickets(recs, wasteRisk, menuItems, trust = false) {
   // Waste-risk rows by ingredient name, so each ticket can say which of its
   // ingredients is at risk, how many days it has left and what's on hand.
-  const riskByName = new Map((wasteRisk || []).map((w) => [String(w.name || "").toLowerCase().trim(), w]));
+  const riskRows = (wasteRisk || [])
+    .filter(
+      (w) =>
+        Number.isFinite(w.daysLeft) &&
+        w.daysLeft <= 7 &&
+        Number(w.remainingQty) > 0
+    )
+    .sort((a, b) => b.daysLeft - a.daysLeft);
+
+  // When several deliveries share an ingredient, keep the most urgent.
+  const riskByName = new Map(
+    riskRows.map((w) => [
+      String(w.name || "").toLowerCase().trim(),
+      w,
+    ])
+  );
   return (recs || []).slice(0, 3).map((r, i) => {
     // Ignore anything the AI appended in parentheses, e.g. "(South of the Border)".
     const key = (r.title || "").replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().trim();

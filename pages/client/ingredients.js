@@ -48,13 +48,41 @@ function shelfFields(name, unit, lines, invRows) {
       if (q != null) bought28 += q;
     }
   }
-  const onHand = invRows.reduce((a, r) => a + (Number(r.remainingQty) || 0), 0);
-  const newest = invRows.reduce((best, r) => (!best || String(r.deliveryDate) > String(best.deliveryDate) ? r : best), null);
+  const positiveRows = invRows.filter((r) => Number(r.remainingQty) > 0);
+  const datedRows = positiveRows.filter((r) => Number.isFinite(r.daysLeft));
+  const unknownAgeRows = positiveRows.filter((r) => !Number.isFinite(r.daysLeft));
+
+  const onHand = positiveRows.reduce(
+    (sum, r) => sum + Number(r.remainingQty),
+    0
+  );
+  const expiryKnownOnHand = datedRows.reduce(
+    (sum, r) => sum + Number(r.remainingQty),
+    0
+  );
+  const unknownAgeQty = unknownAgeRows.reduce(
+    (sum, r) => sum + Number(r.remainingQty),
+    0
+  );
+
+  const newest = positiveRows
+    .filter((r) => r.deliveryDate != null && r.invoicedQty != null)
+    .reduce(
+      (best, r) =>
+        !best || String(r.deliveryDate) > String(best.deliveryDate)
+          ? r
+          : best,
+      null
+    );
+
   const lastSize = newest ? Number(newest.invoicedQty) || 0 : 0;
-  const days = invRows.filter((r) => Number(r.remainingQty) > 0).map((r) => r.daysLeft);
+  const days = datedRows.map((r) => r.daysLeft);
   const life = getShelfLife(name, {}, lines[0]?.unit || "");
+
   return {
     onHand,
+    expiryKnownOnHand,
+    unknownAgeQty,
     fillPct: lastSize > 0 ? Math.min(100, Math.round((onHand / lastSize) * 100)) : 0,
     daysLeft: days.length ? Math.min(...days) : null,
     boughtPerWeek: bought28 / 4,
