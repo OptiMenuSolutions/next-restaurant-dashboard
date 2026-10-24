@@ -142,6 +142,7 @@ export default function InvoicesPage() {
 
   const [lines, setLines] = useState({}); // invoiceId -> line items
   const [fileLinks, setFileLinks] = useState({}); // invoiceId -> signed file link
+  const fileLinkCache = useRef(new Map());
   const [, setTourEndedTick] = useState(0);
 
   // Account from the shared cache (same account checks as before).
@@ -209,17 +210,79 @@ export default function InvoicesPage() {
     return () => window.removeEventListener("optimenu-tour-ended", handler);
   }, []);
 
-  /* Invoice files live in a private bucket. When an invoice is selected, its
-     stored path is swapped for a signed link valid for one hour. Full URLs
-     (tour sample data) are used as they are. */
+  /* Private invoice links last one hour. Refresh cached links ten minutes
+     early so previews keep working while this page stays open. */
   const signFile = useCallback(async (invoice) => {
-    // Read the stored path from the loaded list: the object the receipt
-    // passes back has fileUrl already swapped for the (possibly missing) link.
     const path = invoices.find((v) => v.id === invoice?.id)?.fileUrl;
-    if (!path || /^https?:\/\//.test(path) || fileLinks[invoice.id]) return;
-    const { data } = await supabase.storage.from("invoices").createSignedUrl(path, 3600);
-    if (data?.signedUrl) setFileLinks((prev) => ({ ...prev, [invoice.id]: data.signedUrl }));
-  }, [invoices, fileLinks]);
+    if (!path || /^https?:\/\//.test(path)) return;
+
+    const cached = fileLinkCache.current.get(invoice.id);
+    if (cached?.path === path) {
+      if (cached.pending) return cached.pending;
+      if (cached.url && cached.refreshAt > Date.now()) return cached.url;
+    }
+
+    const entry = {
+      path,
+      url: cached?.path === path ? cached.url : null,
+      refreshAt: 0,
+      pending: null,
+    };
+    fileLinkCache.current.set(invoice.id, entry);
+
+    entry.pending = (async () => {
+      try {
+        const { data, error } = await supabase.storage
+          .from("invoices")
+          .createSignedUrl(path, 3600);
+
+        if (error) throw error;
+        if (!data?.signedUrl) {
+          throw new Error("Could not open the invoice file.");
+        }
+
+        if (fileLinkCache.current.get(invoice.id) !== entry) return;
+
+        entry.url = data.signedUrl;
+        entry.refreshAt = Date.now() + 50 * 60 * 1000;
+        setFileLinks((prev) => ({ ...prev, [invoice.id]: data.signedUrl }));
+        return data.signedUrl;
+      } catch (err) {
+        if (fileLinkCache.current.get(invoice.id) === entry) {
+          entry.refreshAt = Date.now() + 60 * 1000;
+          setUploadError(
+            err?.message || "Could not load the invoice file. Please try again."
+          );
+        }
+      } finally {
+        entry.pending = null;
+      }
+    })();
+
+    return entry.pending;
+  }, [invoices]);
+
+  useEffect(() => {
+    const refreshOpenFiles = () => {
+      if (document.visibilityState !== "visible") return;
+
+      for (const invoice of invoices) {
+        if (fileLinkCache.current.has(invoice.id)) {
+          signFile(invoice);
+        }
+      }
+    };
+
+    const timer = window.setInterval(refreshOpenFiles, 60 * 1000);
+    window.addEventListener("focus", refreshOpenFiles);
+    document.addEventListener("visibilitychange", refreshOpenFiles);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshOpenFiles);
+      document.removeEventListener("visibilitychange", refreshOpenFiles);
+    };
+  }, [invoices, signFile]);
 
   /* For each linked line, the same ingredient's unit price on its most recent
      earlier invoice, skipping copies of this same invoice number. Only
