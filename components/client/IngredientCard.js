@@ -78,7 +78,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
   const suppliers = new Set(buys.map((p) => p.supplier)).size;
 
   return (
-    <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+    <div style={{ flex: 1, minHeight: 0, minWidth: 0, display: "flex", flexDirection: "column", overflowY: "auto", overflowX: "hidden" }}>
       {/* header */}
       <div style={{ flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, padding: "15px 20px 12px", borderBottom: "1px solid var(--line-soft)" }}>
         <div style={{ minWidth: 0 }}>
@@ -113,7 +113,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 14, padding: "14px 20px 16px", overflowY: "auto", overflowX: "hidden" }}>
+      <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 18, padding: "16px 20px 20px" }}>
         {useFirst && (
           <div style={{ flexShrink: 0, border: "1px dashed var(--red)", borderRadius: 6, padding: "9px 12px", fontSize: 12, lineHeight: 1.5 }}>
             <span style={{ fontFamily: MONO, color: "var(--red)", fontWeight: 500, letterSpacing: "0.06em" }}>▲ USE FIRST · {leftLabel}.</span>{" "}
@@ -158,7 +158,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
               ))}
             </div>
 
-            <div style={{ flex: "1 1 130px", minHeight: 110, display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: "0 0 auto", height: 220, minHeight: 220, display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6, flexShrink: 0 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 700 }}>Price per {g.unit}</span>
                 <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>
@@ -190,7 +190,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
           </>
         )}
 
-        <div style={{ flex: "0 1 auto", minHeight: 90, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4, flexShrink: 0 }}>
             <span style={{ fontSize: 12.5, fontWeight: 700 }}>{dishes.length ? `Used in ${dishes.length} dish${dishes.length === 1 ? "" : "es"}` : "Not used in any dish yet"}</span>
             {maxCost > 0 && (
@@ -202,7 +202,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
               <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 74px 64px 100px", gap: 10, fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", color: "var(--faint)", padding: "5px 0", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
                 <span>DISH</span><span style={{ textAlign: "right" }}>PER PLATE</span><span style={{ textAlign: "right" }}>COST</span><span style={{ textAlign: "right" }}>OF MENU PRICE</span>
               </div>
-              <div style={{ minHeight: 0, overflowY: "auto" }}>
+              <div style={{ flexShrink: 0 }}>
                 {dishes.map((d, i) => (
                   <div key={d.id || i} className="om-row" onClick={() => onOpenMenuItem && onOpenMenuItem(d)} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 74px 64px 100px", gap: 10, alignItems: "center", height: 30, borderBottom: "1px solid var(--line-soft)", cursor: "pointer" }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
@@ -230,7 +230,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
             <span>PURCHASE HISTORY</span>
             <span>CLICK TO OPEN</span>
           </div>
-          <div style={{ maxHeight: 180, overflowY: "auto" }}>
+          <div>
             {buys.map((p, i) => (
               <button
                 key={p.invoiceId || i}
