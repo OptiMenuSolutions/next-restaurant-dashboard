@@ -184,6 +184,8 @@ const NavLink = ({ href, style, className, children }) => (
 export default function MenuItemsPage() {
   const tour = useTour("menu-items");
   const router = useRouter();
+  const menuReturnRef = useRef(null);
+  const [navigationError, setNavigationError] = useState("");
 
   const signOut = async () => {
     await supabase.auth.signOut();
@@ -388,6 +390,52 @@ export default function MenuItemsPage() {
 
   const initials = (userName || "Chef").split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 
+  function changeSelectedItem(itemId) {
+    if (!router.isReady) return;
+
+    const id = itemId == null ? null : String(itemId);
+    const current = typeof router.query.item === "string"
+      ? router.query.item
+      : null;
+
+    if (id === current) return;
+    setNavigationError("");
+
+    if (id == null) {
+      if (menuReturnRef.current === current) {
+        router.back();
+        return;
+      }
+
+      const { item, ...query } = router.query;
+      router.replace(
+        { pathname: "/client/menu-items", query },
+        undefined,
+        { shallow: true, scroll: false }
+      ).catch((err) => {
+        if (!err?.cancelled) {
+          setNavigationError("Could not return to your menu. Please try again.");
+        }
+      });
+      return;
+    }
+
+    menuReturnRef.current = current ? null : id;
+
+    router.push(
+      {
+        pathname: "/client/menu-items",
+        query: { ...router.query, item: id },
+      },
+      undefined,
+      { shallow: true, scroll: false }
+    ).catch((err) => {
+      if (!err?.cancelled) {
+        setNavigationError("Could not open that dish. Please try again.");
+      }
+    });
+  }
+
   return (
     <>
       <Head>
@@ -398,10 +446,11 @@ export default function MenuItemsPage() {
         items={items}
         targetMargin={targetMargin}
         loading={loading}
-        error={error}
+        error={error || navigationError}
         onRetry={() => router.reload()}
         periodLabel={periodLabel}
-        openItemId={router.query.item || null}
+        openItemId={typeof router.query.item === "string" ? router.query.item : null}
+        onSelectionChange={changeSelectedItem}
         onAddItem={() => menuFileInput.current && menuFileInput.current.click()}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}

@@ -153,6 +153,7 @@ export default function MenuItemsScreen({
   onRetry,
   onOpenItem,
   openItemId = null,
+  onSelectionChange,
   onAddItem,
   onUploadMenu,
   onSearch,
@@ -171,7 +172,18 @@ export default function MenuItemsScreen({
   const isMobile = useIsMobile(900);
   const [filter, setFilter] = useState("All");
   const [layout, setLayout] = useState("cards");
-  const [selectedId, setSelectedId] = useState(null);
+  const [localSelectedId, setLocalSelectedId] = useState(null);
+  const selectedId = onSelectionChange ? openItemId : localSelectedId;
+
+  function setSelectedId(value) {
+    const next = typeof value === "function" ? value(selectedId) : value;
+
+    if (onSelectionChange) {
+      onSelectionChange(next);
+    } else {
+      setLocalSelectedId(next);
+    }
+  }
   // Sandbox ("Try portions") for the open dish. Client-side only, never saved;
   // cleared whenever a different dish opens.
   const [sandbox, setSandbox] = useState(false);
@@ -188,12 +200,22 @@ export default function MenuItemsScreen({
   useEffect(() => {
     const onView = (e) => {
       const v = e.detail?.view;
-      if (v === "list") { setMobileTab("dishes"); setFilter("All"); setSelectedId(null); }
-      if (v === "detail") { setFilter("All"); setSelectedId((id) => id ?? firstIdRef.current); }
+
+      if (v === "list") {
+        setMobileTab("dishes");
+        setFilter("All");
+        setSelectedId(null);
+      }
+
+      if (v === "detail") {
+        setFilter("All");
+        setSelectedId((id) => id ?? firstIdRef.current);
+      }
     };
+
     window.addEventListener("optimenu-tour-view", onView);
     return () => window.removeEventListener("optimenu-tour-view", onView);
-  }, []);
+  }, [onSelectionChange, selectedId]);
   const tgt = targetMargin;
 
   // Dishes awaiting pricing have no trustworthy cost — keep them out of
@@ -211,19 +233,17 @@ export default function MenuItemsScreen({
     filter === "Waiting" ? waitingList :
     filter === "Part-estimated" ? estimated : data;
 
-  const selected = shown.find((d) => d.id === selectedId) || null;
+  // Resolve URL selections against the full menu, including dishes outside
+  // the current filter.
+  const selected = selectedId == null
+    ? null
+    : data.find((d) => String(d.id) === String(selectedId)) || null;
 
-  // Opened from a link elsewhere (/client/menu-items?item=ID): select that
-  // dish once the menu has it. Runs once per ID.
-  const [openedFromLink, setOpenedFromLink] = useState(null);
+  // Keep standalone uses working when no URL handler is supplied.
   useEffect(() => {
-    if (!openItemId || openedFromLink === openItemId) return;
-    const target = data.find((d) => String(d.id) === String(openItemId));
-    if (!target) return;
-    setOpenedFromLink(openItemId);
-    setFilter("All");
-    setSelectedId(target.id);
-  }, [openItemId, data, openedFromLink]);
+    if (onSelectionChange) return;
+    setLocalSelectedId(openItemId);
+  }, [openItemId, onSelectionChange]);
 
   const chrome = (
     <Header active="menu-items" NavLink={NavLink} user={user} restaurantName={restaurantName} theme={theme} onToggleTheme={toggleTheme} onSearch={onSearch} onSignOut={onSignOut} logoSrc={logoSrc} logoDarkSrc={logoDarkSrc} />
@@ -239,6 +259,24 @@ export default function MenuItemsScreen({
 
   if (loading) return page(<LoadingState label="Costing your plates…" mobile={isMobile} />);
   if (error) return page(<ErrorState message={error} onRetry={onRetry} />);
+
+  if (openItemId && !selected) {
+    return page(
+      <EmptyState
+        kicker="Dish unavailable"
+        title="We could not find that dish"
+        body="It is not in your current menu. Return to the list to choose another."
+      >
+        <button
+          type="button"
+          onClick={() => setSelectedId(null)}
+          style={{ border: "1px solid var(--line)", borderRadius: 22, padding: "10px 18px", minHeight: 44, background: "var(--shell)", color: "var(--text)", fontFamily: SANS, fontWeight: 700, cursor: "pointer" }}
+        >
+          Back to all dishes
+        </button>
+      </EmptyState>
+    );
+  }
 
   if (!data.length) {
     return page(
