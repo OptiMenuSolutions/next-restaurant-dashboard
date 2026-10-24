@@ -272,7 +272,6 @@ export default function PassDashboard({
   const dark = theme === "dark";
   const isMobile = useMediaQuery("(max-width: 900px)");
   const [flipped, setFlipped] = useState(null);
-  const [showAllWaste, setShowAllWaste] = useState(false);
   const [openCalendarDay, setOpenCalendarDay] = useState(null);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
 
@@ -280,7 +279,7 @@ export default function PassDashboard({
     <a href={href} style={style} className={className}>{children}</a>
   ));
 
-  const visibleWaste = showAllWaste ? waste : waste.slice(0, 4);
+  const visibleWaste = waste;
 
   const buckets = optiScore.buckets || [];
   const scoreTone =
@@ -1044,25 +1043,9 @@ export default function PassDashboard({
               }}
             >
               <div style={{ fontSize: "12.5px", fontWeight: 700, letterSpacing: "-0.02em" }}>Waste risk</div>
-              <button
-                type="button"
-                onClick={() => setShowAllWaste((v) => !v)}
-                className="om-hover-accent"
-                style={{
-                  flexShrink: 0,
-                  background: "none",
-                  border: "1px solid var(--line)",
-                  borderRadius: "20px",
-                  padding: "4px 11px",
-                  fontFamily: SANS,
-                  fontSize: "10.5px",
-                  fontWeight: 600,
-                  color: "var(--muted)",
-                  cursor: "pointer",
-                }}
-              >
-                {showAllWaste ? "Show fewer" : "See all " + waste.length + " at risk"}
-              </button>
+              <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: "10.5px", color: "var(--muted)" }}>
+                {waste.length} at risk
+              </span>
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column" }}>
@@ -1072,8 +1055,9 @@ export default function PassDashboard({
                   <div
                     key={w.name}
                     style={{
-                      flex: 1,
-                      minHeight: "34px",
+                      flex: "0 0 auto",
+                      minHeight: "46px",
+                      boxSizing: "border-box",
                       display: "flex",
                       flexDirection: "column",
                       justifyContent: "center",
