@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { MONO, money } from "./ClientChrome";
+import IngredientDishGrid from "./IngredientDishGrid";
 import { convertQuantity } from "../../lib/computeWasteRisk";
 
 /**
@@ -197,76 +198,11 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
           </>
         )}
 
-        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>
-              {dishes.length
-                ? `Used in ${dishes.length} dish${dishes.length === 1 ? "" : "es"}`
-                : "Not used in any dish yet"}
-            </div>
-            {dishes.length > 0 && (
-              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-                Ingredient quantity and cost for each dish.
-              </div>
-            )}
-          </div>
-
-          {dishes.map((d, i) => (
-            <button
-              key={d.id || i}
-              type="button"
-              onClick={() => onOpenMenuItem && onOpenMenuItem(d)}
-              style={{
-                width: "100%",
-                display: "flex",
-                flexDirection: "column",
-                gap: 12,
-                padding: "14px 16px",
-                border: "1px solid var(--line)",
-                borderRadius: 10,
-                background: "var(--panel)",
-                color: "var(--text)",
-                textAlign: "left",
-                fontFamily: "inherit",
-                cursor: "pointer",
-              }}
-            >
-              <span style={{ display: "flex", justifyContent: "space-between", gap: 12, width: "100%" }}>
-                <span style={{ fontSize: 14, fontWeight: 700, overflowWrap: "anywhere" }}>
-                  {d.name}
-                </span>
-                <span style={{ color: "var(--accent-deep)", flexShrink: 0 }}>↗</span>
-              </span>
-
-              <span style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, width: "100%" }}>
-                <span>
-                  <span style={{ display: "block", fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
-                    Quantity per plate
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600, overflowWrap: "anywhere" }}>
-                    {d.qty || "—"}
-                  </span>
-                </span>
-                <span>
-                  <span style={{ display: "block", fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
-                    Ingredient cost
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>
-                    {d.cost == null ? "—" : money2(d.cost)}
-                  </span>
-                </span>
-                <span>
-                  <span style={{ display: "block", fontSize: 10, color: "var(--muted)", marginBottom: 4 }}>
-                    Of menu price
-                  </span>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>
-                    {d.share == null ? "—" : (d.share < 1 && d.cost > 0 ? "<1" : d.share) + "%"}
-                  </span>
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <IngredientDishGrid
+          key={g.id}
+          dishes={dishes}
+          onOpenMenuItem={onOpenMenuItem}
+        />
       </div>
 
       {buys.length > 0 && (
@@ -379,7 +315,20 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
   return (
     <>
       {/* header */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          flexShrink: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+          padding: "12px 0",
+          background: "var(--panel)",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
           <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1, minWidth: 0 }}>{g.name}</div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
@@ -492,33 +441,11 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
       )}
 
       {/* dishes using it */}
-      <div style={{ ...card, overflow: "hidden" }}>
-        <div style={{ padding: "14px 14px 10px" }}>
-          <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.02em" }}>{dishes.length ? `Used in ${dishes.length} dish${dishes.length === 1 ? "" : "es"}` : "Not used in any dish yet"}</div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-            Ingredient quantity and cost for each dish.
-          </div>
-        </div>
-        {dishes.map((d, i) => (
-          <button key={d.id || i} type="button" onClick={() => onOpenMenuItem && onOpenMenuItem(d)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: "none", border: "none", borderTop: "1px solid var(--line-soft)", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "var(--text)" }}>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: "block", fontSize: 14, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.name}</span>
-              <span style={{ display: "block", fontFamily: MONO, fontSize: 10.5, textTransform: "uppercase", color: "var(--muted)", marginTop: 3 }}>
-                {(d.qty || "—") + " per plate · " + (d.cost == null ? "—" : money2(d.cost)) + " cost"}
-              </span>
-            </span>
-            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 500 }}>{d.share == null ? "—" : (d.share < 1 && d.cost > 0 ? "<1" : d.share) + "%"}</span>
-              {d.share != null && (
-                <span style={{ width: 56, height: 4, background: "var(--line-soft)", borderRadius: 2, overflow: "hidden" }}>
-                  <span style={{ display: "block", height: "100%", width: Math.min(100, d.share) + "%", background: "var(--accent)" }} />
-                </span>
-              )}
-              <span style={{ fontFamily: MONO, fontSize: 9, color: "var(--muted)" }}>OF MENU PRICE</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      <IngredientDishGrid
+        key={g.id}
+        dishes={dishes}
+        onOpenMenuItem={onOpenMenuItem}
+      />
 
       {/* purchase history */}
       {buys.length > 0 && (
