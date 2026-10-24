@@ -225,35 +225,64 @@ export default function IngredientsPage() {
       }
       // fetchSampleData() failed — fall through to the real query below.
     }
-    const [{ data: ings }, { data: items }, { data: flatLinks }, { data: componentLinks }, inventory] = await Promise.all([
-      supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).order("name").limit(1000),
-      supabase
-        .from("invoice_items")
-        .select("*, invoices!invoice_items_invoice_id_fkey!inner(id, date, supplier, number, restaurant_id)")
-        .not("ingredient_id", "is", null)
-        .eq("invoices.restaurant_id", restaurantId)
-        .limit(5000),
-      // Legacy flat structure — has no unit column, kept as a fallback for
-      // any dish only ever recorded this way (not through components).
-      supabase
-        .from("menu_item_ingredients")
-        .select("quantity, ingredient_id, menu_items!inner(id, name, price, cost, category, restaurant_id)")
-        .eq("menu_items.restaurant_id", restaurantId),
-      // Real recipe structure — component_ingredients DOES have a unit
-      // column (confirmed against the schema), unlike the flat table above.
-      // This is the primary source; the flat query is only a fallback merge.
-      supabase
-        .from("component_ingredients")
-        .select(`
-          quantity, unit, ingredient_id,
-          menu_item_components!inner(
-            menu_item_id,
-            menu_items!inner(id, name, price, cost, category, restaurant_id)
-          )
-        `)
-        .eq("menu_item_components.menu_items.restaurant_id", restaurantId),
-      // On-hand estimate (same rows as Waste Risk). The shelf still renders if it fails.
-      loadCurrentInventory(supabase, restaurantId).catch(() => []),
+    async function readRows(query, label) {
+      try {
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!Array.isArray(data)) {
+          throw new Error("Expected a list of records.");
+        }
+        return data;
+      } catch (error) {
+        console.error(`Ingredients: failed to load ${label}`, error);
+        throw new Error(`Could not load ${label}. Please try again.`);
+      }
+    }
+
+    const [ings, items, flatLinks, componentLinks, inventory] = await Promise.all([
+      readRows(
+        supabase
+          .from("ingredients")
+          .select("*")
+          .eq("restaurant_id", restaurantId)
+          .order("name")
+          .limit(1000),
+        "your ingredients"
+      ),
+      readRows(
+        supabase
+          .from("invoice_items")
+          .select("*, invoices!invoice_items_invoice_id_fkey!inner(id, date, supplier, number, restaurant_id)")
+          .not("ingredient_id", "is", null)
+          .eq("invoices.restaurant_id", restaurantId)
+          .limit(5000),
+        "ingredient purchase history"
+      ),
+      // Legacy recipes are merged with component recipes below.
+      readRows(
+        supabase
+          .from("menu_item_ingredients")
+          .select("quantity, ingredient_id, menu_items!inner(id, name, price, cost, category, restaurant_id)")
+          .eq("menu_items.restaurant_id", restaurantId),
+        "ingredient dish links"
+      ),
+      readRows(
+        supabase
+          .from("component_ingredients")
+          .select(`
+            quantity, unit, ingredient_id,
+            menu_item_components!inner(
+              menu_item_id,
+              menu_items!inner(id, name, price, cost, category, restaurant_id)
+            )
+          `)
+          .eq("menu_item_components.menu_items.restaurant_id", restaurantId),
+        "ingredient recipe details"
+      ),
+      loadCurrentInventory(supabase, restaurantId).catch((error) => {
+        console.error("Ingredients: failed to load current inventory", error);
+        throw new Error("Could not load current inventory. Please try again.");
+      }),
     ]);
 
     const invById = new Map();
