@@ -410,8 +410,27 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
 
   return (
     <Dialog title={e.id ? 'Edit expense' : e.again ? `Log ${e.vendor} again` : 'Add an expense'} onClose={onClose} width={520}>
-      <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1.1fr) minmax(0, 0.9fr)' : undefined, gap: 10 }}>
-        <Field label="Date"><input className="om-field" type="date" value={f.spent_on} onChange={(x) => set('spent_on', x.target.value)} style={isPhone ? { ...phoneFieldStyle, padding: '0 6px' } : undefined} /></Field>
+      <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : undefined, gap: 10 }}>
+        <Field label="Date">
+          {isPhone ? (
+            <div className="om-field" style={{ ...phoneFieldStyle, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '0 10px' }}>
+              <span aria-hidden="true" style={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontSize: 16 }}>
+                {f.spent_on
+                  ? new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${f.spent_on}T12:00:00Z`))
+                  : 'Choose date'}
+              </span>
+              <input
+                type="date"
+                aria-label="Expense date"
+                value={f.spent_on}
+                onChange={(x) => set('spent_on', x.target.value)}
+                style={{ position: 'absolute', inset: 0, width: '100%', minWidth: 0, maxWidth: '100%', height: '100%', margin: 0, padding: 0, border: 0, boxSizing: 'border-box', opacity: 0, cursor: 'pointer' }}
+              />
+            </div>
+          ) : (
+            <input className="om-field" type="date" value={f.spent_on} onChange={(x) => set('spent_on', x.target.value)} />
+          )}
+        </Field>
         <Field label="Amount"><input className="om-field" inputMode="decimal" placeholder="$0.00" value={f.amount} onChange={(x) => set('amount', x.target.value)} style={phoneFieldStyle} /></Field>
       </div>
       <Field label="Vendor"><input className="om-field" autoFocus={!e.id} value={f.vendor} onChange={(x) => set('vendor', x.target.value)} placeholder="e.g. Vercel" style={phoneFieldStyle} /></Field>
