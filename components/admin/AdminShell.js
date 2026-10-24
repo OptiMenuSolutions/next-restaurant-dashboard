@@ -71,7 +71,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
     let alive = true;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.replace(leaving.current ? '/admin/login' : '/admin/login?redirected=1'); return; }
+      if (!session) { router.replace(leaving.current ? '/client/login' : '/admin/login?redirected=1'); return; }
       const { data: profile } = await supabase.from('profiles').select('role, full_name, email').eq('id', session.user.id).single();
       if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
       if (alive) setMe({ name: profile.full_name || profile.email || 'Admin' });
@@ -102,7 +102,7 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
   async function signOut() {
     leaving.current = true;
     await supabase.auth.signOut();
-    router.push('/admin/login');
+    router.replace('/client/login');
   }
 
   const cur = SECTIONS.find((s) => s.label === section);
