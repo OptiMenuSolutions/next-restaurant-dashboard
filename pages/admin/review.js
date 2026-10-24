@@ -296,7 +296,10 @@ function InvoiceEditor({ id, onDone }) {
 
             return (
               <article key={line.id} style={{ marginBottom: 9, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', background: 'var(--shell)' }}>
-                <button type="button" onClick={() => setSel(line.id)}
+                <button type="button" aria-expanded={selected} onClick={() => {
+                  setSel(selected ? null : line.id);
+                  if (selected) setCalc(null);
+                }}
                   style={{ width: '100%', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', border: 0, background: selected ? 'var(--panel)' : 'transparent', color: 'var(--text)', textAlign: 'left', fontFamily: "'Manrope', sans-serif" }}>
                   <span style={{ minWidth: 0 }}>
                     <span style={{ display: 'block', fontSize: 13.5, fontWeight: 800 }}>{line.item_name || 'Unnamed item'}</span>
@@ -464,6 +467,8 @@ function InvoiceEditor({ id, onDone }) {
 function PhotoViewer({ url, alt }) {
   const box = useRef(null);
   const drag = useRef(null);
+  const pointers = useRef(new Map());
+  const pinchStart = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [boxW, setBoxW] = useState(0);
   const [ratio, setRatio] = useState(null);
@@ -495,11 +500,55 @@ function PhotoViewer({ url, alt }) {
 
   const down = (e) => {
     e.currentTarget.setPointerCapture(e.pointerId);
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.current.size === 2) {
+      const [first, second] = Array.from(pointers.current.values());
+      pinchStart.current = {
+        distance: Math.hypot(second.x - first.x, second.y - first.y),
+        zoom,
+      };
+      drag.current = null;
+      setDragging(false);
+      return;
+    }
+
     drag.current = { x: e.clientX - off.x, y: e.clientY - off.y };
     setDragging(true);
   };
-  const move = (e) => { if (drag.current) setOff({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); };
-  const up = () => { drag.current = null; setDragging(false); };
+
+  const move = (e) => {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (pointers.current.size >= 2) {
+      const [first, second] = Array.from(pointers.current.values());
+      const start = pinchStart.current;
+      if (start?.distance) {
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        setZoom(clampZ(start.zoom * distance / start.distance));
+      }
+      return;
+    }
+
+    if (drag.current) setOff({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y });
+  };
+
+  const up = (e) => {
+    pointers.current.delete(e.pointerId);
+
+    if (pointers.current.size === 1) {
+      const [remaining] = Array.from(pointers.current.values());
+      drag.current = { x: remaining.x - off.x, y: remaining.y - off.y };
+      pinchStart.current = null;
+      setDragging(true);
+      return;
+    }
+
+    drag.current = null;
+    pinchStart.current = null;
+    setDragging(false);
+  };
 
   const btn = { minWidth: 32, height: 30, padding: '0 9px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--shell)', color: 'var(--text)', font: "700 13px 'Manrope', sans-serif", cursor: 'pointer' };
 
