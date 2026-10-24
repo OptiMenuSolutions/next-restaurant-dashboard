@@ -308,7 +308,7 @@ export default function MenuItemsScreen({
     return (
       <Shell theme={theme} style={{ position: "fixed", inset: 0, height: "auto", minHeight: 0, overflow: "hidden" }}>
         <MobileBackBar label="All dishes" onBack={() => setSelectedId(null)} title="Dish" right={backRight} />
-        <div className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
+        <div key={`mobile-dish-${sd.id}`} className="om-mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", padding: "16px 16px 28px", display: "flex", flexDirection: "column", gap: 14, background: "var(--panel)" }}>
           <DishDetail d={sd} tgt={tgt} onBack={() => setSelectedId(null)} stacked sandbox={sandbox} setSandbox={setSandbox} whatIf={whatIf} setWhatIf={setWhatIf} />
         </div>
         <MobileNav active="menu-items" NavLink={NavLink} />
