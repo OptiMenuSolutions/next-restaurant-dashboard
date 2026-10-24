@@ -3,9 +3,10 @@
 // receipt), your monthly run rate, a CSV for taxes, and the dates you
 // cannot miss. Repeating deadlines add their next date when marked done.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AdminShell, { PageHead, Dialog, Confirm } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import supabase from '../../lib/supabaseClient';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, th, td, money, shortDate } from '../../components/admin/ui';
@@ -29,6 +30,7 @@ function dueLabel(d, today) {
 
 function FinancesPage() {
   const { adminFetch } = useAdminFetch();
+  const isPhone = useIsPhone();
   const [year, setYear] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -39,6 +41,7 @@ function FinancesPage() {
   const [expense, setExpense] = useState(null); // {} new, or a row to edit
   const [deadline, setDeadline] = useState(null);
   const [showDone, setShowDone] = useState(false);
+  const [mobileView, setMobileView] = useState('expenses');
 
   const load = useCallback(async () => {
     setError('');
@@ -106,6 +109,131 @@ function FinancesPage() {
     if (json?.url && win) win.location.href = json.url;
     else if (win) win.close();
   };
+
+  if (isPhone) {
+    return (
+      <>
+        <PageHead kicker="BUSINESS · OPTIMENU SOLUTIONS LLC" title="Expenses & deadlines">
+          <select className="om-field" aria-label="Year" style={{ width: 100 }} value={data.year} onChange={(e) => { setData(null); setMonth(null); setCat('All'); setYear(e.target.value); }}>
+            {Array.from({ length: 4 }, (_, i) => String(Number(data.today.slice(0, 4)) - i)).map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </PageHead>
+
+        {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
+        {data.stripeError && <div style={{ background: 'var(--red-tint)', color: 'var(--red)', borderRadius: 10, padding: '10px 14px', fontSize: 13 }}>Stripe did not answer: {data.stripeError}. Plans and money below may be missing.</div>}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+          <div style={{ minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: 11 }}>
+            <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.12em', color: 'var(--muted)' }}>SPENT · {monthName(month).toUpperCase()}</div>
+            <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800, overflowWrap: 'anywhere' }}>{money(data.spentMonth)}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{data.countMonth} expense{data.countMonth === 1 ? '' : 's'}</div>
+          </div>
+          <div style={{ minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: 11 }}>
+            <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.12em', color: 'var(--muted)' }}>MONTHLY RUN RATE</div>
+            <div style={{ marginTop: 4, fontSize: 20, fontWeight: 800, overflowWrap: 'anywhere' }}>{money(rateTotal)}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>Recurring monthly estimate</div>
+          </div>
+        </div>
+
+        <div role="group" aria-label="Choose expenses or deadlines" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, padding: 4, borderRadius: 12, background: 'var(--panel)' }}>
+          {[
+            ['expenses', 'Expenses'],
+            ['deadlines', 'Deadlines'],
+          ].map(([key, label]) => (
+            <button key={key} type="button" aria-pressed={mobileView === key} onClick={() => setMobileView(key)} style={{ minHeight: 42, border: 0, borderRadius: 9, background: mobileView === key ? 'var(--text)' : 'transparent', color: mobileView === key ? 'var(--shell)' : 'var(--muted)', font: "700 14px 'Manrope',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {mobileView === 'expenses' ? (
+          <>
+            <button type="button" className="om-pri" onClick={() => setExpense({})} style={{ width: '100%', minHeight: 44, justifyContent: 'center' }}>+ Expense</button>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <select className="om-field" aria-label="Month" value={month} onChange={(e) => { setMonth(e.target.value); setCat('All'); }}>
+                {months.map((m) => <option key={m} value={m}>{monthName(m)} ({data.expenses.filter((e) => e.spent_on.slice(0, 7) === m).length})</option>)}
+              </select>
+              {cats.length > 2 && <Pills label="Category" value={cat} onChange={setCat} options={cats.map((c) => ({ key: c, label: c }))} />}
+            </div>
+
+            {shown.length === 0 && <Card><div style={{ color: 'var(--muted)', fontSize: 13 }}>No expenses logged for {monthName(month)}.</div></Card>}
+            {shown.map((e) => (
+              <Card key={e.id}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <strong style={{ overflowWrap: 'anywhere' }}>{e.vendor}</strong>
+                    <div style={{ marginTop: 3, fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>
+                      {shortDate(e.spent_on)} · {e.category} · {REP[e.repeats]}
+                    </div>
+                    {e.note && <div style={{ marginTop: 4, fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{e.note}</div>}
+                  </div>
+                  <strong style={{ flexShrink: 0, fontFamily: MONO }}>{money(e.amount)}</strong>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  {e.has_receipt
+                    ? <button type="button" className="om-btn" onClick={() => viewReceipt(e.id)}>📎 Receipt</button>
+                    : <button type="button" className="om-btn" aria-label={`Add receipt for ${e.vendor}`} onClick={() => setExpense({ ...e, pickReceipt: true })} style={{ color: 'var(--amber)' }}>! Add receipt</button>}
+                  {e.repeats !== 'one_time' && <button type="button" className="om-btn" onClick={() => setExpense({ ...e, id: null, spent_on: data.today, receipt_path: null, has_receipt: false, again: true })}>Log again</button>}
+                  <button type="button" className="om-btn" onClick={() => setExpense(e)}>Edit</button>
+                </div>
+              </Card>
+            ))}
+            {shown.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 2px', fontWeight: 800 }}>
+                <span>Total</span><span style={{ fontFamily: MONO }}>{money(shown.reduce((a, e) => a + e.amount, 0))}</span>
+              </div>
+            )}
+
+            <button type="button" className="om-btn" onClick={exportCsv} disabled={!data.expenses.length} style={{ width: '100%', minHeight: 44, justifyContent: 'center' }}>Export CSV for taxes</button>
+          </>
+        ) : (
+          <>
+            <Card title="Deadlines" right={<button type="button" className="om-btn" onClick={() => setDeadline({})}>Add deadline</button>}>
+              {open.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Nothing coming up.</div>}
+              {open.map((d) => {
+                const [label, tone] = dueLabel(d, data.today);
+                return (
+                  <div key={d.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
+                    <input type="checkbox" aria-label={`Mark ${d.title} done`} disabled={busy} onChange={() => post({ action: 'deadline-done', id: d.id })} style={{ width: 18, height: 18, marginTop: 2, flexShrink: 0 }} />
+                    <button type="button" onClick={() => setDeadline(d)} style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 0, background: 'none', padding: 0, cursor: 'pointer', color: 'var(--text)', font: "500 13.5px 'Manrope',sans-serif" }}>
+                      <b style={{ overflowWrap: 'anywhere' }}>{d.title}</b>
+                      <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{[d.note, d.repeats !== 'none' ? DL_REP[d.repeats] : null].filter(Boolean).join(' · ')}</span>
+                    </button>
+                    <Chip bg={TONE[tone][0]} fg={TONE[tone][1]}>{label}</Chip>
+                  </div>
+                );
+              })}
+              {done.length > 0 && (
+                <>
+                  <button type="button" onClick={() => setShowDone(!showDone)} style={{ border: 0, background: 'none', padding: '8px 0 0', textAlign: 'left', cursor: 'pointer', color: 'var(--accent-deep)', font: "600 12.5px 'Manrope',sans-serif" }}>{showDone ? 'Hide' : 'Show'} done ({done.length})</button>
+                  {showDone && done.slice(0, 20).map((d) => (
+                    <div key={d.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13, color: 'var(--muted)' }}>
+                      <span style={{ flex: 1, minWidth: 0, textDecoration: 'line-through', overflowWrap: 'anywhere' }}>{d.title}</span>
+                      <button type="button" className="om-btn" disabled={busy} onClick={() => post({ action: 'deadline-reopen', id: d.id })}>Reopen</button>
+                    </div>
+                  ))}
+                </>
+              )}
+            </Card>
+
+            <Card title="Monthly run rate" right={<span style={{ fontFamily: MONO, fontWeight: 700 }}>{money(rateTotal)}</span>}>
+              {rateByCat.length === 0 && <div style={{ fontSize: 13, color: 'var(--muted)' }}>Log monthly, yearly or usage bills and they add up here.</div>}
+              {rateByCat.map(([category, amount]) => (
+                <div key={category} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: '1px solid var(--line-soft)', fontSize: 13 }}>
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{category} <span style={{ color: 'var(--muted)', fontSize: 12 }}>· {data.runRate.filter((r) => r.category === category).map((r) => r.vendor).join(', ')}</span></span>
+                  <span style={{ flexShrink: 0, fontFamily: MONO }}>{money(amount)}</span>
+                </div>
+              ))}
+            </Card>
+          </>
+        )}
+
+        {expense && <ExpenseDialog e={expense} today={data.today} busy={busy} onClose={() => setExpense(null)} post={post} adminFetch={adminFetch} />}
+        {deadline && <DeadlineDialog d={deadline} busy={busy} onClose={() => setDeadline(null)} post={post} />}
+      </>
+    );
+  }
 
   return (
     <>
@@ -231,12 +359,20 @@ function Field({ label, children }) {
 }
 
 function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
+  const isPhone = useIsPhone();
+  const receiptInput = useRef(null);
   const [f, setF] = useState({ spent_on: e.spent_on || today, vendor: e.vendor || '', category: e.category || 'Hosting', repeats: e.repeats || 'one_time', amount: e.amount != null ? String(e.amount) : '', note: e.note || '' });
   const [file, setFile] = useState(null);
   const [err, setErr] = useState('');
   const [uploading, setUploading] = useState(false);
   const [askDel, setAskDel] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  useEffect(() => {
+    if (!e.pickReceipt) return undefined;
+    const timer = setTimeout(() => receiptInput.current?.click(), 0);
+    return () => clearTimeout(timer);
+  }, [e.pickReceipt]);
 
   const save = async () => {
     setErr('');
@@ -280,8 +416,8 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
         </Field>
       </div>
       <Field label="Note (optional)"><input className="om-field" value={f.note} onChange={(x) => set('note', x.target.value)} /></Field>
-      <Field label={e.receipt_path ? 'Receipt (attached; pick a file to replace it)' : 'Receipt'}>
-        <input type="file" accept="image/*,application/pdf" onChange={(x) => setFile(x.target.files?.[0] || null)} />
+      <Field label={e.receipt_path ? 'Receipt (attached; pick a file to replace it)' : 'Take photo or choose a receipt'}>
+        <input ref={receiptInput} type="file" accept="image/*,application/pdf" capture={isPhone ? 'environment' : undefined} onChange={(x) => setFile(x.target.files?.[0] || null)} />
       </Field>
       {err && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{err}</div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
