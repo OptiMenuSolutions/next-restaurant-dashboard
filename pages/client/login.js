@@ -70,7 +70,7 @@ export default function LoginPage() {
     }
 
     if (existing?.role === "admin") {
-      await router.replace("/admin");
+      await router.replace("/admin/verify");
       return;
     }
 

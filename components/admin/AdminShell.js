@@ -66,17 +66,50 @@ export default function AdminShell({ section, sub, title, children, back, hideBo
   const { adminFetch } = useAdminFetch();
   const leaving = useRef(false);
 
-  // Admins only.
+  // Admins must have verified their second factor.
   useEffect(() => {
     let alive = true;
+    setMe(null);
+
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.replace(leaving.current ? '/client/login' : '/admin/login?redirected=1'); return; }
-      const { data: profile } = await supabase.from('profiles').select('role, full_name, email').eq('id', session.user.id).single();
-      if (!profile || profile.role !== 'admin') { router.replace('/admin/login'); return; }
-      if (alive) setMe({ name: profile.full_name || profile.email || 'Admin' });
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (!alive) return;
+        if (sessionError || !session) {
+          router.replace('/client/login');
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('role, full_name, email')
+          .eq('id', session.user.id)
+          .single();
+
+        if (!alive) return;
+        if (profileError || profile?.role !== 'admin') {
+          router.replace('/client/login');
+          return;
+        }
+
+        const { data: assurance, error: assuranceError } =
+          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+        if (!alive) return;
+        if (assuranceError || assurance?.currentLevel !== 'aal2') {
+          router.replace('/admin/verify');
+          return;
+        }
+
+        setMe({ name: profile.full_name || profile.email || 'Admin' });
+      } catch {
+        if (alive) router.replace('/client/login');
+      }
     })();
-    return () => { alive = false; };
+
+    return () => {
+      alive = false;
+    };
   }, [router]);
 
   // ⌘K / Ctrl+K opens search from anywhere.
