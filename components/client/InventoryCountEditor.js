@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import supabase from "../../lib/supabaseClient";
 import { SANS } from "./ClientChrome";
+import InventoryCountReview from "./InventoryCountReview";
 
 async function request(url, options = {}) {
   const { data, error } = await supabase.auth.getSession();
@@ -296,6 +297,20 @@ export default function InventoryCountEditor({ sessionId }) {
         <>
           {!editable && (
             <p>This count is read-only.</p>
+          )}
+
+          {editable && dirtyCount === 0 && !savingId && counted > 0 && (
+            <InventoryCountReview
+              key={`${sessionId}:${reload}`}
+              sessionId={sessionId}
+              request={request}
+            />
+          )}
+
+          {editable && dirtyCount > 0 && (
+            <p style={{ color: "var(--amber)", lineHeight: 1.5 }}>
+              Save your changed quantities before reviewing this count.
+            </p>
           )}
 
           <label style={{ display: "block", fontWeight: 700 }}>
