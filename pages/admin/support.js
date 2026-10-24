@@ -52,7 +52,13 @@ function SupportPage() {
       setError(e.message);
     }
   }, [adminFetch]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 10000);
+    return () => clearInterval(timer);
+  }, [load]);
 
   // Coming from a restaurant's Message button.
   useEffect(() => {
@@ -194,7 +200,13 @@ function Thread({ id, replies, onChanged }) {
       setError(e.message);
     }
   }, [adminFetch, id]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [load]);
 
   async function act(payload) {
     setBusy(true);
