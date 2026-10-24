@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, th, td, money } from '../../components/admin/ui';
 
@@ -25,6 +26,7 @@ const TIP_CSS = `.om-tip{position:relative;cursor:help;border-bottom:1px dotted 
 const PANE_H = 'max(420px, calc(100vh - 360px))';
 
 function CostsPage() {
+  const isPhone = useIsPhone();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -35,6 +37,7 @@ function CostsPage() {
   const [flash, setFlash] = useState('');
   const [view, setView] = useState('waiting');
   const [bulkAsk, setBulkAsk] = useState(null); // { list, label }
+  const [whyOpen, setWhyOpen] = useState(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -102,16 +105,82 @@ function CostsPage() {
       </div>
       {flash && <div style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
 
-      <div role="tablist" aria-label="Which list" style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
+      <div role="tablist" aria-label="Which list"
+        style={isPhone
+          ? { display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'var(--panel)' }
+          : { display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
         {[['waiting', 'Waiting', rows.length], ['approved', 'Approved today', approvedN], ['skipped', 'Skipped', data.skipped.length]].map(([k, l, c]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
-            style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${view === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: view === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${view === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
+            style={isPhone
+              ? { flex: 1, minWidth: 0, minHeight: 40, padding: '0 4px', border: 0, borderRadius: 9, background: view === k ? 'var(--shell)' : 'transparent', cursor: 'pointer', font: `${view === k ? 800 : 600} 11.5px 'Manrope', sans-serif`, color: view === k ? 'var(--text)' : 'var(--muted)' }
+              : { padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${view === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: view === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${view === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
             {l} <span style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>{c.toLocaleString('en-US')}</span>
           </button>
         ))}
       </div>
 
-      {view === 'waiting' && <section aria-label="Estimates" style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
+      {view === 'waiting' && isPhone ? (
+        <section aria-label="Estimates" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rows.length === 0 && (
+            <div style={{ padding: 20, border: '1px solid var(--line)', borderRadius: 12, color: 'var(--muted)', textAlign: 'center', fontSize: 13 }}>
+              Nothing waiting. Every guess in use is approved or skipped.
+            </div>
+          )}
+          {rows.map((r) => (
+            <article key={r.id} style={{ minWidth: 0, padding: 12, border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{r.name}</div>
+                  <div style={{ marginTop: 2, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>per {r.unit}</div>
+                </div>
+                {r.move && <Chip bg={MOVE[r.move][0]} fg={MOVE[r.move][1]}>{r.move}</Chip>}
+              </div>
+
+              <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--muted)' }}>
+                Used in {r.dishes} dish{r.dishes === 1 ? '' : 'es'} · {r.restaurant}{r.state ? ` · ${r.state}` : ''}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line-soft)' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em', color: 'var(--muted)' }}>AI GUESS</div>
+                  <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 12 }}>{r.guess != null ? `${money(r.guess)}/${r.unit}` : '—'}</div>
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em', color: 'var(--muted)' }}>GLOBAL REF</div>
+                  <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 12 }}>
+                    {r.library ? `${money(r.library.price)}/${r.library.unit || r.unit}` : '—'}
+                  </div>
+                </div>
+                <label style={{ minWidth: 0 }}>
+                  <span style={{ display: 'block', fontFamily: MONO, fontSize: 9, letterSpacing: '0.06em', color: 'var(--muted)' }}>YOUR PRICE</span>
+                  <input aria-label={`Your price for ${r.name}`} inputMode="decimal" value={priceFor(r)} onChange={(e) => setMine({ ...mine, [r.id]: e.target.value })}
+                    style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', minHeight: 38, marginTop: 3, padding: '0 5px', border: '1px solid var(--line)', borderRadius: 7, background: 'var(--shell)', color: 'var(--text)', fontFamily: MONO }} />
+                </label>
+              </div>
+
+              {r.warn && <div style={{ marginTop: 8, color: 'var(--amber)', fontSize: 12, fontWeight: 700 }}>{r.warn}</div>}
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                <button type="button" className="om-pri" disabled={!!busy} onClick={() => approve(r)} style={{ minHeight: 40, flex: '1 1 110px', justifyContent: 'center' }}>
+                  {busy === r.id ? 'Approving…' : 'Approve'}
+                </button>
+                <button type="button" className="om-btn" disabled={!!busy} onClick={() => post({ action: 'skip', ingredientId: r.id }, r.id)} style={{ minHeight: 40, flex: '1 1 80px', justifyContent: 'center' }}>
+                  Skip
+                </button>
+                <button type="button" className="om-btn" aria-expanded={whyOpen === r.id} onClick={() => setWhyOpen(whyOpen === r.id ? null : r.id)} style={{ minHeight: 40, justifyContent: 'center' }}>
+                  Why this guess?
+                </button>
+              </div>
+
+              {whyOpen === r.id && (
+                <div style={{ marginTop: 9, padding: 10, borderRadius: 8, background: 'var(--panel)', color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.5 }}>
+                  {r.why}
+                </div>
+              )}
+            </article>
+          ))}
+        </section>
+      ) : view === 'waiting' && <section aria-label="Estimates" style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'auto', maxHeight: PANE_H }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 1060 }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
             <tr>
@@ -179,6 +248,32 @@ function CostsPage() {
 }
 
 function Done({ items, right, onUndo, busy, empty }) {
+  const isPhone = useIsPhone();
+
+  if (isPhone) {
+    return (
+      <section aria-label="Completed cost decisions" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.length === 0 && (
+          <div style={{ padding: 20, border: '1px solid var(--line)', borderRadius: 12, color: 'var(--muted)', textAlign: 'center', fontSize: 13 }}>
+            {empty}
+          </div>
+        )}
+        {items.map((x) => (
+          <article key={x.at || x.id} style={{ minWidth: 0, padding: 12, border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <b style={{ minWidth: 0, fontSize: 14 }}>{x.name}</b>
+              <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>{right(x)}</span>
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--muted)' }}>{x.restaurant}</div>
+            <button type="button" className="om-btn" disabled={!!busy} onClick={() => onUndo(x)} style={{ width: '100%', minHeight: 40, justifyContent: 'center', marginTop: 10 }}>
+              {busy === x.id ? 'Working…' : x.count > 1 ? 'Undo all' : 'Undo'}
+            </button>
+          </article>
+        ))}
+      </section>
+    );
+  }
+
   return (
     <section style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '4px 18px', maxHeight: PANE_H, overflowY: 'auto' }}>
       {items.length === 0 && <div style={{ padding: '14px 0', fontSize: 13, color: 'var(--muted)' }}>{empty}</div>}
