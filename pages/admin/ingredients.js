@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import useIsPhone from '../../lib/admin/useIsPhone';
@@ -45,6 +46,7 @@ const diffColor = (d) => (d == null ? 'var(--muted)' : d > 0.05 ? 'var(--red)' :
 
 function LibraryPage() {
   const isPhone = useIsPhone();
+  const router = useRouter();
   const { adminFetch } = useAdminFetch();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -70,6 +72,12 @@ function LibraryPage() {
     }
   }, [adminFetch]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!isPhone || !router.isReady) return;
+    setScope(router.query.scope === 'restaurant' ? 'restaurant' : 'global');
+    if (typeof router.query.restaurant === 'string') setRestId(router.query.restaurant);
+    setSel(typeof router.query.ing === 'string' ? router.query.ing : null);
+  }, [isPhone, router.isReady, router.query.ing, router.query.scope, router.query.restaurant]);
 
   const post = useCallback(async (body) => {
     setBusy(true);
@@ -115,8 +123,38 @@ function LibraryPage() {
   if (!data) return <LoadingState label="Loading the ingredient library…" />;
 
   const isGlobal = scope === 'global';
-  const switchScope = (s) => { setScope(s); setSel(null); setFilter('all'); setQ(''); };
-  const selectIngredient = (id) => setSel(id);
+
+  const switchScope = (nextScope) => {
+    setScope(nextScope);
+    setSel(null);
+    setFilter('all');
+    setQ('');
+    if (isPhone) {
+      const query = { scope: nextScope };
+      if (nextScope === 'restaurant' && restId) query.restaurant = restId;
+      router.push({ pathname: router.pathname, query }, undefined, { shallow: true });
+    }
+  };
+
+  const selectIngredient = (id) => {
+    setSel(id);
+    if (isPhone) {
+      const query = { scope };
+      if (scope === 'restaurant' && restId) query.restaurant = restId;
+      query.ing = id;
+      router.push({ pathname: router.pathname, query }, undefined, { shallow: true });
+    }
+  };
+
+  const clearSelection = () => {
+    setSel(null);
+    if (isPhone) {
+      const query = { ...router.query };
+      delete query.ing;
+      router.push({ pathname: router.pathname, query }, undefined, { shallow: true });
+    }
+  };
+
   const selGlobal = isGlobal ? globalsById.get(sel) || null : null;
   const selItem = !isGlobal ? restItems.find((x) => x.id === sel) || null : null;
 
@@ -124,6 +162,16 @@ function LibraryPage() {
   const heads = isGlobal
     ? [[data.globals.length, 'global ingredients'], [data.globals.filter((g) => g.reference_price == null).length, 'with no reference price'], [data.globals.filter((g) => g.restaurants === 0).length, 'not used by any restaurant'], [linkedCount, 'restaurant ingredients linked']]
     : [[restItems.length, 'ingredients'], [restItems.filter((x) => !x.link).length, 'not linked to a global'], [restItems.filter((x) => x.status === 'NO PRICE' || x.status === 'AI GUESS').length, 'with no price the owner sees'], [restItems.filter((x) => x.status === 'INVOICE').length, 'priced from invoices']];
+
+  if (isPhone && (selGlobal || selItem)) {
+    return (
+      <div style={{ width: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
+        {selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={clearSelection} />}
+        {selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -149,7 +197,12 @@ function LibraryPage() {
         {!isGlobal && (
           <label style={{ display: isPhone ? 'flex' : 'inline-flex', width: isPhone ? '100%' : undefined, alignItems: 'center', gap: 8 }}>
             <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>RESTAURANT</span>
-            <select className="om-field" style={{ width: isPhone ? '100%' : 240, flex: isPhone ? 1 : undefined }} value={restId} onChange={(e) => { setRestId(e.target.value); setSel(null); }}>
+            <select className="om-field" style={{ width: isPhone ? '100%' : 240, flex: isPhone ? 1 : undefined }} value={restId} onChange={(e) => {
+              const id = e.target.value;
+              setRestId(id);
+              setSel(null);
+              if (isPhone) router.push({ pathname: router.pathname, query: { scope: 'restaurant', restaurant: id } }, undefined, { shallow: true });
+            }}>
               {data.restaurants.map((r) => <option key={r.id} value={r.id}>{r.name} ({r.n})</option>)}
             </select>
           </label>
@@ -322,14 +375,6 @@ function LibraryPage() {
         )}
       </div>
 
-      {isPhone && (selGlobal || selItem) && (
-        <Dialog title="Ingredient Details" onClose={() => setSel(null)} width={640} showCloseButton>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
-            {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
-          </div>
-        </Dialog>
-      )}
       {dialog === 'add' && <AddDialog busy={busy} onClose={() => setDialog(null)} onSave={async (row) => { const r = await post({ action: 'create', ...row }); if (r) { setDialog(null); setScope('global'); setSel(r.id); setFlash(`Added ${row.name}.`); } }} />}
       {dialog === 'import' && <ImportDialog busy={busy} onClose={() => setDialog(null)} onImport={async (rows) => { const r = await post({ action: 'import', rows }); if (r) { setDialog(null); setFlash(`Added ${r.added}. Skipped ${r.skipped} (already in the library or missing a name or unit).`); } }} />}
     </>
@@ -519,6 +564,7 @@ function ItemPanel({ x, g, globals, busy, post }) {
 // Weekly price lines with a hover crosshair. One line per restaurant,
 // a dashed line for the reference price when it is in the same unit.
 function PriceChart({ title, hist, series, unit, reference, empty, note }) {
+  const isPhone = useIsPhone();
   const [hover, setHover] = useState(null);
   const box = useRef(null);
   const W = 380, H = 150, L = 46, R = 10, T = 10, B = 22;
@@ -551,7 +597,7 @@ function PriceChart({ title, hist, series, unit, reference, empty, note }) {
     const tipLeft = hover != null ? `${Math.min(70, Math.max(0, (x(hover) / W) * 100 - 15))}%` : 0;
     body = (
       <div style={{ position: 'relative' }}>
-        <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${title}, per ${unit}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)} style={{ display: 'block', overflow: 'visible' }}>
+        <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${title}, per ${unit}`} onMouseMove={onMove} onClick={isPhone ? onMove : undefined} onMouseLeave={() => setHover(null)} style={{ display: 'block', overflow: 'visible' }}>
           {[lo, (lo + hi) / 2, hi].map((v) => (
             <g key={v}>
               <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--line-soft)" strokeWidth="1" />
@@ -690,8 +736,18 @@ function ImportDialog({ busy, onClose, onImport }) {
 }
 
 export default function Page() {
+  const isPhone = useIsPhone();
+  const router = useRouter();
+  const hasIngredient = isPhone && typeof router.query.ing === 'string';
+  const scope = router.query.scope === 'restaurant' ? 'restaurant' : 'global';
+  const restaurant = typeof router.query.restaurant === 'string' ? router.query.restaurant : null;
+  const backHref = scope === 'restaurant' && restaurant
+    ? `/admin/ingredients?scope=restaurant&restaurant=${encodeURIComponent(restaurant)}`
+    : '/admin/ingredients?scope=global';
+
   return (
-    <AdminShell section="Data quality" sub="Ingredient library" title="Ingredient library">
+    <AdminShell section="Data quality" sub="Ingredient library" title="Ingredient library"
+      back={hasIngredient ? { label: 'Ingredient library', href: backHref } : undefined}>
       <LibraryPage />
     </AdminShell>
   );
