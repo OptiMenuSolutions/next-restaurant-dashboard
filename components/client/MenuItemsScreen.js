@@ -554,6 +554,7 @@ export default function MenuItemsScreen({
           <div data-tour="mi-detail" style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", animation: "om-rise .4s cubic-bezier(.25,.8,.35,1) both" }}>
             {selected ? (
               <DishDetail
+                key={selected.id}
                 d={selected}
                 tgt={tgt}
                 onBack={() => setSelectedId(null)}
@@ -682,7 +683,10 @@ const DD_CSS = `
 .dd-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 236px;grid-template-rows:minmax(0,1fr);gap:14px}
 .dd-recipe{display:flex;flex-direction:column;min-height:0}
 .dd-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:-8px;padding-right:8px}
-.dd-rail{min-height:0;overflow-y:auto;overflow-x:hidden}
+.dd-rail{min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
+.dd-rail > *{flex-shrink:0;box-sizing:border-box}
+.dd-rail > :first-child{min-height:130px}
+.dd-rail > :nth-child(2){min-height:260px}
 .dd-comp{cursor:pointer;user-select:none}
 .dd-comp:hover .dd-cname{color:var(--accent-deep)}
 @media (max-width:1279px){
