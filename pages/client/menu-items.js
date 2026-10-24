@@ -294,46 +294,65 @@ export default function MenuItemsPage() {
     const since = new Date();
     since.setDate(since.getDate() - 30);
 
-    // Cost history is fetched by restaurant rather than by a list of dish
-    // ids, so it no longer has to wait for the menu query to finish (and no
-    // longer sends ~500 ids in the request URL). Supabase caps a select at
-    // 1,000 rows, so it still pages.
+    async function readRows(query, label) {
+      try {
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!Array.isArray(data)) {
+          throw new Error("Expected a list of records.");
+        }
+        return data;
+      } catch (error) {
+        console.error(`[menu-items] Failed to load ${label}`, error);
+        throw new Error(`Could not load ${label}. Please try again.`);
+      }
+    }
+
+    // Load every page of cost history. A failed page must not leave us
+    // displaying a partial history as though it were complete.
     const loadHistory = async () => {
       const out = [];
       const PAGE = 1000;
       for (let from = 0; ; from += PAGE) {
-        const { data: page, error: hErr } = await supabase
-          .from("menu_item_cost_history")
-          .select("menu_item_id, old_cost, new_cost, created_at, menu_items!inner(restaurant_id)")
-          .eq("menu_items.restaurant_id", restaurantId)
-          .order("created_at", { ascending: true })
-          .range(from, from + PAGE - 1);
-        if (hErr) { console.warn("[menu-items] cost history:", hErr.message); break; }
-        if (!page || !page.length) break;
+        const page = await readRows(
+          supabase
+            .from("menu_item_cost_history")
+            .select("menu_item_id, old_cost, new_cost, created_at, menu_items!inner(restaurant_id)")
+            .eq("menu_items.restaurant_id", restaurantId)
+            .order("created_at", { ascending: true })
+            .range(from, from + PAGE - 1),
+          "menu cost history"
+        );
         out.push(...page);
         if (page.length < PAGE) break;
       }
       return out;
     };
 
-    const [{ data: menuItems }, { data: sales }, history] = await Promise.all([
-      supabase
-        .from("menu_items")
-        .select(`
-          id, name, price, cost, category,
-          menu_item_components(id, name, cost,
-            component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))),
-          menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))
-        `)
-        .eq("restaurant_id", restaurantId)
-        .is("archived_at", null)
-        .order("name")
-        .limit(500),
-      supabase
-        .from("pos_sales")
-        .select("item_name, quantity_sold")
-        .eq("restaurant_id", restaurantId)
-        .gte("sale_date", since.toISOString().split("T")[0]),
+    const [menuItems, sales, history] = await Promise.all([
+      readRows(
+        supabase
+          .from("menu_items")
+          .select(`
+            id, name, price, cost, category,
+            menu_item_components(id, name, cost,
+              component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))),
+            menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))
+          `)
+          .eq("restaurant_id", restaurantId)
+          .is("archived_at", null)
+          .order("name")
+          .limit(500),
+        "your menu and recipes"
+      ),
+      readRows(
+        supabase
+          .from("pos_sales")
+          .select("item_name, quantity_sold")
+          .eq("restaurant_id", restaurantId)
+          .gte("sale_date", since.toISOString().split("T")[0]),
+        "menu sales"
+      ),
       loadHistory(),
     ]);
 
