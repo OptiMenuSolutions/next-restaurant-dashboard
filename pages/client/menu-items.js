@@ -329,9 +329,28 @@ export default function MenuItemsPage() {
       return out;
     };
 
+    async function readAllRows(makeQuery, label) {
+      const out = [];
+      const PAGE = 500;
+
+      for (let from = 0; ; ) {
+        const page = await readRows(
+          makeQuery().range(from, from + PAGE - 1),
+          label
+        );
+
+        if (page.length === 0) return out;
+
+        out.push(...page);
+        // Advance by the actual number returned, even if the server
+        // applies a smaller limit than our requested batch size.
+        from += page.length;
+      }
+    }
+
     const [menuItems, sales, history] = await Promise.all([
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("menu_items")
           .select(`
             id, name, price, cost, category,
@@ -341,16 +360,17 @@ export default function MenuItemsPage() {
           `)
           .eq("restaurant_id", restaurantId)
           .is("archived_at", null)
-          .order("name")
-          .limit(500),
+          .order("name", { ascending: true })
+          .order("id", { ascending: true }),
         "your menu and recipes"
       ),
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("pos_sales")
-          .select("item_name, quantity_sold")
+          .select("id, item_name, quantity_sold")
           .eq("restaurant_id", restaurantId)
-          .gte("sale_date", since.toISOString().split("T")[0]),
+          .gte("sale_date", since.toISOString().split("T")[0])
+          .order("id", { ascending: true }),
         "menu sales"
       ),
       loadHistory(),
