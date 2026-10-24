@@ -10,6 +10,7 @@ import {
   SANS,
   useTheme,
 } from "../../components/client/ClientChrome";
+import InventoryCountEditor from "../../components/client/InventoryCountEditor";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -271,7 +272,7 @@ export default function InventoryCountPage() {
               <>
                 <h2 style={{ margin: 0, fontSize: 20 }}>
                   {session.status === "draft"
-                    ? "Your draft is saved"
+                    ? "Inventory count draft"
                     : "Inventory count"}
                 </h2>
 
@@ -283,17 +284,17 @@ export default function InventoryCountPage() {
                     : ` Status: ${session.status}.`}
                 </p>
 
-                <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-                  Quantity entry is not available yet. Your current
-                  inventory has not been changed by this page.
-                </p>
-
                 <Link
                   href={`/client/inventory-count?count=${session.id}`}
                   style={buttonStyle}
                 >
                   Open saved draft link
                 </Link>
+
+                <InventoryCountEditor
+                  key={`${restaurantId}:${session.id}`}
+                  sessionId={session.id}
+                />
               </>
             ) : !error ? (
               <>
