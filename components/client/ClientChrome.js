@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import NotificationBell from "./NotificationBell";
 
 /**
  * ClientChrome — shared shell for the ported client screens
@@ -207,6 +208,7 @@ export function Header({
         <button type="button" title="Search" onClick={onSearch} className="om-hover-accent" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: "50%", background: "none", cursor: "pointer", flexShrink: 0 }}>
           <SearchIcon />
         </button>
+        <NotificationBell onOpen={() => setDropdownOpen(false)} />
         <div style={{ position: "relative", paddingLeft: 6, borderLeft: "1px solid var(--line)" }}>
           <div
             onClick={() => setDropdownOpen((v) => !v)}
@@ -273,6 +275,7 @@ export function MobileHeader({ theme, onToggleTheme, onSearch, onSignOut, restau
         <button type="button" aria-label="Search" onClick={onSearch} style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid var(--line)", borderRadius: "50%", cursor: "pointer", padding: 0 }}>
           <SearchIcon size={15} />
         </button>
+        <NotificationBell onOpen={() => setMenuOpen(false)} />
         <div style={{ position: "relative" }}>
           <button type="button" aria-label="Account menu" onClick={() => setMenuOpen((v) => !v)} style={{ width: 34, height: 34, borderRadius: "50%", background: "var(--accent)", color: "#fff", border: "none", boxShadow: menuOpen ? "0 0 0 2px var(--shell), 0 0 0 4px var(--accent)" : "none", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>
             {user.initials}

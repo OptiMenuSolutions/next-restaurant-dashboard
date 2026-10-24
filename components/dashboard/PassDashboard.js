@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { MobileHeader, MobileNav, LoadingState, ErrorState, useTheme } from "../client/ClientChrome";
+import NotificationBell from "../client/NotificationBell";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -430,6 +431,7 @@ export default function PassDashboard({
             <path d="M20 20l-3.6-3.6" />
           </svg>
         </button>
+        <NotificationBell onOpen={() => setProfileDropdownOpen(false)} />
         <div style={{ position: "relative", paddingLeft: "6px", borderLeft: "1px solid var(--line)" }}>
           <div
             onClick={() => setProfileDropdownOpen((v) => !v)}

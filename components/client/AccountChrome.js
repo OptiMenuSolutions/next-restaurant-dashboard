@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useTheme } from "./ClientChrome";
+import NotificationBell from "./NotificationBell";
 
 /**
  * AccountChrome — shared header/nav/notification/profile-dropdown for the
@@ -54,12 +55,7 @@ export const FONT_LINKS = (
   </>
 );
 
-export const DEMO_NOTIFS = [
-  { id: 1, title: "Ingredient price alert", body: "Parmigiano Reggiano is up 14% this week.", time: "2h ago", color: "var(--red)", unread: true },
-  { id: 2, title: "Weekly cost summary ready", body: "This week's summary is ready to review.", time: "1d ago", color: "var(--accent)", unread: true },
-  { id: 3, title: "Low margin alert", body: "A menu item dropped below your target food cost.", time: "2d ago", color: "var(--amber)", unread: false },
-  { id: 4, title: "Invoice processed", body: "Your latest invoice was matched to ingredients.", time: "3d ago", color: "var(--green)", unread: false },
-];
+// Notifications come from the signed-in account's saved inbox.
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: "/client/dashboard" },
@@ -74,13 +70,12 @@ const NAV = [
  * and Billing. Returns the header element to render plus the current theme.
  *
  * Props: theme/onThemeChange (controlled, else internal), user {name,email},
- * notifItems (defaults to DEMO_NOTIFS), NavLink (defaults to <a>), onSignOut.
+ * NavLink (defaults to <a>), onSignOut. NotificationBell loads the real inbox.
  */
 export function useAccountChrome({
   theme: themeProp,
   onThemeChange,
   user = null, // null = still loading; never fall back to a fake identity
-  notifItems = DEMO_NOTIFS,
   NavLink = DefaultLink,
   logoSrc = "/landing/logo.png",
   logoDarkSrc = "/landing/logo-knockout.png",
@@ -90,8 +85,6 @@ export function useAccountChrome({
   const [theme, toggleTheme] = useTheme(themeProp, "light", onThemeChange);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [notifs, setNotifs] = useState(notifItems);
 
   // Guards against user being explicitly null (still loading) — a default
   // parameter only applies when the arg is undefined, not null, so a caller
@@ -99,7 +92,6 @@ export function useAccountChrome({
   const safeUser = user || { name: "", email: "" };
   const initials = (safeUser.name || "U").split(" ").map((p) => p.charAt(0)).join("").substring(0, 2).toUpperCase() || "•";
   const firstName = (safeUser.name || "").split(" ")[0] || (user ? safeUser.name : "");
-  const hasUnread = notifs.some((n) => n.unread);
 
   const header = (
     <div
@@ -125,51 +117,11 @@ export function useAccountChrome({
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--accent)", animation: "om-blink 2.4s infinite" }} />Live
         </div>
 
-        <div style={{ position: "relative" }}>
-          <button
-            type="button"
-            onClick={() => { setNotifOpen((v) => !v); setDropdownOpen(false); }}
-            title="Notifications"
-            style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, border: "1px solid var(--line)", borderRadius: "50%", background: "none", cursor: "pointer", flexShrink: 0 }}
-          >
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--faint)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 01-3.46 0" />
-            </svg>
-            {hasUnread && <span style={{ position: "absolute", top: 4, right: 5, width: 7, height: 7, borderRadius: "50%", background: "var(--red)", border: "1.5px solid var(--shell)" }} />}
-          </button>
-          {notifOpen && (
-            <>
-              <div onClick={() => setNotifOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 199, background: "transparent" }} />
-              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 10, width: 320, overflow: "hidden", boxShadow: "var(--shadow-lg)", zIndex: 200 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 15px", borderBottom: "1px solid var(--line-soft)" }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>Notifications</div>
-                  <button type="button" onClick={() => setNotifs((ns) => ns.map((n) => ({ ...n, unread: false })))} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 11.5, fontWeight: 600, color: "var(--accent-deep)", padding: 0 }}>
-                    Mark all read
-                  </button>
-                </div>
-                <div style={{ maxHeight: 360, overflowY: "auto" }}>
-                  {notifs.map((n) => (
-                    <div key={n.id} style={{ display: "flex", gap: 11, padding: "12px 15px", borderBottom: "1px solid var(--line-soft)", background: n.unread ? "var(--accent-tint)" : "transparent" }}>
-                      <div style={{ width: 4, borderRadius: 3, background: n.color, flexShrink: 0 }} />
-                      <div style={{ minWidth: 0, flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{n.title}</div>
-                          {n.unread && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", flexShrink: 0 }} />}
-                        </div>
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>{n.body}</div>
-                        <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: "var(--faint)", marginTop: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>{n.time}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <NotificationBell onOpen={() => setDropdownOpen(false)} />
 
         <div style={{ position: "relative", paddingLeft: 6, borderLeft: "1px solid var(--line)" }}>
           <div
-            onClick={() => { setDropdownOpen((v) => !v); setNotifOpen(false); }}
+            onClick={() => setDropdownOpen((v) => !v)}
             style={{ display: "flex", alignItems: "center", gap: 9, cursor: "pointer", padding: 3, borderRadius: 20, border: `1.5px solid ${dropdownOpen ? "var(--accent)" : "transparent"}` }}
           >
             <div style={{ width: 26, height: 26, borderRadius: "50%", background: "var(--accent)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>{initials}</div>
