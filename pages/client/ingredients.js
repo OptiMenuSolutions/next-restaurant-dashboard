@@ -239,35 +239,55 @@ export default function IngredientsPage() {
       }
     }
 
+    async function readAllRows(makeQuery, label) {
+      const out = [];
+      const PAGE = 500;
+
+      for (let from = 0; ; ) {
+        const page = await readRows(
+          makeQuery().range(from, from + PAGE - 1),
+          label
+        );
+
+        if (page.length === 0) return out;
+
+        out.push(...page);
+        from += page.length;
+      }
+    }
+
     const [ings, items, flatLinks, componentLinks, inventory] = await Promise.all([
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("ingredients")
           .select("*")
           .eq("restaurant_id", restaurantId)
-          .order("name")
-          .limit(1000),
+          .order("name", { ascending: true })
+          .order("id", { ascending: true }),
         "your ingredients"
       ),
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("invoice_items")
           .select("*, invoices!invoice_items_invoice_id_fkey!inner(id, date, supplier, number, restaurant_id)")
           .not("ingredient_id", "is", null)
           .eq("invoices.restaurant_id", restaurantId)
-          .limit(5000),
+          .order("id", { ascending: true }),
         "ingredient purchase history"
       ),
       // Legacy recipes are merged with component recipes below.
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("menu_item_ingredients")
           .select("quantity, ingredient_id, menu_items!inner(id, name, price, cost, category, restaurant_id)")
-          .eq("menu_items.restaurant_id", restaurantId),
+          .eq("menu_items.restaurant_id", restaurantId)
+          .order("menu_item_id", { ascending: true })
+          .order("ingredient_id", { ascending: true })
+          .order("quantity", { ascending: true }),
         "ingredient dish links"
       ),
-      readRows(
-        supabase
+      readAllRows(
+        () => supabase
           .from("component_ingredients")
           .select(`
             quantity, unit, ingredient_id,
@@ -276,7 +296,8 @@ export default function IngredientsPage() {
               menu_items!inner(id, name, price, cost, category, restaurant_id)
             )
           `)
-          .eq("menu_item_components.menu_items.restaurant_id", restaurantId),
+          .eq("menu_item_components.menu_items.restaurant_id", restaurantId)
+          .order("id", { ascending: true }),
         "ingredient recipe details"
       ),
       loadCurrentInventory(supabase, restaurantId).catch((error) => {
