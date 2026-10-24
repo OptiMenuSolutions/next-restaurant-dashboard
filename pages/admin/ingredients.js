@@ -116,14 +116,7 @@ function LibraryPage() {
 
   const isGlobal = scope === 'global';
   const switchScope = (s) => { setScope(s); setSel(null); setFilter('all'); setQ(''); };
-  const selectIngredient = (id) => {
-    setSel(id);
-    if (isPhone) {
-      window.requestAnimationFrame(() => {
-        document.getElementById('ingredient-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
-  };
+  const selectIngredient = (id) => setSel(id);
   const selGlobal = isGlobal ? globalsById.get(sel) || null : null;
   const selItem = !isGlobal ? restItems.find((x) => x.id === sel) || null : null;
 
@@ -320,13 +313,26 @@ function LibraryPage() {
           )}
         </section>}
 
-        <aside id="ingredient-details" aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto', scrollMarginTop: 64 }}>
-          {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
-          {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
-          {!(selGlobal || selItem) && <div style={{ color: 'var(--muted)', fontSize: 13.5, padding: '30px 0', textAlign: 'center' }}>Click an ingredient to see its price history and details.</div>}
-        </aside>
+        {!isPhone && (
+          <aside aria-label="Details" style={{ flex: '0 1 420px', minWidth: 300, border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, maxHeight: PANE_H, overflowY: 'auto' }}>
+            {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
+            {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
+            {!(selGlobal || selItem) && <div style={{ color: 'var(--muted)', fontSize: 13.5, padding: '30px 0', textAlign: 'center' }}>Click an ingredient to see its price history and details.</div>}
+          </aside>
+        )}
       </div>
 
+      {isPhone && (selGlobal || selItem) && (
+        <Dialog title="Ingredient details" onClose={() => setSel(null)} width={640}>
+          <button type="button" className="om-btn" onClick={() => setSel(null)} style={{ width: '100%', minHeight: 40, justifyContent: 'center' }}>
+            Close
+          </button>
+          <div style={{ height: '45dvh', minHeight: 0, overflowY: 'auto', paddingRight: 2 }}>
+            {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
+            {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
+          </div>
+        </Dialog>
+      )}
       {dialog === 'add' && <AddDialog busy={busy} onClose={() => setDialog(null)} onSave={async (row) => { const r = await post({ action: 'create', ...row }); if (r) { setDialog(null); setScope('global'); setSel(r.id); setFlash(`Added ${row.name}.`); } }} />}
       {dialog === 'import' && <ImportDialog busy={busy} onClose={() => setDialog(null)} onImport={async (rows) => { const r = await post({ action: 'import', rows }); if (r) { setDialog(null); setFlash(`Added ${r.added}. Skipped ${r.skipped} (already in the library or missing a name or unit).`); } }} />}
     </>
