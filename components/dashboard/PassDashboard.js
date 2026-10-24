@@ -1332,7 +1332,20 @@ export default function PassDashboard({
       <div
         className="om-dash"
         data-theme={theme}
-        style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}
+        style={isMobile
+          ? {
+              position: "fixed",
+              inset: 0,
+              minHeight: 0,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }
+          : {
+              minHeight: "100vh",
+              display: "flex",
+              flexDirection: "column",
+            }}
       >
         {isMobile ? mobileHeader : header}
         {body}
@@ -1520,7 +1533,26 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buc
   const stepBtn = { height: "44px", display: "flex", alignItems: "center", gap: "6px", borderRadius: "22px", fontFamily: SANS, fontSize: "13.5px", fontWeight: 700 };
 
   return (
-    <div style={{ background: "var(--panel)", flex: 1, display: "flex", flexDirection: "column" }}>
+    <div
+      style={{
+        background: "var(--panel)",
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehaviorY: "contain",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
       <div style={{ padding: "14px 16px 28px", display: "flex", flexDirection: "column", gap: "18px" }}>
 
         {/* live line, greeting, OptiScore + barometers */}
@@ -1693,6 +1725,7 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buc
 
         {/* month in review (built in the parent so it shares the desktop calendar state) */}
         <div data-tour="db-week">{weekView}</div>
+      </div>
       </div>
 
       <MobileNav active={activeNav} NavLink={Link} />
