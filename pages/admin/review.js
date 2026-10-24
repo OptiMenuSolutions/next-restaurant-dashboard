@@ -219,15 +219,42 @@ function InvoiceEditor({ id, onDone }) {
   const set = (lineId, patch) => setLines((ls) => ls.map((l) => (l.id === lineId ? { ...l, ...patch } : l)));
 
   async function save(reviewed) {
+    if (busy) return;
+
     setBusy(true);
     setFlash('');
+
     try {
-      const json = await api('/api/admin/review/invoices', { action: reviewed ? 'reviewed' : 'save', invoiceId: id, lines: dirty });
-      if (json.errors?.length) setFlash(`Saved with ${json.errors.length} problem(s): ${json.errors[0]}`);
-      if (reviewed) await onDone();
-      else { await load(); if (!json.errors?.length) setFlash(`Saved. ${json.changed} line(s) fixed, ${json.relinked} rematched.`); }
+      const json = await api('/api/admin/review/invoices', {
+        action: reviewed ? 'reviewed' : 'save',
+        invoiceId: id,
+        lines: dirty,
+      });
+
+      if (json.ok === false || json.errors?.length) {
+        const details = json.errors?.join(' · ') ||
+          'The calculations did not finish.';
+
+        setFlash(
+          `Review not completed. Some edits may already be saved, but the calculations are not confirmed. ${details} Your entries remain here. Click Save or Mark reviewed again to retry.`
+        );
+
+        return;
+      }
+
+      if (reviewed) {
+        await onDone();
+      } else {
+        await load();
+
+        setFlash(
+          `Saved. ${json.changed} line(s) fixed, ${json.relinked} rematched. Inventory recalculated.`
+        );
+      }
     } catch (e) {
-      setFlash(e.message);
+      setFlash(
+        `Could not confirm completion. ${e.message} Your entries remain here. Retry to confirm the save and recalculate inventory.`
+      );
     } finally {
       setBusy(false);
     }

@@ -12,6 +12,8 @@ import { saveInvoiceLines } from '../../../../lib/admin/invoiceLines';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
 import { convertInvoiceCostToStandardUnit } from '../../../../lib/standardizedUnits';
 
+export const config = { maxDuration: 300 };
+
 const words = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
 
 // Up to 3 ingredients whose names share the most words with the line.
@@ -139,8 +141,31 @@ export default async function handler(req, res) {
     const { action, invoiceId, lines } = req.body || {};
     if (!invoiceId) return res.status(400).json({ error: 'invoiceId is required' });
 
-    let result = { changed: 0, relinked: 0, errors: [] };
-    if (Array.isArray(lines) && lines.length) result = await saveInvoiceLines(db, invoiceId, lines);
+    if (!['save', 'reviewed'].includes(action)) {
+      return res.status(400).json({
+        error: 'Unknown invoice review action.',
+      });
+    }
+
+    if (lines != null && !Array.isArray(lines)) {
+      return res.status(400).json({
+        error: 'Invoice lines must be a list.',
+      });
+    }
+
+    // An empty edit list still needs to retry any failed calculations.
+    const result = await saveInvoiceLines(
+      db,
+      invoiceId,
+      lines || []
+    );
+
+    if (result.errors.length) {
+      return res.status(200).json({
+        ok: false,
+        ...result,
+      });
+    }
 
     const { data: inv } = await db.from('invoices').select('id, restaurant_id, supplier, number').eq('id', invoiceId).single();
     const { data: r } = inv ? await db.from('restaurants').select('id, name').eq('id', inv.restaurant_id).single() : { data: null };
@@ -148,11 +173,29 @@ export default async function handler(req, res) {
 
     if (action === 'reviewed') {
       const now = new Date().toISOString();
-      const [{ error: e1 }, { error: e2 }] = await Promise.all([
-        db.from('invoices').update({ reviewed: true, reviewed_at: now, reviewed_by: admin.user.id }).eq('id', invoiceId),
-        db.from('invoice_items').update({ reviewed: true }).eq('invoice_id', invoiceId),
-      ]);
-      if (e1 || e2) throw new Error((e1 || e2).message);
+      const { error: lineReviewError } = await db
+        .from('invoice_items')
+        .update({ reviewed: true })
+        .eq('invoice_id', invoiceId);
+
+      if (lineReviewError) {
+        throw new Error(lineReviewError.message);
+      }
+
+      // Mark the parent invoice last so it stays in the review queue
+      // if an earlier step fails.
+      const { error: invoiceReviewError } = await db
+        .from('invoices')
+        .update({
+          reviewed: true,
+          reviewed_at: now,
+          reviewed_by: admin.user.id,
+        })
+        .eq('id', invoiceId);
+
+      if (invoiceReviewError) {
+        throw new Error(invoiceReviewError.message);
+      }
       await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: `Marked ${what} reviewed${result.changed || result.relinked ? ` (${result.changed} lines fixed, ${result.relinked} rematched)` : ''}`, target_restaurant_id: r?.id, target_restaurant_name: r?.name });
     } else if (result.changed || result.relinked) {
       await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: `Edited ${what}: ${result.changed} lines fixed, ${result.relinked} rematched`, target_restaurant_id: r?.id, target_restaurant_name: r?.name });
