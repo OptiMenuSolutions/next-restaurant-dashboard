@@ -90,6 +90,20 @@ function Invoices({ initialRestaurant, initialInvoice }) {
 
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!list) return <LoadingState label="Loading invoices…" />;
+  if (isPhone && initialInvoice) {
+    return (
+      <InvoiceEditor
+        key={initialInvoice}
+        id={initialInvoice}
+        onDone={async () => {
+          await load();
+          const query = { ...router.query };
+          delete query.invoice;
+          await router.replace({ pathname: router.pathname, query }, undefined, { shallow: true });
+        }}
+      />
+    );
+  }
   if (!list.length) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>Every invoice is reviewed. Nice.</div>;
 
   const groups = [];
@@ -167,6 +181,7 @@ const cell = { padding: '7px 6px', borderTop: '1px solid var(--line-soft)', vert
 const inp = (w) => ({ width: w, minHeight: 32, border: '1px solid var(--line)', borderRadius: 6, padding: '0 7px', background: 'var(--shell)', color: 'var(--text)', fontFamily: MONO, fontSize: 12.5 });
 
 function InvoiceEditor({ id, onDone }) {
+  const isPhone = useIsPhone();
   const api = useApi();
   const [data, setData] = useState(null);
   const [lines, setLines] = useState([]);
@@ -176,6 +191,7 @@ function InvoiceEditor({ id, onDone }) {
   const [page, setPage] = useState(0);
   const [calc, setCalc] = useState(null);
   const [sel, setSel] = useState(null);
+  const [photoHidden, setPhotoHidden] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -188,6 +204,9 @@ function InvoiceEditor({ id, onDone }) {
     }
   }, [api, id]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (data?.lines?.length && !sel) setSel(data.lines[0].id);
+  }, [data, sel]);
 
   const dirty = useMemo(() => {
     if (!data) return [];
@@ -220,6 +239,130 @@ function InvoiceEditor({ id, onDone }) {
   const inv = data.invoice;
   const pg = data.pages[page];
   const sum = lines.reduce((a, l) => a + (Number(l.amount) || 0), 0);
+
+  if (isPhone) {
+    return (
+      <div style={{ position: 'fixed', top: 40, right: 0, bottom: 0, left: 0, zIndex: 105, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--shell)' }}>
+        {!photoHidden && (
+          <section aria-label="Invoice photo" style={{ height: '38dvh', minHeight: 170, flex: '0 0 38dvh', display: 'flex', flexDirection: 'column', borderBottom: '1px solid var(--line)', background: 'var(--panel)' }}>
+            <div style={{ minHeight: 40, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', overflowX: 'auto', borderBottom: '1px solid var(--line)' }}>
+              {data.pages.length > 1 && data.pages.map((p, i) => (
+                <button key={i} type="button" className="om-btn" onClick={() => setPage(i)}>{p.page || i + 1}</button>
+              ))}
+              {pg && <a href={pg.url} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12, fontWeight: 700 }}>Open full size ↗</a>}
+              <button type="button" className="om-btn" style={{ flexShrink: 0 }} onClick={() => setPhotoHidden(true)}>Hide photo</button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+              {!pg && <div style={{ padding: 16, color: 'var(--muted)', fontSize: 13 }}>No photo on file for this invoice.</div>}
+              {pg?.kind === 'pdf' && <iframe title="Invoice" src={pg.url} style={{ width: '100%', height: '100%', minHeight: 0, border: 0 }} />}
+              {pg?.kind === 'image' && <PhotoViewer key={pg.url} url={pg.url} alt={`Invoice page ${pg.page || page + 1}`} />}
+            </div>
+          </section>
+        )}
+
+        {photoHidden && (
+          <div style={{ flexShrink: 0, padding: '6px 12px', borderBottom: '1px solid var(--line)' }}>
+            <button type="button" className="om-btn" onClick={() => setPhotoHidden(false)}>Show invoice photo</button>
+          </div>
+        )}
+
+        <section aria-label="Invoice lines" style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 14px' }}>
+          <div style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>
+              {inv.supplier || 'Unknown supplier'}{inv.number ? ` · ${inv.number}` : ''}
+            </h2>
+            <div style={{ marginTop: 4, fontSize: 12.5, color: 'var(--muted)' }}>
+              {inv.restaurant} · {shortDate(inv.date || inv.created_at)}
+            </div>
+            <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>
+              {lines.length} lines · {data.lines.filter((line) => line.checks?.some((check) => check.tone === 'amber')).length} flagged · Invoice total {money(inv.total)} · Lines total {money(sum)}
+            </div>
+          </div>
+
+          {flash && <div style={{ marginBottom: 10, padding: 10, borderRadius: 8, background: 'var(--accent-tint)', fontSize: 13 }}>{flash}</div>}
+
+          {lines.map((line) => {
+            const original = data.lines.find((item) => item.id === line.id);
+            const selected = sel === line.id;
+            const changed = (key) => String(original?.[key] ?? '') !== String(line[key] ?? '');
+            const inputStyle = (key) => ({
+              width: '100%',
+              minWidth: 0,
+              boxSizing: 'border-box',
+              fontFamily: MONO,
+              borderColor: changed(key) ? 'var(--accent)' : undefined,
+              background: changed(key) ? 'var(--accent-tint)' : undefined,
+            });
+
+            return (
+              <article key={line.id} style={{ marginBottom: 9, border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden', background: 'var(--shell)' }}>
+                <button type="button" onClick={() => setSel(line.id)}
+                  style={{ width: '100%', minHeight: 48, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '10px 12px', border: 0, background: selected ? 'var(--panel)' : 'transparent', color: 'var(--text)', textAlign: 'left', fontFamily: "'Manrope', sans-serif" }}>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 800 }}>{line.item_name || 'Unnamed item'}</span>
+                    {!selected && <span style={{ display: 'block', marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>{line.quantity || '—'} {line.unit || ''} × {money(line.unit_cost)} · {line.ingredient_id ? 'Matched ingredient' : 'Not matched'}</span>}
+                  </span>
+                  <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 12 }}>{money(line.amount)}</span>
+                </button>
+
+                {selected && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 12px 12px', borderTop: '1px solid var(--line-soft)' }}>
+                    {original?.checks?.map((check, index) => (
+                      <div key={index} style={{ color: check.tone === 'amber' ? 'var(--amber)' : 'var(--muted)', fontSize: 12, fontWeight: check.tone === 'amber' ? 700 : 500 }}>{check.text}</div>
+                    ))}
+                    {line.edited && <div style={{ color: 'var(--muted)', fontSize: 11.5 }}>AI read {line.original_quantity ?? '—'} at {money(line.original_price)}</div>}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: 'var(--muted)' }}>
+                        Qty
+                        <input className="om-field" aria-label="Quantity" inputMode="decimal" value={line.quantity ?? ''} onChange={(e) => set(line.id, { quantity: e.target.value })} style={inputStyle('quantity')} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: 'var(--muted)' }}>
+                        Unit
+                        <input className="om-field" aria-label="Unit" value={line.unit ?? ''} onChange={(e) => set(line.id, { unit: e.target.value })} style={inputStyle('unit')} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: 'var(--muted)' }}>
+                        Unit cost
+                        <input className="om-field" aria-label="Unit cost" inputMode="decimal" value={line.unit_cost ?? ''} onChange={(e) => set(line.id, { unit_cost: e.target.value })} style={inputStyle('unit_cost')} />
+                      </label>
+                      <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11.5, color: 'var(--muted)' }}>
+                        Line total
+                        <input className="om-field" aria-label="Line total" inputMode="decimal" value={line.amount ?? ''} onChange={(e) => set(line.id, { amount: e.target.value })} style={inputStyle('amount')} />
+                      </label>
+                    </div>
+
+                    <button type="button" className="om-btn" aria-expanded={calc === line.id} onClick={() => setCalc(calc === line.id ? null : line.id)}>Case math</button>
+                    {calc === line.id && <CaseCalc line={line} onClose={() => setCalc(null)} onUse={(patch) => { set(line.id, patch); setCalc(null); }} />}
+
+                    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 11.5, color: 'var(--muted)' }}>
+                      Rematch ingredient
+                      <select className="om-field" aria-label="Ingredient" value={line.ingredient_id || ''} onChange={(e) => set(line.id, { ingredient_id: e.target.value || null })} style={inputStyle('ingredient_id')}>
+                        <option value="">Not matched</option>
+                        {original?.suggestions?.length > 0 && (
+                          <optgroup label="Suggested">{original.suggestions.map((suggestion) => <option key={`s${suggestion.id}`} value={suggestion.id}>{suggestion.name}</option>)}</optgroup>
+                        )}
+                        <optgroup label="All ingredients">{data.ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.id}>{ingredient.name} ({ingredient.unit})</option>)}</optgroup>
+                      </select>
+                    </label>
+                    {changed('ingredient_id') && original?.ingredient_id && <div style={{ color: 'var(--muted)', fontSize: 11 }}>Future invoices with this item name will match it too.</div>}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
+
+        <div style={{ flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '10px 16px calc(10px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--line)', background: 'var(--shell)' }}>
+          <button type="button" className="om-btn" disabled={busy || !dirty.length} onClick={() => save(false)} style={{ minHeight: 44, justifyContent: 'center' }}>
+            {dirty.length ? `Save (${dirty.length})` : 'Save'}
+          </button>
+          <button type="button" className="om-pri" disabled={busy} onClick={() => save(true)} style={{ minHeight: 44, justifyContent: 'center' }}>
+            {busy ? 'Saving…' : 'Mark reviewed'}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -581,10 +724,17 @@ function DishCard({ dish, ingredients, api, onSaved, onChecked }) {
 export default function Page() {
   const router = useRouter();
   const restaurant = typeof router.query.restaurant === 'string' ? router.query.restaurant : null;
+  const invoice = typeof router.query.invoice === 'string' ? router.query.invoice : null;
 
   return (
     <AdminShell section="Data quality" sub="Review queue" title="Review queue"
-      back={restaurant ? { label: 'Restaurant invoices', href: `/admin/restaurants/${restaurant}?tab=Invoices` } : undefined}>
+      back={invoice
+        ? { label: 'Review queue', href: '/admin/review' }
+        : restaurant
+          ? { label: 'Restaurant invoices', href: `/admin/restaurants/${restaurant}?tab=Invoices` }
+          : undefined}
+      hideBottomNav={Boolean(invoice)}
+      fixedBack={Boolean(invoice)}>
       <ReviewPage />
     </AdminShell>
   );
