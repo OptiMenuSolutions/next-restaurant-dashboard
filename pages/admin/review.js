@@ -33,16 +33,22 @@ function useApi() {
 
 function ReviewPage() {
   const router = useRouter();
+  const isPhone = useIsPhone();
   const [tab, setTab] = useState('invoices');
   useEffect(() => { if (router.query.tab === 'menus') setTab('menus'); }, [router.query.tab]);
 
   return (
     <>
       <PageHead kicker="DATA QUALITY" title="Review queue" sub="Check what the AI read before owners lean on it. Fixes here update prices and dish costs right away." />
-      <div role="tablist" aria-label="What to review" style={{ display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
-        {[['invoices', 'Scanned invoices'], ['menus', 'Menu parses']].map(([k, l]) => (
+      <div role="tablist" aria-label="What to review"
+        style={isPhone
+          ? { display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'var(--panel)', marginBottom: 12 }
+          : { display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
+        {[['invoices', 'Invoices'], ['menus', 'Menus']].map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-            style={{ padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>{l}</button>
+            style={isPhone
+              ? { flex: 1, minHeight: 40, border: 0, borderRadius: 9, background: tab === k ? 'var(--shell)' : 'transparent', color: tab === k ? 'var(--text)' : 'var(--muted)', cursor: 'pointer', font: `${tab === k ? 800 : 600} 14px 'Manrope', sans-serif` }
+              : { padding: '10px 0', border: 0, background: 'none', cursor: 'pointer', font: `${tab === k ? 700 : 500} 13.5px 'Manrope', sans-serif`, color: tab === k ? 'var(--text)' : 'var(--muted)', borderBottom: `2px solid ${tab === k ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>{l}</button>
         ))}
       </div>
       {tab === 'invoices' ? (
@@ -91,6 +97,40 @@ function Invoices({ initialRestaurant, initialInvoice }) {
     let g = groups.find((x) => x.id === i.restaurant_id);
     if (!g) groups.push((g = { id: i.restaurant_id, name: i.restaurant, items: [] }));
     g.items.push(i);
+  }
+
+  if (isPhone) {
+    return (
+      <section aria-label="Invoices to review" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {list.map((i) => {
+          const on = i.id === openId;
+          return (
+            <button key={i.id} type="button" onClick={() => {
+              setOpenId(i.id);
+              router.replace({ pathname: router.pathname, query: { ...router.query, invoice: i.id } }, undefined, { shallow: true });
+            }}
+              style={{ width: '100%', minWidth: 0, padding: 12, textAlign: 'left', border: `1px solid ${on ? 'var(--accent)' : 'var(--line)'}`, borderRadius: 12, background: on ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', cursor: 'pointer', fontFamily: "'Manrope', sans-serif" }}>
+              <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 800 }}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.number || i.supplier || 'Unknown invoice'}</span>
+                <span style={{ flexShrink: 0, fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{shortDate(i.date || i.created_at)}</span>
+              </span>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, color: 'var(--muted)' }}>
+                {i.supplier || 'Unknown supplier'} · {i.restaurant}
+              </span>
+              {i.parse_status === 'failed' && <span style={{ display: 'block', marginTop: 4, color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>Could not be read</span>}
+              <span style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--line-soft)' }}>
+                {[['LINES', i.lines], ['FLAGGED', i.flagged], ['TOTAL', money(i.total)]].map(([label, value]) => (
+                  <span key={label} style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3, fontFamily: MONO, fontSize: 12, overflowWrap: 'anywhere' }}>
+                    <span style={{ color: 'var(--muted)', fontSize: 9.5, letterSpacing: '0.08em' }}>{label}</span>
+                    <span>{value}</span>
+                  </span>
+                ))}
+              </span>
+            </button>
+          );
+        })}
+      </section>
+    );
   }
 
   return (

@@ -91,19 +91,47 @@ export default async function handler(req, res) {
         return res.status(200).json(out);
       }
       const { data: invs, error } = await db.from('invoices')
-        .select('id, restaurant_id, supplier, number, date, amount, created_at, invoice_items(count)')
+        .select('id, restaurant_id, supplier, number, date, amount, created_at, parse_status, invoice_items(id, quantity, unit, unit_cost, amount, ingredient_id)')
         .eq('reviewed', false).eq('is_sample', false)
         .order('created_at', { ascending: true }).limit(500);
       if (error) throw new Error(error.message);
       const ids = [...new Set((invs || []).map((i) => i.restaurant_id))];
-      const { data: rest } = ids.length ? await db.from('restaurants').select('id, name').in('id', ids) : { data: [] };
+      const [{ data: rest }, ingredients] = await Promise.all([
+        ids.length ? db.from('restaurants').select('id, name').in('id', ids) : Promise.resolve({ data: [] }),
+        ids.length
+          ? fetchAll(() => db.from('ingredients').select('id, restaurant_id, name, unit, last_price').in('restaurant_id', ids))
+          : Promise.resolve([]),
+      ]);
       const names = new Map((rest || []).map((r) => [r.id, r.name]));
+      const ingredientsByRestaurant = new Map();
+      for (const ingredient of ingredients) {
+        const list = ingredientsByRestaurant.get(ingredient.restaurant_id) || [];
+        list.push(ingredient);
+        ingredientsByRestaurant.set(ingredient.restaurant_id, list);
+      }
       return res.status(200).json({
-        invoices: (invs || []).map((i) => ({
-          id: i.id, restaurant_id: i.restaurant_id, restaurant: names.get(i.restaurant_id) || 'Unknown',
-          supplier: i.supplier, number: i.number, date: i.date, total: i.total_amount ?? i.amount,
-          lines: i.invoice_items?.[0]?.count ?? 0, parse_status: i.parse_status, created_at: i.created_at,
-        })),
+        invoices: (invs || []).map((i) => {
+          const ingredientById = new Map((ingredientsByRestaurant.get(i.restaurant_id) || []).map((g) => [g.id, g]));
+          const flagged = (i.invoice_items || []).filter((line) => {
+            const ingredient = line.ingredient_id ? ingredientById.get(line.ingredient_id) : null;
+            const quantity = Number(line.quantity);
+            const unitCost = Number(line.unit_cost);
+            const amount = Number(line.amount);
+            if (!line.ingredient_id) return true;
+            if (quantity > 0 && unitCost > 0 && amount > 0 && Math.abs(quantity * unitCost - amount) > Math.max(0.05, amount * 0.02)) return true;
+            if (ingredient && unitCost > 0 && Number(ingredient.last_price) > 0) {
+              const standardCost = convertInvoiceCostToStandardUnit(unitCost, line.unit || 'each', ingredient.name);
+              const difference = (standardCost - Number(ingredient.last_price)) / Number(ingredient.last_price);
+              if (Math.abs(difference) >= 0.3) return true;
+            }
+            return false;
+          }).length;
+          return {
+            id: i.id, restaurant_id: i.restaurant_id, restaurant: names.get(i.restaurant_id) || 'Unknown',
+            supplier: i.supplier, number: i.number, date: i.date, total: i.total_amount ?? i.amount,
+            lines: i.invoice_items?.length ?? 0, flagged, parse_status: i.parse_status, created_at: i.created_at,
+          };
+        }),
       });
     }
 
