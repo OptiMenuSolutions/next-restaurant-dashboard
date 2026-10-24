@@ -13,6 +13,7 @@
 import { adminDb as db, requireAdmin, etDate, addDays, TOUR_RESTAURANT_ID } from '../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
+import { createHash, randomBytes } from 'crypto';
 import { sendFromNick, ownerOf } from '../../../../lib/admin/email';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -89,42 +90,76 @@ export default async function handler(req, res) {
 
     if (b.action === 'ask-permission') {
       const { data: q, error: qError } = await db.from('admin_testimonials')
-        .select('id, quote, person, restaurant_id, permission')
+        .select('id, quote, person, restaurant_id, permission, permission_token_hash, permission_token_expires_at')
         .eq('id', b.id)
         .maybeSingle();
       if (qError) throw new Error(qError.message);
       if (!q) return res.status(404).json({ error: 'Quote not found' });
-      if (q.permission !== 'not asked') {
-        return res.status(409).json({ error: 'A permission request has already been sent or this quote has a response.' });
+      if (!['not asked', 'asked'].includes(q.permission)) {
+        return res.status(409).json({ error: 'A permission request cannot be sent for this quote.' });
       }
 
       const owner = await ownerOf(db, q.restaurant_id);
       if (!owner) return res.status(400).json({ error: 'No owner email on file for this restaurant' });
 
+      const { data: restaurant, error: restaurantError } = await db.from('restaurants')
+        .select('name')
+        .eq('id', q.restaurant_id)
+        .maybeSingle();
+      if (restaurantError) throw new Error(restaurantError.message);
+
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
       const attribution = q.person || owner.name;
-      const message = `Hi ${owner.first || 'there'},
+      const restaurantName = restaurant?.name || 'your restaurant';
+      const approvalUrl = `https://www.opti-menu.com/testimonial-approval#token=${token}`;
+
+      let claim = db.from('admin_testimonials')
+        .update({
+          permission: 'asked',
+          permission_token_hash: tokenHash,
+          permission_token_expires_at: expiresAt,
+        })
+        .eq('id', q.id)
+        .eq('permission', q.permission);
+
+      claim = q.permission_token_hash
+        ? claim.eq('permission_token_hash', q.permission_token_hash)
+        : claim.is('permission_token_hash', null);
+
+      const { data: claimed, error: claimError } = await claim.select('id').maybeSingle();
+      if (claimError) throw new Error(claimError.message);
+      if (!claimed) return res.status(409).json({ error: 'This quote changed. Refresh the page and try again.' });
+
+      try {
+        await sendFromNick({
+          to: owner.email,
+          subject: 'May we share your OptiMenu quote?',
+          message: `Hi ${owner.first || 'there'},
 
 You shared this with us:
 
 “${q.quote}”
 
-Would you be comfortable with OptiMenu sharing this quote on our website with the attribution “${attribution} at your restaurant”? We will not publish it unless you say yes. A reply to this email is enough. No is completely fine.
+May we publish this quote on the OptiMenu website with the attribution “${attribution}, ${restaurantName}”? Clicking the button below records your approval. We will not publish it unless you approve. If you do not approve, you can ignore this email or reply to Nick.
 
-Nick`;
+Nick`,
+          button: { label: 'Yes, you can use my quote', url: approvalUrl },
+        });
+      } catch (sendError) {
+        await db.from('admin_testimonials')
+          .update({
+            permission: q.permission,
+            permission_token_hash: q.permission_token_hash,
+            permission_token_expires_at: q.permission_token_expires_at,
+          })
+          .eq('id', q.id)
+          .eq('permission_token_hash', tokenHash);
+        throw sendError;
+      }
 
-      await sendFromNick({
-        to: owner.email,
-        subject: 'May we share your OptiMenu quote?',
-        message,
-      });
-
-      const { error: updateError } = await db.from('admin_testimonials')
-        .update({ permission: 'asked' })
-        .eq('id', q.id)
-        .eq('permission', 'not asked');
-      if (updateError) throw new Error(updateError.message);
-
-      await log('Emailed a testimonial permission request');
+      await log(q.permission === 'asked' ? 'Resent a testimonial permission request' : 'Emailed a testimonial permission request');
       return res.status(200).json({ ok: true });
     }
 

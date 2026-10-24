@@ -131,6 +131,7 @@ function TestimonialsPage() {
                   {q.permission === 'asked' && <>
                     <button type="button" className="om-pri" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
                     <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'no' })}>They said no</button>
+                    <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'ask-permission', id: q.id }, 'Permission email sent again.')}>Resend permission email</button>
                   </>}
                   {q.permission === 'yes' && (
                     <button type="button" aria-pressed={!!q.on_website} className="om-btn" style={{ minHeight: 30, borderColor: q.on_website ? 'var(--green)' : 'var(--line)', color: q.on_website ? 'var(--green)' : 'var(--text)' }} disabled={busy}
@@ -166,6 +167,9 @@ function TestimonialsPage() {
       {more && (
         <Dialog title="Quote actions" onClose={() => setMore(null)} width={420}>
           <button type="button" className="om-btn" onClick={() => { copy(`“${more.quote}”${more.person ? ` (${[more.person, more.restaurant].filter(Boolean).join(', ')})` : ''}`, 'Quote copied.'); setMore(null); }}>Copy quote</button>
+          {more.permission === 'asked' && (
+            <button type="button" className="om-btn" disabled={busy} onClick={() => { post({ action: 'ask-permission', id: more.id }, 'Permission email sent again.'); setMore(null); }}>Resend permission email</button>
+          )}
           {more.permission === 'asked' && (
             <button type="button" className="om-btn" disabled={busy} onClick={() => { post({ action: 'permission', id: more.id, permission: 'no' }); setMore(null); }}>They said no</button>
           )}
