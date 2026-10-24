@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "next/router";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
 import { useIsMobile, useInApp, MobileBackBar, MobileNav } from "./ClientChrome";
 import ScannersCard from "./ScannersCard";
+import SupportConversation from "./SupportConversation";
 
 /**
  * ProfileScreen — ported from OptiMenu Profile.dc.html. Presentational;
@@ -37,8 +39,60 @@ export default function ProfileScreen({
   const { header, theme } = useAccountChrome({ user, NavLink, onSignOut });
   const isMobile = useIsMobile(900);
   const inApp = useInApp();
+  const router = useRouter();
+  const threadId = typeof router.query.thread === "string"
+    ? router.query.thread
+    : null;
 
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
+
+  function closeSupportConversation() {
+    const { thread, ...query } = router.query;
+    router.replace(
+      { pathname: "/client/profile", query: { ...query, tab: "support" } },
+      undefined,
+      { shallow: true, scroll: false }
+    );
+  }
+
+  function switchProfileTab(nextTab) {
+    setActiveTab(nextTab);
+    const { thread, ...query } = router.query;
+    router.push(
+      { pathname: "/client/profile", query: { ...query, tab: nextTab } },
+      undefined,
+      { shallow: true, scroll: false }
+    );
+  }
+
+  useEffect(() => {
+    if (activeTab !== "support" || !threadId) return;
+
+    const previousOverflow = document.body.style.overflow;
+    if (isMobile) document.body.style.overflow = "hidden";
+
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        const { thread, ...query } = router.query;
+        router.replace(
+          { pathname: "/client/profile", query: { ...query, tab: "support" } },
+          undefined,
+          { shallow: true, scroll: false }
+        );
+      }
+    };
+
+    window.addEventListener("keydown", onKey);
+
+    return () => {
+      if (isMobile) document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [activeTab, threadId, isMobile, router]);
   const [restaurantName, setRestaurantName] = useState(restaurantNameProp);
   const [targetFoodCost, setTargetFoodCost] = useState(targetFoodCostProp);
   const [notifs, setNotifs] = useState(notifPrefs);
@@ -130,14 +184,14 @@ export default function ProfileScreen({
       ) : header}
 
       <div style={{ background: "var(--panel)", minHeight: "calc(100vh - 41px)", display: "flex", flexDirection: "column", alignItems: "center", padding: isMobile ? "0 16px 28px" : "0 20px 60px" }}>
-        <div style={{ width: "100%", maxWidth: 640, paddingTop: isMobile ? 18 : 24 }}>
+        <div style={{ width: "100%", maxWidth: !isMobile && activeTab === "support" && threadId ? 1120 : 640, paddingTop: isMobile ? 18 : 24 }}>
           <div style={{ fontFamily: "'IBM Plex Mono',monospace", fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 5 }}>Account settings</div>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.1, marginBottom: 16 }}>Profile &amp; settings</div>
 
           <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: isMobile ? "repeat(4, minmax(0, 1fr))" : undefined, alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3, marginBottom: 16, overflowX: "auto" }}>
             {tabs.map((t) => (
               <button
-                key={t.id} type="button" onClick={() => setActiveTab(t.id)}
+                key={t.id} type="button" onClick={() => switchProfileTab(t.id)}
                 style={{ border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, borderRadius: 16, padding: isMobile ? "0 4px" : "8px 15px", minHeight: isMobile ? 40 : undefined, whiteSpace: "nowrap", background: activeTab === t.id ? "var(--accent-tint)" : "transparent", color: activeTab === t.id ? "var(--accent-deep)" : "var(--muted)" }}
               >
                 {isMobile && t.id === "notifications" ? "Alerts" : t.label}
@@ -422,7 +476,8 @@ export default function ProfileScreen({
           )}
 
           {activeTab === "support" && (
-            <div>
+            <div style={{ display: !isMobile && threadId ? "grid" : "block", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.1fr)", gap: 20, alignItems: "start" }}>
+              <div style={{ minWidth: 0 }}>
               <div onClick={onRestartTour} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", ...card, cursor: "pointer" }}>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>Restart tour</div>
                 <div style={{ color: "var(--faint)" }}>→</div>
@@ -458,6 +513,45 @@ export default function ProfileScreen({
               </div>
 
               <div style={{ textAlign: "center", fontFamily: "'IBM Plex Mono',monospace", fontSize: 11, letterSpacing: "0.08em", color: "var(--faint)", marginBottom: 20 }}>OptiMenu · Founding member plan · v1.0</div>
+              </div>
+
+              {threadId && (
+                <>
+                  {isMobile && (
+                    <div
+                      onClick={closeSupportConversation}
+                      style={{ position: "fixed", inset: 0, zIndex: 400, background: "color-mix(in srgb, var(--text) 35%, transparent)" }}
+                    />
+                  )}
+                  <aside
+                    role={isMobile ? "dialog" : undefined}
+                    aria-modal={isMobile ? true : undefined}
+                    aria-label="Support conversation"
+                    style={{
+                      position: isMobile ? "fixed" : "sticky",
+                      top: isMobile ? undefined : 16,
+                      left: isMobile ? 0 : undefined,
+                      right: isMobile ? 0 : undefined,
+                      bottom: isMobile ? 0 : undefined,
+                      zIndex: isMobile ? 401 : undefined,
+                      width: "100%",
+                      minWidth: 0,
+                      height: isMobile ? "82dvh" : "min(680px, calc(100dvh - 96px))",
+                      minHeight: 0,
+                      border: "1px solid var(--line)",
+                      borderRadius: isMobile ? "20px 20px 0 0" : 14,
+                      overflow: "hidden",
+                      background: "var(--shell)",
+                      boxShadow: "var(--shadow-lg)",
+                    }}
+                  >
+                    <SupportConversation
+                      key={threadId}
+                      onClose={closeSupportConversation}
+                    />
+                  </aside>
+                </>
+              )}
             </div>
           )}
         </div>
