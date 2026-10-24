@@ -381,7 +381,7 @@ export function PageHead({ kicker, title, sub, children }) {
   );
 }
 
-export function Dialog({ title, sub, onClose, children, width = 460, fullScreen = false, backLabel }) {
+export function Dialog({ title, sub, onClose, children, width = 460, fullScreen = false, backLabel, showCloseButton = false }) {
   const isPhone = useIsPhone();
   const swipeStartY = useRef(null);
 
@@ -420,9 +420,17 @@ export function Dialog({ title, sub, onClose, children, width = 460, fullScreen 
             </button>
           </div>
         )}
-        <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{title}</h2>
-          {sub && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>{sub}</p>}
+        <div style={showCloseButton ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } : undefined}>
+          <div style={{ minWidth: 0 }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{title}</h2>
+            {sub && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>{sub}</p>}
+          </div>
+          {showCloseButton && (
+            <button type="button" aria-label={`Close ${title}`} onClick={onClose}
+              style={{ width: 36, height: 36, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--line)', borderRadius: '50%', background: 'transparent', color: 'var(--muted)', font: "400 24px/1 'Manrope', sans-serif", cursor: 'pointer' }}>
+              ×
+            </button>
+          )}
         </div>
         {children}
       </div>

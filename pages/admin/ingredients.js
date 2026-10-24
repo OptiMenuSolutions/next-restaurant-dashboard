@@ -323,11 +323,8 @@ function LibraryPage() {
       </div>
 
       {isPhone && (selGlobal || selItem) && (
-        <Dialog title="Ingredient details" onClose={() => setSel(null)} width={640}>
-          <button type="button" className="om-btn" onClick={() => setSel(null)} style={{ width: '100%', minHeight: 40, justifyContent: 'center' }}>
-            Close
-          </button>
-          <div style={{ height: '45dvh', minHeight: 0, overflowY: 'auto', paddingRight: 2 }}>
+        <Dialog title="Ingredient Details" onClose={() => setSel(null)} width={640} showCloseButton>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {isGlobal && selGlobal && <GlobalPanel key={selGlobal.id} g={selGlobal} items={data.items.filter((x) => x.link?.id === selGlobal.id)} busy={busy} post={post} onDeleted={() => setSel(null)} />}
             {!isGlobal && selItem && <ItemPanel key={selItem.id} x={selItem} g={selItem.link ? globalsById.get(selItem.link.id) : null} globals={data.globals} busy={busy} post={post} />}
           </div>
