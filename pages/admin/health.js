@@ -4,9 +4,11 @@
 // each, every run of a job, and the error list.
 
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import Link from 'next/link';
 import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import useIsPhone from '../../lib/admin/useIsPhone';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, Pills, Card, th, td, shortDate } from '../../components/admin/ui';
 
@@ -48,11 +50,18 @@ async function copy(text, setFlash) {
 
 function HealthPage() {
   const { adminFetch } = useAdminFetch();
+  const router = useRouter();
+  const isPhone = useIsPhone();
   const [data, setData] = useState(null);
   const [svc, setSvc] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
   const [errTab, setErrTab] = useState('open');
+
+  useEffect(() => {
+    const status = String(router.query.status || '');
+    if (['open', 'investigating', 'resolved'].includes(status)) setErrTab(status);
+  }, [router.query.status]);
   const [busy, setBusy] = useState(null);
   const [flash, setFlash] = useState('');
   const [stackOpen, setStackOpen] = useState(null);
@@ -101,7 +110,9 @@ function HealthPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <LoadingState label="Loading jobs and health…" />;
 
-  const job = data.jobs.find((j) => j.key === open);
+  const selectedJob = data.jobs.find((j) => j.key === String(router.query.job || ''));
+  const job = selectedJob || data.jobs.find((j) => j.key === open);
+  const selectedError = data.errors.find((e) => e.id === String(router.query.error || ''));
   const errs = data.errors.filter((e) => e.status === errTab);
   const count = (s) => data.errors.filter((e) => e.status === s).length;
 
@@ -116,7 +127,31 @@ function HealthPage() {
     `Seen ${e.times} time${e.times === 1 ? '' : 's'}, first ${when(e.first)}, last ${when(e.last)}.`,
     `Message: ${e.message}`,
     ...(e.stack ? ['Details:', e.stack] : []),
-  ].join('\n');
+  ].join('\\n');
+
+  if (isPhone && selectedJob) {
+    return (
+      <PhoneJobDetail
+        job={selectedJob}
+        busy={busy}
+        flash={flash}
+        onRun={() => post({ action: 'run', job: selectedJob.key }, selectedJob.key)}
+        onCopy={() => copy(jobText(selectedJob), setFlash)}
+      />
+    );
+  }
+
+  if (isPhone && selectedError) {
+    return (
+      <PhoneErrorDetail
+        error={selectedError}
+        busy={busy}
+        flash={flash}
+        onCopy={() => copy(errText(selectedError), setFlash)}
+        onStatus={(status) => post({ action: 'error', id: selectedError.id, status }, selectedError.id)}
+      />
+    );
+  }
 
   return (
     <>
@@ -125,7 +160,22 @@ function HealthPage() {
 
       <Card title="Services" right={<button type="button" className="om-btn" onClick={checkServices} disabled={!svc}>{svc ? 'Check again' : 'Checking…'}</button>}>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Each one is called when you open this page{svc?.checkedAt ? `, last at ${clock(svc.checkedAt)}` : ''}.</div>
-        <div style={{ overflowX: 'auto' }}>
+        {isPhone && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+            {!svc && <div style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 13 }}>Checking each service…</div>}
+            {svc?.error && <div style={{ gridColumn: '1 / -1', color: 'var(--red)', fontSize: 13 }}>{svc.error}</div>}
+            {(svc?.services || []).map((s) => (
+              <div key={s.name} style={{ minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, padding: 11 }}>
+                <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{s.name}</strong>
+                <div style={{ margin: '5px 0 8px', fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{s.use}</div>
+                <Chip bg={SVC[s.status][0]} fg={SVC[s.status][1]}>{s.status}</Chip>
+                <div style={{ marginTop: 7, fontFamily: MONO, fontSize: 11.5 }}>{s.ms} ms</div>
+                {s.error && <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', overflowWrap: 'anywhere' }}>{s.error}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+        <div style={{ display: isPhone ? 'none' : undefined, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 620 }}>
             <thead><tr><th style={th}>SERVICE</th><th style={th}>WHAT WE USE IT FOR</th><th style={th}>STATUS</th><th style={{ ...th, textAlign: 'right' }}>RESPONSE</th><th style={th}>PROBLEM</th></tr></thead>
             <tbody>
@@ -150,7 +200,7 @@ function HealthPage() {
           Each job feeds the next. Click a job to see every run.
           {!data.tracking && ' No runs recorded yet. The first ones show up after tonight’s jobs.'}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+        <div style={{ display: isPhone ? 'none' : 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
           {data.jobs.map((j) => {
             const on = j.key === open;
             return (
@@ -168,7 +218,28 @@ function HealthPage() {
           })}
         </div>
 
-        {job && (
+        {isPhone && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {data.jobs.map((j) => (
+              <div key={j.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, background: 'var(--shell)' }}>
+                <button type="button" onClick={() => router.push({ pathname: '/admin/health', query: { job: j.key } }, undefined, { shallow: true })} style={{ display: 'grid', width: '100%', gap: 7, padding: 0, border: 0, background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer' }}>
+                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{j.time}</span>
+                    <RunChip status={j.today.status} />
+                  </span>
+                  <strong style={{ fontSize: 14.5, overflowWrap: 'anywhere' }}>{j.name}</strong>
+                  <span style={{ fontSize: 12, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{j.today.summary || j.what}</span>
+                  <NightStrip nights={j.nights} />
+                </button>
+                {j.canRun
+                  ? <button type="button" className="om-btn" disabled={!!busy} onClick={() => post({ action: 'run', job: j.key }, j.key)} style={{ marginTop: 9 }}>{busy === j.key ? 'Running…' : 'Run now'}</button>
+                  : <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>Runs on schedule; it deletes data.</div>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!isPhone && job && (
           <div style={{ borderTop: '1px solid var(--line)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, flex: 1 }}>{job.name} · every run</h3>
@@ -202,9 +273,23 @@ function HealthPage() {
 
       <Card title="Errors">
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Every new error also lands on Today as a to-do. A job that fails or has problems adds one here by itself.</div>
-        <Pills label="Error status" value={errTab} onChange={setErrTab}
-          options={[{ key: 'open', label: 'New', n: count('open') }, { key: 'investigating', label: 'Watching', n: count('investigating') }, { key: 'resolved', label: 'Fixed', n: count('resolved') }]} />
-        <div style={{ overflowX: 'auto' }}>
+        <Pills label="Error status" value={errTab} onChange={(value) => {
+          setErrTab(value);
+          if (isPhone) router.push({ pathname: '/admin/health', query: { status: value } }, undefined, { shallow: true });
+        }} options={[{ key: 'open', label: 'New', n: count('open') }, { key: 'investigating', label: 'Watching', n: count('investigating') }, { key: 'resolved', label: 'Fixed', n: count('resolved') }]} />
+        {isPhone && (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {errs.length === 0 && <div style={{ padding: 12, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>Nothing {ERR[errTab].toLowerCase()}.</div>}
+            {errs.map((e) => (
+              <button key={e.id} type="button" onClick={() => router.push({ pathname: '/admin/health', query: { error: e.id, status: errTab } }, undefined, { shallow: true })} style={{ width: '100%', minWidth: 0, padding: 12, border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)', color: 'var(--text)', textAlign: 'left', cursor: 'pointer' }}>
+                <strong style={{ display: 'block', overflowWrap: 'anywhere' }}>{String(e.feature || 'Error').replace(/[_-]+/g, ' ').replace(/^\\w/, (c) => c.toUpperCase())}</strong>
+                <span style={{ display: 'block', marginTop: 4, fontSize: 12.5, color: 'var(--muted)', overflowWrap: 'anywhere' }}>{e.message}</span>
+                <span style={{ display: 'block', marginTop: 7, fontFamily: MONO, fontSize: 10.5, color: 'var(--muted)' }}>{e.restaurant || 'Platform'} · {e.times} time{e.times === 1 ? '' : 's'} · {when(e.last)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{ display: isPhone ? 'none' : undefined, overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 700 }}>
             <thead><tr><th style={th}>WHAT HAPPENED</th><th style={th}>WHERE</th><th style={{ ...th, textAlign: 'right' }}>TIMES</th><th style={th}>LAST SEEN</th><th style={{ ...th, textAlign: 'right' }}>ACTIONS</th></tr></thead>
             <tbody>
@@ -241,9 +326,82 @@ function HealthPage() {
   );
 }
 
-export default function Page() {
+function PhoneJobDetail({ job, busy, onRun, onCopy, flash }) {
   return (
-    <AdminShell section="Platform" sub="Jobs & health" title="Jobs & health">
+    <>
+      <PageHead kicker={`PLATFORM · ${job.time}`} title={job.name} sub={job.what}>
+        {job.canRun
+          ? <button type="button" className="om-pri" disabled={!!busy} onClick={onRun}>{busy === job.key ? 'Running…' : 'Run now'}</button>
+          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>Runs on schedule; it deletes data.</span>}
+        <button type="button" className="om-btn" onClick={onCopy}>Copy details for Claude</button>
+      </PageHead>
+      {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
+      <Card title="Last 14 runs">
+        {job.runs.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13 }}>No runs recorded yet.</div>}
+        <div style={{ display: 'grid', gap: 10 }}>
+          {job.runs.map((r) => (
+            <div key={r.id} style={{ minWidth: 0, borderTop: '1px solid var(--line-soft)', paddingTop: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                <strong>{shortDate(r.night)}</strong>
+                <RunChip status={r.status} />
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 5, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>
+                <span>{clock(r.at)}{r.trigger === 'manual' ? ' · by hand' : ''}</span>
+                <span>{took(r.ms)}</span>
+                <span>{r.restaurants ?? '—'} restaurants</span>
+              </div>
+              <div style={{ marginTop: 5, fontSize: 13, overflowWrap: 'anywhere' }}>
+                {r.summary}
+                {r.details.map((detail) => <span key={detail} style={{ display: 'block', marginTop: 3, color: 'var(--muted)', fontSize: 12 }}>{detail}</span>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+function PhoneErrorDetail({ error, busy, flash, onCopy, onStatus }) {
+  const feature = String(error.feature || 'Error').replace(/[_-]+/g, ' ').replace(/^\\w/, (c) => c.toUpperCase());
+
+  return (
+    <>
+      <PageHead kicker={`PLATFORM · ${ERR[error.status] || 'Error'}`} title={feature} sub={`${error.times} occurrence${error.times === 1 ? '' : 's'} · first ${when(error.first)} · last ${when(error.last)}`} />
+      {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
+      <Card title="Error details">
+        <div style={{ fontSize: 13.5, overflowWrap: 'anywhere' }}>{error.message}</div>
+        <div style={{ marginTop: 8, fontSize: 13 }}>
+          {error.restaurant
+            ? <Link href={`/admin/restaurants/${error.restaurant_id}`} style={{ color: 'var(--accent-deep)' }}>{error.restaurant}</Link>
+            : <span style={{ color: 'var(--muted)' }}>Platform</span>}
+        </div>
+        {error.stack && <pre style={{ margin: '12px 0 0', padding: 10, background: 'var(--panel)', borderRadius: 8, fontFamily: MONO, fontSize: 11.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 320, overflow: 'auto' }}>{error.stack}</pre>}
+      </Card>
+      <Card title="Actions">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button type="button" className="om-btn" disabled={!!busy} onClick={onCopy}>Copy details for Claude</button>
+          {error.status === 'open' && <button type="button" className="om-btn" disabled={!!busy} onClick={() => onStatus('investigating')}>Watch</button>}
+          {error.status !== 'resolved'
+            ? <button type="button" className="om-pri" disabled={!!busy} onClick={() => onStatus('resolved')}>Mark fixed</button>
+            : <button type="button" className="om-btn" disabled={!!busy} onClick={() => onStatus('open')}>Reopen</button>}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+export default function Page() {
+  const router = useRouter();
+  const isPhone = useIsPhone();
+  const hasDetail = router.isReady && (router.query.job || router.query.error);
+  const status = String(router.query.status || 'open');
+  const back = isPhone && hasDetail
+    ? { label: 'Jobs & health', href: router.query.error ? `/admin/health?status=${encodeURIComponent(status)}` : '/admin/health' }
+    : undefined;
+
+  return (
+    <AdminShell section="Platform" sub="Jobs & health" title="Jobs & health" back={back}>
       <HealthPage />
     </AdminShell>
   );
