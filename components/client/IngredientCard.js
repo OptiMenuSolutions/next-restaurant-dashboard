@@ -113,7 +113,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 14, padding: "14px 20px 16px", overflow: "hidden" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", gap: 14, padding: "14px 20px 16px", overflowY: "auto", overflowX: "hidden" }}>
         {useFirst && (
           <div style={{ flexShrink: 0, border: "1px dashed var(--red)", borderRadius: 6, padding: "9px 12px", fontSize: 12, lineHeight: 1.5 }}>
             <span style={{ fontFamily: MONO, color: "var(--red)", fontWeight: 500, letterSpacing: "0.06em" }}>▲ USE FIRST · {leftLabel}.</span>{" "}
@@ -223,6 +223,38 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
           )}
         </div>
       </div>
+
+      {buys.length > 0 && (
+        <div style={{ flexShrink: 0, borderTop: "1px solid var(--line)", padding: "12px 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", color: "var(--muted)" }}>
+            <span>PURCHASE HISTORY</span>
+            <span>CLICK TO OPEN</span>
+          </div>
+          <div style={{ maxHeight: 180, overflowY: "auto" }}>
+            {buys.map((p, i) => (
+              <button
+                key={p.invoiceId || i}
+                type="button"
+                onClick={() => onOpenInvoice && onOpenInvoice(p)}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, minHeight: 44, padding: "8px 0", border: "none", borderTop: "1px dashed var(--line-soft)", background: "none", color: "var(--text)", textAlign: "left", cursor: "pointer", fontFamily: MONO }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {p.supplier}
+                  </span>
+                  <span style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--muted)" }}>
+                    {p.date} · {p.qty || "—"} ·{" "}
+                    <span style={{ color: "var(--accent-deep)" }}>{p.invoice}</span>
+                  </span>
+                </span>
+                <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600 }}>
+                  {unitMoney(p.unitCost)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 12, padding: "11px 20px", borderTop: "1px solid var(--line)", fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>
         <span>{buys.length ? `Bought from ${suppliers} supplier${suppliers === 1 ? "" : "s"} · ${buys.length} invoice${buys.length === 1 ? "" : "s"}` : "No invoices yet"}</span>
