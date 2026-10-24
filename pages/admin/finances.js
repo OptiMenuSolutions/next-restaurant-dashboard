@@ -114,9 +114,11 @@ function FinancesPage() {
     return (
       <>
         <PageHead kicker="BUSINESS · OPTIMENU SOLUTIONS LLC" title="Expenses & deadlines">
-          <select className="om-field" aria-label="Year" style={{ width: 100 }} value={data.year} onChange={(e) => { setData(null); setMonth(null); setCat('All'); setYear(e.target.value); }}>
-            {Array.from({ length: 4 }, (_, i) => String(Number(data.today.slice(0, 4)) - i)).map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <div role="group" aria-label="Choose year" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button type="button" className="om-btn" aria-label="Previous year" disabled={Number(data.year) <= Number(data.today.slice(0, 4)) - 3} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) - 1)); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>‹</button>
+            <strong style={{ minWidth: 54, textAlign: 'center' }}>{data.year}</strong>
+            <button type="button" className="om-btn" aria-label="Next year" disabled={Number(data.year) >= Number(data.today.slice(0, 4))} onClick={() => { setData(null); setMonth(null); setCat('All'); setYear(String(Number(data.year) + 1)); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>›</button>
+          </div>
         </PageHead>
 
         {flash && <div role="status" style={{ background: 'var(--accent-tint)', borderRadius: 10, padding: '10px 14px', fontSize: 13.5 }}>{flash}</div>}
@@ -151,9 +153,11 @@ function FinancesPage() {
             <button type="button" className="om-pri" onClick={() => setExpense({})} style={{ width: '100%', minHeight: 44, justifyContent: 'center' }}>+ Expense</button>
 
             <div style={{ display: 'grid', gap: 8 }}>
-              <select className="om-field" aria-label="Month" value={month} onChange={(e) => { setMonth(e.target.value); setCat('All'); }}>
-                {months.map((m) => <option key={m} value={m}>{monthName(m)} ({data.expenses.filter((e) => e.spent_on.slice(0, 7) === m).length})</option>)}
-              </select>
+              <div role="group" aria-label="Choose month" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, border: '1px solid var(--line)', borderRadius: 12, padding: '6px 8px' }}>
+                <button type="button" className="om-btn" aria-label="Previous month" disabled={months.indexOf(month) >= months.length - 1} onClick={() => { setMonth(months[months.indexOf(month) + 1]); setCat('All'); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>‹</button>
+                <strong style={{ minWidth: 0, textAlign: 'center' }}>{monthName(month)} <span style={{ color: 'var(--muted)', fontWeight: 500 }}>· {inMonth.length}</span></strong>
+                <button type="button" className="om-btn" aria-label="Next month" disabled={months.indexOf(month) <= 0} onClick={() => { setMonth(months[months.indexOf(month) - 1]); setCat('All'); }} style={{ width: 40, minHeight: 40, padding: 0, justifyContent: 'center' }}>›</button>
+              </div>
               {cats.length > 2 && <Pills label="Category" value={cat} onChange={setCat} options={cats.map((c) => ({ key: c, label: c }))} />}
             </div>
 
@@ -399,12 +403,12 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
 
   return (
     <Dialog title={e.id ? 'Edit expense' : e.again ? `Log ${e.vendor} again` : 'Add an expense'} onClose={onClose} width={520}>
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : undefined, gap: 10 }}>
         <Field label="Date"><input className="om-field" type="date" value={f.spent_on} onChange={(x) => set('spent_on', x.target.value)} /></Field>
         <Field label="Amount"><input className="om-field" inputMode="decimal" placeholder="$0.00" value={f.amount} onChange={(x) => set('amount', x.target.value)} /></Field>
       </div>
       <Field label="Vendor"><input className="om-field" autoFocus={!e.id} value={f.vendor} onChange={(x) => set('vendor', x.target.value)} placeholder="e.g. Vercel" /></Field>
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ display: isPhone ? 'grid' : 'flex', gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : undefined, gap: 10 }}>
         <Field label="Category">
           <input className="om-field" list="om-cats" value={f.category} onChange={(x) => set('category', x.target.value)} />
           <datalist id="om-cats">{CATS.map((c) => <option key={c} value={c} />)}</datalist>
@@ -420,11 +424,13 @@ function ExpenseDialog({ e, today, busy, onClose, post, adminFetch }) {
         <input ref={receiptInput} type="file" accept="image/*,application/pdf" capture={isPhone ? 'environment' : undefined} onChange={(x) => setFile(x.target.files?.[0] || null)} />
       </Field>
       {err && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{err}</div>}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-        {e.id ? <button type="button" className="om-btn" style={{ color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button> : <span />}
-        <span style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="om-btn" onClick={onClose}>Cancel</button>
-          <button type="button" className="om-pri" disabled={busy || uploading || !f.vendor.trim() || f.amount === ''} onClick={save}>{uploading ? 'Uploading…' : busy ? 'Saving…' : 'Save'}</button>
+      <div style={{ display: 'flex', flexDirection: isPhone ? 'column-reverse' : 'row', justifyContent: 'space-between', alignItems: isPhone ? 'stretch' : 'center', gap: 8 }}>
+        {e.id
+          ? <button type="button" className="om-btn" style={isPhone ? { width: '100%', minHeight: 44, justifyContent: 'center', color: 'var(--red)' } : { color: 'var(--red)' }} disabled={busy} onClick={() => setAskDel(true)}>Delete</button>
+          : <span />}
+        <span style={{ display: 'flex', flexDirection: isPhone ? 'column-reverse' : 'row', gap: 8, width: isPhone ? '100%' : undefined }}>
+          <button type="button" className="om-btn" onClick={onClose} style={isPhone ? { width: '100%', minHeight: 44, justifyContent: 'center' } : undefined}>Cancel</button>
+          <button type="button" className="om-pri" disabled={busy || uploading || !f.vendor.trim() || f.amount === ''} onClick={save} style={isPhone ? { width: '100%', minHeight: 44, justifyContent: 'center' } : undefined}>{uploading ? 'Uploading…' : busy ? 'Saving…' : 'Save'}</button>
         </span>
       </div>
       {askDel && <Confirm title={`Delete ${e.vendor} ${money(e.amount)}?`} sub="The expense and its receipt are removed." yes="Delete expense" danger busy={busy} onClose={() => setAskDel(false)} onYes={async () => { if (await post({ action: 'expense-delete', id: e.id })) onClose(); setAskDel(false); }} />}
