@@ -98,20 +98,40 @@ function SettingsPage() {
     <>
       <PageHead kicker="BUSINESS" title="Settings" />
       {isPhone ? (
-        <select
-          className="om-field"
+        <div
+          role="group"
           aria-label="Settings section"
-          value={tab}
-          onChange={(e) => {
-            const nextTab = e.target.value;
-            setTab(nextTab);
-            setFlash('');
-            router.push({ pathname: router.pathname, query: { ...router.query, tab: nextTab } }, undefined, { shallow: true, scroll: false });
-          }}
-          style={{ width: '100%', minHeight: 44, minWidth: 0, boxSizing: 'border-box' }}
+          className="om-mobile-subnav"
+          style={{ display: 'flex', gap: 8, width: '100%', minWidth: 0, overflowX: 'auto', overflowY: 'hidden', scrollbarWidth: 'none', padding: '2px 0' }}
         >
-          {TABS.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+          {TABS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={tab === t}
+              onClick={(e) => {
+                setTab(t);
+                setFlash('');
+                e.currentTarget.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                router.push({ pathname: router.pathname, query: { ...router.query, tab: t } }, undefined, { shallow: true, scroll: false });
+              }}
+              style={{
+                flexShrink: 0,
+                minHeight: 44,
+                padding: '0 16px',
+                borderRadius: 24,
+                border: '1px solid var(--line)',
+                background: tab === t ? 'var(--text)' : 'var(--shell)',
+                color: tab === t ? 'var(--shell)' : 'var(--muted)',
+                font: "700 13px 'Manrope',sans-serif",
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       ) : (
         <Pills label="Settings section" value={tab} onChange={(t) => { setTab(t); setFlash(''); }} options={TABS.map((t) => ({ key: t, label: t }))} />
       )}
