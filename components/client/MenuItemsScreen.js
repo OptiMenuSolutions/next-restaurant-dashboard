@@ -679,21 +679,19 @@ const DD_CSS = `
 .dd-pt .dd-tip{opacity:0;transition:opacity .12s;pointer-events:none}
 .dd-pt:hover .dd-tip,.dd-pt.on .dd-tip{opacity:1}
 .dd-qty:focus{outline:none;border-color:var(--accent)!important}
-.dd-root{display:flex;flex-direction:column;overflow:hidden}
-.dd-body{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 236px;grid-template-rows:minmax(0,1fr);gap:14px}
+.dd-root{display:flex;flex-direction:column;overflow:auto}
+.dd-root > :not(.dd-body){flex-shrink:0}
+.dd-body{flex:1;min-height:420px;display:grid;grid-template-columns:minmax(0,1fr) 236px;grid-template-rows:minmax(0,1fr);gap:14px;box-sizing:border-box}
 .dd-recipe{display:flex;flex-direction:column;min-height:0}
 .dd-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;margin-right:-8px;padding-right:8px}
-.dd-rail{min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-gutter:stable}
-.dd-rail > *{flex-shrink:0;box-sizing:border-box}
-.dd-rail > :first-child{min-height:130px}
-.dd-rail > :nth-child(2){min-height:260px}
+.dd-rail{display:grid;grid-template-rows:minmax(160px,1fr) auto;gap:12px;min-width:0;min-height:0;overflow:visible}
+.dd-rail > *{min-width:0;box-sizing:border-box}
 .dd-comp{cursor:pointer;user-select:none}
 .dd-comp:hover .dd-cname{color:var(--accent-deep)}
 @media (max-width:1279px){
-  .dd-root{overflow-y:auto}
-  .dd-body{flex:none;grid-template-columns:minmax(0,1fr);grid-template-rows:none}
+  .dd-body{flex:none;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:none}
   .dd-list{flex:none;overflow:visible;margin-right:0;padding-right:0}
-  .dd-rail{overflow:visible}
+  .dd-rail{grid-template-rows:240px auto}
 }
 `;
 
@@ -979,20 +977,30 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   const hist = (d.history || []).slice(-6);
   const trendMove = hist.length > 1 ? hist[hist.length - 1].value - hist[0].value : 0;
   const trend = (
-    <div style={{ ...box, padding: "12px 13px 10px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+    <div style={{ ...box, padding: "12px 13px 10px", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, flexShrink: 0 }}>
         <span style={h3}>Margin, {hist.length > 1 ? `${hist.length} months` : "trend"}</span>
         {hist.length > 1 && Math.abs(trendMove) >= 0.05 && (
           <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>{trendMove < 0 ? "▼" : "▲"} {Math.abs(trendMove).toFixed(1)} PTS</span>
         )}
       </div>
       {hist.length > 1 ? (
-        <div style={{ marginTop: 12 }}>
-          <MarginTrend history={hist} tgt={tgt} whatIf={live ? margin : null} height={stacked ? 180 : 200} />
-          {stacked && <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.06em", color: "var(--faint)", textAlign: "center", marginTop: 10 }}>TAP A MONTH TO SEE ITS MARGIN</div>}
-        </div>
+        stacked ? (
+          <div style={{ marginTop: 12 }}>
+            <MarginTrend history={hist} tgt={tgt} whatIf={live ? margin : null} height={180} />
+            <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.06em", color: "var(--faint)", textAlign: "center", marginTop: 10 }}>
+              TAP A MONTH TO SEE ITS MARGIN
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", marginTop: 12 }}>
+            <FittedMarginTrend history={hist} tgt={tgt} whatIf={live ? margin : null} />
+          </div>
+        )
       ) : (
-        <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 8 }}>The trend appears once this dish has a second month of invoice prices.</div>
+        <div style={{ flex: stacked ? undefined : 1, display: "flex", alignItems: "center", fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 8 }}>
+          The trend appears once this dish has a second month of invoice prices.
+        </div>
       )}
     </div>
   );
@@ -1130,7 +1138,31 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
           <div style={{ minWidth: 0 }}>
             <div style={{ ...kick, fontSize: 10.5 }}>{[d.category || "Dish", `${d.components.length} component${d.components.length === 1 ? "" : "s"}`, `${d.lineCount} ingredient${d.lineCount === 1 ? "" : "s"}`].join(" · ")}</div>
             <div style={{ fontSize: 25, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.1, marginTop: 7, textWrap: "pretty" }}>{d.name}</div>
-            <div style={{ marginTop: 10 }}>{chip}</div>
+            <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: "4px 18px", marginTop: 10 }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                <span style={kick}>Sold · 30D</span>
+                <strong style={{ fontSize: 15, fontVariantNumeric: "tabular-nums" }}>
+                  {covers.toLocaleString()}
+                </strong>
+                {!covers && (
+                  <span style={{ fontSize: 10.5, color: "var(--faint)" }}>No sales synced</span>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+                <span style={kick}>Earned · 30D</span>
+                <strong style={{ fontSize: 15, fontVariantNumeric: "tabular-nums" }}>
+                  {awaiting || !covers ? "—" : money0(covers * (price - realCost))}
+                </strong>
+                <span style={{ fontSize: 10.5, color: "var(--faint)" }}>
+                  {awaiting ? "Awaiting prices" : `${money2(price - realCost)} a plate`}
+                </span>
+              </div>
+              {live && covers > 0 && (
+                <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--accent-deep)" }}>
+                  {delta <= 0 ? "+" : "−"}{money0(Math.abs(delta) * covers)} SANDBOX
+                </span>
+              )}
+            </div>
           </div>
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.045em", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{money2(price)}</div>
@@ -1168,8 +1200,7 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
       {hero}
       <div className="dd-body" style={{ padding: "16px 18px 18px" }}>
         {recipe}
-        <div className="dd-rail" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          {sales}
+        <div className="dd-rail">
           {trend}
           {panel}
         </div>
@@ -1181,6 +1212,31 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
 /* Margin trend: no y-axis. The first and last months are labelled, every
    month shows its margin on hover (tap on phones), and the sandbox result
    shows as a dashed ghost point on the latest month. */
+function FittedMarginTrend({ history, tgt, whatIf }) {
+  const containerRef = useRef(null);
+  const [height, setHeight] = useState(140);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const measure = () => {
+      setHeight(Math.max(80, Math.floor(node.clientHeight) - 28));
+    };
+
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={containerRef} style={{ flex: 1, minHeight: 108, minWidth: 0 }}>
+      <MarginTrend history={history} tgt={tgt} whatIf={whatIf} height={height} />
+    </div>
+  );
+}
+
 function MarginTrend({ history, tgt, whatIf = null, height = 200 }) {
   const [tapped, setTapped] = useState(null);
   const vals = history.map((p) => Number(p.value) || 0);
