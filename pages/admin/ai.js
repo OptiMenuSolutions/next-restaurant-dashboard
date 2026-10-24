@@ -228,7 +228,7 @@ function DayBars({ days, limit }) {
   const d = hover != null ? days[hover] : null;
   return (
     <div style={{ position: 'relative' }}>
-      <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Spend per day. ${days.filter((x) => x.spend > limit).length} days over the ${money(limit)} line.`} onMouseLeave={() => setHover(null)} style={{ display: 'block' }}>
+      <svg ref={box} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Spend per day. ${days.filter((x) => x.spend > limit).length} days over the ${money(limit)} line.`} onMouseLeave={() => { if (!isPhone) setHover(null); }} style={{ display: 'block' }}>
         {[0, max / 2, max].map((v) => (
           <g key={v}>
             <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--line-soft)" />
@@ -240,7 +240,7 @@ function DayBars({ days, limit }) {
           const over = x.spend > limit;
           const cx = L + slot * i + (slot - bw) / 2;
           return (
-            <g key={x.date} onMouseEnter={() => setHover(i)} onClick={() => { if (isPhone) setHover(hover === i ? null : i); }}>
+            <g key={x.date} onMouseEnter={() => { if (!isPhone) setHover(i); }} onClick={() => { if (isPhone) setHover(i); }}>
               <rect x={L + slot * i} y={T} width={slot} height={H - T - B} fill="transparent" />
               {h > 0 && <rect x={cx} y={y(x.spend)} width={bw} height={h} rx={Math.min(4, bw / 2)} fill={over ? 'var(--amber)' : 'var(--accent-deep)'} opacity={hover == null || hover === i ? 1 : 0.55} />}
               {over && <text x={cx + bw / 2} y={y(x.spend) - 4} textAnchor="middle" fontSize="10" fill="var(--amber)">!</text>}
