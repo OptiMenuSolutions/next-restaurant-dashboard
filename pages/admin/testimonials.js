@@ -113,7 +113,7 @@ function TestimonialsPage() {
               {isPhone ? (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   {q.permission === 'not asked' && (
-                    <button type="button" className="om-btn" style={{ flex: 1, minHeight: 38 }} disabled={busy} onClick={async () => { await copy(askText(q), 'Copied a request you can send them. Marked as asked.'); post({ action: 'permission', id: q.id, permission: 'asked' }); }}>Ask permission</button>
+                    <button type="button" className="om-btn" style={{ flex: 1, minHeight: 38 }} disabled={busy} onClick={() => post({ action: 'ask-permission', id: q.id }, 'Permission request emailed to the restaurant owner.')}>Ask permission</button>
                   )}
                   {q.permission === 'asked' && (
                     <button type="button" className="om-pri" style={{ flex: 1, minHeight: 38 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
@@ -127,7 +127,7 @@ function TestimonialsPage() {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {q.permission === 'not asked' && <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={async () => { await copy(askText(q), 'Copied a request you can send them. Marked as asked.'); post({ action: 'permission', id: q.id, permission: 'asked' }); }}>Ask permission</button>}
+                {q.permission === 'not asked' && <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'ask-permission', id: q.id }, 'Permission request emailed to the restaurant owner.')}>Ask permission</button>}
                   {q.permission === 'asked' && <>
                     <button type="button" className="om-pri" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'yes' })}>They said yes</button>
                     <button type="button" className="om-btn" style={{ minHeight: 30 }} disabled={busy} onClick={() => post({ action: 'permission', id: q.id, permission: 'no' })}>They said no</button>

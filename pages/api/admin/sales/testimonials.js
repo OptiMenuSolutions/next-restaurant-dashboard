@@ -13,6 +13,7 @@
 import { adminDb as db, requireAdmin, etDate, addDays, TOUR_RESTAURANT_ID } from '../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
+import { sendFromNick, ownerOf } from '../../../../lib/admin/email';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameDish = (a, b) => a === b || (a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a)));
@@ -85,6 +86,47 @@ export default async function handler(req, res) {
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
     const b = req.body || {};
+
+    if (b.action === 'ask-permission') {
+      const { data: q, error: qError } = await db.from('admin_testimonials')
+        .select('id, quote, person, restaurant_id, permission')
+        .eq('id', b.id)
+        .maybeSingle();
+      if (qError) throw new Error(qError.message);
+      if (!q) return res.status(404).json({ error: 'Quote not found' });
+      if (q.permission !== 'not asked') {
+        return res.status(409).json({ error: 'A permission request has already been sent or this quote has a response.' });
+      }
+
+      const owner = await ownerOf(db, q.restaurant_id);
+      if (!owner) return res.status(400).json({ error: 'No owner email on file for this restaurant' });
+
+      const attribution = q.person || owner.name;
+      const message = `Hi ${owner.first || 'there'},
+
+You shared this with us:
+
+“${q.quote}”
+
+Would you be comfortable with OptiMenu sharing this quote on our website with the attribution “${attribution} at your restaurant”? We will not publish it unless you say yes. A reply to this email is enough. No is completely fine.
+
+Nick`;
+
+      await sendFromNick({
+        to: owner.email,
+        subject: 'May we share your OptiMenu quote?',
+        message,
+      });
+
+      const { error: updateError } = await db.from('admin_testimonials')
+        .update({ permission: 'asked' })
+        .eq('id', q.id)
+        .eq('permission', 'not asked');
+      if (updateError) throw new Error(updateError.message);
+
+      await log('Emailed a testimonial permission request');
+      return res.status(200).json({ ok: true });
+    }
 
     if (b.action === 'permission') {
       if (!PERMS.includes(b.permission)) return res.status(400).json({ error: 'Bad status' });
