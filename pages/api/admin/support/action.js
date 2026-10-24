@@ -43,7 +43,15 @@ export default async function handler(req, res) {
         .insert({ restaurant_id: r.id, subject, kind: 'general', status: 'waiting', last_message_at: now })
         .select('id').single();
       if (error) throw new Error(error.message);
-      await db.from('support_messages').insert({ thread_id: t.id, direction: 'out', body, author: admin.name, emailed: true });
+      const { error: messageError } = await db
+        .from('support_messages')
+        .insert({ thread_id: t.id, direction: 'out', body, author: admin.name, emailed: true });
+
+      if (messageError) {
+        throw new Error(
+          'The email was sent, but saving the message and notification failed. Do not resend the email. ' + messageError.message
+        );
+      }
       await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: `Messaged the owner: ${subject}`, target_restaurant_id: r.id, target_restaurant_name: r.name, metadata: { thread_id: t.id } });
       return res.status(200).json({ ok: true, threadId: t.id });
     }
@@ -73,8 +81,28 @@ export default async function handler(req, res) {
         await sendFromNick({ to: owner.email, subject, message: body, quote: last ? { from: owner.name, at: last.created_at, body: last.body } : null });
         emailed = true;
       }
-      await db.from('support_messages').insert({ thread_id: t.id, direction: 'out', body, author: admin.name, emailed });
-      await db.from('support_threads').update({ status: 'waiting', last_message_at: now }).eq('id', t.id);
+      const { error: messageError } = await db
+        .from('support_messages')
+        .insert({ thread_id: t.id, direction: 'out', body, author: admin.name, emailed });
+
+      if (messageError) {
+        throw new Error(
+          emailed
+            ? 'The email was sent, but saving the reply and notification failed. Do not resend the email. ' + messageError.message
+            : 'Could not save the reply and notification. ' + messageError.message
+        );
+      }
+
+      const { error: threadError } = await db
+        .from('support_threads')
+        .update({ status: 'waiting', last_message_at: now })
+        .eq('id', t.id);
+
+      if (threadError) {
+        throw new Error(
+          'The reply and notification were saved, but updating the conversation status failed. Do not resend. ' + threadError.message
+        );
+      }
       await syncFeedback('waiting');
       await log(emailed ? 'Replied to a support message by email' : 'Added a reply without emailing');
       return res.status(200).json({ ok: true });
