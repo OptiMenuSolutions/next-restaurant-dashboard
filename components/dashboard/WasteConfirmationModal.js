@@ -23,6 +23,7 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
   const [resolved, setResolved] = useState({}); // id -> status, optimistic local state
   const [submitting, setSubmitting] = useState(null); // id currently in flight
   const [failedId, setFailedId] = useState(null);
+  const [snoozeStatus, setSnoozeStatus] = useState("");
 
   if (!items || items.length === 0) return null;
 
@@ -172,15 +173,53 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
 
         {!allResolved && (
           <div style={{ padding: "14px 22px" }}>
+            {snoozeStatus === "error" && (
+              <div
+                role="alert"
+                style={{
+                  marginBottom: 8,
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "var(--red)",
+                  textAlign: "center",
+                }}
+              >
+                Could not save the delay. Check your connection and try again.
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={onAskLater}
+              disabled={snoozeStatus === "saving" || !!submitting}
+              onClick={async () => {
+                if (snoozeStatus === "saving" || submitting) return;
+                setSnoozeStatus("saving");
+
+                try {
+                  await onAskLater();
+                  setSnoozeStatus("");
+                } catch (err) {
+                  console.error("Could not snooze waste prompts:", err);
+                  setSnoozeStatus("error");
+                }
+              }}
               style={{
-                width: "100%", padding: 10, borderRadius: 8, border: "none", background: "none",
-                color: "var(--faint,#78868a)", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                width: "100%",
+                minHeight: 44,
+                padding: 10,
+                borderRadius: 8,
+                border: "none",
+                background: "none",
+                color: "var(--faint)",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: snoozeStatus === "saving" ? "wait" : "pointer",
+                opacity: snoozeStatus === "saving" ? 0.6 : 1,
               }}
             >
-              Ask me in 2 hours
+              {snoozeStatus === "saving"
+                ? "Saving delay…"
+                : "Ask me in 2 hours"}
             </button>
           </div>
         )}

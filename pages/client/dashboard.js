@@ -231,33 +231,63 @@ export default function DashboardPage() {
     : null;
 
   useEffect(() => {
-    if (!confirmationSnoozeKey) return;
+    if (!confirmationSnoozeKey || !restaurantId) return;
 
-    const readSnooze = () => {
-      let until = 0;
+    let cancelled = false;
+    let reading = false;
+
+    const readSnooze = async () => {
+      if (reading || document.visibilityState === "hidden") return;
+      reading = true;
+
       try {
-        const saved = Number(localStorage.getItem(confirmationSnoozeKey));
-        if (Number.isFinite(saved) && saved > Date.now()) until = saved;
-      } catch {}
+        const { data, error } = await supabase.rpc(
+          "client_waste_prompt_snooze",
+          {
+            p_restaurant_id: restaurantId,
+            p_snooze: false,
+          }
+        );
 
-      setConfirmationSnooze({ key: confirmationSnoozeKey, until });
-    };
+        if (error) throw error;
 
-    const onStorage = (event) => {
-      if (event.key === confirmationSnoozeKey || event.key === null) {
-        readSnooze();
+        const saved = Date.parse(data);
+        if (!Number.isFinite(saved)) {
+          throw new Error("Invalid waste prompt snooze.");
+        }
+
+        if (cancelled) return;
+
+        const until = saved > Date.now() ? saved : 0;
+
+        setConfirmationSnooze((current) => ({
+          key: confirmationSnoozeKey,
+          until: current.key === confirmationSnoozeKey
+            ? Math.max(current.until, until)
+            : until,
+        }));
+      } catch (err) {
+        console.error("[dashboard] Could not check waste prompt snooze:", err);
+      } finally {
+        reading = false;
       }
     };
 
     readSnooze();
-    window.addEventListener("storage", onStorage);
+
+    const timer = window.setInterval(readSnooze, 30 * 1000);
     window.addEventListener("focus", readSnooze);
+    window.addEventListener("online", readSnooze);
+    document.addEventListener("visibilitychange", readSnooze);
 
     return () => {
-      window.removeEventListener("storage", onStorage);
+      cancelled = true;
+      window.clearInterval(timer);
       window.removeEventListener("focus", readSnooze);
+      window.removeEventListener("online", readSnooze);
+      document.removeEventListener("visibilitychange", readSnooze);
     };
-  }, [confirmationSnoozeKey]);
+  }, [confirmationSnoozeKey, restaurantId]);
 
   useEffect(() => {
     if (
@@ -277,15 +307,30 @@ export default function DashboardPage() {
     return () => clearTimeout(timer);
   }, [confirmationSnoozeKey, confirmationSnooze.key, confirmationSnooze.until]);
 
-  function snoozeWasteConfirmations() {
-    if (!confirmationSnoozeKey) return;
+  async function snoozeWasteConfirmations() {
+    if (!confirmationSnoozeKey || !restaurantId) {
+      throw new Error("Your account is still loading. Please try again.");
+    }
 
-    const until = Date.now() + 2 * 60 * 60 * 1000;
-    try {
-      localStorage.setItem(confirmationSnoozeKey, String(until));
-    } catch {}
+    const { data, error } = await supabase.rpc(
+      "client_waste_prompt_snooze",
+      {
+        p_restaurant_id: restaurantId,
+        p_snooze: true,
+      }
+    );
 
-    setConfirmationSnooze({ key: confirmationSnoozeKey, until });
+    if (error) throw error;
+
+    const until = Date.parse(data);
+    if (!Number.isFinite(until)) {
+      throw new Error("Could not confirm the snooze. Please try again.");
+    }
+
+    setConfirmationSnooze({
+      key: confirmationSnoozeKey,
+      until,
+    });
   }
 
   useEffect(() => {
