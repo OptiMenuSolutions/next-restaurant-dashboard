@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -31,6 +31,35 @@ export default function LoginPage() {
   const router = useRouter();
   const [reactivatePrompt, setReactivatePrompt] = useState(null); // { onConfirm, onCancel } | null
 
+  useEffect(() => {
+    let active = true;
+
+    async function restoreAdminSession() {
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        if (!active || sessionError || !session?.user) return;
+
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", session.user.id)
+          .maybeSingle();
+
+        if (active && !profileError && profile?.role === "admin") {
+          router.replace("/admin");
+        }
+      } catch (error) {
+        console.error("[login] Could not restore admin session:", error);
+      }
+    }
+
+    restoreAdminSession();
+
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
   // Promise-based stand-in for what window.confirm() used to do
   // synchronously — same pattern as onboarding.js's askDuplicateConfirm,
   // resolves once the person clicks a button on the real in-app modal.
@@ -56,8 +85,20 @@ export default function LoginPage() {
     const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (error) throw error;
 
-    const { data: existing } = await supabase
-      .from("profiles").select("id, restaurant_id").eq("id", data.user.id).single();
+    const { data: existing, error: existingError } = await supabase
+      .from("profiles")
+      .select("id, restaurant_id, role")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    if (existingError) {
+      throw new Error("Could not load your account. Please try signing in again.");
+    }
+
+    if (existing?.role === "admin") {
+      await router.replace("/admin");
+      return;
+    }
 
     let restaurantId = existing?.restaurant_id || null;
 
