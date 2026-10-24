@@ -98,7 +98,7 @@ function SupportPage() {
 
       <div style={{ display: 'flex', gap: 18, alignItems: 'stretch', flexWrap: 'wrap', minHeight: isPhone && typeof router.query.thread === 'string' ? 0 : 560 }}>
         {/* Thread list */}
-        <section aria-label="Conversations" style={{ display: isPhone && typeof router.query.thread === 'string' ? 'none' : 'flex', flex: '1 1 300px', maxWidth: 380, minWidth: 0, border: '1px solid var(--line)', borderRadius: 12, flexDirection: 'column', overflow: 'hidden' }}>
+        <section aria-label="Conversations" style={{ display: isPhone && typeof router.query.thread === 'string' ? 'none' : 'flex', flex: '1 1 300px', maxWidth: isPhone ? '100%' : 380, minWidth: 0, border: isPhone ? 0 : '1px solid var(--line)', borderRadius: isPhone ? 0 : 12, flexDirection: 'column', overflow: isPhone ? 'visible' : 'hidden' }}>
           <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8, borderBottom: '1px solid var(--line)' }}>
             <input type="search" className="om-field" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search messages" aria-label="Search messages" style={{ borderRadius: 18 }} />
             <Pills label="Filter by status" value={filter} onChange={(k) => { setFilter(k); setOpenId(null); }} options={[
@@ -114,25 +114,35 @@ function SupportPage() {
               </div>
             )}
           </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
+          <div style={{ overflowY: isPhone ? 'visible' : 'auto', flex: 1, display: isPhone ? 'flex' : undefined, flexDirection: isPhone ? 'column' : undefined, gap: isPhone ? 10 : undefined, padding: isPhone ? '12px 0' : undefined }}>
             {threads.length === 0 && <div style={{ padding: 20, fontSize: 13.5, color: 'var(--muted)' }}>Nothing here.</div>}
             {threads.map((t) => {
               const on = t.id === openId;
+              const showPreview = !isPhone || String(t.preview || '').trim().toLowerCase() !== String(t.subject || '').trim().toLowerCase();
+              const [statusLabel, statusBg, statusFg] = STATUS[t.status] || STATUS.new;
               return (
                 <button key={t.id} type="button" onClick={() => {
                   setOpenId(t.id);
                   if (isPhone) router.push({ pathname: '/admin/support', query: { thread: t.id } }, undefined, { shallow: true });
                 }}
-                  style={{ width: '100%', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 3, padding: isPhone ? 14 : '11px 14px', border: 0, borderBottom: isPhone ? 0 : '1px solid var(--line-soft)', borderRadius: isPhone ? 12 : 0, cursor: 'pointer', background: isPhone ? 'var(--panel)' : on ? 'var(--accent-tint)' : 'transparent', boxShadow: on && !isPhone ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
-                  <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
-                    <span style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.restaurant_name}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                      {isPhone && <StatusChip status={t.status} />}
-                      <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{when(t.last_message_at)}</span>
-                    </span>
+                  style={{ width: '100%', boxSizing: isPhone ? 'border-box' : undefined, flexShrink: isPhone ? 0 : undefined, textAlign: 'left', display: 'flex', flexDirection: 'column', gap: isPhone ? 7 : 3, padding: isPhone ? 12 : '11px 14px', border: isPhone ? '1px solid var(--line)' : 0, borderBottom: isPhone ? '1px solid var(--line)' : '1px solid var(--line-soft)', borderRadius: isPhone ? 12 : 0, cursor: 'pointer', background: isPhone ? 'var(--shell)' : on ? 'var(--accent-tint)' : 'transparent', boxShadow: on && !isPhone ? 'inset 3px 0 0 var(--accent)' : 'none', color: 'var(--text)', fontFamily: "'Manrope', sans-serif" }}>
+                  <span style={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: 'space-between', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                    <span style={{ minWidth: 0, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.restaurant_name}</span>
+                    <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{when(t.last_message_at)}</span>
                   </span>
-                  <span style={{ fontSize: 13, fontWeight: t.status === 'new' ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</span>
-                  <span style={{ fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.preview}</span>
+                  <span style={{ width: '100%', minWidth: 0, fontSize: 13, fontWeight: t.status === 'new' ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</span>
+                  {showPreview && t.preview && (
+                    <span style={isPhone
+                      ? { fontSize: 12, color: 'var(--muted)', lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }
+                      : { fontSize: 12, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.preview}
+                    </span>
+                  )}
+                  {isPhone && (
+                    <span style={{ alignSelf: 'flex-start' }}>
+                      <Chip bg={statusBg} fg={statusFg}>{statusLabel}</Chip>
+                    </span>
+                  )}
                 </button>
               );
             })}
