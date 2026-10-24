@@ -136,7 +136,7 @@ export default async function handler(req, res) {
         trial: s?.status === 'trialing',
         pays, ai, host, fee, other, profit,
       };
-    }).sort((a, b) => b.pays - a.pays || a.name.localeCompare(b.name));
+    }).sort((a, b) => b.pays - a.pays || String(a.name || '').localeCompare(String(b.name || '')));
 
     // MRR the way Stripe counts it: every active or past-due subscription,
     // monthly, after discounts, whether or not it is linked to a restaurant.
