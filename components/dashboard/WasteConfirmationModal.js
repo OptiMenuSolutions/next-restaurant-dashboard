@@ -19,7 +19,7 @@ import { useState } from "react";
  *              'pending' server-side and will show again next visit, or
  *              auto-expire after the cron job's EXPIRY_WINDOW_DAYS)
  */
-export default function WasteConfirmationModal({ items, onRespond, onClose }) {
+export default function WasteConfirmationModal({ items, onRespond, onClose, onAskLater = onClose }) {
   const [resolved, setResolved] = useState({}); // id -> status, optimistic local state
   const [submitting, setSubmitting] = useState(null); // id currently in flight
   const [failedId, setFailedId] = useState(null);
@@ -174,13 +174,13 @@ export default function WasteConfirmationModal({ items, onRespond, onClose }) {
           <div style={{ padding: "14px 22px" }}>
             <button
               type="button"
-              onClick={onClose}
+              onClick={onAskLater}
               style={{
                 width: "100%", padding: 10, borderRadius: 8, border: "none", background: "none",
                 color: "var(--faint,#78868a)", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
               }}
             >
-              Ask me later
+              Ask me in 2 hours
             </button>
           </div>
         )}

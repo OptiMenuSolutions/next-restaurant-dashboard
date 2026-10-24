@@ -210,6 +210,10 @@ export default function DashboardPage() {
   const tour = useTour("dashboard");
   const [searchOpen, setSearchOpen] = useState(false);
   const [confirmationsDismissed, setConfirmationsDismissed] = useState(false);
+  const [confirmationSnooze, setConfirmationSnooze] = useState({
+    key: null,
+    until: 0,
+  });
   const [showTourPrompt, setShowTourPrompt] = useState(false);
 
   // Account (login, profile, restaurant) from the shared cache, with the
@@ -221,6 +225,68 @@ export default function DashboardPage() {
   const restaurantName = rd?.name || "Your Restaurant";
   const restaurantCreatedAt = rd?.created_at || null;
   const targetFoodCost = rd?.target_food_cost != null ? Number(rd.target_food_cost) : null;
+
+  const confirmationSnoozeKey = account?.user?.id && restaurantId
+    ? `om_waste_snooze:${account.user.id}:${restaurantId}`
+    : null;
+
+  useEffect(() => {
+    if (!confirmationSnoozeKey) return;
+
+    const readSnooze = () => {
+      let until = 0;
+      try {
+        const saved = Number(localStorage.getItem(confirmationSnoozeKey));
+        if (Number.isFinite(saved) && saved > Date.now()) until = saved;
+      } catch {}
+
+      setConfirmationSnooze({ key: confirmationSnoozeKey, until });
+    };
+
+    const onStorage = (event) => {
+      if (event.key === confirmationSnoozeKey || event.key === null) {
+        readSnooze();
+      }
+    };
+
+    readSnooze();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("focus", readSnooze);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("focus", readSnooze);
+    };
+  }, [confirmationSnoozeKey]);
+
+  useEffect(() => {
+    if (
+      !confirmationSnoozeKey ||
+      confirmationSnooze.key !== confirmationSnoozeKey ||
+      !confirmationSnooze.until
+    ) return;
+
+    const timer = setTimeout(() => {
+      setConfirmationSnooze((current) =>
+        current.key === confirmationSnoozeKey
+          ? { key: confirmationSnoozeKey, until: 0 }
+          : current
+      );
+    }, Math.max(0, confirmationSnooze.until - Date.now()));
+
+    return () => clearTimeout(timer);
+  }, [confirmationSnoozeKey, confirmationSnooze.key, confirmationSnooze.until]);
+
+  function snoozeWasteConfirmations() {
+    if (!confirmationSnoozeKey) return;
+
+    const until = Date.now() + 2 * 60 * 60 * 1000;
+    try {
+      localStorage.setItem(confirmationSnoozeKey, String(until));
+    } catch {}
+
+    setConfirmationSnooze({ key: confirmationSnoozeKey, until });
+  }
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -441,7 +507,16 @@ export default function DashboardPage() {
       }));
     }
   );
-  const pendingConfirmations = confirmationsDismissed ? [] : confirmationRows || [];
+  const confirmationSnoozeReady =
+    !!confirmationSnoozeKey &&
+    confirmationSnooze.key === confirmationSnoozeKey;
+
+  const pendingConfirmations =
+    confirmationsDismissed ||
+    !confirmationSnoozeReady ||
+    confirmationSnooze.until > Date.now()
+      ? []
+      : confirmationRows || [];
 
   async function handleWasteConfirmationRespond(id, status) {
     // The waste_confirmations table only grants authenticated users UPDATE
@@ -644,6 +719,7 @@ export default function DashboardPage() {
           items={pendingConfirmations}
           onRespond={handleWasteConfirmationRespond}
           onClose={() => setConfirmationsDismissed(true)}
+          onAskLater={snoozeWasteConfirmations}
         />
       )}
 
