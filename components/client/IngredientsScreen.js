@@ -149,6 +149,7 @@ export default function IngredientsScreen({
   const [theme, toggleTheme] = useTheme(themeProp, defaultTheme, onThemeChange);
   const isMobile = useIsMobile(900);
   const [filter, setFilter] = useState("All");
+  const [searchText, setSearchText] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [invoicesOpen, setInvoicesOpen] = useState(false);
@@ -197,7 +198,12 @@ export default function IngredientsScreen({
   const estimatedCount = all.filter((g) => g.estimated && !g.awaiting).length;
   const awaitingCount = all.filter((g) => g.awaiting).length;
 
-  const shown = filter === "Use first" ? useFirst : filter === "Risers" ? risers : filter === "Needs price" ? unpriced : all;
+  const filtered = filter === "Use first" ? useFirst : filter === "Risers" ? risers : filter === "Needs price" ? unpriced : all;
+  const searchTerms = searchText.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = filtered.filter((g) => {
+    const name = String(g.name || "").toLowerCase();
+    return searchTerms.every((term) => name.includes(term));
+  });
   // URL selection is independent of the filter so saved links and browser
   // Back/Forward always open the requested ingredient.
   const picked = onCloseIngredient
@@ -310,6 +316,19 @@ export default function IngredientsScreen({
 
           <MobileTitle kicker={`${restaurantName} · Purchasing`} title="Ingredients" sub="Priced from your invoices" />
 
+          <label style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 24, padding: "10px 14px", minHeight: 44, boxSizing: "border-box", minWidth: 0 }}>
+            <SearchIcon size={16} />
+            <input
+              type="search"
+              aria-label="Search ingredients"
+              placeholder="Search ingredients"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              autoComplete="off"
+              style={{ flex: 1, width: "100%", minWidth: 0, border: "none", background: "transparent", color: "var(--text)", fontFamily: SANS, fontSize: 16, outline: "none" }}
+            />
+          </label>
+
           <MobileChips options={filterOpts} value={filter} onChange={(k) => { setFilter(k); clear(); }} />
 
           {showAlert && uf && (
@@ -411,10 +430,18 @@ export default function IngredientsScreen({
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button type="button" onClick={onSearch} className="om-hover-accent" style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "7px 12px", cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "7px 12px", minWidth: 0 }}>
               <SearchIcon size={13} />
-              <span style={{ fontSize: 12.5, color: "var(--faint)" }}>Search ingredients</span>
-            </button>
+              <input
+                type="search"
+                aria-label="Search ingredients"
+                placeholder="Search ingredients"
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                autoComplete="off"
+                style={{ width: 160, minWidth: 0, border: "none", background: "transparent", color: "var(--text)", fontFamily: SANS, fontSize: 13, outline: "none" }}
+              />
+            </label>
             <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3 }}>
               {["All", "Use first", "Risers", "Needs price"].map((f) => (
                 <button
