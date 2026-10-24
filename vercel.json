@@ -38,6 +38,10 @@
     { 
       "path": "/api/cron/sync-pos-menu", 
       "schedule": "45 7 * * *" 
+    },
+    {
+      "path": "/api/cron/check-services",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

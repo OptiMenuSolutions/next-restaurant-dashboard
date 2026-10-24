@@ -73,7 +73,7 @@ async function getOk(url, headers) {
 }
 const need = (v) => { if (!v) throw new Error('not set'); return v; };
 
-async function services() {
+export async function services() {
   const env = process.env;
   return Promise.all([
     timed('Supabase', 'Database, logins and file storage', async () => {
