@@ -86,12 +86,6 @@ function TestimonialsPage() {
           { key: 'proof', label: 'Proof points', n: data.proof.length },
         ]} />
       )}
-      {isPhone && (
-        <Pills label="Testimonials" value={view} onChange={setView} options={[
-          { key: 'quotes', label: 'Quotes', n: data.quotes.length },
-          { key: 'proof', label: 'Proof points', n: data.proof.length },
-        ]} />
-      )}
       {(!isPhone || view === 'quotes') && (
         <Pills label="Filter" value={filter} onChange={setFilter} options={[
           { key: 'all', label: 'All', n: data.quotes.length }, { key: 'not asked', label: 'Not asked', n: n('not asked') },
