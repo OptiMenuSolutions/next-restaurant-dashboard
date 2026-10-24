@@ -430,18 +430,6 @@ export default function IngredientsScreen({
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 7, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "7px 12px", minWidth: 0 }}>
-              <SearchIcon size={13} />
-              <input
-                type="search"
-                aria-label="Search ingredients"
-                placeholder="Search ingredients"
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                autoComplete="off"
-                style={{ width: 160, minWidth: 0, border: "none", background: "transparent", color: "var(--text)", fontFamily: SANS, fontSize: 13, outline: "none" }}
-              />
-            </label>
             <div style={{ display: "flex", alignItems: "center", gap: 2, background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: 3 }}>
               {["All", "Use first", "Risers", "Needs price"].map((f) => (
                 <button
@@ -459,9 +447,31 @@ export default function IngredientsScreen({
 
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr)", gap: 16, flex: 1, minHeight: 0 }}>
           <div data-tour="ing-list" style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "var(--card-lift)", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
-            <div style={{ display: "grid", gridTemplateColumns: HEAD_GRID, gap: 14, padding: "12px 20px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: HEAD_GRID, alignItems: "center", gap: 14, padding: "12px 20px", borderBottom: "1px solid var(--line)", flexShrink: 0 }}>
               {COLUMNS.map((c) => (
-                <span key={c.label} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", textAlign: c.align }}>{c.label}</span>
+                c.label === "Ingredient" ? (
+                  <div key={c.label} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, minWidth: 0 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)" }}>
+                      {c.label}
+                    </span>
+                    <label style={{ display: "flex", alignItems: "center", gap: 7, flex: "1 1 110px", minWidth: 0, maxWidth: 180, boxSizing: "border-box", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 20, padding: "6px 10px" }}>
+                      <SearchIcon size={13} />
+                      <input
+                        type="search"
+                        aria-label="Search ingredients"
+                        placeholder="Search"
+                        value={searchText}
+                        onChange={(e) => setSearchText(e.target.value)}
+                        autoComplete="off"
+                        style={{ flex: 1, width: "100%", minWidth: 0, border: "none", background: "transparent", color: "var(--text)", fontFamily: SANS, fontSize: 13, outline: "none" }}
+                      />
+                    </label>
+                  </div>
+                ) : (
+                  <span key={c.label} style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", textAlign: c.align }}>
+                    {c.label}
+                  </span>
+                )
               ))}
             </div>
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
