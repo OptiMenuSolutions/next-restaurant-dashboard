@@ -133,6 +133,7 @@ export default function ProfileScreen({
   const [restaurantName, setRestaurantName] = useState(restaurantNameProp);
   const [targetFoodCost, setTargetFoodCost] = useState(targetFoodCostProp);
   const [notifs, setNotifs] = useState(notifPrefs);
+  const [savingNotif, setSavingNotif] = useState(null);
   const [freezeSettings, setFreezeSettings] = useState(freezeSettingsProp);
 
   // Each of these props arrives late (profile.js renders once with defaults
@@ -502,8 +503,51 @@ export default function ProfileScreen({
                   </div>
                   <button
                     type="button"
-                    onClick={() => { const next = !notifs[r.key]; setNotifs((n) => ({ ...n, [r.key]: next })); onToggleNotif?.(r.key, next); flash("Preference saved"); }}
-                    style={{ width: tg.w, height: tg.h, borderRadius: tg.h / 2, position: "relative", border: "none", cursor: "pointer", flexShrink: 0, background: notifs[r.key] ? "var(--accent)" : "var(--line)" }}
+                    role="switch"
+                    aria-label={r.label}
+                    aria-checked={!!notifs[r.key]}
+                    aria-busy={savingNotif === r.key}
+                    disabled={savingNotif !== null}
+                    onClick={async () => {
+                      if (savingNotif !== null) return;
+
+                      const previous = !!notifs[r.key];
+                      const next = !previous;
+
+                      setSavingNotif(r.key);
+                      setNotifs((current) => ({ ...current, [r.key]: next }));
+
+                      try {
+                        if (!onToggleNotif) {
+                          throw new Error("Notification settings are unavailable. Please reload.");
+                        }
+
+                        await onToggleNotif(r.key, next);
+                        flash("Preference saved");
+                      } catch (err) {
+                        setNotifs((current) => ({
+                          ...current,
+                          [r.key]: previous,
+                        }));
+                        flash(
+                          err?.message || "Could not save that preference. Please try again.",
+                          true
+                        );
+                      } finally {
+                        setSavingNotif(null);
+                      }
+                    }}
+                    style={{
+                      width: tg.w,
+                      height: tg.h,
+                      borderRadius: tg.h / 2,
+                      position: "relative",
+                      border: "none",
+                      cursor: savingNotif !== null ? "wait" : "pointer",
+                      flexShrink: 0,
+                      opacity: savingNotif === r.key ? 0.6 : 1,
+                      background: notifs[r.key] ? "var(--accent)" : "var(--line)",
+                    }}
                   >
                     <div style={{ width: tg.k, height: tg.k, borderRadius: "50%", background: "#fff", position: "absolute", top: (tg.h - tg.k) / 2, left: notifs[r.key] ? tg.w - tg.k - 2 : 2, transition: "left .2s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)" }} />
                   </button>

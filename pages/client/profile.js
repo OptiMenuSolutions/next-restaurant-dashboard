@@ -152,16 +152,33 @@ export default function ProfilePage() {
   };
 
   const toggleNotif = async (key, next) => {
-    if (!restaurantId) return;
+    if (!restaurantId) {
+      throw new Error("Your restaurant is still loading. Please try again.");
+    }
+
     const columnMap = {
       weekly: "notif_weekly_summary",
       priceAlert: "notif_price_alerts",
       lowMargin: "notif_low_margin",
     };
     const column = columnMap[key];
-    if (!column) { console.warn("Unknown notification key, nothing to persist:", key); return; }
-    const { error } = await supabase.from("restaurants").update({ [column]: next }).eq("id", restaurantId);
+
+    if (!column || typeof next !== "boolean") {
+      throw new Error("That notification preference is invalid.");
+    }
+
+    const { data, error } = await supabase
+      .from("restaurants")
+      .update({ [column]: next })
+      .eq("id", restaurantId)
+      .select("id")
+      .single();
+
     if (error) throw error;
+    if (!data) {
+      throw new Error("The preference was not saved. Please try again.");
+    }
+
     setNotifPrefs((prev) => ({ ...prev, [key]: next }));
   };
 
