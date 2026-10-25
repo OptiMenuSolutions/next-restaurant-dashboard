@@ -15,6 +15,8 @@ export default function PosUsage() {
   const [editing, setEditing] = useState(null);
   const [portions, setPortions] = useState([]);
   const [addId, setAddId] = useState('');
+  const [selectedTicket, setSelectedTicket] = useState('');
+  const [ticketFilter, setTicketFilter] = useState('all');
 
   const card = {
     overflowWrap: 'anywhere',
@@ -49,6 +51,26 @@ export default function PosUsage() {
   }
 
   const ticketGroups = [...grouped.values()];
+
+  const ticketCounts = {
+    all: ticketGroups.length,
+    blocked: ticketGroups.filter((ticket) =>
+      ticket.rows.some((row) => row.status === 'blocked')
+    ).length,
+    ready: ticketGroups.filter((ticket) =>
+      ticket.rows.every((row) => row.status !== 'blocked')
+    ).length,
+  };
+
+  const filteredTickets = ticketGroups.filter((ticket) => {
+    const blocked = ticket.rows.some((row) => row.status === 'blocked');
+    return ticketFilter === 'all' ||
+      (ticketFilter === 'blocked' ? blocked : !blocked);
+  });
+
+  const activeTicket = filteredTickets.find((ticket) =>
+    ticket.key === selectedTicket
+  ) || filteredTickets[0];
 
   const hasMissingRequests = report.some((row) =>
     row.instructions && !row.typed_requests_available
@@ -229,27 +251,158 @@ export default function PosUsage() {
       sub="POS connections"
       title="POS ingredient usage"
     >
-      <h1>POS ingredient usage</h1>
+      <style jsx global>{`
+        .pu-heading {
+          display: flex;
+          align-items: end;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 16px;
+          margin-bottom: 18px;
+        }
+        .pu-heading select {
+          width: 270px;
+          max-width: 100%;
+        }
+        .pu-filters {
+          display: flex;
+          gap: 8px;
+          overflow-x: auto;
+          padding: 18px 0;
+        }
+        .pu-filters button { flex-shrink: 0; }
+        .pu-filters button span {
+          margin-left: 6px;
+          font-variant-numeric: tabular-nums;
+        }
+        .pu-workspace {
+          display: grid;
+          grid-template-columns: 230px minmax(0, 1fr);
+          gap: 16px;
+          align-items: start;
+        }
+        .pu-ticket-list {
+          display: grid;
+          gap: 8px;
+          min-width: 0;
+        }
+        .pu-ticket {
+          display: grid;
+          gap: 5px;
+          padding: 14px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          text-align: left;
+          color: var(--text);
+          font: inherit;
+          cursor: pointer;
+        }
+        .pu-ticket strong { font-size: 14px; }
+        .pu-ticket span {
+          font-size: 12px;
+          color: var(--muted);
+        }
+        .pu-dish {
+          display: grid;
+          grid-template-columns: 32px minmax(0, 1fr) auto;
+          column-gap: 12px;
+          align-items: start;
+        }
+        .pu-dish > * { grid-column: 2 / -1; min-width: 0; }
+        .pu-dish > div:first-child { display: contents !important; }
+        .pu-dish > div:first-child > span:first-child {
+          grid-column: 1;
+          grid-row: 1 / span 2;
+          display: grid;
+          place-items: center;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--accent-tint);
+          color: var(--accent-deep) !important;
+          font-size: 12px;
+        }
+        .pu-dish > div:first-child > span:last-child {
+          grid-column: 3;
+          grid-row: 1;
+          font-size: 10px;
+          padding-top: 4px;
+        }
+        .pu-dish > h3 {
+          grid-column: 2;
+          grid-row: 1;
+          font-size: 14px !important;
+        }
+        .pu-dish > div:nth-child(3) { margin-top: 5px !important; }
+        .pu-dish details summary { min-height: 28px; }
+        .pu-footer {
+          display: flex;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 16px 0;
+          color: var(--muted);
+          font-size: 12px;
+        }
+        @media (max-width: 720px) {
+          .pu-heading { align-items: stretch; }
+          .pu-heading select { width: 100%; font-size: 16px; }
+          .pu-workspace { grid-template-columns: minmax(0, 1fr); }
+          .pu-ticket-list {
+            display: flex;
+            overflow-x: auto;
+            padding-bottom: 4px;
+          }
+          .pu-ticket { flex: 0 0 165px; }
+          .pu-dish {
+            grid-template-columns: 26px minmax(0, 1fr) auto;
+            column-gap: 8px;
+            padding: 12px !important;
+          }
+          .pu-dish > div:first-child > span:first-child {
+            width: 26px;
+            height: 26px;
+          }
+          .pu-dish details {
+            grid-column: 1 / -1;
+          }
+        }
+      `}</style>
 
-      <p>
-        Review individual dishes and estimated modifier portions.
-        Preview does not change inventory.
-      </p>
+      <div className="pu-heading">
+        <div>
+          <div style={{
+            fontSize: 11,
+            letterSpacing: '0.16em',
+            color: 'var(--muted)',
+            marginBottom: 8,
+          }}>
+            PLATFORM
+          </div>
+          <h1 style={{ margin: 0, fontSize: 30 }}>
+            POS ingredient usage
+          </h1>
+        </div>
 
-      <select
-        className="om-field"
-        value={restaurantId}
-        disabled={busy}
-        onChange={(event) => setRestaurantId(event.target.value)}
-      >
-        <option value="">Choose restaurant</option>
-
-        {restaurants.map((restaurant) => (
-          <option key={restaurant.id} value={restaurant.id}>
-            {restaurant.name || 'Unnamed restaurant'}
-          </option>
-        ))}
-      </select>
+        <select
+          aria-label="Restaurant"
+          className="om-field"
+          value={restaurantId}
+          disabled={busy}
+          onChange={(event) => {
+            setRestaurantId(event.target.value);
+            setSelectedTicket('');
+            setTicketFilter('all');
+          }}
+        >
+          <option value="">Choose restaurant</option>
+          {restaurants.map((restaurant) => (
+            <option key={restaurant.id} value={restaurant.id}>
+              {restaurant.name || 'Unnamed restaurant'}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {message && <p role="status">{message}</p>}
 
@@ -351,11 +504,85 @@ export default function PosUsage() {
             )}
           </div>
 
-          {ticketGroups.map((ticket) => (
+          <div className="pu-filters" aria-label="Filter tickets">
+            {[
+              ['all', 'All tickets'],
+              ['blocked', 'Needs review'],
+              ['ready', 'Ready'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className="om-btn"
+                aria-pressed={ticketFilter === value}
+                onClick={() => {
+                  setTicketFilter(value);
+                  setSelectedTicket('');
+                }}
+                style={{
+                  background: ticketFilter === value
+                    ? 'var(--accent-tint)'
+                    : 'var(--shell)',
+                  color: ticketFilter === value
+                    ? 'var(--accent-deep)'
+                    : 'var(--muted)',
+                }}
+              >
+                {label}
+                <span>{ticketCounts[value]}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="pu-workspace">
+            <nav className="pu-ticket-list" aria-label="Tickets">
+              {filteredTickets.map((ticket) => {
+                const blocked = ticket.rows.some((row) =>
+                  row.status === 'blocked'
+                );
+
+                return (
+                  <button
+                    key={ticket.key}
+                    type="button"
+                    onClick={() => setSelectedTicket(ticket.key)}
+                    aria-current={activeTicket?.key === ticket.key ? 'true' : undefined}
+                    className="pu-ticket"
+                    style={{
+                      borderColor: activeTicket?.key === ticket.key
+                        ? 'var(--accent)'
+                        : 'var(--line)',
+                      background: activeTicket?.key === ticket.key
+                        ? 'var(--accent-tint)'
+                        : 'var(--shell)',
+                    }}
+                  >
+                    <strong>Ticket {ticket.number || '—'}</strong>
+                    <span>{ticket.date}</span>
+                    <span style={{
+                      color: blocked ? 'var(--amber)' : 'var(--accent-deep)',
+                    }}>
+                      {ticket.rows.length} entries · {blocked ? 'Needs review' : 'Prepared'}
+                    </span>
+                  </button>
+                );
+              })}
+
+              {!filteredTickets.length && (
+                <p style={{ color: 'var(--muted)', padding: 12 }}>
+                  {report.length
+                    ? 'No tickets match this filter.'
+                    : 'Prepare the tickets to see their ingredient usage.'}
+                </p>
+              )}
+            </nav>
+
+          {(activeTicket ? [activeTicket] : []).map((ticket) => (
             <section
               key={ticket.key}
               style={{
-                marginTop: 24,
+                minWidth: 0,
+                marginTop: 0,
                 border: '1px solid var(--line)',
                 borderRadius: 14,
                 background: 'var(--shell)',
@@ -413,8 +640,7 @@ export default function PosUsage() {
               <div
                 style={{
                   display: 'grid',
-                  gridTemplateColumns:
-                    'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+                  gridTemplateColumns: 'minmax(0, 1fr)',
                   gap: 12,
                   padding: 12,
                 }}
@@ -438,6 +664,7 @@ export default function PosUsage() {
 
                   return (
                     <article
+                      className="pu-dish"
                       key={`${row.line_key}:${row.unit_index || 0}`}
                       style={{
                         minWidth: 0,
@@ -460,7 +687,7 @@ export default function PosUsage() {
                         }}
                       >
                         <span style={{ color: 'var(--muted)' }}>
-                          DISH {index + 1}
+                          {String(index + 1).padStart(2, '0')}
                         </span>
                         <span style={{ color: statusColor }}>
                           {row.status === 'blocked'
@@ -617,8 +844,8 @@ export default function PosUsage() {
                             <div style={{ marginTop: 8 }}>
                               <div
                                 style={{
-                                  display: 'flex',
-                                  justifyContent: 'space-between',
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0, 1fr) minmax(60px, auto) minmax(60px, auto)',
                                   gap: 12,
                                   paddingBottom: 7,
                                   color: 'var(--muted)',
@@ -628,10 +855,9 @@ export default function PosUsage() {
                                 }}
                               >
                                 <span>INGREDIENT</span>
-                                <span>
-                                  {row.status === 'ready'
-                                    ? 'USAGE'
-                                    : 'BASE RECIPE'}
+                                <span style={{ textAlign: 'right' }}>STANDARD</span>
+                                <span style={{ textAlign: 'right' }}>
+                                  {row.status === 'ready' ? 'THIS ORDER' : 'BASE'}
                                 </span>
                               </div>
 
@@ -640,7 +866,7 @@ export default function PosUsage() {
                                   key={part.id}
                                   style={{
                                     display: 'grid',
-                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    gridTemplateColumns: 'minmax(0, 1fr) minmax(60px, auto) minmax(60px, auto)',
                                     gap: 12,
                                     padding: '8px 0',
                                     borderTop: '1px solid var(--line)',
@@ -660,9 +886,18 @@ export default function PosUsage() {
                                   >
                                     {part.name}
                                   </span>
+                                  <span
+                                    style={{
+                                      textAlign: 'right',
+                                      color: 'var(--muted)',
+                                      fontVariantNumeric: 'tabular-nums',
+                                    }}
+                                  >
+                                    {formatQty(part.before)} {part.unit}
+                                  </span>
                                   <strong
                                     style={{
-                                      whiteSpace: 'nowrap',
+                                      textAlign: 'right',
                                       fontVariantNumeric: 'tabular-nums',
                                       color: part.changed
                                         ? 'var(--accent-deep)'
@@ -738,6 +973,20 @@ export default function PosUsage() {
               </div>
             </section>
           ))}
+          </div>
+
+          {data.settings && (
+            <div className="pu-footer">
+              <span>
+                {data.settings.enabled
+                  ? 'These quantities are used for inventory.'
+                  : 'Preview only. Inventory unchanged.'}
+              </span>
+              <span>
+                {report.filter((row) => row.status === 'blocked').length} entries need review
+              </span>
+            </div>
+          )}
 
           {editing && (
             <div
