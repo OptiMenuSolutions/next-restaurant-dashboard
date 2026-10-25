@@ -25,6 +25,82 @@ export default function PosUsage() {
     marginTop: 12,
   };
 
+  const report = data?.result?.report || [];
+  const grouped = new Map();
+
+  for (const row of report) {
+    const lineKey = String(row.line_key || '');
+    const separator = lineKey.lastIndexOf(':');
+    const ticketId = separator >= 0
+      ? lineKey.slice(0, separator)
+      : String(row.ticket || lineKey);
+    const key = `${row.date}:${ticketId}`;
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        number: row.ticket,
+        date: row.date,
+        rows: [],
+      });
+    }
+
+    grouped.get(key).rows.push(row);
+  }
+
+  const ticketGroups = [...grouped.values()];
+
+  const hasMissingRequests = report.some((row) =>
+    row.instructions && !row.typed_requests_available
+  );
+
+  function formatQty(value) {
+    return Number.isFinite(value)
+      ? Number(value.toFixed(4)).toLocaleString('en-US', {
+          maximumFractionDigits: 4,
+        })
+      : '—';
+  }
+
+  function ingredientRows(row) {
+    const base = row.base || [];
+    const adjusted = row.adjusted;
+    const parts = new Map();
+
+    for (const part of base) {
+      parts.set(part.id, {
+        ...part,
+        before: part.quantity,
+        quantity: adjusted ? 0 : part.quantity,
+        changed: Boolean(adjusted && part.quantity !== 0),
+      });
+    }
+
+    for (const part of adjusted || []) {
+      const original = base.find((candidate) =>
+        candidate.id === part.id
+      );
+
+      const before = original
+        ? convertQuantity(
+            original.quantity,
+            original.unit,
+            part.unit,
+            part.name
+          )
+        : 0;
+
+      parts.set(part.id, {
+        ...part,
+        before,
+        changed: !Number.isFinite(before) ||
+          Math.abs(before - part.quantity) > 0.000001,
+      });
+    }
+
+    return [...parts.values()];
+  }
+
   async function request(url, body) {
     const response = await adminFetch(
       url,
@@ -252,104 +328,415 @@ export default function PosUsage() {
                   )}
                 </div>
 
-                <p>
-                  Typed requests are available only after the
-                  Shift4 lookup succeeds. Missing requests are
-                  marked on each dish.
-                </p>
+                {hasMissingRequests && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: '10px 12px',
+                      borderLeft: '3px solid var(--amber)',
+                      background: 'var(--amber-tint)',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                    }}
+                  >
+                    <strong>Typed kitchen instructions are incomplete.</strong>
+                    {' '}
+                    These results include the preset modifiers received
+                    from Shift4. Typed requests will be included when
+                    lookup access is available.
+                  </div>
+                )}
               </>
             )}
           </div>
 
-          {(data.result?.report || []).map((row, index) => (
-            <div
-              key={`${row.line_key}:${index}`}
-              style={card}
+          {ticketGroups.map((ticket) => (
+            <section
+              key={ticket.key}
+              style={{
+                marginTop: 24,
+                border: '1px solid var(--line)',
+                borderRadius: 14,
+                background: 'var(--shell)',
+                overflow: 'hidden',
+              }}
             >
-              <strong>
-                Ticket {row.ticket} · {row.dish}
-                {row.unit_index
-                  ? ` · Dish ${row.unit_index}`
-                  : ''}
-              </strong>
-
-              <p>
-                {row.status}
-                {row.estimated ? ' · Estimated portion' : ''}
-                {row.reason ? ` · ${row.reason}` : ''}
-              </p>
-
-              {row.instructions && (
-                <>
-                  <p>
-                    {row.instructions.modifiers
-                      .map((modifier) => modifier.name)
-                      .join(', ') || 'No preset modifiers'}
-                  </p>
-
-                  <p>
-                    {[
-                      ...(row.instructions.requests || []),
-                      ...row.instructions.modifiers.flatMap(
-                        (modifier) => modifier.requests || []
-                      ),
-                    ].join('; ') || 'No typed text received'}
-                  </p>
-
-                  {!row.typed_requests_available && (
-                    <p>Typed-request retrieval incomplete.</p>
-                  )}
-                </>
-              )}
-
-              {row.adjusted?.map((part) => (
-                <div key={part.id}>
-                  {part.name}: {' '}
-                  {Number(part.quantity.toFixed(4))} {part.unit}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderBottom: '1px solid var(--line)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                }}
+              >
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18 }}>
+                    Ticket {ticket.number || '—'}
+                  </h2>
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontSize: 12,
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    {ticket.date} · {ticket.rows.length} dish entries
+                  </div>
                 </div>
-              ))}
 
-              {row.plan?.explanation && (
-                <p>{row.plan.explanation}</p>
-              )}
+                {ticket.rows.some((row) => row.status === 'blocked') ? (
+                  <span
+                    style={{
+                      color: 'var(--red)',
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Needs review
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      color: 'var(--muted)',
+                      fontSize: 12,
+                    }}
+                  >
+                    Prepared
+                  </span>
+                )}
+              </div>
 
-              {row.reason ===
-                'Choose the matching OptiMenu dish' && (
-                <select
-                  className="om-field"
-                  disabled={busy}
-                  defaultValue=""
-                  onChange={(event) =>
-                    event.target.value && act('map', {
-                      itemRef: row.item_ref,
-                      menuId: event.target.value,
-                    })
-                  }
-                >
-                  <option value="">Choose matching recipe</option>
-                  <option value="__exclude__">
-                    No tracked ingredients — exclude this POS item
-                  </option>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+                  gap: 12,
+                  padding: 12,
+                }}
+              >
+                {ticket.rows.map((row, index) => {
+                  const ingredients = ingredientRows(row);
+                  const changes = ingredients.filter((part) => part.changed);
+                  const modifiers = row.instructions?.modifiers || [];
+                  const requests = [
+                    ...(row.instructions?.requests || []),
+                    ...modifiers.flatMap((modifier) =>
+                      modifier.requests || []
+                    ),
+                  ].filter((text) => text.trim());
 
-                  {data.menus.map((menu) => (
-                    <option key={menu.id} value={menu.id}>
-                      {menu.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+                  const statusColor = row.status === 'blocked'
+                    ? 'var(--red)'
+                    : row.estimated
+                      ? 'var(--amber)'
+                      : 'var(--muted)';
 
-              {row.rule_available && (
-                <button
-                  type="button"
-                  className="om-btn"
-                  disabled={busy}
-                  onClick={() => edit(row)}
-                >
-                  Set portions for this combination
-                </button>
-              )}
-            </div>
+                  return (
+                    <article
+                      key={`${row.line_key}:${row.unit_index || 0}`}
+                      style={{
+                        minWidth: 0,
+                        padding: 14,
+                        border: '1px solid var(--line)',
+                        borderRadius: 10,
+                        overflowWrap: 'anywhere',
+                        alignSelf: 'start',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 10,
+                          marginBottom: 8,
+                          fontSize: 11,
+                          fontWeight: 700,
+                        }}
+                      >
+                        <span style={{ color: 'var(--muted)' }}>
+                          DISH {index + 1}
+                        </span>
+                        <span style={{ color: statusColor }}>
+                          {row.status === 'blocked'
+                            ? 'NEEDS REVIEW'
+                            : row.status === 'excluded'
+                              ? 'EXCLUDED'
+                              : row.estimated
+                                ? 'ESTIMATED'
+                                : 'READY'}
+                        </span>
+                      </div>
+
+                      <h3
+                        style={{
+                          margin: 0,
+                          fontSize: 16,
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        {row.dish}
+                      </h3>
+
+                      <div
+                        style={{
+                          marginTop: 9,
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 6,
+                        }}
+                      >
+                        {modifiers.length ? modifiers.map((modifier, i) => (
+                          <span
+                            key={i}
+                            style={{
+                              padding: '4px 9px',
+                              borderRadius: 12,
+                              background: 'var(--accent-tint)',
+                              color: 'var(--accent-deep)',
+                              fontSize: 12,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {modifier.name}
+                          </span>
+                        )) : (
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: 'var(--muted)',
+                            }}
+                          >
+                            {requests.length
+                              ? 'Typed instructions'
+                              : 'Standard order'}
+                          </span>
+                        )}
+                      </div>
+
+                      {requests.length > 0 && (
+                        <p
+                          style={{
+                            margin: '10px 0 0',
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                            color: 'var(--muted)',
+                          }}
+                        >
+                          {requests.join(' · ')}
+                        </p>
+                      )}
+
+                      {row.status === 'ready' && (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 10,
+                            borderTop: '1px solid var(--line)',
+                            fontSize: 13,
+                            lineHeight: 1.6,
+                          }}
+                        >
+                          {changes.length ? changes.map((part) => (
+                            <div key={part.id}>
+                              <strong>{part.name}</strong>
+                              {' · '}
+                              {part.quantity === 0
+                                ? 'Removed'
+                                : part.before === 0
+                                  ? `Added ${formatQty(part.quantity)} ${part.unit}`
+                                  : `${formatQty(part.before)} → ${formatQty(part.quantity)} ${part.unit}`}
+                            </div>
+                          )) : (
+                            <span style={{ color: 'var(--muted)' }}>
+                              Standard recipe quantities
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {row.reason && (
+                        <p
+                          style={{
+                            margin: '12px 0 0',
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                            color: statusColor,
+                          }}
+                        >
+                          {row.reason}
+                        </p>
+                      )}
+
+                      {row.reason === 'Choose the matching OptiMenu dish' && (
+                        <select
+                          aria-label={`Match recipe for ${row.dish}`}
+                          className="om-field"
+                          style={{ marginTop: 12, minWidth: 0 }}
+                          disabled={busy}
+                          defaultValue=""
+                          onChange={(event) =>
+                            event.target.value && act('map', {
+                              itemRef: row.item_ref,
+                              menuId: event.target.value,
+                            })
+                          }
+                        >
+                          <option value="">Choose matching recipe</option>
+                          <option value="__exclude__">
+                            No tracked ingredients — exclude this POS item
+                          </option>
+                          {data.menus.map((menu) => (
+                            <option key={menu.id} value={menu.id}>
+                              {menu.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {(ingredients.length > 0 || row.plan?.explanation) && (
+                        <details style={{ marginTop: 12 }}>
+                          <summary
+                            style={{
+                              cursor: 'pointer',
+                              color: 'var(--accent-deep)',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: '6px 0',
+                            }}
+                          >
+                            Ingredients & calculation
+                          </summary>
+
+                          {ingredients.length > 0 && (
+                            <div style={{ marginTop: 8 }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  gap: 12,
+                                  paddingBottom: 7,
+                                  color: 'var(--muted)',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  letterSpacing: '0.08em',
+                                }}
+                              >
+                                <span>INGREDIENT</span>
+                                <span>
+                                  {row.status === 'ready'
+                                    ? 'USAGE'
+                                    : 'BASE RECIPE'}
+                                </span>
+                              </div>
+
+                              {ingredients.map((part) => (
+                                <div
+                                  key={part.id}
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    gap: 12,
+                                    padding: '8px 0',
+                                    borderTop: '1px solid var(--line)',
+                                    fontSize: 13,
+                                    alignItems: 'baseline',
+                                  }}
+                                >
+                                  <span
+                                    style={{
+                                      color: part.quantity === 0
+                                        ? 'var(--muted)'
+                                        : 'var(--text)',
+                                      textDecoration: part.quantity === 0
+                                        ? 'line-through'
+                                        : 'none',
+                                    }}
+                                  >
+                                    {part.name}
+                                  </span>
+                                  <strong
+                                    style={{
+                                      whiteSpace: 'nowrap',
+                                      fontVariantNumeric: 'tabular-nums',
+                                      color: part.changed
+                                        ? 'var(--accent-deep)'
+                                        : 'var(--text)',
+                                    }}
+                                  >
+                                    {formatQty(part.quantity)} {part.unit}
+                                  </strong>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {row.plan?.explanation && (
+                            <p
+                              style={{
+                                margin: '12px 0 0',
+                                paddingTop: 10,
+                                borderTop: '1px solid var(--line)',
+                                color: 'var(--muted)',
+                                fontSize: 12,
+                                lineHeight: 1.65,
+                              }}
+                            >
+                              {row.plan.explanation}
+                            </p>
+                          )}
+
+                          {row.instructions && (
+                            <p
+                              style={{
+                                margin: '10px 0 0',
+                                fontSize: 11,
+                                color: 'var(--muted)',
+                              }}
+                            >
+                              {row.typed_requests_available
+                                ? 'Typed-request retrieval complete.'
+                                : 'Typed requests unavailable for this dish.'}
+                            </p>
+                          )}
+
+                          {row.rule_available && (
+                            <button
+                              type="button"
+                              className="om-btn"
+                              style={{ marginTop: 12 }}
+                              disabled={busy}
+                              onClick={() => edit(row)}
+                            >
+                              Edit portions
+                            </button>
+                          )}
+                        </details>
+                      )}
+
+                      {row.rule_available &&
+                        ingredients.length === 0 &&
+                        !row.plan?.explanation && (
+                          <button
+                            type="button"
+                            className="om-btn"
+                            style={{ marginTop: 12 }}
+                            disabled={busy}
+                            onClick={() => edit(row)}
+                          >
+                            Edit portions
+                          </button>
+                        )}
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
           ))}
 
           {editing && (
