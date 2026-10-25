@@ -144,13 +144,14 @@ export default function InventoryCountReview({
       style={{
         border: "1px solid var(--line)",
         borderRadius: 14,
-        padding: 16,
-        marginBottom: 22,
+        background: "var(--shell)",
+        padding: 18,
+        marginBottom: 0,
         minWidth: 0,
       }}
     >
       <h3 style={{ margin: "0 0 10px", fontSize: 18 }}>
-        Review saved count
+        Date & timing
       </h3>
 
       <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
@@ -210,7 +211,15 @@ export default function InventoryCountReview({
               display: "flex",
               alignItems: "flex-start",
               gap: 10,
-              padding: "10px 0",
+              padding: 12,
+              marginBottom: 8,
+              border: timing === option.value
+                ? "1px solid var(--accent-deep)"
+                : "1px solid var(--line)",
+              borderRadius: 10,
+              background: timing === option.value
+                ? "var(--accent-tint)"
+                : "var(--shell)",
               cursor: busy ? "default" : "pointer",
             }}
           >

@@ -210,25 +210,35 @@ export default function InventoryCountPage() {
       <main
         style={{
           width: "100%",
-          maxWidth: 760,
+          maxWidth: 1280,
           boxSizing: "border-box",
           margin: "0 auto",
           padding: "24px 16px 40px",
         }}
       >
-        <h1 style={{ margin: 0, fontSize: 28 }}>
+        <div style={{
+          fontSize: 11,
+          letterSpacing: "0.16em",
+          color: "var(--muted)",
+          marginBottom: 8,
+        }}>
+          INVENTORY
+        </div>
+
+        <h1 style={{ margin: 0, fontSize: 30 }}>
           Inventory count
         </h1>
 
-        <p
-          style={{
-            margin: "10px 0 24px",
-            color: "var(--muted)",
-            lineHeight: 1.6,
-          }}
-        >
-          Optional counts help keep your stock estimates accurate.
-          Starting a draft does not change your inventory.
+        <p style={{
+          margin: "10px 0 24px",
+          color: "var(--muted)",
+          lineHeight: 1.6,
+        }}>
+          {session
+            ? session.status === "draft"
+              ? "Count what is on hand. Your draft stays separate from live inventory."
+              : `Saved count · ${session.status}`
+            : "Optional counts help keep your stock estimates accurate."}
         </p>
 
         {visibleError && (
@@ -262,38 +272,19 @@ export default function InventoryCountPage() {
         ) : !accountError && restaurantId ? (
           <section
             style={{
-              background: "var(--shell)",
-              border: "1px solid var(--line)",
+              minWidth: 0,
+              background: session ? "transparent" : "var(--shell)",
+              border: session ? "none" : "1px solid var(--line)",
               borderRadius: 18,
-              padding: 20,
+              padding: session ? 0 : 20,
             }}
           >
             {session ? (
               <>
-                <h2 style={{ margin: 0, fontSize: 20 }}>
-                  {session.status === "draft"
-                    ? "Inventory count draft"
-                    : "Inventory count"}
-                </h2>
-
-                <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-                  Started{" "}
-                  {new Date(session.created_at).toLocaleString()}.
-                  {session.status === "draft"
-                    ? " You can leave this page and return to this draft."
-                    : ` Status: ${session.status}.`}
-                </p>
-
-                <Link
-                  href={`/client/inventory-count?count=${session.id}`}
-                  style={buttonStyle}
-                >
-                  Open saved draft link
-                </Link>
-
                 <InventoryCountEditor
                   key={`${restaurantId}:${session.id}`}
                   sessionId={session.id}
+                  restaurantId={restaurantId}
                 />
               </>
             ) : !error ? (
