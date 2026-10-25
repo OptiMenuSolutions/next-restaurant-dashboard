@@ -6,6 +6,10 @@
 // price update happen in place, in the same card, no navigation at all.
 
 import { createClient } from '@supabase/supabase-js';
+import { waitUntil } from '@vercel/functions';
+import { deliverLowMarginAlerts } from '../../../lib/notifications/priceAlerts';
+
+export const config = { maxDuration: 120 };
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -41,6 +45,16 @@ export default async function handler(req, res) {
   }
   if (!data) {
     return res.status(404).json({ error: 'Menu item not found for this restaurant.' });
+  }
+
+  try {
+    waitUntil(Promise.resolve().then(() =>
+      deliverLowMarginAlerts(supabase, restaurant_id)
+    ).catch((failure) => {
+      console.error('[low-margin-alerts]', restaurant_id, failure);
+    }));
+  } catch (failure) {
+    console.error('[low-margin-alerts:schedule]', failure);
   }
 
   return res.status(200).json({ success: true, id: data.id, price: data.price });

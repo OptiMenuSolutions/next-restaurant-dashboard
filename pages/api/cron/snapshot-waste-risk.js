@@ -26,7 +26,7 @@ import {
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
 import { runUsage } from '../../../lib/pos/runUsage';
-import { deliverPriceAlerts } from '../../../lib/notifications/priceAlerts';
+import { deliverPriceAlerts, deliverLowMarginAlerts } from '../../../lib/notifications/priceAlerts';
 import { processInvoiceCalculations } from '../../../lib/admin/processInvoiceCalculations';
 
 export const config = { maxDuration: 300 };
@@ -254,20 +254,22 @@ async function handler(req, res) {
       });
     }
 
-    try {
-      const alerts = await deliverPriceAlerts(
-        supabase,
-        restaurant.id
-      );
+    for (const [label, deliver] of [
+      ['Price alerts', deliverPriceAlerts],
+      ['Low-margin alerts', deliverLowMarginAlerts],
+    ]) {
+      try {
+        const alerts = await deliver(supabase, restaurant.id);
 
-      if (alerts.failures.length) {
-        throw new Error(alerts.failures.join('; '));
+        if (alerts.failures.length) {
+          throw new Error(alerts.failures.join('; '));
+        }
+      } catch (error) {
+        results.failed.push({
+          name: `${label} for ${restaurant.name}`,
+          error: error.message,
+        });
       }
-    } catch (error) {
-      results.failed.push({
-        name: `Price alerts for ${restaurant.name}`,
-        error: error.message,
-      });
     }
     // Rebuild current_inventory first: after the overnight POS sync, so it
     // reflects yesterday's sales. Runs even when the snapshot below is skipped.
