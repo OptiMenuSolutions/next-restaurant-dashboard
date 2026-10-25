@@ -206,7 +206,15 @@ export default function PosUsage() {
       setMessage(
         action === 'disable'
           ? 'Standard recipes restored.'
-          : 'Saved. The background worker will process the update automatically.'
+          : result.usage?.error
+            ? `Saved, but usage processing failed: ${result.usage.error}. The daily inventory job will retry it; you can also use Retry now.`
+            : result.usage?.retryPending
+              ? 'Saved. Some interpretations still need a retry. Successful servings have been processed.'
+              : result.usage?.applied
+                ? 'Saved. Prepared servings have been applied to inventory.'
+                : result.usage?.skipped
+                  ? 'Saved. Usage is already current or another run is processing it.'
+                  : 'Saved. Preview updated.'
       );
 
       setEditing(null);
@@ -456,7 +464,7 @@ export default function PosUsage() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Automatic checks run every five minutes.
+                  Usage updates after POS sync and saved usage corrections.
                   {' '}
                   {report.filter(
                     (row) => row.status === 'ready'
@@ -497,7 +505,7 @@ export default function PosUsage() {
                     disabled={busy}
                     onClick={() => act('prepare')}
                   >
-                    {busy ? 'Queuing…' : 'Retry sooner'}
+                    {busy ? 'Processing…' : 'Retry now'}
                   </button>
 
                   {!data.settings.enabled && (
@@ -614,7 +622,7 @@ export default function PosUsage() {
                 <p style={{ color: 'var(--muted)', padding: 12 }}>
                   {report.length
                     ? 'No tickets match this filter.'
-                    : 'The background worker will prepare the tickets automatically.'}
+                    : 'Usage is prepared after POS sync or when you save a usage correction.'}
                 </p>
               )}
             </nav>

@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { saveTickets } from '../../../lib/pos/saveTickets';
+import { runUsage } from '../../../lib/pos/runUsage';
 import { withJobRun } from '../../../lib/admin/jobRun';
 
 export const config = { maxDuration: 300 };
@@ -116,7 +117,38 @@ async function syncConnection(conn, range) {
     })
     .eq('id', conn.id);
 
-  return { rows: records.length, ...ticketCounts };
+  let usage = null;
+
+  if (conn.provider === 'shift4') {
+    try {
+      usage = await runUsage(
+        supabase,
+        conn.restaurant_id
+      );
+
+      if (usage.error) throw new Error(usage.error);
+    } catch (error) {
+      usage = { error: error.message };
+
+      console.error(
+        '[pos-usage:after-sync]',
+        conn.restaurant_id,
+        error.message
+      );
+
+      await sendCronAlert(
+        'POS ingredient usage',
+        `Sales saved for ${conn.restaurant_id}, but ingredient usage needs a retry.`,
+        [error.message]
+      );
+    }
+  }
+
+  return {
+    rows: records.length,
+    ...ticketCounts,
+    usage,
+  };
 }
 
 async function handler(req, res) {

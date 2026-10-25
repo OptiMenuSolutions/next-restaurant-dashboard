@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { allRows } from '../../../lib/pos/usageServer';
+import { runUsage } from '../../../lib/pos/runUsage';
 import { applyPlan } from '../../../lib/pos/usageMath';
 import { convertQuantity } from '../../../lib/computeWasteRisk';
 import {
@@ -114,7 +115,7 @@ export default withAdminAuth(async function handler(req, res) {
         p_restaurant_id: restaurantId,
       }));
 
-      return res.json({ queued: true });
+      // Continue below and process this restaurant in the same request.
     } else if (action === 'map') {
       const menu = req.body.menuId === '__exclude__'
         ? { id: '__exclude__' }
@@ -250,7 +251,19 @@ export default withAdminAuth(async function handler(req, res) {
       throw new Error('Unknown action');
     }
 
-    return res.json({ ok: true });
+    let usage = null;
+
+    if (action !== 'disable') {
+      try {
+        usage = await runUsage(db, restaurantId);
+      } catch (error) {
+        // The correction is already saved.
+        // Do not tell the user to save it again.
+        usage = { error: error.message };
+      }
+    }
+
+    return res.json({ ok: true, usage });
   } catch (error) {
     return res.status(400).json({
       error: error.message,

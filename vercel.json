@@ -42,10 +42,6 @@
     {
       "path": "/api/cron/check-services",
       "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/prepare-pos-usage",
-      "schedule": "*/5 * * * *"
     }
   ]
 }

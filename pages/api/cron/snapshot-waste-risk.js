@@ -25,6 +25,9 @@ import {
 } from '../../../lib/currentInventory';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
+import { runUsage } from '../../../lib/pos/runUsage';
+
+export const config = { maxDuration: 300 };
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -236,8 +239,27 @@ async function handler(req, res) {
     // Rebuild current_inventory first: after the overnight POS sync, so it
     // reflects yesterday's sales. Runs even when the snapshot below is skipped.
     try {
-      const invCount = await rebuildCurrentInventory(supabase, restaurant.id);
-      console.log(`[cron:waste-snapshot] inventory ${restaurant.name}: ${invCount} rows`);
+      const usage = await runUsage(
+        supabase,
+        restaurant.id
+      );
+
+      if (usage.error) throw new Error(usage.error);
+
+      if (!usage.applied) {
+        const invCount = await rebuildCurrentInventory(
+          supabase,
+          restaurant.id
+        );
+
+        console.log(
+          `[cron:waste-snapshot] inventory ${restaurant.name}: ${invCount} rows`
+        );
+      } else {
+        console.log(
+          `[cron:waste-snapshot] inventory ${restaurant.name}: rebuilt after POS preparation`
+        );
+      }
     } catch (err) {
       console.error(`[cron:waste-snapshot] inventory ${restaurant.name} failed:`, err.message);
       results.inventoryFailed.push({ name: restaurant.name, error: err.message });
