@@ -27,6 +27,7 @@ import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
 import { runUsage } from '../../../lib/pos/runUsage';
 import { deliverPriceAlerts } from '../../../lib/notifications/priceAlerts';
+import { processInvoiceCalculations } from '../../../lib/admin/processInvoiceCalculations';
 
 export const config = { maxDuration: 300 };
 
@@ -237,6 +238,22 @@ async function handler(req, res) {
   const results = { success: [], skipped: [], failed: [], inventoryFailed: [] };
 
   for (const restaurant of restaurants) {
+    try {
+      const calculations = await processInvoiceCalculations(
+        supabase,
+        restaurant.id
+      );
+
+      if (calculations.errors.length) {
+        throw new Error(calculations.errors.join('; '));
+      }
+    } catch (error) {
+      results.failed.push({
+        name: `Invoice calculations for ${restaurant.name}`,
+        error: error.message,
+      });
+    }
+
     try {
       const alerts = await deliverPriceAlerts(
         supabase,

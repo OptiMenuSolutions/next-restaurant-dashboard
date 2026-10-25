@@ -8,7 +8,8 @@
 
 import { adminDb as db, requireAdmin } from '../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
-import { saveInvoiceLines } from '../../../../lib/admin/invoiceLines';
+import { waitUntil } from '@vercel/functions';
+import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
 import { convertInvoiceCostToStandardUnit } from '../../../../lib/standardizedUnits';
 
@@ -73,7 +74,23 @@ async function detail(id) {
     return { ...l, edited, checks, suggestions: l.ingredient_id ? [] : suggest(l.item_name, ingredients) };
   });
 
+  const { data: calculations, error: calculationError } = await db
+    .from('invoice_calculation_jobs')
+    .select('generation,completed_generation,last_error,finished_at')
+    .eq('restaurant_id', inv.restaurant_id)
+    .maybeSingle();
+
   return {
+    calculations: calculationError
+      ? { status: 'unknown' }
+      : calculations
+        ? {
+            status: calculations.generation > calculations.completed_generation
+              ? calculations.last_error ? 'failed' : 'pending'
+              : 'complete',
+            error: calculations.last_error,
+          }
+        : null,
     invoice: { ...inv, total: inv.total_amount ?? inv.amount, restaurant: rest?.name || 'Unknown' },
     pages,
     lines: out,
@@ -153,53 +170,37 @@ export default async function handler(req, res) {
       });
     }
 
-    // An empty edit list still needs to retry any failed calculations.
-    const result = await saveInvoiceLines(
-      db,
-      invoiceId,
-      lines || []
+    // Edits, approval, and the durable queue entry commit together.
+    const { data: result, error: saveError } = await db.rpc(
+      'save_admin_invoice_review',
+      {
+        p_invoice_id: invoiceId,
+        p_lines: lines || [],
+        p_reviewed: action === 'reviewed',
+        p_admin_id: admin.user.id,
+      }
     );
 
-    if (result.errors.length) {
-      return res.status(200).json({
-        ok: false,
-        ...result,
-      });
+    if (saveError) throw new Error(saveError.message);
+
+    await writeAuditLog({
+      admin_id: admin.user.id,
+      admin_name: admin.name,
+      action: `${action === 'reviewed' ? 'Reviewed' : 'Saved'} invoice ${invoiceId}: ${result.changed} lines fixed, ${result.relinked} rematched`,
+      target_restaurant_id: result.restaurantId,
+    });
+
+    try {
+      waitUntil(Promise.resolve().then(() =>
+        processInvoiceCalculations(db, result.restaurantId)
+      ).catch((error) => {
+        console.error('[invoice-calculations]', result.restaurantId, error);
+      }));
+    } catch (error) {
+      // The durable queue remains available to the daily retry.
+      console.error('[invoice-calculations:schedule]', error);
     }
 
-    const { data: inv } = await db.from('invoices').select('id, restaurant_id, supplier, number').eq('id', invoiceId).single();
-    const { data: r } = inv ? await db.from('restaurants').select('id, name').eq('id', inv.restaurant_id).single() : { data: null };
-    const what = `${inv?.supplier || 'invoice'}${inv?.number ? ' #' + inv.number : ''}`;
-
-    if (action === 'reviewed') {
-      const now = new Date().toISOString();
-      const { error: lineReviewError } = await db
-        .from('invoice_items')
-        .update({ reviewed: true })
-        .eq('invoice_id', invoiceId);
-
-      if (lineReviewError) {
-        throw new Error(lineReviewError.message);
-      }
-
-      // Mark the parent invoice last so it stays in the review queue
-      // if an earlier step fails.
-      const { error: invoiceReviewError } = await db
-        .from('invoices')
-        .update({
-          reviewed: true,
-          reviewed_at: now,
-          reviewed_by: admin.user.id,
-        })
-        .eq('id', invoiceId);
-
-      if (invoiceReviewError) {
-        throw new Error(invoiceReviewError.message);
-      }
-      await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: `Marked ${what} reviewed${result.changed || result.relinked ? ` (${result.changed} lines fixed, ${result.relinked} rematched)` : ''}`, target_restaurant_id: r?.id, target_restaurant_name: r?.name });
-    } else if (result.changed || result.relinked) {
-      await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: `Edited ${what}: ${result.changed} lines fixed, ${result.relinked} rematched`, target_restaurant_id: r?.id, target_restaurant_name: r?.name });
-    }
     return res.status(200).json({ ok: true, ...result });
   } catch (err) {
     console.error('[admin/review/invoices]', err);

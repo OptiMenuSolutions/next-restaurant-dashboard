@@ -199,6 +199,20 @@ function InvoiceEditor({ id, onDone }) {
       const json = await api(`/api/admin/review/invoices?id=${id}`);
       setData(json);
       setLines(json.lines.map((l) => ({ ...l })));
+
+      const status = json.calculations?.status;
+
+      setFlash(
+        status === 'failed'
+          ? `Invoice data is saved. Background calculations need attention: ${json.calculations.error}. Do not re-enter the invoice. The daily job will retry.`
+          : status === 'pending'
+            ? 'Invoice data is saved. Background calculations are pending.'
+            : status === 'complete'
+              ? 'Background calculations are complete.'
+              : status === 'unknown'
+                ? 'Invoice data loaded. Calculation status could not be checked.'
+                : ''
+      );
     } catch (e) {
       setError(e.message);
     }
@@ -232,11 +246,8 @@ function InvoiceEditor({ id, onDone }) {
       });
 
       if (json.ok === false || json.errors?.length) {
-        const details = json.errors?.join(' · ') ||
-          'The calculations did not finish.';
-
         setFlash(
-          `Review not completed. Some edits may already be saved, but the calculations are not confirmed. ${details} Your entries remain here. Click Save or Mark reviewed again to retry.`
+          `Invoice not saved. ${json.errors?.join(' · ') || 'Please retry.'} Your entries remain here.`
         );
 
         return;
@@ -248,12 +259,12 @@ function InvoiceEditor({ id, onDone }) {
         await load();
 
         setFlash(
-          `Saved. ${json.changed} line(s) fixed, ${json.relinked} rematched. Inventory recalculated.`
+          `Saved. ${json.changed} line(s) fixed, ${json.relinked} rematched. Calculations are queued automatically. Reopen this invoice to check their status.`
         );
       }
     } catch (e) {
       setFlash(
-        `Could not confirm completion. ${e.message} Your entries remain here. Retry to confirm the save and recalculate inventory.`
+        `Could not confirm the save. ${e.message} Your entries remain here. Reload to check whether the save reached the server before retrying.`
       );
     } finally {
       setBusy(false);
