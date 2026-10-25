@@ -207,7 +207,7 @@ export default function ProfileScreen({
 
   const notifRows = [
     { key: "weekly", label: "Weekly cost summary", sub: "Email every Monday with your top cost changes" },
-    { key: "priceAlert", label: "Ingredient price alerts", sub: "When an ingredient price rises more than 10%" },
+    { key: "priceAlert", label: "Ingredient price alerts", sub: "Email when a recorded ingredient price rises or falls more than 10%" },
     { key: "lowMargin", label: "Low margin alerts", sub: "When menu items drop below your target food cost" },
   ];
 

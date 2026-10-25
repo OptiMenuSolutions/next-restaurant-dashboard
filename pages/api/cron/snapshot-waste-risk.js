@@ -26,6 +26,7 @@ import {
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
 import { runUsage } from '../../../lib/pos/runUsage';
+import { deliverPriceAlerts } from '../../../lib/notifications/priceAlerts';
 
 export const config = { maxDuration: 300 };
 
@@ -236,6 +237,21 @@ async function handler(req, res) {
   const results = { success: [], skipped: [], failed: [], inventoryFailed: [] };
 
   for (const restaurant of restaurants) {
+    try {
+      const alerts = await deliverPriceAlerts(
+        supabase,
+        restaurant.id
+      );
+
+      if (alerts.failures.length) {
+        throw new Error(alerts.failures.join('; '));
+      }
+    } catch (error) {
+      results.failed.push({
+        name: `Price alerts for ${restaurant.name}`,
+        error: error.message,
+      });
+    }
     // Rebuild current_inventory first: after the overnight POS sync, so it
     // reflects yesterday's sales. Runs even when the snapshot below is skipped.
     try {
