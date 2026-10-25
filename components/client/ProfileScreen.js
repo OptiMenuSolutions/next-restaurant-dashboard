@@ -430,6 +430,30 @@ export default function ProfileScreen({
             </div>
           )}
 
+          {activeTab === "restaurant" && (
+            <div style={{ ...card, marginBottom: 20 }}>
+              <NavLink
+                href="/client/recipes"
+                style={{
+                  display: "block",
+                  padding: "18px",
+                  color: "var(--text)",
+                  textDecoration: "none",
+                }}
+              >
+                <strong>Recipes &amp; prep →</strong>
+                <div style={{
+                  marginTop: 6,
+                  color: "var(--muted)",
+                  fontSize: 13,
+                }}>
+                  Upload recipes, edit batch preps and review each dish
+                  with your kitchen.
+                </div>
+              </NavLink>
+            </div>
+          )}
+
           {activeTab === "restaurant" && onLaunchNewMenu && (
             <div style={{ ...card, marginBottom: 20 }}>
               <div style={cardHead}>Menu</div>

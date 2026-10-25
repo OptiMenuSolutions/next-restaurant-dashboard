@@ -4,6 +4,7 @@
 // Writes to: ingredients, menu_items, menu_item_components, component_ingredients, menu_categories
 
 import Anthropic from '@anthropic-ai/sdk';
+import { recipeAI } from '../../../lib/recipes/ai';
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
@@ -1725,6 +1726,39 @@ export default async function handler(req, res) {
   let fileList = [];
 
   try {
+    if (req.query.catalogOnly === 'true') {
+      for (const file of fileRefs) {
+        fileList.push(
+          await downloadToTempFile(
+            file.file_url,
+            file.file_name,
+            restaurantId
+          )
+        );
+      }
+
+      const text = (
+        await Promise.all(fileList.map(fileToText))
+      ).join('\n\n');
+
+      if (text.length > 120000) {
+        throw new Error('Please upload the menu in smaller sections.');
+      }
+
+      const dishes = await recipeAI('catalog', { text });
+
+      for (const file of fileList) {
+        try {
+          fs.unlinkSync(file.filepath);
+        } catch {}
+      }
+
+      return res.status(200).json({
+        success: true,
+        dishes,
+        ingredient_library: [],
+      });
+    }
     const { data: globalIngredients, error: dbError } = await supabase
       .from('global_ingredients')
       .select('name, unit, aliases')

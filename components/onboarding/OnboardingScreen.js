@@ -25,17 +25,20 @@ import { useEffect, useState } from "react";
  *                                      parsing/saving actually finishes
  *   NavLink, skipHref (defaults to /client/dashboard), doneHref (defaults to /client/dashboard)
  */
-const STEP_LABELS = ["Profile", "Pass tag", "Menu", "Invoices", "POS"];
+const STEP_LABELS = ["Profile", "Menu", "Recipes", "Pass tag", "Invoices", "POS"];
+const STEP_ORDER = [1, 3, 6, 2, 4, 5];
 const POS_LIST = [
   { key: "shift4", label: "Connect Shift4 / SkyTab", mono: "S4" },
   { key: "upload", label: "Upload sales data manually (CSV)", mono: "CSV" },
 ];
 
 export default function OnboardingScreen({
-  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation,
+  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation, recipeSetup, recipeBusy,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
+  const [savingStep, setSavingStep] = useState(false);
+  const position = STEP_ORDER.indexOf(step);
   const isPhone = useIsPhone();
   const [done, setDone] = useState(false);
   const [name, setName] = useState("");
@@ -84,47 +87,74 @@ export default function OnboardingScreen({
   const stepSub = { fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5, marginBottom: 20 };
 
   const continueStep = async () => {
-    if (step === 1 && !name.trim()) { setNameError(true); return; }
-    if (step === 1) {
-      try {
+    if (
+      savingStep ||
+      parsingMenu ||
+      parsingInvoices ||
+      recipeBusy
+    ) return;
+
+    if (step === 1 && !name.trim()) {
+      setNameError(true);
+      return;
+    }
+
+    setSavingStep(true);
+
+    try {
+      if (step === 1) {
         await onSaveStep?.(1, {
-          name, style, cuisine,
-          freezesBeef, freezesPoultry, freezesPork, freezesSeafood, freezesBakery,
+          name,
+          style,
+          cuisine,
+          freezesBeef,
+          freezesPoultry,
+          freezesPork,
+          freezesSeafood,
+          freezesBakery,
         });
-      } catch (err) {
-        window.alert(err.message || "Could not save your restaurant profile. Please try again.");
-        return;
       }
-    }
-    if (step === 2) {
-      try {
-        await onSaveStep?.(2, { addrLine1, addrCity, addrState, addrZip });
-      } catch (err) {
-        window.alert(err.message || "Could not save your shipping address. Please try again.");
-        return;
+
+      if (step === 2) {
+        await onSaveStep?.(2, {
+          addrLine1,
+          addrCity,
+          addrState,
+          addrZip,
+        });
       }
+
+      if (step === 3 && menuFiles.length) {
+        await onParseMenu?.(menuFiles);
+        setMenuFiles([]);
+      }
+
+      if (step === 4 && invoiceFiles.length) {
+        await onParseInvoices?.(invoiceFiles);
+        setInvoiceFiles([]);
+      }
+
+      if (step === 5) {
+        await onFinish?.({
+          name,
+          addrLine1,
+          addrCity,
+          addrState,
+          addrZip,
+          style,
+          cuisine,
+        });
+        setDone(true);
+      } else {
+        setStep(STEP_ORDER[position + 1]);
+      }
+    } catch (error) {
+      window.alert(
+        error.message || "Could not save this step. Please try again."
+      );
+    } finally {
+      setSavingStep(false);
     }
-    if (step === 3 && menuFiles.length > 0) {
-      // Waits for the actual review (commit or discard) to finish before
-      // moving on — onParseMenu's promise doesn't resolve until then, see
-      // pages/client/onboarding.js.
-      await onParseMenu?.(menuFiles);
-      setStep((s) => s + 1);
-      return;
-    }
-    if (step === 4 && invoiceFiles.length > 0) {
-      // Same pattern as step 3 — parse the whole batch once, on Continue,
-      // and wait for it to actually finish before advancing.
-      await onParseInvoices?.(invoiceFiles);
-      setStep((s) => s + 1);
-      return;
-    }
-    if (step === 5) {
-      onFinish?.({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine });
-      setDone(true);
-      return;
-    }
-    setStep((s) => s + 1);
   };
 
   return (
@@ -144,14 +174,14 @@ export default function OnboardingScreen({
         {!done && (
           <div style={{ display: "flex", alignItems: "center", gap: isPhone ? 6 : 10 }}>
             {STEP_LABELS.map((label, i) => {
-              const n = i + 1;
-              const checked = n < step;
+              const n = STEP_ORDER[i];
+              const checked = i < position;
               const current = n === step;
               const isLast = n === STEP_LABELS.length;
               return (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: isPhone ? 6 : 10 }}>
                   <div style={{ width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, background: checked || current ? "var(--accent)" : "var(--shell)", color: checked || current ? "#fff" : "var(--faint)", border: `1px solid ${checked || current ? "var(--accent)" : "var(--line)"}` }}>
-                    {checked ? <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : n}
+                    {checked ? <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> : i + 1}
                   </div>
                   {!isLast && <div style={{ width: isPhone ? 10 : 22, height: 1, background: "var(--line)" }} />}
                 </div>
@@ -160,7 +190,7 @@ export default function OnboardingScreen({
           </div>
         )}
 
-        {step > 2 && (
+        {position > 3 && (
           blockNavigation ? (
             <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--line)", flexShrink: 0, cursor: "default" }} title="Your menu is still being processed">Skip for now</span>
           ) : (
@@ -170,7 +200,7 @@ export default function OnboardingScreen({
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: isPhone ? "flex-start" : "center", justifyContent: "center", padding: isPhone ? "16px 12px calc(24px + env(safe-area-inset-bottom))" : "36px 20px" }}>
-        <div style={{ width: "100%", maxWidth: 520 }}>
+        <div style={{ width: "100%", maxWidth: step === 6 ? 1100 : 520 }}>
 
           {done ? (
             <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: isPhone ? "36px 22px" : "44px 36px", textAlign: "center" }}>
@@ -189,7 +219,7 @@ export default function OnboardingScreen({
 
               {step === 1 && (
                 <div>
-                  <div style={stepKicker}>Step 1 of 5</div>
+                  <div style={stepKicker}>Step 1 of 6</div>
                   <div style={stepTitle}>Tell us about your restaurant</div>
                   <div style={stepSub}>This shows up on your invoices and reports.</div>
 
@@ -260,7 +290,7 @@ export default function OnboardingScreen({
 
               {step === 2 && (
                 <div>
-                  <div style={stepKicker}>Step 2 of 5</div>
+                  <div style={stepKicker}>Step 4 of 6</div>
                   <div style={stepTitle}>Your NFC pass tag is on the way</div>
                   <div style={stepSub}>We ship it same-day or next-day after signup. One passive tag at the pass logs every dish that goes out — no power, no wiring. Where should we send it?</div>
 
@@ -290,11 +320,17 @@ export default function OnboardingScreen({
                 </div>
               )}
 
+              {step === 6 && recipeSetup}
+
               {step === 3 && (
                 <div>
-                  <div style={stepKicker}>Step 3 of 5</div>
+                  <div style={stepKicker}>Step 2 of 6</div>
                   <div style={stepTitle}>Add photos of your menu</div>
-                  <div style={stepSub}>We'll pull dish names, prices and listed ingredients from these, then have our AI draft a first-pass recipe for each dish. We'll follow up with you to confirm the real recipes.</div>
+                  <div style={stepSub}>
+                    We will read dish names, descriptions, sections,
+                    categories and prices. On the next step, choose how
+                    you want to set up your recipes.
+                  </div>
 
                   <label
                     onDragOver={(e) => { e.preventDefault(); setMenuDragOver(true); }}
@@ -350,7 +386,7 @@ export default function OnboardingScreen({
 
               {step === 4 && (
                 <div>
-                  <div style={stepKicker}>Step 4 of 5</div>
+                  <div style={stepKicker}>Step 5 of 6</div>
                   <div style={stepTitle}>Got any invoices on hand?</div>
                   <div style={stepSub}>We read supplier, date and every line item from what you upload, then re-cost your menu automatically. No rush — you can always add these later from Invoices.</div>
 
@@ -412,7 +448,7 @@ export default function OnboardingScreen({
 
               {step === 5 && (
                 <div>
-                  <div style={stepKicker}>Step 5 of 5</div>
+                  <div style={stepKicker}>Step 6 of 6</div>
                   <div style={stepTitle}>Add your sales data</div>
                   <div style={stepSub}>Connect your Shift4 POS and we'll sync your sales automatically every night. Not on Shift4? Upload a CSV export of your sales instead.</div>
 
@@ -435,17 +471,49 @@ export default function OnboardingScreen({
                 </div>
               )}
 
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 30, paddingTop: 24, borderTop: "1px solid var(--line-soft)" }}>
-                {step > 1 ? (
-                  <button type="button" onClick={() => setStep((s) => Math.max(1, s - 1))} style={{ background: "transparent", border: "1px solid var(--line)", color: "var(--text)", borderRadius: 24, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer", minHeight: isPhone ? 48 : undefined }}>Back</button>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 12,
+                marginTop: 30,
+                paddingTop: 24,
+                borderTop: "1px solid var(--line-soft)",
+              }}>
+                {position > 0 ? (
+                  <button
+                    type="button"
+                    disabled={savingStep || blockNavigation}
+                    onClick={() => setStep(STEP_ORDER[position - 1])}
+                    style={{
+                      ...inputCls,
+                      width: "auto",
+                      borderRadius: 24,
+                    }}
+                  >
+                    Back
+                  </button>
                 ) : <span />}
+
                 <button
                   type="button"
                   onClick={continueStep}
-                  disabled={parsingMenu || parsingInvoices}
-                  style={{ background: "var(--accent)", color: "#fff", border: "none", borderRadius: 24, padding: "12px 26px", fontSize: isPhone ? 15 : 14, fontWeight: 700, cursor: (parsingMenu || parsingInvoices) ? "default" : "pointer", opacity: (parsingMenu || parsingInvoices) ? 0.6 : 1, flex: isPhone ? 1 : undefined, minHeight: isPhone ? 48 : undefined }}
+                  disabled={savingStep || blockNavigation}
+                  style={{
+                    ...inputCls,
+                    width: "auto",
+                    borderRadius: 24,
+                    background: "var(--accent-tint)",
+                    color: "var(--accent-deep)",
+                    fontWeight: 700,
+                  }}
                 >
-                  {parsingMenu ? "Reading your menu…" : parsingInvoices ? "Reading your invoices…" : step === 5 ? "Finish setup" : "Continue"}
+                  {savingStep || parsingMenu || parsingInvoices
+                    ? "Saving…"
+                    : recipeBusy
+                      ? "Save your recipe draft to continue"
+                      : step === 5
+                        ? "Finish setup"
+                        : "Continue"}
                 </button>
               </div>
             </div>
