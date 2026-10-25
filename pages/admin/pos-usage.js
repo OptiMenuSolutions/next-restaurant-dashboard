@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { convertQuantity } from '../../lib/computeWasteRisk';
 import AdminShell from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 
@@ -17,6 +16,20 @@ export default function PosUsage() {
   const [addId, setAddId] = useState('');
   const [selectedTicket, setSelectedTicket] = useState('');
   const [ticketFilter, setTicketFilter] = useState('all');
+  const [conversion, setConversion] = useState({
+    ingredientId: '',
+    fromUnit: 'each',
+    factor: '',
+    basis: 'estimated',
+    evidence: '',
+  });
+
+  const needsReview = (row) =>
+    row.status === 'blocked' ||
+    (
+      row.status === 'ready' &&
+      (row.estimated || row.typed_requests_available === false)
+    );
 
   const card = {
     overflowWrap: 'anywhere',
@@ -55,17 +68,18 @@ export default function PosUsage() {
   const ticketCounts = {
     all: ticketGroups.length,
     blocked: ticketGroups.filter((ticket) =>
-      ticket.rows.some((row) => row.status === 'blocked')
+      ticket.rows.some(needsReview)
     ).length,
     ready: ticketGroups.filter((ticket) =>
-      ticket.rows.every((row) => row.status !== 'blocked')
+      !ticket.rows.some(needsReview)
     ).length,
   };
 
   const filteredTickets = ticketGroups.filter((ticket) => {
-    const blocked = ticket.rows.some((row) => row.status === 'blocked');
+    const review = ticket.rows.some(needsReview);
+
     return ticketFilter === 'all' ||
-      (ticketFilter === 'blocked' ? blocked : !blocked);
+      (ticketFilter === 'blocked' ? review : !review);
   });
 
   const activeTicket = filteredTickets.find((ticket) =>
@@ -86,41 +100,40 @@ export default function PosUsage() {
 
   function ingredientRows(row) {
     const base = row.base || [];
-    const adjusted = row.adjusted;
-    const parts = new Map();
+    const ids = [...new Set(
+      [...base, ...(row.adjusted || [])].map((part) => part.id)
+    )];
 
-    for (const part of base) {
-      parts.set(part.id, {
-        ...part,
-        before: part.quantity,
-        quantity: adjusted ? 0 : part.quantity,
-        changed: Boolean(adjusted && part.quantity !== 0),
-      });
-    }
-
-    for (const part of adjusted || []) {
-      const original = base.find((candidate) =>
-        candidate.id === part.id
+    return ids.map((id) => {
+      const originals = base.filter((part) => part.id === id);
+      const adjusted = row.adjusted?.find((part) => part.id === id);
+      const first = adjusted || originals[0];
+      const sameUnit = originals.every((part) =>
+        part.unit === first.unit
       );
 
-      const before = original
-        ? convertQuantity(
-            original.quantity,
-            original.unit,
-            part.unit,
-            part.name
+      const before = sameUnit
+        ? originals.reduce((sum, part) =>
+            sum + Number(part.quantity || 0), 0
           )
-        : 0;
+        : null;
 
-      parts.set(part.id, {
-        ...part,
-        before,
-        changed: !Number.isFinite(before) ||
-          Math.abs(before - part.quantity) > 0.000001,
-      });
-    }
-
-    return [...parts.values()];
+      return {
+        ...first,
+        before_label: originals.length
+          ? originals.map((part) =>
+              `${formatQty(part.quantity)} ${part.unit || ''}`
+            ).join(' + ')
+          : '0',
+        quantity: adjusted
+          ? adjusted.quantity
+          : row.adjusted ? 0 : before,
+        changed: Boolean(
+          row.adjusted &&
+          (!sameUnit || (adjusted?.quantity || 0) !== before)
+        ),
+      };
+    });
   }
 
   async function request(url, body) {
@@ -226,38 +239,32 @@ export default function PosUsage() {
   }
 
   function edit(row) {
-    try {
-      const next = (row.adjusted || row.base || [])
-        .map((part) => {
-          const ingredient = data.ingredients.find(
-            (candidate) => candidate.id === part.id
-          );
+    const parts = row.adjusted || row.base || [];
+    const totals = new Map();
 
-          const quantity = ingredient && convertQuantity(
-            part.quantity,
-            part.unit,
-            ingredient.unit,
-            ingredient.name
-          );
+    for (const part of parts) {
+      const ingredient = data.ingredients.find((candidate) =>
+        candidate.id === part.id
+      );
 
-          if (!Number.isFinite(quantity)) {
-            throw new Error(
-              'Correct the ingredient unit mapping before editing this rule.'
-            );
-          }
+      if (!ingredient) continue;
 
-          return {
-            id: part.id,
-            quantity: String(quantity),
-          };
-        });
+      const old = totals.get(part.id);
+      const known =
+        part.unit === ingredient.unit &&
+        Number.isFinite(part.quantity);
 
-      setPortions(next);
-      setEditing(row);
-      setAddId('');
-    } catch (error) {
-      setMessage(error.message);
+      totals.set(part.id, {
+        id: part.id,
+        quantity: known && old?.quantity !== ''
+          ? String(Number(old?.quantity || 0) + part.quantity)
+          : '',
+      });
     }
+
+    setPortions([...totals.values()]);
+    setEditing(row);
+    setAddId('');
   }
 
   return (
@@ -587,9 +594,7 @@ export default function PosUsage() {
           <div className="pu-workspace">
             <nav className="pu-ticket-list" aria-label="Tickets">
               {filteredTickets.map((ticket) => {
-                const blocked = ticket.rows.some((row) =>
-                  row.status === 'blocked'
-                );
+                const blocked = ticket.rows.some(needsReview);
 
                 return (
                   <button
@@ -665,7 +670,7 @@ export default function PosUsage() {
                   </div>
                 </div>
 
-                {ticket.rows.some((row) => row.status === 'blocked') ? (
+                {ticket.rows.some(needsReview) ? (
                   <span
                     style={{
                       color: 'var(--red)',
@@ -943,7 +948,7 @@ export default function PosUsage() {
                                       fontVariantNumeric: 'tabular-nums',
                                     }}
                                   >
-                                    {formatQty(part.before)} {part.unit}
+                                    {part.before_label}
                                   </span>
                                   <strong
                                     style={{
@@ -1033,7 +1038,7 @@ export default function PosUsage() {
                   : 'Preview only. Inventory unchanged.'}
               </span>
               <span>
-                {report.filter((row) => row.status === 'blocked').length} entries need review
+                {report.filter(needsReview).length} entries need review
               </span>
             </div>
           )}
@@ -1058,11 +1063,136 @@ export default function PosUsage() {
                 <h2>{editing.dish} — one serving</h2>
 
                 <p>
-                  Set final quantities, including unchanged
-                  ingredients. Zero removes an ingredient.
-                  This rule is reused for the same recipe
-                  and instructions.
+                  Set complete final quantities in the units shown. Zero removes an
+                  ingredient. A blank means its conversion needs confirmation; enter
+                  the correct quantity or save a conversion below. Saving reuses this
+                  decision for matching recipes and instructions, including other
+                  matching orders. It does not change unrelated dishes.
                 </p>
+
+                <details style={{ marginBottom: 16 }}>
+                  <summary>
+                    Correct a conversion for this ingredient everywhere
+                  </summary>
+
+                  <p>
+                    Use a package label, measurement, or documented estimate.
+                    One source unit equals the factor in the destination unit shown.
+                  </p>
+
+                  <label>
+                    Ingredient
+                    <select
+                      className="om-field"
+                      value={conversion.ingredientId}
+                      onChange={(event) => setConversion({
+                        ...conversion,
+                        ingredientId: event.target.value,
+                      })}
+                    >
+                      <option value="">Choose an ingredient</option>
+
+                      {data.ingredients.map((ingredient) => (
+                        <option key={ingredient.id} value={ingredient.id}>
+                          {ingredient.name} ({ingredient.unit})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    Source unit
+                    <select
+                      className="om-field"
+                      value={conversion.fromUnit}
+                      onChange={(event) => setConversion({
+                        ...conversion,
+                        fromUnit: event.target.value,
+                      })}
+                    >
+                      {[
+                        'each', 'slice', 'bunch', 'package',
+                        'oz', 'lb', 'g', 'kg',
+                        'fl oz', 'cup', 'pt', 'qt', 'gal',
+                        'ml', 'l', 'tsp', 'tbsp',
+                      ].map((unit) => (
+                        <option key={unit} value={unit}>{unit}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    1 {conversion.fromUnit} equals this many{' '}
+                    {data.ingredients.find((ingredient) =>
+                      ingredient.id === conversion.ingredientId
+                    )?.unit || 'destination units'}
+
+                    <input
+                      className="om-field"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={conversion.factor}
+                      onChange={(event) => setConversion({
+                        ...conversion,
+                        factor: event.target.value,
+                      })}
+                    />
+                  </label>
+
+                  <label>
+                    Basis
+                    <select
+                      className="om-field"
+                      value={conversion.basis}
+                      onChange={(event) => setConversion({
+                        ...conversion,
+                        basis: event.target.value,
+                      })}
+                    >
+                      <option value="estimated">Estimate</option>
+                      <option value="measured">Measured</option>
+                      <option value="package_label">Package label</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Source or explanation
+                    <input
+                      className="om-field"
+                      value={conversion.evidence}
+                      onChange={(event) => setConversion({
+                        ...conversion,
+                        evidence: event.target.value,
+                      })}
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    className="om-btn"
+                    disabled={
+                      busy ||
+                      !conversion.ingredientId ||
+                      !conversion.evidence.trim() ||
+                      !Number.isFinite(Number(conversion.factor)) ||
+                      Number(conversion.factor) <= 0 ||
+                      conversion.fromUnit === data.ingredients.find(
+                        (ingredient) =>
+                          ingredient.id === conversion.ingredientId
+                      )?.unit
+                    }
+                    onClick={() => act('conversion', {
+                      ...conversion,
+                      factor: Number(conversion.factor),
+                      toUnit: data.ingredients.find((ingredient) =>
+                        ingredient.id === conversion.ingredientId
+                      )?.unit,
+                    })}
+                  >
+                    Save conversion and recalculate
+                  </button>
+                </details>
 
                 {portions.map((portion, index) => {
                   const ingredient = data.ingredients.find(

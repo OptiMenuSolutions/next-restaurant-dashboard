@@ -2,8 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { allRows } from '../../../lib/pos/usageServer';
 import { runUsage } from '../../../lib/pos/runUsage';
-import { applyPlan } from '../../../lib/pos/usageMath';
-import { convertQuantity } from '../../../lib/computeWasteRisk';
+import { adjustRecipe, inventoryPortions } from '../../../lib/pos/usageRecipe';
 import {
   rebuildCurrentInventory,
 } from '../../../lib/currentInventory';
@@ -151,6 +150,16 @@ export default withAdminAuth(async function handler(req, res) {
         })
         .eq('restaurant_id', restaurantId)
       );
+    } else if (action === 'conversion') {
+      check(await db.rpc('save_pos_conversion', {
+        p_restaurant_id: restaurantId,
+        p_ingredient_id: req.body.ingredientId,
+        p_from: String(req.body.fromUnit || '').trim().toLowerCase(),
+        p_to: String(req.body.toUnit || '').trim().toLowerCase(),
+        p_factor: req.body.factor,
+        p_basis: req.body.basis,
+        p_evidence: req.body.evidence,
+      }));
     } else if (action === 'rule') {
       const rule = check(await db
         .from('pos_usage_rules')
@@ -212,17 +221,15 @@ export default withAdminAuth(async function handler(req, res) {
       }
 
       const plan = {
-        operations,
+        replace_all: true,
+        operations: operations.filter((operation) =>
+          operation.action === 'set'
+        ),
         unresolved: [],
-        explanation: 'Admin configured per-dish quantities',
+        explanation: 'Admin confirmed complete per-dish quantities',
       };
 
-      applyPlan(
-        rule.context.recipe,
-        plan,
-        catalog,
-        convertQuantity
-      );
+      inventoryPortions(adjustRecipe([], plan, catalog), catalog);
 
       check(await db
         .from('pos_usage_rules')

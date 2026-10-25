@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { prepareUsage } from '../../../lib/pos/usageServer';
+import { prepareUsage } from '../../../lib/pos/prepareUsageV2';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { withJobRun } from '../../../lib/admin/jobRun';
 
