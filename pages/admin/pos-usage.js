@@ -164,19 +164,28 @@ export default function PosUsage() {
     setEditing(null);
     setMessage('');
 
-    if (restaurantId) {
-      request(
-        `/api/admin/pos-usage?restaurantId=${restaurantId}`
-      )
-        .then((json) => {
-          if (live) setData(json);
-        })
-        .catch((error) => {
-          if (live) setMessage(error.message);
-        });
-    }
+    let timer;
 
-    return () => { live = false; };
+    const refresh = async () => {
+      try {
+        const json = await request(
+          `/api/admin/pos-usage?restaurantId=${restaurantId}`
+        );
+
+        if (live) setData(json);
+      } catch (error) {
+        if (live) setMessage(error.message);
+      } finally {
+        if (live) timer = setTimeout(refresh, 15000);
+      }
+    };
+
+    if (restaurantId) refresh();
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [restaurantId, adminFetch]);
 
   async function act(action, extra = {}) {
@@ -195,11 +204,9 @@ export default function PosUsage() {
       ));
 
       setMessage(
-        action === 'prepare'
-          ? result.ready
-            ? 'Ready to review.'
-            : 'Review blocked dishes below. Pending interpretations can be continued with Prepare again.'
-          : 'Saved.'
+        action === 'disable'
+          ? 'Standard recipes restored.'
+          : 'Saved. The background worker will process the update automatically.'
       );
 
       setEditing(null);
@@ -442,6 +449,41 @@ export default function PosUsage() {
                   {data.settings.start_date}
                 </p>
 
+                <p
+                  role="status"
+                  style={{
+                    color: 'var(--muted)',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  Automatic checks run every five minutes.
+                  {' '}
+                  {report.filter(
+                    (row) => row.status === 'ready'
+                  ).length}
+                  {' prepared servings; '}
+                  {report.filter(
+                    (row) => row.status === 'blocked'
+                  ).length}
+                  {' unresolved servings.'}
+
+                  {data.settings.enabled && (
+                    data.result?.publication_id &&
+                    data.job?.applied_publication_id ===
+                      data.result.publication_id
+                      ? ' Prepared servings have been applied to inventory.'
+                      : ' Waiting for the background inventory update.'
+                  )}
+
+                  {report.some(
+                    (row) => row.status === 'blocked'
+                  ) &&
+                    ' Inventory usage is incomplete until these servings are resolved. Other prepared servings still count.'}
+
+                  {data.job?.last_error &&
+                    ` Worker error: ${data.job.last_error}`}
+                </p>
+
                 <div
                   style={{
                     display: 'flex',
@@ -455,14 +497,14 @@ export default function PosUsage() {
                     disabled={busy}
                     onClick={() => act('prepare')}
                   >
-                    {busy ? 'Working…' : 'Prepare / refresh'}
+                    {busy ? 'Queuing…' : 'Retry sooner'}
                   </button>
 
                   {!data.settings.enabled && (
                     <button
                       type="button"
                       className="om-btn"
-                      disabled={busy || !data.result?.ready}
+                      disabled={busy}
                       onClick={() => act('enable')}
                     >
                       Use for inventory
@@ -572,7 +614,7 @@ export default function PosUsage() {
                 <p style={{ color: 'var(--muted)', padding: 12 }}>
                   {report.length
                     ? 'No tickets match this filter.'
-                    : 'Prepare the tickets to see their ingredient usage.'}
+                    : 'The background worker will prepare the tickets automatically.'}
                 </p>
               )}
             </nav>
@@ -979,7 +1021,7 @@ export default function PosUsage() {
             <div className="pu-footer">
               <span>
                 {data.settings.enabled
-                  ? 'These quantities are used for inventory.'
+                  ? 'Prepared servings apply automatically; unresolved servings remain in review.'
                   : 'Preview only. Inventory unchanged.'}
               </span>
               <span>

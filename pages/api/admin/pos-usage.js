@@ -1,9 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
-import {
-  prepareUsage,
-  allRows,
-} from '../../../lib/pos/usageServer';
+import { allRows } from '../../../lib/pos/usageServer';
 import { applyPlan } from '../../../lib/pos/usageMath';
 import { convertQuantity } from '../../../lib/computeWasteRisk';
 import {
@@ -50,7 +47,7 @@ export default withAdminAuth(async function handler(req, res) {
     }
 
     if (req.method === 'GET') {
-      const [settings, result, menus, ingredients] =
+      const [settings, result, menus, ingredients, job] =
         await Promise.all([
           db
             .from('pos_usage_settings')
@@ -59,7 +56,7 @@ export default withAdminAuth(async function handler(req, res) {
             .maybeSingle(),
           db
             .from('pos_usage_results')
-            .select('ready,report,computed_at')
+            .select('ready,usable,report,computed_at,publication_id')
             .eq('restaurant_id', restaurantId)
             .maybeSingle(),
           allRows(() => db
@@ -74,11 +71,20 @@ export default withAdminAuth(async function handler(req, res) {
             .eq('restaurant_id', restaurantId)
             .order('id')
           ),
+          db
+            .from('pos_usage_jobs')
+            .select(
+              'next_run,lease_until,last_error,' +
+              'last_finished_at,applied_publication_id'
+            )
+            .eq('restaurant_id', restaurantId)
+            .maybeSingle(),
         ]);
 
       return res.json({
         settings: check(settings),
         result: check(result),
+        job: check(job),
         menus,
         ingredients,
       });
@@ -104,20 +110,11 @@ export default withAdminAuth(async function handler(req, res) {
         })
       );
     } else if (action === 'prepare') {
-      const result = await prepareUsage(db, restaurantId);
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
 
-      const setting = check(await db
-        .from('pos_usage_settings')
-        .select('enabled')
-        .eq('restaurant_id', restaurantId)
-        .single()
-      );
-
-      if (setting.enabled && result.ready) {
-        await rebuildCurrentInventory(db, restaurantId);
-      }
-
-      return res.json(result);
+      return res.json({ queued: true });
     } else if (action === 'map') {
       const menu = req.body.menuId === '__exclude__'
         ? { id: '__exclude__' }
@@ -233,50 +230,14 @@ export default withAdminAuth(async function handler(req, res) {
         .eq('context_key', req.body.contextKey)
       );
 
-      check(await db
-        .from('pos_usage_results')
-        .update({ ready: false })
-        .eq('restaurant_id', restaurantId)
-      );
     } else if (action === 'enable') {
-      const source = check(await db.rpc(
-        'pos_usage_source',
-        { p_restaurant_id: restaurantId }
-      ));
-
-      const result = check(await db
-        .from('pos_usage_results')
-        .select('ready,source_revision')
-        .eq('restaurant_id', restaurantId)
-        .single()
-      );
-
-      if (
-        !result.ready ||
-        result.source_revision !== source?.revision
-      ) {
-        throw new Error(
-          'Prepare current tickets and resolve blocked dishes first'
-        );
-      }
-
       check(await db
         .from('pos_usage_settings')
         .update({ enabled: true })
         .eq('restaurant_id', restaurantId)
       );
 
-      try {
-        await rebuildCurrentInventory(db, restaurantId);
-      } catch (error) {
-        check(await db
-          .from('pos_usage_settings')
-          .update({ enabled: false })
-          .eq('restaurant_id', restaurantId)
-        );
-
-        throw error;
-      }
+      // The worker prepares and applies valid servings automatically.
     } else if (action === 'disable') {
       check(await db
         .from('pos_usage_settings')
