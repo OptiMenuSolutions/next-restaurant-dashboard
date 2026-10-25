@@ -56,6 +56,41 @@ export default async function handler(req, res) {
     const redirectUri = `${APP_URL}/api/pos/oauth-callback`;
     const result = await provider.exchangeCode({ code, redirectUri });
 
+    if (providerId === 'shift4' && result.pendingLocation) {
+      const { data: existing, error: existingError } = await supabase
+        .from('pos_connections')
+        .select('id, status, shift4_location_id')
+        .eq('restaurant_id', restaurantId)
+        .eq('provider', providerId)
+        .maybeSingle();
+
+      if (existingError) throw new Error(existingError.message);
+
+      const hasExistingLink =
+        existing?.shift4_location_id &&
+        ['connected', 'error', 'pending'].includes(existing.status);
+
+      if (hasExistingLink) {
+        const locations = await provider.listLocations(result.accessToken);
+        const linkedLocation = locations.find(
+          (location) =>
+            String(location.id) === String(existing.shift4_location_id)
+        );
+
+        // Verify the freshly authorized account can see the same location
+        // and that Shift4 still reports OptiMenu installed there.
+        if (!linkedLocation || linkedLocation.reason !== 'INSTALLED') {
+          throw new Error(
+            'The existing Shift4 location could not be verified as installed. The saved connection was not changed.'
+          );
+        }
+
+        // Refresh credentials on the existing link without entering the
+        // location picker or temporarily changing its status to pending.
+        result.pendingLocation = false;
+      }
+    }
+
     const { error: upsertError } = await supabase
       .from('pos_connections')
       .upsert({

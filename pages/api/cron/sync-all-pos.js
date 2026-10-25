@@ -148,10 +148,28 @@ async function handler(req, res) {
     } catch (err) {
       results.failed.push({ restaurantId: conn.restaurant_id, provider: conn.provider, error: err.message });
       console.error(`[cron:sync-all-pos] ✗ ${conn.provider} for ${conn.restaurant_id}:`, err.message);
-      await supabase
+      const failureUpdate = {
+        last_error: err.message,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Shift4 sales use app-level HMAC credentials. A sync failure does
+      // not establish that the merchant disconnected or must sign in again.
+      if (conn.provider !== 'shift4') {
+        failureUpdate.status = 'error';
+      }
+
+      const { error: statusError } = await supabase
         .from('pos_connections')
-        .update({ status: 'error', last_error: err.message, updated_at: new Date().toISOString() })
+        .update(failureUpdate)
         .eq('id', conn.id);
+
+      if (statusError) {
+        console.error(
+          `[cron:sync-all-pos] Could not record sync failure for ${conn.restaurant_id}:`,
+          statusError.message
+        );
+      }
     }
   }
 
@@ -159,7 +177,7 @@ async function handler(req, res) {
   if (results.failed.length) {
     await sendCronAlert(
       'POS sync cron',
-      `${results.failed.length} of ${connections.length} POS connections failed to sync. They are marked error and will not sync again until reconnected.`,
+      `${results.failed.length} of ${connections.length} POS connections failed to sync. Shift4 links remain connected and will retry on the next run. Check the individual errors before requesting reconnection.`,
       results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}: ${f.error}`)
     );
   }
