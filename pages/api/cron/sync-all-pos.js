@@ -9,6 +9,8 @@ import { sendCronAlert } from '../../../lib/cronAlert';
 import { saveTickets } from '../../../lib/pos/saveTickets';
 import { withJobRun } from '../../../lib/admin/jobRun';
 
+export const config = { maxDuration: 300 };
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY

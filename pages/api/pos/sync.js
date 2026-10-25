@@ -15,6 +15,8 @@ import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { saveTickets } from '../../../lib/pos/saveTickets';
 
+export const config = { maxDuration: 300 };
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
