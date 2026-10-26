@@ -13,7 +13,7 @@ export default async function handler(req, res) {
 
   try {
     const { data: quote, error } = await db.from('admin_testimonials')
-      .select('id, permission, permission_token_expires_at')
+      .select('id, quote, person, restaurant_id, permission, permission_token_expires_at')
       .eq('permission_token_hash', tokenHash)
       .maybeSingle();
 
@@ -46,7 +46,28 @@ export default async function handler(req, res) {
       return res.status(410).json({ error: 'This approval link is expired or has already been used.' });
     }
 
-    return res.status(200).json({ ok: true });
+    // Show the person exactly what they approved.
+    let restaurantName = '';
+    if (quote.restaurant_id) {
+      const { data: restaurant } = await db.from('restaurants')
+        .select('name')
+        .eq('id', quote.restaurant_id)
+        .maybeSingle();
+      restaurantName = restaurant?.name || '';
+    }
+
+    let person = String(quote.person || '').trim();
+    const suffix = restaurantName ? `, ${restaurantName}` : '';
+    while (suffix && person.toLowerCase().endsWith(suffix.toLowerCase())) {
+      person = person.slice(0, -suffix.length).trim();
+    }
+
+    return res.status(200).json({
+      ok: true,
+      quote: quote.quote || '',
+      person,
+      restaurant: restaurantName,
+    });
   } catch (error) {
     console.error('[testimonial-approval]', error);
     return res.status(500).json({ error: 'We could not record your approval. Please reply to Nick.' });

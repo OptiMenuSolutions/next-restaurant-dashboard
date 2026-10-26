@@ -192,8 +192,8 @@ function Conversation({ threadId, userId, accountLoading, accountError, onClose 
       <header style={{ flexShrink: 0, background: 'var(--shell)', borderBottom: '1px solid var(--line)', padding: '12px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)' }}>OptiMenu support</div>
-            <h2 style={{ margin: '3px 0 0', fontSize: 15, fontWeight: 800, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
+            <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>OPTIMENU SUPPORT</div>
+            <h2 style={{ margin: '4px 0 0', fontSize: 16, fontWeight: 800, letterSpacing: '-0.02em', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
               {data?.thread?.subject || 'Conversation'}
             </h2>
           </div>
@@ -234,17 +234,15 @@ function Conversation({ threadId, userId, accountLoading, accountError, onClose 
           {messages.map((message) => {
             const fromClient = message.direction === 'in';
             return (
-              <div key={message.id} style={{ alignSelf: fromClient ? 'flex-end' : 'flex-start', maxWidth: '88%', minWidth: 0 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4, textAlign: fromClient ? 'right' : 'left' }}>
-                  {fromClient ? 'Your restaurant' : 'OptiMenu'}
-                </div>
-                <div style={{ padding: '11px 14px', borderRadius: 14, border: '1px solid var(--line)', background: fromClient ? 'var(--accent-tint)' : 'var(--shell)', color: 'var(--text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.55 }}>
+              <div key={message.id} style={{ alignSelf: fromClient ? 'flex-end' : 'flex-start', maxWidth: '84%', minWidth: 0 }}>
+                <div style={{ padding: '10px 13px', borderRadius: fromClient ? '14px 14px 4px 14px' : '14px 14px 14px 4px', border: `1px solid ${fromClient ? 'transparent' : 'var(--line)'}`, background: fromClient ? 'var(--accent-deep)' : 'var(--shell)', color: fromClient ? 'var(--shell)' : 'var(--text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: 14, lineHeight: 1.5 }}>
                   {message.body}
                 </div>
-                <div style={{ marginTop: 4, fontSize: 10.5, color: 'var(--muted)', textAlign: fromClient ? 'right' : 'left' }}>
+                <div style={{ marginTop: 4, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: '0.04em', color: 'var(--muted)', textAlign: fromClient ? 'right' : 'left' }}>
+                  {fromClient ? '' : 'OPTIMENU · '}
                   {new Date(message.created_at).toLocaleString(undefined, {
                     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-                  })}
+                  }).toUpperCase()}
                 </div>
               </div>
             );
@@ -255,19 +253,21 @@ function Conversation({ threadId, userId, accountLoading, accountError, onClose 
       <form onSubmit={send} style={{ flexShrink: 0, borderTop: '1px solid var(--line)', background: 'var(--shell)', padding: '12px 16px calc(12px + env(safe-area-inset-bottom, 0px))' }}>
         <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sendError && <div role="alert" style={{ fontSize: 13, color: 'var(--red)' }}>{sendError}</div>}
-          <textarea
-            aria-label="Your reply"
-            placeholder="Write a reply…"
-            rows={3}
-            maxLength={5000}
-            value={draft}
-            disabled={sending || !data}
-            onChange={(e) => setDraft(e.target.value)}
-            style={{ width: '100%', boxSizing: 'border-box', minHeight: 72, padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)', color: 'var(--text)', font: "500 16px 'Manrope', sans-serif", resize: 'none' }}
-          />
-          <button type="submit" disabled={sending || !draft.trim() || !data} style={{ ...buttonStyle, background: 'var(--accent-deep)', color: 'var(--shell)', border: 0, opacity: sending || !draft.trim() || !data ? 0.5 : 1 }}>
-            {sending ? 'Sending…' : 'Send reply'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea
+              aria-label="Your reply"
+              placeholder="Write a reply…"
+              rows={2}
+              maxLength={5000}
+              value={draft}
+              disabled={sending || !data}
+              onChange={(e) => setDraft(e.target.value)}
+              style={{ flex: 1, minWidth: 0, boxSizing: 'border-box', minHeight: 46, maxHeight: 140, padding: '11px 12px', border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)', color: 'var(--text)', font: "500 16px 'Manrope', sans-serif", resize: 'none' }}
+            />
+            <button type="submit" disabled={sending || !draft.trim() || !data} style={{ ...buttonStyle, minHeight: 46, flexShrink: 0, background: 'var(--accent-deep)', color: 'var(--shell)', border: 0, opacity: sending || !draft.trim() || !data ? 0.5 : 1 }}>
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
         </div>
       </form>
     </Shell>
