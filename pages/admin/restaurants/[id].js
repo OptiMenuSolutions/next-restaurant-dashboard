@@ -107,6 +107,7 @@ function RestaurantPage({ id }) {
             ? <a className="om-btn" href={data.staffPreview} target="_blank" rel="noopener noreferrer">Open staff page ↗</a>
             : <button type="button" className="om-btn" disabled>No staff page yet</button>}
           <Link className="om-btn" href={`/admin/support?restaurant=${r.id}`}>Message</Link>
+          <Link className="om-btn" href={`/admin/recipes?restaurant=${r.id}`}>Recipes &amp; prep</Link>
           <button type="button" className="om-btn" onClick={runDish} disabled={running || r.status === 'CLOSED'}>{running ? 'Running…' : 'Run Tonight’s Dish now'}</button>
           <Link className="om-btn" href="/admin/view-as">View as this restaurant</Link>
         </div>
