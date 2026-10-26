@@ -408,6 +408,9 @@ export default function RecipeWorkspace({
       name: file.name,
     });
 
+    // During onboarding the "Upload worked" card says what happened.
+    if (!admin && router.pathname.startsWith('/client/onboarding')) return;
+
     const entry = latest.current.state.imports.find(f => f.path === signed.path);
     const left = (entry?.items || []).filter(item => !item.adopted).length;
 
@@ -488,9 +491,11 @@ export default function RecipeWorkspace({
   // method has something to show. The Recipes page and admin always show them.
   const method = data.state.method;
   const progressive = !admin && router.pathname.startsWith('/client/onboarding');
-  const showWork = !progressive
-    || (method === 'upload' && data.state.imports.some(f => f.parsed))
-    || (method === 'manual' && !!data.state.build);
+  const uploadDone = data.state.imports.some(f => f.parsed);
+  const missing = dishes.filter(n => statusOf(n).key === 'none');
+  // During onboarding an upload goes to OptiMenu to check, so the owner
+  // doesn't review it here. Only building recipes yourself opens the list.
+  const showWork = !progressive || (method === 'manual' && !!data.state.build);
 
   const prepFor = id => nodes.find(n => n.id === id && n.kind === 'prep');
 
@@ -589,7 +594,11 @@ export default function RecipeWorkspace({
     </div>
   );
 
-  const lineCols = phone ? null : 'minmax(0, 2fr) 90px 96px minmax(0, 1fr) 36px';
+  const lineCols = phone
+    ? null
+    : editor?.kind === 'prep'
+      ? 'minmax(0, 2fr) 90px 96px 36px'
+      : 'minmax(0, 2fr) 90px 96px minmax(0, 1fr) 36px';
 
   const editorPanel = editor && (
     <section style={{ ...card, boxShadow: '0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)' }}>
@@ -673,7 +682,7 @@ export default function RecipeWorkspace({
         <div style={{ border: '1px solid var(--line)', borderRadius: 10 }}>
           {!phone && (
             <div style={{ display: 'grid', gridTemplateColumns: lineCols, gap: 10, padding: '8px 14px', background: 'var(--panel)', borderRadius: '10px 10px 0 0', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
-              <span>INGREDIENT OR BATCH</span><span>QTY</span><span>UNIT</span><span>COMPONENT</span><span />
+              <span>INGREDIENT OR BATCH</span><span>QTY</span><span>UNIT</span>{editor.kind !== 'prep' && <span>PART OF THE PLATE</span>}<span />
             </div>
           )}
 
@@ -748,12 +757,13 @@ export default function RecipeWorkspace({
                 onChange={value => lineChange(index, { unit: value })}
               />
             );
-            const component = (
+            // Which part of the plate this belongs to. Batch preps don't need it.
+            const component = editor.kind !== 'prep' && (
               <input
                 style={field}
-                aria-label={`${line.name || 'Line'} component`}
-                placeholder="Component"
-                value={line.component}
+                aria-label={`${line.name || 'Line'} part of the plate`}
+                placeholder="Protein, side, sauce…"
+                value={line.component === 'Recipe' ? '' : line.component || ''}
                 onChange={e => lineChange(index, { component: e.target.value })}
               />
             );
@@ -809,7 +819,7 @@ export default function RecipeWorkspace({
               onClick={() => editDefinition({
                 lines: [
                   ...editor.draft.lines,
-                  { name: '', quantity: '', unit: 'oz', component: 'Recipe' },
+                  { name: '', quantity: '', unit: 'oz', component: '' },
                 ],
               })}
             >
@@ -965,7 +975,7 @@ export default function RecipeWorkspace({
             You can mix methods. Recipes you’ve confirmed are never replaced.
           </div>
 
-          {data.state.assistance === 'requested' && (admin ? (
+          {data.state.assistance === 'requested' && (admin || method === 'assisted') && (admin ? (
             <section style={{ background: 'var(--paper)', color: 'var(--ink)', borderRadius: 4, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)' }}>
               <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', fontWeight: 600, color: 'var(--accent-deep)' }}>KITCHEN FOLLOW-UP REQUESTED</div>
               <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: 'var(--ink-soft)' }}>
@@ -987,7 +997,10 @@ export default function RecipeWorkspace({
                   {progressive ? 'You’re all set. Keep going.' : 'OptiMenu is on your recipes'}
                 </div>
                 <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
-                  OptiMenu is drafting recipes for your dishes in the background. We’ll reach out to book a short setup call to go over them with your kitchen. Until then, costs use these estimates and are marked as estimated.
+                  {uploadDone
+                    ? 'OptiMenu will check the recipes you uploaded and draft the missing ones in the background.'
+                    : 'OptiMenu is drafting recipes for your dishes in the background.'}
+                  {' '}We’ll reach out to book a short setup call to go over them with your kitchen. Until then, costs use these estimates and are marked as estimated.
                 </p>
               </div>
             </section>
@@ -1068,17 +1081,17 @@ export default function RecipeWorkspace({
                         <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--muted)' }}>
                           {file.parsed
                             ? `${(file.items || []).length} ${(file.items || []).length === 1 ? 'RECIPE' : 'RECIPES'} FOUND${saved.length ? ` · ${saved.length} SAVED AS DRAFTS` : ''}`
-                            : 'NOT READ YET'}
+                            : busy ? 'READING…' : 'NOT READ YET'}
                         </span>
                       </span>
-                      {!file.parsed && (
+                      {!file.parsed && !busy && (
                         <button type="button" style={button} disabled={busy || dirty} onClick={() => run(() => post({ action: 'import', path: file.path, name: file.name }))}>
                           Try reading again
                         </button>
                       )}
                     </div>
 
-                    {summary && (
+                    {summary && !progressive && (
                       <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', borderTop: '1px solid var(--line-soft)' }}>
                         {[
                           ['BATCH PREPS ADDED', summary.preps, false],
@@ -1094,13 +1107,13 @@ export default function RecipeWorkspace({
                       </div>
                     )}
 
-                    {waiting.length > 0 && (
+                    {!progressive && waiting.length > 0 && (
                       <div style={{ padding: '10px 16px 0', borderTop: '1px solid var(--line-soft)', fontSize: 12.5, color: 'var(--muted)' }}>
                         {waiting.length === 1 ? 'This one didn’t' : 'These didn’t'} match a dish by name. Choose where each one goes.
                       </div>
                     )}
 
-                    {waiting.map(item => (
+                    {!progressive && waiting.map(item => (
                       <div key={item.id} style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                         <div style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</div>
                         {item.notes && <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--muted)' }}>{item.notes}</div>}
@@ -1152,6 +1165,64 @@ export default function RecipeWorkspace({
                   </div>
                 );
               })}
+            </section>
+          )}
+
+          {method === 'upload' && uploadDone && (
+            <section style={{ ...card, padding: phone ? 14 : '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <span style={{ width: 34, height: 34, borderRadius: '50%', flexShrink: 0, background: missing.length ? 'var(--amber-tint, #fbf3e2)' : 'var(--green-tint, #e9f5ec)', color: missing.length ? 'var(--amber)' : 'var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon d={ICONS.check} />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                    {missing.length
+                      ? `Upload worked, but ${missing.length} ${missing.length === 1 ? 'dish is' : 'dishes are'} still missing a recipe`
+                      : 'Upload worked. Every dish has a recipe.'}
+                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
+                    OptiMenu will check what we read and go over it with your kitchen on a short setup call. You don’t need to review anything now.
+                  </p>
+                </div>
+              </div>
+
+              {missing.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {missing.map(n => (
+                      <span key={n.id} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 28, padding: '0 10px', borderRadius: 14, background: 'var(--panel)', fontSize: 12.5, fontWeight: 600 }}>
+                        {n.name}
+                      </span>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>How do you want to add the rest?</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                    <label style={{ ...button, position: 'relative', cursor: busy || dirty ? 'default' : 'pointer' }}>
+                      <Icon d={ICONS.upload} size={15} />
+                      Upload more recipes
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
+                        disabled={busy || dirty}
+                        style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+                        onChange={event => {
+                          const file = event.target.files[0];
+                          event.target.value = '';
+                          run(() => upload(file));
+                        }}
+                      />
+                    </label>
+                    <button type="button" style={button} disabled={busy || dirty} onClick={() => run(() => choose('assisted'))}>
+                      <Icon d={ICONS.assisted} size={15} />
+                      Work with OptiMenu on the rest
+                    </button>
+                    <button type="button" style={button} disabled={busy || dirty} onClick={() => run(() => choose('manual'))}>
+                      <Icon d={ICONS.manual} size={15} />
+                      Build the rest myself
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
           )}
         </>
