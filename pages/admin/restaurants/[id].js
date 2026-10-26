@@ -167,7 +167,7 @@ function RestaurantPage({ id }) {
       {tab === 'Activity' && <Activity id={id} />}
       {tab === 'Menu' && <Menu id={id} />}
       {tab === 'Invoices' && <Invoices id={id} />}
-      {tab === 'Billing' && <Billing r={r} />}
+      {tab === 'Billing' && <Billing r={r} act={act} />}
     </>
   );
 }
@@ -641,8 +641,28 @@ function Invoices({ id }) {
   );
 }
 
-function Billing({ r }) {
+function Billing({ r, act }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState('');
+
+  async function remove() {
+    setBusy(true);
+    setProblem('');
+
+    try {
+      await act({ action: 'delete-test-account', confirm: typed.trim() });
+      router.push('/admin/restaurants');
+    } catch (e) {
+      setProblem(e.message);
+      setBusy(false);
+    }
+  }
+
   return (
+    <>
     <Card title="Billing">
       {[
         ['Plan', r.subscription_status ? r.subscription_status.replace(/_/g, ' ') : 'No plan'],
@@ -659,6 +679,47 @@ function Billing({ r }) {
       </div>
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>What they paid, what they cost you month by month, payments and billing actions are on the client billing page.</p>
     </Card>
+
+    <Card title="Delete test account">
+      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
+        For test signups only. This cancels the Stripe subscription, deletes the Stripe customer, then permanently deletes the restaurant and all of its data. It can’t be undone.
+      </p>
+      <button
+        type="button"
+        className="om-btn"
+        onClick={() => { setTyped(''); setProblem(''); setOpen(true); }}
+        style={{ alignSelf: 'flex-start', color: 'var(--red)' }}
+      >
+        Delete test account…
+      </button>
+    </Card>
+
+    {open && (
+      <Dialog title={`Delete ${r.name}?`} sub="Type the restaurant’s name exactly to confirm." onClose={() => { if (!busy) setOpen(false); }}>
+        <input
+          className="om-field"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          placeholder={r.name}
+          aria-label="Restaurant name"
+          autoFocus
+        />
+        {problem && <div role="alert" style={{ fontSize: 13, color: 'var(--red)' }}>{problem}</div>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="om-btn" onClick={() => setOpen(false)} disabled={busy} style={{ flex: 1 }}>Cancel</button>
+          <button
+            type="button"
+            className="om-pri"
+            onClick={remove}
+            disabled={busy || typed.trim() !== r.name}
+            style={{ flex: 1, background: 'var(--red)' }}
+          >
+            {busy ? 'Deleting…' : 'Delete everything'}
+          </button>
+        </div>
+      </Dialog>
+    )}
+    </>
   );
 }
 

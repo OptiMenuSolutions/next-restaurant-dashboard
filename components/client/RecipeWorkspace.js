@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import supabase from '../../lib/supabaseClient';
 import useIsPhone from '../../lib/admin/useIsPhone';
 import { UNITS } from '../../lib/recipes/compile';
+import Picker from './Picker';
+import RecipeBuilder from './RecipeBuilder';
 import { useLeaveGuard } from '../../lib/useLeaveGuard';
 import LeaveGuardModal from '../LeaveGuardModal';
 
@@ -122,7 +124,9 @@ const TONES = {
 function statusOf(node) {
   if (node.status === 'confirmed') return { text: 'Confirmed', tone: 'green', key: 'confirmed' };
   if (node.status === 'estimated') return { text: 'Estimated by OptiMenu', tone: 'amber', key: 'estimated' };
-  if (node.status === 'draft') {
+  if (node.status === 'skeleton') return { text: 'Needs amounts', tone: 'amber', key: 'skeleton' };
+  // An empty draft (a dish just read from the menu) isn't a recipe yet.
+  if (node.status === 'draft' && (node.published || node.draft?.lines?.length)) {
     return node.published
       ? { text: 'Draft · old recipe in use', tone: 'accent', key: 'draft' }
       : { text: 'Draft', tone: 'accent', key: 'draft' };
@@ -176,10 +180,11 @@ export default function RecipeWorkspace({
   const stop = useRef(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [tab, setTab] = useState('prep');
+  const [tab, setTab] = useState('dish');
   const [editor, setEditor] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [targets, setTargets] = useState({});
+  const [looping, setLooping] = useState(false);
   const guard = useLeaveGuard(busy || dirty);
 
   const accept = result => {
@@ -295,33 +300,74 @@ export default function RecipeWorkspace({
     });
   }
 
+  // Admin only: drafts any dishes the background pass hasn't reached.
   async function generate() {
     stop.current = false;
+    setLooping(true);
 
-    while (latest.current.remaining > 0 && !stop.current) {
+    try {
+      while (latest.current.draftLeft > 0 && !stop.current) {
+        setMessage(`${latest.current.draftLeft} dishes still need a draft…`);
+        await post({ action: 'assist' });
+      }
+
       setMessage(
-        `${latest.current.remaining} dishes still need a draft…`
+        stop.current
+          ? 'Progress saved. You can resume later.'
+          : 'Drafts saved. Estimated recipes are active and awaiting kitchen confirmation.'
       );
-      await post({ action: 'assist' });
+    } finally {
+      setLooping(false);
     }
-
-    setMessage(
-      stop.current
-        ? 'Progress saved. You can resume later.'
-        : 'Drafts saved. Estimated recipes are active and awaiting kitchen confirmation.'
-    );
   }
 
-  async function choose(method) {
+  // Lists each dish's components and ingredients from the menu, with no amounts.
+  async function buildSkeletons() {
+    stop.current = false;
+    setLooping(true);
+
+    try {
+      while (latest.current.skeletonLeft > 0 && !stop.current) {
+        const left = latest.current.skeletonLeft;
+        setMessage(`Reading your menu… ${left} ${left === 1 ? 'dish' : 'dishes'} to go`);
+        await post({ action: 'skeleton' });
+      }
+
+      setMessage(
+        stop.current
+          ? 'Progress saved. You can resume later.'
+          : 'Skeletons ready. Every amount is blank. Open each dish to fill them in, then confirm it.'
+      );
+    } finally {
+      setLooping(false);
+    }
+  }
+
+  async function savePrep(prep) {
+    let result = null;
+
+    await run(async () => {
+      result = await post({ action: 'confirm', node: prep });
+      setMessage(`${prep.name} saved as a batch prep.`);
+    });
+
+    return result;
+  }
+
+  async function choose(method, build) {
     if (dirty) {
       setError('Save this recipe draft before changing setup methods.');
       return;
     }
 
-    await post({ action: 'method', method });
+    await post({ action: 'method', method, ...(build ? { build } : {}) });
 
-    if (method === 'assisted') {
-      await generate();
+    if (method === 'assisted' && admin) {
+      setMessage('Drafting has started in the background.');
+    }
+
+    if (build === 'skeleton') {
+      await buildSkeletons();
     }
   }
 
@@ -354,24 +400,31 @@ export default function RecipeWorkspace({
 
     if (uploadError) throw uploadError;
 
+    setMessage('Reading your document…');
+
     await post({
       action: 'import',
       path: signed.path,
       name: file.name,
     });
 
+    const entry = latest.current.state.imports.find(f => f.path === signed.path);
+    const left = (entry?.items || []).filter(item => !item.adopted).length;
+
     setMessage(
-      'Recipes extracted. Assign each one to a batch or dish, then check quantities.'
+      left
+        ? `Read. Recipes that matched a dish or batch by name were saved as drafts. Choose where the other ${left === 1 ? 'one goes' : `${left} go`}.`
+        : 'Read. Every recipe was matched by name and saved as a draft. Check the amounts, then confirm each one.'
     );
   }
 
-  async function save(confirm) {
+  async function save(confirm, node = editor) {
     const result = await post({
       action: confirm ? 'confirm' : 'save',
-      node: editor,
+      node,
     });
 
-    const saved = result.state.nodes.find(n => n.id === editor.id)
+    const saved = result.state.nodes.find(n => n.id === node.id)
       || result.state.nodes[result.state.nodes.length - 1];
 
     setDirty(false);
@@ -406,32 +459,38 @@ export default function RecipeWorkspace({
   const preps = nodes.filter(n => n.kind === 'prep');
   const shown = nodes.filter(n => n.kind === tab);
 
-  const units = value => (
-    <>
-      {!UNITS.includes(value) && (
-        <option value={value}>{value || 'Choose unit'}</option>
-      )}
-      {UNITS.map(unit => <option key={unit}>{unit}</option>)}
-    </>
-  );
+  const unitOptions = value => [
+    ...(UNITS.includes(value) ? [] : [{ value, label: value || 'Choose unit' }]),
+    ...UNITS.map(unit => ({ value: unit, label: unit })),
+  ];
 
-  // Progress across dishes, by plain status.
-  const counts = { confirmed: 0, current: 0, estimated: 0, draft: 0, none: 0 };
+  // Progress across dishes, by plain status. Skeletons have no amounts yet,
+  // so they don't count as having a recipe.
+  const counts = { confirmed: 0, current: 0, estimated: 0, draft: 0, skeleton: 0, none: 0 };
   dishes.forEach(n => { counts[statusOf(n).key] += 1; });
-  const withRecipe = dishes.length - counts.none;
+  const withRecipe = dishes.length - counts.none - counts.skeleton;
   const parts = [
     ['Confirmed', counts.confirmed, 'var(--green)'],
     ['Current', counts.current, 'var(--faint)'],
     ['Estimated', counts.estimated, 'var(--amber)'],
     ['Draft', counts.draft, 'var(--accent)'],
+    ['Needs amounts', counts.skeleton, 'var(--amber)'],
     ['No recipe', counts.none, 'var(--red)'],
   ].filter(([, n]) => n > 0);
 
   const methods = [
     ['upload', 'Upload recipes', 'PDFs, photos or spreadsheets of your prep book.'],
-    ['assisted', 'Work with OptiMenu', 'We draft recipes from your menu, then check them with your kitchen.'],
-    ['manual', 'Build them myself', 'Batch preps first, then what goes on each plate.'],
+    ['assisted', 'Work with OptiMenu', 'We draft your recipes. You review them with us on a short setup call.'],
+    ['manual', 'Build them myself', 'Start from your menu or from blank. Batch preps first, then each plate.'],
   ];
+
+  // During onboarding, the list and editor only appear once the chosen
+  // method has something to show. The Recipes page and admin always show them.
+  const method = data.state.method;
+  const progressive = !admin && router.pathname.startsWith('/client/onboarding');
+  const showWork = !progressive
+    || (method === 'upload' && data.state.imports.some(f => f.parsed))
+    || (method === 'manual' && !!data.state.build);
 
   const prepFor = id => nodes.find(n => n.id === id && n.kind === 'prep');
 
@@ -507,7 +566,7 @@ export default function RecipeWorkspace({
               </span>
             )}
             <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <span style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: '-0.01em', overflowWrap: 'anywhere' }}>{node.name || 'Untitled'}</span>
+              <span style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em', overflowWrap: 'anywhere' }}>{node.name || 'Untitled'}</span>
               <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', color: 'var(--muted)' }}>{meta}</span>
                 <Tag status={status} />
@@ -539,7 +598,7 @@ export default function RecipeWorkspace({
           <div style={kicker}>
             {editor.kind === 'prep' ? 'Batch prep' : `Dish${editor.menu_section ? ` · ${editor.menu_section}` : ''}`}
           </div>
-          <h2 style={{ margin: '4px 0 0', fontSize: phone ? 22 : 21, fontWeight: 800, letterSpacing: '-0.02em', overflowWrap: 'anywhere' }}>
+          <h2 style={{ margin: '4px 0 0', fontSize: 20, fontWeight: 700, letterSpacing: '-0.02em', overflowWrap: 'anywhere' }}>
             {editor.name || (editor.kind === 'prep' ? 'New batch prep' : 'Untitled dish')}
           </h2>
           <div style={{ marginTop: 8 }}>
@@ -566,6 +625,12 @@ export default function RecipeWorkspace({
           </div>
         )}
 
+        {editor.status === 'skeleton' && (
+          <div style={{ background: 'var(--panel)', borderRadius: 12, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
+            Built from your menu{editor.description ? `: “${editor.description}”` : ''}. Every amount is blank. Fill them in, then confirm.
+          </div>
+        )}
+
         <label style={label}>
           Name
           <input style={field} value={editor.name} onChange={e => edit({ name: e.target.value })} />
@@ -585,12 +650,17 @@ export default function RecipeWorkspace({
                 onChange={e => editDefinition({ yield_quantity: e.target.value })}
               />
             </label>
-            <label style={label}>
+            <div style={label}>
               Unit
-              <select style={field} value={editor.draft.yield_unit} onChange={e => editDefinition({ yield_unit: e.target.value })}>
-                {units(editor.draft.yield_unit)}
-              </select>
-            </label>
+              <Picker
+                ariaLabel="Yield unit"
+                value={editor.draft.yield_unit}
+                text={editor.draft.yield_unit}
+                options={unitOptions(editor.draft.yield_unit)}
+                search={false}
+                onChange={value => editDefinition({ yield_unit: value })}
+              />
+            </div>
           </div>
         )}
 
@@ -600,9 +670,9 @@ export default function RecipeWorkspace({
             : 'Enter the amounts for one served dish. For a batch prep, enter the portion of the finished batch that goes on the plate.'}
         </div>
 
-        <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--line)', borderRadius: 10 }}>
           {!phone && (
-            <div style={{ display: 'grid', gridTemplateColumns: lineCols, gap: 10, padding: '8px 14px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: lineCols, gap: 10, padding: '8px 14px', background: 'var(--panel)', borderRadius: '10px 10px 0 0', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
               <span>INGREDIENT OR BATCH</span><span>QTY</span><span>UNIT</span><span>COMPONENT</span><span />
             </div>
           )}
@@ -611,12 +681,27 @@ export default function RecipeWorkspace({
             const prep = line.prep_id ? prepFor(line.prep_id) : null;
             const prepDef = prep ? (prep.published || prep.draft) : null;
             const picker = (
-              <select
-                style={field}
-                aria-label={`Line ${index + 1} ingredient`}
+              <Picker
+                ariaLabel={`Line ${index + 1} ingredient`}
                 value={line.prep_id ? `p:${line.prep_id}` : line.ingredient_id ? `i:${line.ingredient_id}` : ''}
-                onChange={e => {
-                  const [type, id] = e.target.value.split(':');
+                text={line.name}
+                placeholder="Choose or type an ingredient"
+                options={[
+                  ...preps.filter(n => n.id !== editor.id).map(n => ({
+                    value: `p:${n.id}`,
+                    label: n.name,
+                    meta: n.published ? 'batch' : 'confirm first',
+                    group: 'Batch preps',
+                  })),
+                  ...data.ingredients.map(i => ({
+                    value: `i:${i.id}`,
+                    label: i.name,
+                    meta: i.unit,
+                    group: 'Ingredients',
+                  })),
+                ]}
+                onChange={value => {
+                  const [type, id] = value.split(':');
                   const found = type === 'p'
                     ? nodes.find(n => n.id === id)
                     : data.ingredients.find(n => n.id === id);
@@ -631,34 +716,19 @@ export default function RecipeWorkspace({
                     component: type === 'p' ? found.name : line.component,
                   });
                 }}
-              >
-                <option value="">Type a name below</option>
-                <optgroup label="Batch preps">
-                  {preps.filter(n => n.id !== editor.id).map(n => (
-                    <option key={n.id} value={`p:${n.id}`}>
-                      {n.name}{!n.published ? ' (confirm first)' : ''}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Ingredients">
-                  {data.ingredients.map(i => (
-                    <option key={i.id} value={`i:${i.id}`}>{i.name} · {i.unit}</option>
-                  ))}
-                </optgroup>
-              </select>
-            );
-            const nameInput = !line.prep_id && !line.ingredient_id && (
-              <input
-                style={{ ...field, marginTop: 6 }}
-                aria-label={`Line ${index + 1} name`}
-                placeholder="Ingredient name"
-                value={line.name}
-                onChange={e => lineChange(index, { name: e.target.value })}
+                onCreate={name => lineChange(index, { prep_id: null, ingredient_id: null, name })}
               />
             );
             const qty = (
               <input
-                style={{ ...field, fontFamily: MONO }}
+                style={{
+                  ...field,
+                  fontFamily: MONO,
+                  ...(editor.status === 'skeleton' && (line.quantity === '' || line.quantity == null)
+                    ? { border: '1px solid var(--amber)', background: 'var(--amber-tint, #fbf3e2)' }
+                    : {}),
+                }}
+                placeholder={editor.status === 'skeleton' ? 'Amount' : undefined}
                 aria-label={`${line.name || 'Line'} quantity`}
                 type="number"
                 min="0"
@@ -669,9 +739,14 @@ export default function RecipeWorkspace({
               />
             );
             const unit = (
-              <select style={field} aria-label={`${line.name || 'Line'} unit`} value={line.unit} onChange={e => lineChange(index, { unit: e.target.value })}>
-                {units(line.unit)}
-              </select>
+              <Picker
+                ariaLabel={`${line.name || 'Line'} unit`}
+                value={line.unit}
+                text={line.unit}
+                options={unitOptions(line.unit)}
+                search={false}
+                onChange={value => lineChange(index, { unit: value })}
+              />
             );
             const component = (
               <input
@@ -704,7 +779,7 @@ export default function RecipeWorkspace({
             return phone ? (
               <div key={index} style={{ padding: 12, borderTop: index ? '1px solid var(--line-soft)' : 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>{picker}{nameInput}{batchNote}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>{picker}{batchNote}</div>
                   {remove}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>{qty}{unit}</div>
@@ -712,7 +787,7 @@ export default function RecipeWorkspace({
               </div>
             ) : (
               <div key={index} style={{ display: 'grid', gridTemplateColumns: lineCols, gap: 10, padding: '8px 14px', borderTop: '1px solid var(--line-soft)', alignItems: 'start' }}>
-                <div style={{ minWidth: 0 }}>{picker}{nameInput}{batchNote}</div>
+                <div style={{ minWidth: 0 }}>{picker}{batchNote}</div>
                 {qty}
                 {unit}
                 {component}
@@ -786,6 +861,29 @@ export default function RecipeWorkspace({
     </section>
   );
 
+  // Start blank: a dish with nothing on it opens the step-by-step builder.
+  const building = !!editor
+    && editor.kind === 'dish'
+    && !!editor.id
+    && data.state.build === 'blank'
+    && !editor.draft.lines.length
+    && !editor.published;
+
+  const builderPanel = building && (
+    <RecipeBuilder
+      key={editor.id}
+      dish={editor}
+      nodes={nodes}
+      ingredients={data.ingredients}
+      busy={busy}
+      phone={phone}
+      onDirty={() => setDirty(true)}
+      onSavePrep={savePrep}
+      onSave={(lines, confirm) => run(() => save(confirm, { ...editor, draft: { ...editor.draft, lines } }))}
+      onClose={() => select(null)}
+    />
+  );
+
   return (
     <div style={{ color: 'var(--text)', display: 'flex', flexDirection: 'column', gap: phone ? 14 : 18, minWidth: 0 }}>
       {phone && editor ? (
@@ -803,7 +901,7 @@ export default function RecipeWorkspace({
           {showHeading && (
             <div>
               <div style={kicker}>Restaurant setup</div>
-              <h2 style={{ margin: '6px 0 0', fontSize: phone ? 25 : 26, fontWeight: 800, letterSpacing: '-0.03em' }}>Recipes &amp; prep</h2>
+              <h2 style={{ margin: '6px 0 0', fontSize: phone ? 23 : 24, fontWeight: 700, letterSpacing: '-0.03em' }}>Recipes &amp; prep</h2>
               <p style={{ margin: '6px 0 0', fontSize: 14, lineHeight: 1.5, color: 'var(--muted)', maxWidth: 720 }}>
                 Tell us what goes into each dish. Start with anything your kitchen makes in batches, then build each plate from those.
               </p>
@@ -812,7 +910,7 @@ export default function RecipeWorkspace({
 
           <section style={{ ...card, padding: phone ? 14 : '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
+              <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>
                 {withRecipe} of {dishes.length} {dishes.length === 1 ? 'dish has' : 'dishes have'} a recipe
               </h3>
               <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
@@ -851,7 +949,7 @@ export default function RecipeWorkspace({
                     <Icon d={ICONS[key]} />
                   </span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 14.5, fontWeight: 800 }}>{title}</span>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{title}</span>
                     <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, lineHeight: 1.45, color: 'var(--muted)' }}>{detail}</span>
                   </span>
                   {on && (
@@ -867,36 +965,79 @@ export default function RecipeWorkspace({
             You can mix methods. Recipes you’ve confirmed are never replaced.
           </div>
 
-          {data.state.assistance === 'requested' && (
+          {data.state.assistance === 'requested' && (admin ? (
             <section style={{ background: 'var(--paper)', color: 'var(--ink)', borderRadius: 4, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6, boxShadow: '0 1px 1px rgba(17,24,25,0.05), 0 3px 6px rgba(17,24,25,0.07)' }}>
               <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.12em', fontWeight: 600, color: 'var(--accent-deep)' }}>KITCHEN FOLLOW-UP REQUESTED</div>
               <div style={{ fontFamily: MONO, fontSize: 11.5, lineHeight: 1.5, color: 'var(--ink-soft)' }}>
-                {admin
-                  ? `${data.remaining} ${data.remaining === 1 ? 'dish still needs' : 'dishes still need'} a draft. Review the estimates with the kitchen, then mark this done.`
-                  : 'OptiMenu will go over these recipes with your kitchen. Estimated recipes are used until you confirm them.'}
+                {data.draftLeft
+                  ? `${data.draftLeft} ${data.draftLeft === 1 ? 'dish still needs' : 'dishes still need'} a draft. Review the estimates with the kitchen, then mark this done.`
+                  : 'Every dish has a draft. Review the estimates with the kitchen, then mark this done.'}
               </div>
-              {admin && (
-                <button type="button" style={{ ...button, alignSelf: 'flex-start', marginTop: 4 }} disabled={busy || dirty} onClick={() => run(() => post({ action: 'complete' }))}>
-                  Mark kitchen follow-up done
-                </button>
-              )}
+              <button type="button" style={{ ...button, alignSelf: 'flex-start', marginTop: 4 }} disabled={busy || dirty} onClick={() => run(() => post({ action: 'complete' }))}>
+                Mark kitchen follow-up done
+              </button>
+            </section>
+          ) : (
+            <section style={{ display: 'flex', gap: 14, alignItems: 'flex-start', padding: phone ? 14 : '16px 18px', borderRadius: 12, background: 'var(--accent-tint)' }}>
+              <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--shell)', color: 'var(--accent-deep)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Icon d={ICONS.check} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700 }}>
+                  {progressive ? 'You’re all set. Keep going.' : 'OptiMenu is on your recipes'}
+                </div>
+                <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
+                  OptiMenu is drafting recipes for your dishes in the background. We’ll reach out to book a short setup call to go over them with your kitchen. Until then, costs use these estimates and are marked as estimated.
+                </p>
+              </div>
+            </section>
+          ))}
+
+          {method === 'manual' && !data.state.build && (
+            <section style={{ ...card, padding: phone ? 14 : '16px 18px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>How do you want to start?</div>
+              <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : '1fr 1fr', gap: 10 }}>
+                {[
+                  ['skeleton', 'Start from your menu', 'OptiMenu lists each dish’s components and the ingredients it can read from your menu or safely assume. You fill in every amount.'],
+                  ['blank', 'Start blank', 'Pick a dish and build it step by step: batch preps, then components, then the recipe for each component.'],
+                ].map(([key, title, detail]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={busy || dirty}
+                    onClick={() => run(() => choose('manual', key))}
+                    style={{ ...card, textAlign: 'left', padding: '14px 16px', cursor: 'pointer', color: 'var(--text)', font: 'inherit' }}
+                  >
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{title}</span>
+                    <span style={{ display: 'block', marginTop: 3, fontSize: 12.5, lineHeight: 1.45, color: 'var(--muted)' }}>{detail}</span>
+                  </button>
+                ))}
+              </div>
             </section>
           )}
 
-          {data.state.method === 'assisted' && !busy && data.remaining > 0 && (
+          {admin && method === 'assisted' && !busy && data.draftLeft > 0 && (
             <button type="button" style={{ ...primary, alignSelf: 'flex-start' }} disabled={dirty} onClick={() => run(generate)}>
-              Draft the {data.remaining} remaining {data.remaining === 1 ? 'dish' : 'dishes'}
+              Draft the {data.draftLeft} remaining {data.draftLeft === 1 ? 'dish' : 'dishes'}
+            </button>
+          )}
+
+          {method === 'manual' && data.state.build === 'skeleton' && !busy && data.skeletonLeft > 0 && (
+            <button type="button" style={{ ...primary, alignSelf: 'flex-start' }} disabled={dirty} onClick={() => run(buildSkeletons)}>
+              Finish reading your menu ({data.skeletonLeft} left)
             </button>
           )}
 
           {data.state.method === 'upload' && (
-            <section style={{ ...card, overflow: 'hidden' }}>
+            <section style={card}>
               <label style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: busy || dirty ? 'default' : 'pointer', borderBottom: data.state.imports.length ? '1px solid var(--line-soft)' : 0 }}>
                 <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--accent-tint)', color: 'var(--accent-deep)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <Icon d={ICONS.upload} />
                 </span>
                 <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>Upload a recipe document</span>
+                  <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>
+                    {data.state.imports.length ? 'Upload another document' : 'Upload a recipe document'}
+                  </span>
                   <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: 'var(--muted)' }}>PDF, photo, CSV or text, up to 20 MB</span>
                 </span>
                 <span style={button}>Choose file</span>
@@ -916,46 +1057,72 @@ export default function RecipeWorkspace({
               {data.state.imports.map((file, fileIndex) => {
                 const waiting = (file.items || []).filter(item => !item.adopted);
                 const saved = (file.items || []).filter(item => item.adopted);
+                const summary = file.summary;
 
                 return (
                   <div key={file.path} style={{ borderTop: fileIndex ? '1px solid var(--line-soft)' : 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px' }}>
                       <span style={{ color: 'var(--accent-deep)', display: 'flex' }}><Icon d={ICONS.doc} /></span>
                       <span style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
+                        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</span>
                         <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--muted)' }}>
                           {file.parsed
-                            ? `${(file.items || []).length} ${(file.items || []).length === 1 ? 'RECIPE' : 'RECIPES'} FOUND${saved.length ? ` · ${saved.length} SAVED` : ''}`
+                            ? `${(file.items || []).length} ${(file.items || []).length === 1 ? 'RECIPE' : 'RECIPES'} FOUND${saved.length ? ` · ${saved.length} SAVED AS DRAFTS` : ''}`
                             : 'NOT READ YET'}
                         </span>
                       </span>
                       {!file.parsed && (
                         <button type="button" style={button} disabled={busy || dirty} onClick={() => run(() => post({ action: 'import', path: file.path, name: file.name }))}>
-                          Read it
+                          Try reading again
                         </button>
                       )}
                     </div>
 
+                    {summary && (
+                      <div style={{ display: 'grid', gridTemplateColumns: phone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))', borderTop: '1px solid var(--line-soft)' }}>
+                        {[
+                          ['BATCH PREPS ADDED', summary.preps, false],
+                          ['DISHES MATCHED BY NAME', summary.dishes, false],
+                          ['BATCH LINES LINKED', summary.linked, false],
+                          ['NEED AN AMOUNT OR YIELD', summary.review, true],
+                        ].map(([k, v, warn]) => (
+                          <div key={k} style={{ padding: '10px 16px' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: warn && v ? 'var(--amber)' : 'var(--text)' }}>{v}</div>
+                            <div style={{ fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.1em', color: 'var(--muted)' }}>{k}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {waiting.length > 0 && (
+                      <div style={{ padding: '10px 16px 0', borderTop: '1px solid var(--line-soft)', fontSize: 12.5, color: 'var(--muted)' }}>
+                        {waiting.length === 1 ? 'This one didn’t' : 'These didn’t'} match a dish by name. Choose where each one goes.
+                      </div>
+                    )}
+
                     {waiting.map(item => (
-                      <div key={item.id} style={{ padding: '12px 16px', borderTop: '1px solid var(--line-soft)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700 }}>{item.name}</div>
+                      <div key={item.id} style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</div>
                         {item.notes && <div style={{ fontSize: 12.5, lineHeight: 1.45, color: 'var(--muted)' }}>{item.notes}</div>}
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <select
-                            style={{ ...field, flex: '1 1 220px', width: 'auto' }}
-                            aria-label={`Save ${item.name} to`}
+                          <Picker
+                            style={{ flex: '1 1 220px' }}
+                            ariaLabel={`Save ${item.name} to`}
                             disabled={busy || dirty}
                             value={targets[item.id] || ''}
-                            onChange={e => setTargets({ ...targets, [item.id]: e.target.value })}
-                          >
-                            <option value="">Save this recipe to…</option>
-                            <option value="new-prep">A new batch prep</option>
-                            {nodes.map(node => (
-                              <option key={node.id} value={node.id}>
-                                {node.kind === 'prep' ? 'Batch: ' : 'Dish: '}{node.name}
-                              </option>
-                            ))}
-                          </select>
+                            placeholder="Save this recipe to…"
+                            options={[
+                              { value: 'new-prep', label: 'A new batch prep', group: 'New' },
+                              ...dishes.map(node => ({
+                                value: node.id,
+                                label: node.name,
+                                group: 'Dishes',
+                                meta: node.status === 'confirmed' ? 'confirmed' : '',
+                              })),
+                              ...preps.map(node => ({ value: node.id, label: node.name, group: 'Batch preps' })),
+                            ]}
+                            onChange={value => setTargets({ ...targets, [item.id]: value })}
+                          />
                           <button
                             type="button"
                             style={primary}
@@ -993,7 +1160,7 @@ export default function RecipeWorkspace({
       {(message || error || busy) && (
         <div role="status" aria-live="polite" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, fontSize: 13, lineHeight: 1.5, borderRadius: 10, padding: '10px 12px', background: error ? 'var(--red-tint, #fbeceb)' : 'var(--accent-tint)', color: error ? 'var(--red)' : 'var(--text)' }}>
           <span style={{ flex: 1, minWidth: 0 }}>{error || message || 'Working…'}</span>
-          {busy && data.state.method === 'assisted' && (
+          {busy && looping && (
             <button type="button" style={button} onClick={() => { stop.current = true; }}>
               Stop after this batch
             </button>
@@ -1001,18 +1168,18 @@ export default function RecipeWorkspace({
         </div>
       )}
 
-      {phone ? (
-        editor ? editorPanel : list
+      {showWork && (phone ? (
+        editor ? (builderPanel || editorPanel) : list
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '340px minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
           {list}
-          {editorPanel || (
+          {builderPanel || editorPanel || (
             <section style={{ ...card, border: '1px dashed var(--line)', padding: 28, textAlign: 'center', fontSize: 13.5, color: 'var(--muted)' }}>
               Choose a {tab === 'prep' ? 'batch prep' : 'dish'} to see and edit its recipe.
             </section>
           )}
         </div>
-      )}
+      ))}
 
       <LeaveGuardModal
         open={!!guard.pendingUrl}
