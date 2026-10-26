@@ -177,7 +177,7 @@ export default function OnboardingScreen({
               const n = STEP_ORDER[i];
               const checked = i < position;
               const current = n === step;
-              const isLast = n === STEP_LABELS.length;
+              const isLast = i === STEP_LABELS.length - 1;
               return (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: isPhone ? 6 : 10 }}>
                   <div style={{ width: 22, height: 22, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, flexShrink: 0, background: checked || current ? "var(--accent)" : "var(--shell)", color: checked || current ? "#fff" : "var(--faint)", border: `1px solid ${checked || current ? "var(--accent)" : "var(--line)"}` }}>
