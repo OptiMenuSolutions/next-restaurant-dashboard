@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { SANS } from "./ClientChrome";
 
+const MONO = "'IBM Plex Mono', ui-monospace, monospace";
+
 const fieldStyle = {
   width: "100%",
   minWidth: 0,
   maxWidth: "100%",
-  minHeight: 44,
+  minHeight: 42,
   boxSizing: "border-box",
   border: "1px solid var(--line)",
   borderRadius: 10,
-  padding: "10px 12px",
+  padding: "0 12px",
   background: "var(--shell)",
   color: "var(--text)",
   fontFamily: SANS,
@@ -17,16 +19,30 @@ const fieldStyle = {
 };
 
 const buttonStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   minHeight: 44,
-  border: "1px solid var(--line)",
+  border: 0,
   borderRadius: 22,
-  padding: "10px 16px",
-  background: "var(--accent-tint)",
-  color: "var(--accent-deep)",
+  padding: "0 16px",
+  background: "var(--accent-deep)",
+  color: "var(--on-accent, #ffffff)",
   fontFamily: SANS,
-  fontSize: 14,
+  fontSize: 13.5,
   fontWeight: 700,
   cursor: "pointer",
+  width: "100%",
+};
+
+const labelStyle = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  minWidth: 0,
+  fontSize: 12.5,
+  fontWeight: 600,
+  color: "var(--muted)",
 };
 
 export default function InventoryCountReview({
@@ -138,6 +154,9 @@ export default function InventoryCountReview({
     }
   }
 
+  const timingLabel = (value) =>
+    value === "before_opening" ? "Before opening" : "After closing";
+
   return (
     <section
       aria-label="Review saved inventory count"
@@ -145,21 +164,23 @@ export default function InventoryCountReview({
         border: "1px solid var(--line)",
         borderRadius: 14,
         background: "var(--shell)",
-        padding: 18,
-        marginBottom: 0,
+        padding: "16px 18px",
         minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
       }}
     >
-      <h3 style={{ margin: "0 0 10px", fontSize: 18 }}>
-        Date & timing
-      </h3>
+      <div>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>
+          When did you count?
+        </h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, lineHeight: 1.5, color: "var(--muted)" }}>
+          Pick when the shelves were counted, not when you typed it in.
+        </p>
+      </div>
 
-      <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-        Choose when these quantities were physically counted,
-        rather than when you entered them here.
-      </p>
-
-      <label style={{ display: "block", minWidth: 0 }}>
+      <label style={labelStyle}>
         Count date
         <input
           type="date"
@@ -173,7 +194,6 @@ export default function InventoryCountReview({
           style={{
             ...fieldStyle,
             display: "block",
-            marginTop: 6,
             appearance: "none",
             WebkitAppearance: "none",
           }}
@@ -182,139 +202,108 @@ export default function InventoryCountReview({
 
       <fieldset
         disabled={busy}
-        style={{
-          margin: "16px 0",
-          padding: 0,
-          border: "none",
-          minWidth: 0,
-        }}
+        style={{ margin: 0, padding: 0, border: "none", minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}
       >
-        <legend style={{ marginBottom: 8 }}>
-          When was it counted?
-        </legend>
+        <legend style={{ ...labelStyle, padding: 0, marginBottom: 6 }}>Timing</legend>
 
         {[
           {
             value: "before_opening",
             label: "Before opening",
-            detail: "Before that day’s deliveries and sales.",
+            detail: "That day’s deliveries and sales happen after this count.",
           },
           {
             value: "after_closing",
             label: "After closing",
-            detail: "After that day’s deliveries and sales.",
+            detail: "Includes everything delivered and sold that day.",
           },
-        ].map((option) => (
-          <label
-            key={option.value}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              padding: 12,
-              marginBottom: 8,
-              border: timing === option.value
-                ? "1px solid var(--accent-deep)"
-                : "1px solid var(--line)",
-              borderRadius: 10,
-              background: timing === option.value
-                ? "var(--accent-tint)"
-                : "var(--shell)",
-              cursor: busy ? "default" : "pointer",
-            }}
-          >
-            <input
-              type="radio"
-              name={`count-timing-${sessionId}`}
-              value={option.value}
-              checked={timing === option.value}
-              onChange={() => {
-                setTiming(option.value);
-                setReview(null);
-                setError("");
+        ].map((option) => {
+          const on = timing === option.value;
+          return (
+            <label
+              key={option.value}
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                padding: 12,
+                border: `${on ? 1.5 : 1}px solid ${on ? "var(--accent)" : "var(--line)"}`,
+                borderRadius: 10,
+                background: on ? "var(--accent-tint)" : "var(--shell)",
+                cursor: busy ? "default" : "pointer",
               }}
-              style={{ marginTop: 4 }}
-            />
-
-            <span>
-              <strong>{option.label}</strong>
-              <span
-                style={{
-                  display: "block",
-                  color: "var(--muted)",
-                  fontSize: 13,
-                  marginTop: 3,
+            >
+              <input
+                type="radio"
+                name={`count-timing-${sessionId}`}
+                value={option.value}
+                checked={on}
+                onChange={() => {
+                  setTiming(option.value);
+                  setReview(null);
+                  setError("");
                 }}
-              >
-                {option.detail}
+                style={{ margin: "3px 0 0", accentColor: "var(--accent-deep)" }}
+              />
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14, fontWeight: 700 }}>{option.label}</span>
+                <span style={{ display: "block", marginTop: 2, fontSize: 12.5, lineHeight: 1.45, color: "var(--muted)" }}>
+                  {option.detail}
+                </span>
               </span>
-            </span>
-          </label>
-        ))}
+            </label>
+          );
+        })}
       </fieldset>
 
       {error && (
-        <p role="alert" style={{ color: "var(--red)", lineHeight: 1.5 }}>
+        <p role="alert" style={{ margin: 0, padding: "10px 12px", borderRadius: 10, background: "var(--red-tint, #fbeceb)", color: "var(--red)", fontSize: 13, lineHeight: 1.5 }}>
           {error}
         </p>
       )}
 
-      <button
-        type="button"
-        onClick={loadReview}
-        disabled={busy || !date || !timing}
-        style={{
-          ...buttonStyle,
-          opacity: busy || !date || !timing ? 0.5 : 1,
-        }}
-      >
-        {submitting
-          ? "Submitting…"
-          : busy
-            ? "Loading review…"
-            : "Review saved quantities"}
-      </button>
+      {!review && (
+        <button
+          type="button"
+          onClick={loadReview}
+          disabled={busy || !date || !timing}
+          style={{ ...buttonStyle, opacity: busy || !date || !timing ? 0.5 : 1 }}
+        >
+          {busy ? "Loading review…" : "Review before submitting"}
+        </button>
+      )}
 
       {review && (
-        <div style={{ marginTop: 18 }}>
-          <p role="status" style={{ lineHeight: 1.6 }}>
-            <strong>{review.counted} counted</strong>
-            {" · "}
-            {review.uncounted} not counted
-            <br />
-            {review.effective_date}
-            {" · "}
-            {review.count_timing === "before_opening"
-              ? "Before opening"
-              : "After closing"}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div role="status" style={{ background: "var(--panel)", borderRadius: 10, padding: "10px 12px", fontSize: 13, lineHeight: 1.55 }}>
+            <strong>{review.counted} counted</strong> · {review.uncounted} keep their estimate
+            <span style={{ display: "block", fontFamily: MONO, fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+              {review.effective_date} · {timingLabel(review.count_timing).toUpperCase()}
+            </span>
+          </div>
+
+          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: "var(--muted)" }}>
+            Only these ingredients change. Nothing has changed in inventory yet.
           </p>
 
-          <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-            Only the ingredients below are included. Uncounted
-            ingredients will stay untouched. This review has not
-            changed inventory.
-          </p>
-
-          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-            {review.lines.map((line) => (
+          <ul style={{ listStyle: "none", padding: 0, margin: 0, border: "1px solid var(--line-soft)", borderRadius: 10, overflow: "hidden" }}>
+            {review.lines.map((line, index) => (
               <li
                 key={line.id}
                 style={{
                   display: "flex",
-                  flexWrap: "wrap",
                   justifyContent: "space-between",
-                  gap: "6px 16px",
-                  borderTop: "1px solid var(--line)",
-                  padding: "12px 0",
+                  gap: 12,
+                  padding: "9px 12px",
+                  borderTop: index ? "1px solid var(--line-soft)" : 0,
+                  fontSize: 13.5,
                   overflowWrap: "anywhere",
                 }}
               >
-                <span style={{ flex: "1 1 180px", minWidth: 0 }}>
-                  {line.ingredient_name}
-                </span>
-                <strong>
+                <span style={{ minWidth: 0 }}>{line.ingredient_name}</span>
+                <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
                   {line.quantity} {line.unit}
-                </strong>
+                </span>
               </li>
             ))}
           </ul>
@@ -323,13 +312,17 @@ export default function InventoryCountReview({
             type="button"
             onClick={submitCount}
             disabled={busy}
-            style={{
-              ...buttonStyle,
-              marginTop: 16,
-              opacity: busy ? 0.5 : 1,
-            }}
+            style={{ ...buttonStyle, opacity: busy ? 0.5 : 1 }}
           >
             {submitting ? "Submitting count…" : "Submit count"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setReview(null)}
+            disabled={busy}
+            style={{ alignSelf: "center", border: 0, background: "none", padding: 0, fontFamily: SANS, fontSize: 13, fontWeight: 700, color: "var(--accent-deep)", cursor: "pointer" }}
+          >
+            Change date or timing
           </button>
         </div>
       )}

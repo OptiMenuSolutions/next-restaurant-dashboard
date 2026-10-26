@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import Head from "next/head";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import supabase from "../../lib/supabaseClient";
 import { useGuardedAccount } from "../../lib/useAccount";
-import {
-  Shell,
-  FONT_LINKS,
-  SANS,
-  useTheme,
-} from "../../components/client/ClientChrome";
+import { SANS, useIsMobile } from "../../components/client/ClientChrome";
+import ClientPage, { PageTitle } from "../../components/client/ClientPage";
 import InventoryCountEditor from "../../components/client/InventoryCountEditor";
 
 const UUID =
@@ -50,22 +44,32 @@ const buttonStyle = {
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
-  minHeight: 44,
-  padding: "10px 18px",
+  minHeight: 42,
+  padding: "0 18px",
   border: "1px solid var(--line)",
-  borderRadius: 24,
+  borderRadius: 21,
   background: "var(--shell)",
   color: "var(--text)",
   fontFamily: SANS,
-  fontSize: 15,
+  fontSize: 13.5,
   fontWeight: 700,
   textDecoration: "none",
   cursor: "pointer",
 };
 
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+function stamp(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toUpperCase();
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${time}`;
+}
+
 export default function InventoryCountPage() {
   const router = useRouter();
-  const [theme] = useTheme();
+  const isMobile = useIsMobile();
   const { account, loading: accountLoading, error: accountError } =
     useGuardedAccount({ instant: true });
 
@@ -177,145 +181,110 @@ export default function InventoryCountPage() {
       ? accountError.message || String(accountError)
       : error;
 
-  return (
-    <Shell theme={theme}>
-      <Head>
-        <title>Inventory count · OptiMenu</title>
-        {FONT_LINKS}
-      </Head>
+  const kicker = session
+    ? session.status === "draft"
+      ? `INVENTORY · DRAFT STARTED ${stamp(session.created_at)}`
+      : `INVENTORY · SUBMITTED ${stamp(session.submitted_at || session.updated_at)}`
+    : "INVENTORY";
 
-      <header
-        style={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          background: "var(--shell)",
-          borderBottom: "1px solid var(--line)",
-          padding: "12px 16px",
-        }}
-      >
-        <Link
-          href="/client/ingredients"
+  return (
+    <ClientPage
+      title="Inventory count"
+      account={account}
+      active="ingredients"
+      maxWidth={1280}
+      back={{ label: "Ingredients", href: "/client/ingredients" }}
+      phoneBack={{ label: "Ingredients", href: "/client/ingredients", title: "Count" }}
+    >
+      <PageTitle
+        kicker={isMobile ? (session?.status === "draft" ? "INVENTORY · DRAFT" : "INVENTORY") : kicker}
+        title="Inventory count"
+        isPhone={isMobile}
+        sub={session
+          ? session.status === "draft"
+            ? isMobile
+              ? "Blank skips a line. 0 means none left."
+              : "Optional. Count what’s on hand and we’ll correct the estimates. Leave a line blank to skip it. Enter 0 when there’s none left."
+            : "This count is submitted and read-only."
+          : "Optional counts keep your stock estimates accurate."}
+      />
+
+      {visibleError && (
+        <div
+          role="alert"
           style={{
-            ...buttonStyle,
-            border: "none",
-            padding: "8px 0",
-            color: "var(--accent-deep)",
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 14px",
+            borderRadius: 12,
+            background: "var(--red-tint, #fbeceb)",
+            color: "var(--red)",
+            fontSize: 13.5,
+            overflowWrap: "anywhere",
           }}
         >
-          ‹ Ingredients
-        </Link>
-      </header>
-
-      <main
-        style={{
-          width: "100%",
-          maxWidth: 1280,
-          boxSizing: "border-box",
-          margin: "0 auto",
-          padding: "24px 16px 40px",
-        }}
-      >
-        <div style={{
-          fontSize: 11,
-          letterSpacing: "0.16em",
-          color: "var(--muted)",
-          marginBottom: 8,
-        }}>
-          INVENTORY
-        </div>
-
-        <h1 style={{ margin: 0, fontSize: 30 }}>
-          Inventory count
-        </h1>
-
-        <p style={{
-          margin: "10px 0 24px",
-          color: "var(--muted)",
-          lineHeight: 1.6,
-        }}>
-          {session
-            ? session.status === "draft"
-              ? "Count what is on hand. Your draft stays separate from live inventory."
-              : `Saved count · ${session.status}`
-            : "Optional counts help keep your stock estimates accurate."}
-        </p>
-
-        {visibleError && (
-          <div
-            role="alert"
-            style={{
-              border: "1px solid var(--red)",
-              borderRadius: 14,
-              padding: 16,
-              marginBottom: 16,
-              overflowWrap: "anywhere",
-            }}
+          <span style={{ flex: "1 1 220px" }}>{visibleError}</span>
+          <button
+            type="button"
+            style={buttonStyle}
+            disabled={busy}
+            onClick={() => setRetry((value) => value + 1)}
           >
-            <p style={{ margin: "0 0 12px" }}>
-              {visibleError}
-            </p>
+            Try again
+          </button>
+        </div>
+      )}
 
-            <button
-              type="button"
-              style={buttonStyle}
-              disabled={busy}
-              onClick={() => setRetry((value) => value + 1)}
-            >
-              Try again
-            </button>
-          </div>
-        )}
-
-        {waiting ? (
-          <p role="status">Loading your inventory count…</p>
-        ) : !accountError && restaurantId ? (
+      {waiting ? (
+        <p role="status" style={{ margin: 0, color: "var(--muted)" }}>Loading your inventory count…</p>
+      ) : !accountError && restaurantId ? (
+        session ? (
+          <InventoryCountEditor
+            key={`${restaurantId}:${session.id}`}
+            sessionId={session.id}
+            restaurantId={restaurantId}
+          />
+        ) : !error ? (
           <section
             style={{
               minWidth: 0,
-              background: session ? "transparent" : "var(--shell)",
-              border: session ? "none" : "1px solid var(--line)",
-              borderRadius: 18,
-              padding: session ? 0 : 20,
+              maxWidth: 560,
+              background: "var(--shell)",
+              border: "1px solid var(--line)",
+              borderRadius: 14,
+              padding: "20px 22px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
             }}
           >
-            {session ? (
-              <>
-                <InventoryCountEditor
-                  key={`${restaurantId}:${session.id}`}
-                  sessionId={session.id}
-                  restaurantId={restaurantId}
-                />
-              </>
-            ) : !error ? (
-              <>
-                <h2 style={{ margin: 0, fontSize: 20 }}>
-                  No count in progress
-                </h2>
-
-                <p style={{ color: "var(--muted)", lineHeight: 1.6 }}>
-                  Create a draft when you are ready to count.
-                </p>
-
-                <button
-                  type="button"
-                  onClick={startCount}
-                  disabled={busy}
-                  style={{
-                    ...buttonStyle,
-                    background: "var(--accent-tint)",
-                    color: "var(--accent-deep)",
-                    opacity: busy ? 0.6 : 1,
-                    cursor: busy ? "wait" : "pointer",
-                  }}
-                >
-                  {busy ? "Starting…" : "Start inventory count"}
-                </button>
-              </>
-            ) : null}
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800 }}>
+              No count in progress
+            </h2>
+            <p style={{ margin: 0, color: "var(--muted)", fontSize: 13.5, lineHeight: 1.6 }}>
+              Start a draft when you’re ready to count. It stays separate from live inventory until you submit it.
+            </p>
+            <button
+              type="button"
+              onClick={startCount}
+              disabled={busy}
+              style={{
+                ...buttonStyle,
+                alignSelf: "flex-start",
+                border: 0,
+                background: "var(--accent-deep)",
+                color: "var(--on-accent, #ffffff)",
+                opacity: busy ? 0.6 : 1,
+                cursor: busy ? "wait" : "pointer",
+              }}
+            >
+              {busy ? "Starting…" : "Start inventory count"}
+            </button>
           </section>
-        ) : null}
-      </main>
-    </Shell>
+        ) : null
+      ) : null}
+    </ClientPage>
   );
 }
