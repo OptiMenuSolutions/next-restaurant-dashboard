@@ -3,11 +3,16 @@
 // POST { action: 'delete-note', noteId }
 // POST { action: 'run-dish' }         runs Tonight's Dish now and replaces
 //                                     today's picks
+// POST { action: 'delete-test-account', confirm }
+//                                     cancels the Stripe subscription, deletes
+//                                     the Stripe customer, then purges the
+//                                     restaurant. confirm must match its name.
 // Each one is written to the audit log.
 
 import { adminDb as db, requireAdmin } from '../../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../../lib/admin/withAdminAuth';
 import { generateForRestaurant } from '../../../ai-recommendations';
+import stripe from '../../../../../lib/stripeServer';
 
 export const config = { maxDuration: 60 };
 
@@ -55,6 +60,52 @@ export default async function handler(req, res) {
       console.error('[admin/run-dish]', e);
       return res.status(500).json({ error: e.message || 'Tonight’s Dish failed' });
     }
+  }
+
+  if (action === 'delete-test-account') {
+    if (String(req.body.confirm || '').trim() !== r.name) {
+      return res.status(400).json({ error: 'Type the restaurant name exactly to confirm.' });
+    }
+
+    const { data: billing, error: billingError } = await db.from('restaurants')
+      .select('stripe_customer_id, stripe_subscription_id')
+      .eq('id', r.id)
+      .single();
+    if (billingError) return res.status(500).json({ error: billingError.message });
+
+    // Stripe first. If it fails, the restaurant is left untouched.
+    try {
+      if (billing.stripe_subscription_id) {
+        try {
+          await stripe.subscriptions.cancel(billing.stripe_subscription_id);
+        } catch (e) {
+          if (e.code !== 'resource_missing' && !/canceled/i.test(e.message || '')) throw e;
+        }
+      }
+      if (billing.stripe_customer_id) {
+        try {
+          await stripe.customers.del(billing.stripe_customer_id);
+        } catch (e) {
+          if (e.code !== 'resource_missing') throw e;
+        }
+      }
+    } catch (e) {
+      console.error('[admin/delete-test-account:stripe]', e);
+      return res.status(502).json({ error: `Stripe said: ${e.message}. The restaurant was not deleted.` });
+    }
+
+    await log('Deleted a test account', {
+      stripe_customer_id: billing.stripe_customer_id || null,
+      stripe_subscription_id: billing.stripe_subscription_id || null,
+    });
+
+    const { error: purgeError } = await db.rpc('purge_restaurant', { target: r.id });
+    if (purgeError) {
+      console.error('[admin/delete-test-account:purge]', purgeError);
+      return res.status(500).json({ error: `Stripe was cleaned up, but deleting the restaurant failed: ${purgeError.message}` });
+    }
+
+    return res.status(200).json({ ok: true });
   }
 
   return res.status(400).json({ error: 'Unknown action' });
