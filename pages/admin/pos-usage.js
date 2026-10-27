@@ -470,24 +470,25 @@ export default function PosUsage() {
     const parts = row.adjusted || row.base || [];
     const totals = new Map();
 
+    // Each line keeps the unit it was counted in (0.1094 qt of milk);
+    // usage converts it to the inventory unit.
     for (const part of parts) {
-      const ingredient = data.ingredients.find((candidate) =>
-        candidate.id === part.id
-      );
-
-      if (!ingredient) continue;
+      if (!data.ingredients.some((candidate) => candidate.id === part.id)) continue;
 
       const old = totals.get(part.id);
-      const known =
-        part.unit === ingredient.unit &&
-        Number.isFinite(part.quantity);
+      const quantity = Number(part.quantity);
 
-      totals.set(part.id, {
-        id: part.id,
-        quantity: known && old?.quantity !== ''
-          ? String(Number(old?.quantity || 0) + part.quantity)
-          : '',
-      });
+      if (!old) {
+        totals.set(part.id, {
+          id: part.id,
+          unit: part.unit,
+          quantity: Number.isFinite(quantity) ? String(Number(quantity.toFixed(4))) : '',
+        });
+      } else if (old.unit === part.unit && old.quantity !== '' && Number.isFinite(quantity)) {
+        old.quantity = String(Number((Number(old.quantity) + quantity).toFixed(4)));
+      } else {
+        old.quantity = '';
+      }
     }
 
     setPortions([...totals.values()]);
@@ -1316,14 +1317,14 @@ export default function PosUsage() {
                 )}
 
                 <div style={{ border: '1px solid var(--line)', borderRadius: 10, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 56px', gap: 8, padding: '7px 12px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
-                    <span>INGREDIENT</span><span>ONE SERVING</span><span>UNIT</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 100px 96px 36px', gap: 8, padding: '7px 12px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
+                    <span>INGREDIENT</span><span>ONE SERVING</span><span>UNIT</span><span />
                   </div>
                   {portions.map((portion, index) => {
                     const ingredient = data.ingredients.find((candidate) => candidate.id === portion.id);
                     const needed = portion.quantity === '';
                     return (
-                      <label key={portion.id} className="pu-portion" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 56px', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--line-soft)', alignItems: 'center', fontSize: 13.5, background: needed ? 'var(--amber-tint)' : 'transparent' }}>
+                      <label key={portion.id} className="pu-portion" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 100px 96px 36px', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--line-soft)', alignItems: 'center', fontSize: 13.5, background: needed ? 'var(--amber-tint)' : 'transparent' }}>
                         <span style={{ fontWeight: needed ? 700 : 600, minWidth: 0, overflowWrap: 'anywhere' }}>
                           {ingredient?.name}
                           {needed && <span style={{ display: 'block', marginTop: 2, fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: 'var(--amber)' }}>NEEDED</span>}
@@ -1344,7 +1345,35 @@ export default function PosUsage() {
                             ))
                           }
                         />
-                        <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>{ingredient?.unit}</span>
+                        <select
+                          className="om-field"
+                          aria-label={`${ingredient?.name} unit`}
+                          value={portion.unit || ingredient?.unit || ''}
+                          disabled={busy}
+                          style={{ padding: '0 6px' }}
+                          onChange={(event) =>
+                            setPortions(portions.map((value, i) =>
+                              i === index ? { ...value, unit: event.target.value } : value
+                            ))
+                          }
+                        >
+                          {[...new Set([portion.unit || ingredient?.unit, ...UNITS])]
+                            .filter(Boolean)
+                            .map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                        </select>
+                        <button
+                          type="button"
+                          aria-label={`Remove ${ingredient?.name || 'this ingredient'}`}
+                          title="Remove"
+                          disabled={busy}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            setPortions(portions.filter((_, i) => i !== index));
+                          }}
+                          style={{ width: 32, height: 32, padding: 0, border: '1px solid var(--line)', borderRadius: '50%', background: 'var(--shell)', color: 'var(--muted)', font: "400 18px/1 'Manrope', sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          ×
+                        </button>
                       </label>
                     );
                   })}
@@ -1367,7 +1396,13 @@ export default function PosUsage() {
                       meta: ingredient.unit,
                     }))}
                   onChange={(id) => {
-                    if (id) setPortions([...portions, { id, quantity: '' }]);
+                    if (id) {
+                      setPortions([...portions, {
+                        id,
+                        quantity: '',
+                        unit: data.ingredients.find((ingredient) => ingredient.id === id)?.unit || '',
+                      }]);
+                    }
                   }}
                 />
 
@@ -1410,6 +1445,8 @@ export default function PosUsage() {
                         portions: portions.map((portion) => ({
                           ...portion,
                           quantity: Number(portion.quantity),
+                          unit: portion.unit ||
+                            data.ingredients.find((ingredient) => ingredient.id === portion.id)?.unit,
                         })),
                       });
 
