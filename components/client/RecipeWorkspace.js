@@ -232,8 +232,9 @@ export default function RecipeWorkspace({
       setTab(selected.kind);
     } else if (router.query.recipe !== 'new') {
       setEditor(null);
+      if (router.query.tab === 'prep' || router.query.tab === 'dish') setTab(router.query.tab);
     }
-  }, [data, router.query.recipe, dirty, busy]);
+  }, [data, router.query.recipe, router.query.tab, dirty, busy]);
 
   async function post(body) {
     return accept(await recipeRequest(
@@ -515,6 +516,7 @@ export default function RecipeWorkspace({
 
     const query = { ...router.query };
     delete query.recipe;
+    query.tab = key;
 
     router.push(
       { pathname: router.pathname, query },
