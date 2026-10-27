@@ -257,6 +257,34 @@ export default withAdminAuth(async function handler(req, res) {
         .eq('context_key', req.body.contextKey)
       );
 
+    } else if (action === 'confirm') {
+      const rule = check(await db
+        .from('pos_usage_rules')
+        .select('plan')
+        .eq('restaurant_id', restaurantId)
+        .eq('context_key', req.body.contextKey)
+        .single()
+      );
+
+      if (
+        rule.plan?.pending ||
+        !Array.isArray(rule.plan?.operations) ||
+        rule.plan?.unresolved?.length
+      ) {
+        throw new Error('This dish still needs portions entered');
+      }
+
+      // Same plan, now owned by the admin: never asked again or overwritten.
+      check(await db
+        .from('pos_usage_rules')
+        .update({ origin: 'admin' })
+        .eq('restaurant_id', restaurantId)
+        .eq('context_key', req.body.contextKey)
+      );
+
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
     } else if (action === 'enable') {
       check(await db
         .from('pos_usage_settings')

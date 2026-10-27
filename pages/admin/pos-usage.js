@@ -1,5 +1,4 @@
-import { Fragment, useEffect, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell';
 import { MONO } from '../../components/client/ClientChrome';
@@ -42,12 +41,106 @@ function rowStatus(row) {
   return row.estimated ? 'ESTIMATED' : 'READY';
 }
 
+
+const REVIEW_MARKS = {
+  dish: ['Which dish is this?', 'var(--red-tint)', 'var(--red)'],
+  amount: ['Check this amount', 'var(--amber-tint)', 'var(--amber)'],
+  weight: ['Missing a weight', 'var(--accent-tint)', 'var(--accent-deep)'],
+  retry: ['Working on it', 'var(--panel)', 'var(--muted)'],
+};
+
+// Why a dish needs review, or null when it counts on its own.
+// Removals and plain dishes never ask; extras and swaps ask once.
+function reviewKind(row) {
+  if (row.status === 'excluded') return null;
+
+  if (row.status === 'blocked') {
+    if (row.review) return row.review;
+    if (row.retryable) return 'retry';
+    return /matching OptiMenu dish|dish mapping/i.test(row.reason || '')
+      ? 'dish'
+      : 'amount';
+  }
+
+  const guessed = row.origin !== 'admin' &&
+    (row.plan?.operations || []).some((op) => op.action !== 'remove');
+
+  return guessed ? 'amount' : null;
+}
+
+function requestList(row) {
+  const modifiers = row.instructions?.modifiers || [];
+  return [
+    ...modifiers.map((modifier) => modifier.name),
+    ...(row.instructions?.requests || []),
+    ...modifiers.flatMap((modifier) => modifier.requests || []),
+  ].filter((value) => value && String(value).trim());
+}
+
+// What the plan did, in recipe units, one sentence per change.
+function planLines(row, ingredients) {
+  const name = (id) =>
+    ingredients.find((ingredient) => ingredient.id === id)?.name || 'Unknown ingredient';
+  const base = row.base || [];
+
+  return (row.plan?.operations || []).map((op) => {
+    if (op.action === 'remove') {
+      return base.some((part) => part.id === op.ingredient_id)
+        ? `Removed ${name(op.ingredient_id)}`
+        : null;
+    }
+
+    if (op.action === 'replace') {
+      const amount = ['equal_weight', 'equal_volume'].includes(op.basis)
+        ? 'the same amount'
+        : `${formatQty(op.quantity)} ${op.unit || ''}`.trim();
+      return `Swapped ${name(op.ingredient_id)} for ${amount} of ${name(op.target_id)}`;
+    }
+
+    const had = base.some((part) => part.id === op.ingredient_id);
+    return `${had ? 'Set' : 'Added'} ${formatQty(op.quantity)} ${op.unit || ''} of ${name(op.ingredient_id)}`
+      .replace(/\s+/g, ' ');
+  }).filter(Boolean);
+}
+
+function longDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!match) return String(value || '—');
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+const menuWords = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9 ]+/g, ' ')
+  .split(/\s+/)
+  .filter((word) => word.length > 2);
+
+// Up to three menu dishes sharing the most words with the POS name.
+function closestMenus(name, menus) {
+  const words = new Set(menuWords(name));
+  return menus
+    .map((menu) => ({
+      menu,
+      score: menuWords(menu.name).filter((word) => words.has(word)).length,
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.menu.name.localeCompare(b.menu.name))
+    .slice(0, 3)
+    .map((entry) => entry.menu);
+}
+
 // Base recipe next to this order's adjusted recipe, one line per ingredient.
 function ingredientRows(row) {
   const base = row.base || [];
   const ids = [...new Set(
     [...base, ...(row.adjusted || [])].map((part) => part.id)
   )];
+  const touched = new Set(
+    (row.plan?.operations || [])
+      .flatMap((op) => [op.ingredient_id, op.target_id])
+      .filter(Boolean)
+  );
 
   return ids.map((id) => {
     const originals = base.filter((part) => part.id === id);
@@ -73,9 +166,17 @@ function ingredientRows(row) {
         : '—',
       quantity,
       added: !originals.length,
+      // Only ingredients the plan changed; a unit conversion alone is not a change.
       changed: Boolean(
-        row.adjusted &&
-        (!sameUnit || !originals.length || (adjusted?.quantity || 0) !== before)
+        row.adjusted && (
+          !originals.length ||
+          !adjusted ||
+          (row.plan?.replace_all
+            ? sameUnit &&
+              originals[0].unit === adjusted.unit &&
+              Math.abs(adjusted.quantity - before) > 1e-9
+            : touched.has(id))
+        )
       ),
     };
   });
@@ -129,9 +230,6 @@ export default function PosUsage() {
   const restaurantId = typeof router.query.restaurant === 'string'
     ? router.query.restaurant
     : '';
-  const ticketKey = typeof router.query.ticket === 'string'
-    ? router.query.ticket
-    : '';
 
   const [restaurants, setRestaurants] = useState([]);
   const [data, setData] = useState(null);
@@ -141,7 +239,11 @@ export default function PosUsage() {
   const [editing, setEditing] = useState(null);
   const [portions, setPortions] = useState([]);
   const [addId, setAddId] = useState('');
-  const [ticketFilter, setTicketFilter] = useState('all');
+  const [view, setView] = useState('review');
+  const [reviewDay, setReviewDay] = useState('all');
+  const [doneDay, setDoneDay] = useState('');
+  const [openKey, setOpenKey] = useState('');
+  const [match, setMatch] = useState({});
   const [fixes, setFixes] = useState({});
   const [conversion, setConversion] = useState({
     ingredientId: '',
@@ -152,48 +254,65 @@ export default function PosUsage() {
   });
 
   const report = data?.result?.report || [];
-  const grouped = new Map();
-
-  for (const row of report) {
-    const lineKey = String(row.line_key || '');
-    const separator = lineKey.lastIndexOf(':');
-    const ticketId = separator >= 0
-      ? lineKey.slice(0, separator)
-      : String(row.ticket || lineKey);
-    const key = `${row.date}:${ticketId}`;
-
-    if (!grouped.has(key)) {
-      grouped.set(key, {
-        key,
-        number: row.ticket,
-        date: row.date,
-        rows: [],
-      });
-    }
-
-    grouped.get(key).rows.push(row);
-  }
-
-  const ticketGroups = [...grouped.values()];
-  const blocked = (ticket) => ticket.rows.some((row) => row.status === 'blocked');
-
-  const ticketCounts = {
-    all: ticketGroups.length,
-    review: ticketGroups.filter(blocked).length,
-    ready: ticketGroups.filter((ticket) => !blocked(ticket)).length,
-  };
-
-  const filteredTickets = ticketGroups.filter((ticket) =>
-    ticketFilter === 'all' ||
-    (ticketFilter === 'review' ? blocked(ticket) : !blocked(ticket))
+  const sorted = [...report].sort((a, b) =>
+    String(a.date || '').localeCompare(String(b.date || '')) ||
+    String(a.ticket ?? '').localeCompare(String(b.ticket ?? ''), undefined, { numeric: true }) ||
+    String(a.line_key || '').localeCompare(String(b.line_key || '')) ||
+    (a.unit_index || 0) - (b.unit_index || 0)
   );
 
-  const activeTicket = filteredTickets.find((ticket) => ticket.key === ticketKey) ||
-    (isPhone ? null : filteredTickets[0]);
+  // Needs review: one group per dish with the same requests, oldest first.
+  const reviewGroups = [];
+  const groupIndex = new Map();
 
-  const readyRows = report.filter((row) => row.status === 'ready');
-  const blockedRows = report.filter((row) => row.status === 'blocked');
-  const estimatedRows = readyRows.filter((row) => row.estimated);
+  for (const row of sorted) {
+    const kind = reviewKind(row);
+    if (!kind) continue;
+
+    const key = row.context_key
+      ? `${kind}:${row.context_key}`
+      : `${kind}:${row.item_ref}:${row.dish}:${row.reason || ''}`;
+
+    if (!groupIndex.has(key)) {
+      const group = { key, kind, row, sales: [] };
+      groupIndex.set(key, group);
+      reviewGroups.push(group);
+    }
+
+    groupIndex.get(key).sales.push(row);
+  }
+
+  const days = [...new Set(sorted.map((row) => row.date).filter(Boolean))];
+  const visibleGroups = reviewDay === 'all'
+    ? reviewGroups
+    : reviewGroups.filter((group) =>
+        group.sales.some((sale) => sale.date === reviewDay)
+      );
+
+  // Done: every counted dish on one day, one line per ticket line.
+  const shownDay = days.includes(doneDay) ? doneDay : days[days.length - 1] || '';
+  const dayIndex = days.indexOf(shownDay);
+  const doneLines = [];
+  const lineIndex = new Map();
+
+  for (const row of sorted) {
+    if (row.date !== shownDay || reviewKind(row)) continue;
+
+    if (!lineIndex.has(row.line_key)) {
+      const line = { row, count: 0 };
+      lineIndex.set(row.line_key, line);
+      doneLines.push(line);
+    }
+
+    lineIndex.get(row.line_key).count++;
+  }
+
+  const waitingToday = new Set(
+    sorted
+      .filter((row) => row.date === shownDay && reviewKind(row))
+      .map((row) => row.line_key)
+  ).size;
+
   const typedMissing = report.some((row) =>
     row.instructions && row.typed_requests_available === false
   );
@@ -202,7 +321,6 @@ export default function PosUsage() {
     data?.result?.publication_id &&
     data?.job?.applied_publication_id === data.result.publication_id
   );
-  const restaurantName = restaurants.find((r) => r.id === restaurantId)?.name || '';
 
   function setQuery(changes, replace = false) {
     const query = { ...router.query, ...changes };
@@ -256,6 +374,10 @@ export default function PosUsage() {
     setData(null);
     setEditing(null);
     setMessage('');
+    setOpenKey('');
+    setMatch({});
+    setReviewDay('all');
+    setDoneDay('');
 
     let timer;
 
@@ -280,11 +402,6 @@ export default function PosUsage() {
       clearTimeout(timer);
     };
   }, [restaurantId, adminFetch]);
-
-  // A detail screen starts at its top, not where the list was scrolled.
-  useEffect(() => {
-    if (isPhone && ticketKey) window.scrollTo(0, 0);
-  }, [isPhone, ticketKey]);
 
   async function act(action, extra = {}) {
     setBusy(true);
@@ -367,10 +484,7 @@ export default function PosUsage() {
       value={restaurantId}
       disabled={busy}
       style={{ width: isPhone ? '100%' : 240, minHeight: isPhone ? 44 : 38, borderRadius: isPhone ? 10 : 20 }}
-      onChange={(event) => {
-        setTicketFilter('all');
-        setQuery({ restaurant: event.target.value, ticket: '' }, true);
-      }}
+      onChange={(event) => setQuery({ restaurant: event.target.value }, true)}
     >
       <option value="">Choose restaurant</option>
       {restaurants.map((restaurant) => (
@@ -504,9 +618,7 @@ export default function PosUsage() {
       ? `serving ${row.unit_index} of ${row.quantity}`
       : Number(row.quantity) > 1 ? `×${row.quantity}` : '×1';
     const reasonBg = status === 'ESTIMATED' ? 'var(--amber-tint)' : 'var(--red-tint)';
-    const reason = row.reason || (status === 'ESTIMATED'
-      ? (row.plan?.explanation || 'This portion is an estimate. It already counts. Confirm it once and matching orders reuse it.')
-      : '');
+    const reason = row.reason || '';
     const table = (
       <div style={{ border: '1px solid var(--line-soft)', borderRadius: 8, overflow: 'hidden' }}>
         <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr) 70px 92px' : 'minmax(0, 1fr) 100px 110px', gap: 10, padding: '7px 12px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
@@ -634,7 +746,7 @@ export default function PosUsage() {
           </div>
         )}
 
-        {row.rule_available && (row.status === 'blocked' || (row.status === 'ready' && row.estimated)) && (
+        {row.rule_available && row.status === 'blocked' && (
           <div style={{ marginLeft: indent, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -654,7 +766,7 @@ export default function PosUsage() {
             </summary>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {ingredients.length > 0 && table}
-              {row.plan?.explanation && status !== 'ESTIMATED' && (
+              {row.plan?.explanation && (
                 <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.6 }}>{row.plan.explanation}</p>
               )}
               {row.instructions && (
@@ -664,7 +776,7 @@ export default function PosUsage() {
                     : 'Typed requests were not available for this dish.'}
                 </p>
               )}
-              {row.rule_available && !row.estimated && (
+              {row.rule_available && (
                 <button
                   type="button"
                   className="om-btn"
@@ -682,45 +794,201 @@ export default function PosUsage() {
     );
   }
 
-  function renderTicketDetail(ticket) {
-    return ticket.rows.map((row, index) => (
-      <Fragment key={`${row.line_key}:${row.unit_index || 0}`}>
-        {renderDish(row, index)}
-      </Fragment>
-    ));
+  function renderReview(group) {
+    const { row, kind, sales } = group;
+    const [label, bg, fg] = REVIEW_MARKS[kind];
+    const open = openKey === group.key;
+    const requests = requestList(row);
+    const first = sales[0];
+    const last = sales[sales.length - 1];
+    const options = kind === 'dish' ? closestMenus(row.dish, data.menus) : [];
+    const pick = match[group.key] ?? options[0]?.id ?? '';
+    const picked = data.menus.find((menu) => menu.id === pick);
+    const counted = planLines(row, data.ingredients);
+    const when = sales.length > 1
+      ? `${shortDate(first.date)}${first.date === last.date ? '' : ` – ${shortDate(last.date)}`} · ${sales.length} SALES`
+      : `${shortDate(first.date)} · #${first.ticket || '—'}`;
+
+    return (
+      <article key={group.key} className="pu-card" data-open={open ? '' : undefined}>
+        <button
+          type="button"
+          className="pu-head"
+          aria-expanded={open}
+          onClick={() => setOpenKey(open ? '' : group.key)}
+        >
+          <span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span>
+          <span className="pu-title">
+            <strong>
+              {kind === 'dish' ? `“${row.dish}”` : row.dish}
+              {sales.length > 1 && <span className="pu-count">×{sales.length}</span>}
+            </strong>
+            <span>
+              {kind === 'dish'
+                ? 'POS button with no matching dish'
+                : requests.length ? requests.join(' · ') : 'No requests'}
+            </span>
+          </span>
+          <span className="pu-when">{when}</span>
+        </button>
+
+        {open && (
+          <div className="pu-body">
+            {sales.length > 1 && (
+              <div className="pu-sales">
+                {sales.map((sale) => (
+                  <span key={`${sale.line_key}:${sale.unit_index || 0}`}>
+                    {shortDate(sale.date)} · #{sale.ticket || '—'}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {kind === 'dish' && (
+              <>
+                {options.length > 0 && (
+                  <>
+                    <span className="pu-label">Closest dishes on the menu</span>
+                    <div className="pu-choices">
+                      {options.map((menu) => (
+                        <button
+                          key={menu.id}
+                          type="button"
+                          aria-pressed={pick === menu.id}
+                          onClick={() => setMatch({ ...match, [group.key]: menu.id })}
+                        >
+                          {menu.name}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <Picker
+                  value={options.some((menu) => menu.id === pick) ? '' : pick}
+                  search
+                  placeholder="Search all dishes"
+                  ariaLabel={`Search dishes for ${row.dish}`}
+                  disabled={busy}
+                  options={[...data.menus]
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((menu) => ({ value: menu.id, label: menu.name }))}
+                  onChange={(id) => {
+                    if (id) setMatch({ ...match, [group.key]: id });
+                  }}
+                />
+                <div className="pu-buttons">
+                  <button
+                    type="button"
+                    className="om-pri"
+                    disabled={busy || !picked}
+                    onClick={() => act('map', { itemRef: row.item_ref, menuId: pick })}
+                  >
+                    {picked ? `Confirm ${picked.name}` : 'Choose a dish'}
+                  </button>
+                  <button
+                    type="button"
+                    className="om-btn"
+                    disabled={busy}
+                    onClick={() => act('map', { itemRef: row.item_ref, menuId: '__exclude__' })}
+                  >
+                    Not food, skip it
+                  </button>
+                </div>
+                <p className="pu-note">
+                  Nothing changes until you confirm. Every past and future sale of this button then counts as that dish.
+                </p>
+              </>
+            )}
+
+            {kind === 'amount' && row.status === 'ready' && (
+              <>
+                <div className="pu-counted">
+                  <strong>We counted:</strong>
+                  {counted.map((text, i) => <span key={i}>{text}</span>)}
+                  {row.plan?.explanation && (
+                    <span className="pu-note">{row.plan.explanation}</span>
+                  )}
+                </div>
+                <div className="pu-buttons">
+                  <button
+                    type="button"
+                    className="om-pri"
+                    disabled={busy}
+                    onClick={() => act('confirm', { contextKey: row.context_key })}
+                  >
+                    {sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
+                  </button>
+                  <button type="button" className="om-btn" disabled={busy} onClick={() => edit(row)}>
+                    Change amounts
+                  </button>
+                </div>
+                <p className="pu-note">
+                  Already counted. Your answer is used for every sale of this dish with these requests, past and future.
+                </p>
+              </>
+            )}
+
+            {kind !== 'dish' && !(kind === 'amount' && row.status === 'ready') && (
+              <>
+                {row.reason && <div className="pu-reason">{row.reason}</div>}
+                <div className="pu-buttons">
+                  {kind === 'retry' ? (
+                    <button type="button" className="om-btn" disabled={busy} onClick={() => act('prepare')}>
+                      Retry now
+                    </button>
+                  ) : row.rule_available && (
+                    <button type="button" className="om-pri" disabled={busy} onClick={() => edit(row)}>
+                      {kind === 'weight' ? 'Set the weight' : 'Set portions'}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+
+            {row.base?.length > 0 && (
+              <details>
+                <summary className="pu-more">See the full recipe</summary>
+                <div style={{ marginTop: 8 }}>{renderDish(row, 0)}</div>
+              </details>
+            )}
+          </div>
+        )}
+      </article>
+    );
   }
 
-  const ticketHeader = (ticket) => {
-    const review = blocked(ticket);
-    return {
-      tag: review ? 'NEEDS REVIEW' : 'READY',
-      label: review ? `${ticket.rows.filter((row) => row.status === 'blocked').length} TO REVIEW` : 'APPLIED',
-    };
-  };
+  function renderDone({ row, count }) {
+    const key = `done:${row.line_key}`;
+    const open = openKey === key;
+    const requests = requestList(row);
+    const [label, bg, fg] = row.status === 'excluded'
+      ? ['Not food', 'var(--panel)', 'var(--muted)']
+      : row.origin === 'admin'
+        ? ['Reviewed by you', 'var(--green-tint)', 'var(--green)']
+        : ['Automatic', 'var(--panel)', 'var(--muted)'];
 
-  const filters = (
-    <Segmented
-      label="Filter tickets"
-      value={ticketFilter}
-      onChange={(key) => {
-        setTicketFilter(key);
-        setQuery({ ticket: '' }, true);
-      }}
-      options={[
-        ['all', `All · ${ticketCounts.all}`],
-        ['review', `Review · ${ticketCounts.review}`],
-        ['ready', `Applied · ${ticketCounts.ready}`],
-      ]}
-    />
-  );
-
-  const emptyTickets = (
-    <p style={{ color: 'var(--muted)', fontSize: 13, padding: 8, margin: 0 }}>
-      {report.length
-        ? 'No tickets match this filter.'
-        : 'Usage is prepared after POS sync or when you save a usage correction.'}
-    </p>
-  );
+    return (
+      <div key={key} className="pu-done">
+        <button
+          type="button"
+          className="pu-done-row"
+          aria-expanded={open}
+          onClick={() => setOpenKey(open ? '' : key)}
+        >
+          <strong>
+            {row.dish}
+            {count > 1 && <span className="pu-count">×{count}</span>}
+          </strong>
+          <span className="pu-req">{requests.length ? requests.join(' · ') : 'No requests'}</span>
+          <span className="pu-when">#{row.ticket || '—'}</span>
+          <span><span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span></span>
+        </button>
+        {open && row.status !== 'excluded' && (
+          <div style={{ padding: '0 18px 16px' }}>{renderDish(row, 0)}</div>
+        )}
+      </div>
+    );
+  }
 
   const setupCard = data && !data.settings && (
     <section style={{ border: '1px solid var(--line)', borderRadius: 12, padding: '16px 18px', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
@@ -734,185 +1002,196 @@ export default function PosUsage() {
     </section>
   );
 
-  const phoneDetail = isPhone && activeTicket;
-
   return (
     <AdminShell
       section="Platform"
       sub="Ingredient usage"
       title="POS ingredient usage"
-      back={phoneDetail ? {
-        label: 'Tickets',
-        href: { pathname: router.pathname, query: { restaurant: restaurantId } },
-        actions: <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: '0.08em', color: 'var(--muted)' }}>#{activeTicket.number || '—'}</span>,
-      } : undefined}
     >
       <style jsx global>{`
         .pu-seg { display: flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
-        .pu-seg button { flex: 1; min-height: 34px; border: 0; border-radius: 8px; background: transparent; font: 600 12.5px 'Manrope', sans-serif; color: var(--muted); cursor: pointer; white-space: nowrap; padding: 0 10px; }
+        .pu-seg button { flex: 1; min-height: 34px; border: 0; border-radius: 8px; background: transparent; font: 600 12.5px 'Manrope', sans-serif; color: var(--muted); cursor: pointer; white-space: nowrap; padding: 0 12px; }
         .pu-seg button[aria-pressed="true"] { background: var(--shell); color: var(--text); box-shadow: 0 1px 2px rgba(17,24,25,0.10); }
         .pu-portion input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .pu-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .pu-day { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+        .pu-day select { width: auto; min-height: 38px; border-radius: 19px; }
+        .pu-arrows { display: flex; align-items: center; gap: 6px; }
+        .pu-arrows button { width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--line); background: var(--shell); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .pu-arrows button:disabled { opacity: 0.4; cursor: default; }
+        .pu-arrows span { min-width: 130px; text-align: center; font-size: 15px; font-weight: 800; }
+        .pu-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+        .pu-list { display: flex; flex-direction: column; gap: 10px; }
+        .pu-card { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+        .pu-card[data-open] { border: 2px solid var(--accent); }
+        .pu-head { width: 100%; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; border: 0; background: transparent; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
+        .pu-mark { display: inline-block; font-size: 11.5px; font-weight: 800; padding: 4px 10px; border-radius: 10px; white-space: nowrap; }
+        .pu-title { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .pu-title strong { font-size: 15px; font-weight: 800; }
+        .pu-title > span { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+        .pu-count { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; background: var(--panel); color: var(--text); padding: 2px 7px; border-radius: 8px; margin-left: 6px; }
+        .pu-when { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--muted); }
+        .pu-body { border-top: 1px solid var(--line-soft); padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+        .pu-sales { display: flex; gap: 8px; flex-wrap: wrap; }
+        .pu-sales span { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; background: var(--panel); border-radius: 8px; padding: 6px 10px; }
+        .pu-label { font-size: 13px; font-weight: 700; }
+        .pu-choices { display: flex; gap: 8px; flex-wrap: wrap; }
+        .pu-choices button { min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--shell); font: 600 13.5px 'Manrope', sans-serif; color: var(--text); cursor: pointer; }
+        .pu-choices button[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-tint); font-weight: 700; }
+        .pu-counted { background: var(--amber-tint); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+        .pu-reason { background: var(--red-tint); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.55; }
+        .pu-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .pu-more { cursor: pointer; color: var(--accent-deep); font-size: 12.5px; font-weight: 700; padding: 4px 0; }
+        .pu-done-list { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+        .pu-done + .pu-done { border-top: 1px solid var(--line-soft); }
+        .pu-done-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.6fr) 110px 150px; gap: 12px; align-items: center; padding: 13px 18px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+        .pu-done-row strong { font-size: 13.5px; font-weight: 700; }
+        .pu-req { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+        .pu-empty { margin: 0; color: var(--muted); font-size: 13px; padding: 14px 18px; }
+        @media (max-width: 700px) {
+          .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+          .pu-done-row strong { flex: 1 1 100%; }
+        }
       `}</style>
 
-      {phoneDetail ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <section style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-              <Kicker>{restaurantName.toUpperCase()}</Kicker>
-              <Tag status={ticketHeader(activeTicket).tag} />
-            </div>
-            <h1 style={{ margin: 0, fontSize: 25, fontWeight: 800, letterSpacing: '-0.04em' }}>Ticket {activeTicket.number || '—'}</h1>
-            <div style={{ fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>
-              {shortDate(activeTicket.date)} · {activeTicket.rows.length} {activeTicket.rows.length === 1 ? 'serving' : 'servings'}
-            </div>
-          </section>
-          {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
-          {renderTicketDetail(activeTicket)}
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isPhone ? 14 : 20 }}>
-          <PageHead
-            kicker={data?.settings && !isPhone
-              ? (data.settings.enabled
-                ? `PLATFORM · ACTIVE FOR INVENTORY SINCE ${shortDate(data.settings.start_date)}`
-                : `PLATFORM · PREVIEW FROM ${shortDate(data.settings.start_date)}`)
-              : 'PLATFORM'}
-            title={isPhone ? 'Ingredient usage' : 'POS ingredient usage'}
-            sub={isPhone
-              ? 'What each ticket took out of inventory.'
-              : 'What every ticket took out of inventory, dish by dish. Modifiers are applied to the recipe first, then quantities are converted into each ingredient’s inventory unit.'}
-          >
-            {!isPhone && selectRestaurant}
-            {!isPhone && actions}
-          </PageHead>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: isPhone ? 14 : 18 }}>
+        <PageHead
+          kicker={data?.settings
+            ? (data.settings.enabled
+              ? `PLATFORM · COUNTING SINCE ${shortDate(data.settings.start_date)}`
+              : `PLATFORM · PREVIEW FROM ${shortDate(data.settings.start_date)}`)
+            : 'PLATFORM'}
+          title="Ingredient usage"
+          sub={isPhone ? undefined : 'What every dish sold took out of inventory.'}
+        >
+          {!isPhone && selectRestaurant}
+          {!isPhone && actions}
+        </PageHead>
 
-          {isPhone && selectRestaurant}
+        {isPhone && selectRestaurant}
+        {isPhone && actions && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div>
+        )}
 
-          {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
+        {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
 
-          {setupCard}
+        {setupCard}
 
-          {data?.settings && !isPhone && (
-            <section aria-label="Summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-              {kpis.map(([label, value, sub, color]) => (
-                <div key={label} style={{ padding: '16px 20px', borderRight: '1px solid var(--line-soft)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <Kicker>{label}</Kicker>
-                  <div style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.03em', color }}>{value}</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{sub}</div>
+        {data?.job?.last_error && (
+          <div className="pu-reason">Last worker error: {data.job.last_error}</div>
+        )}
+
+        {typedMissing && data?.settings && (
+          <div className="pu-reason" style={{ background: 'var(--amber-tint)' }}>
+            <strong>Typed kitchen requests are incomplete.</strong> Preset modifiers are applied. Typed requests are included once Shift4 lookup access is on.
+          </div>
+        )}
+
+        {data?.settings && (
+          <>
+            <div className="pu-bar">
+              <Segmented
+                label="View"
+                value={view}
+                onChange={(key) => {
+                  setView(key);
+                  setOpenKey('');
+                }}
+                options={[
+                  ['review', `Needs review · ${reviewGroups.length}`],
+                  ['done', 'Done'],
+                ]}
+              />
+
+              {view === 'review' ? (
+                <label className="pu-day">
+                  Day
+                  <select
+                    className="om-field"
+                    value={reviewDay}
+                    onChange={(event) => setReviewDay(event.target.value)}
+                  >
+                    <option value="all">All days</option>
+                    {days.map((day) => (
+                      <option key={day} value={day}>{longDate(day)}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="pu-arrows">
+                  <button
+                    type="button"
+                    aria-label="Previous day"
+                    disabled={dayIndex <= 0}
+                    onClick={() => {
+                      setDoneDay(days[dayIndex - 1]);
+                      setOpenKey('');
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+                  </button>
+                  <span>{shownDay ? longDate(shownDay) : '—'}</span>
+                  <button
+                    type="button"
+                    aria-label="Next day"
+                    disabled={dayIndex < 0 || dayIndex >= days.length - 1}
+                    onClick={() => {
+                      setDoneDay(days[dayIndex + 1]);
+                      setOpenKey('');
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
+                  </button>
                 </div>
-              ))}
-            </section>
-          )}
-
-          {data?.settings && isPhone && (
-            <section style={{ border: '1px solid var(--line)', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                <div style={{ padding: '12px 14px', borderRight: '1px solid var(--line-soft)', borderBottom: '1px solid var(--line-soft)' }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em' }}>{readyRows.length}</div>
-                  <Kicker style={{ fontSize: 9.5, letterSpacing: '0.12em' }}>{applied ? 'APPLIED' : 'PREPARED'}</Kicker>
-                </div>
-                <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--line-soft)' }}>
-                  <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.03em', color: blockedRows.length ? 'var(--red)' : 'var(--text)' }}>{blockedRows.length}</div>
-                  <Kicker style={{ fontSize: 9.5, letterSpacing: '0.12em' }}>TO REVIEW</Kicker>
-                </div>
-              </div>
-              <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: data.settings.enabled ? 'var(--green)' : 'var(--faint)' }} />
-                  <span style={{ flex: 1 }}>
-                    {data.settings.enabled
-                      ? (applied ? 'Active for inventory · up to date' : 'Active · waiting for the background update')
-                      : 'Preview only · inventory unchanged'}
-                  </span>
-                </div>
-                {estimatedRows.length > 0 && (
-                  <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>
-                    {estimatedRows.length} estimated {estimatedRows.length === 1 ? 'serving' : 'servings'} counted · confirm once to reuse
-                  </div>
-                )}
-                {typedMissing && (
-                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--amber)', background: 'var(--amber-tint)', borderRadius: 8, padding: '8px 10px' }}>
-                    Typed kitchen requests are partial until Shift4 grants lookup access.
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: 8 }}>{actions}</div>
-              </div>
-            </section>
-          )}
-
-          {!isPhone && data?.job?.last_error && (
-            <div style={{ fontSize: 13, lineHeight: 1.5, background: 'var(--red-tint)', borderRadius: 8, padding: '10px 12px' }}>
-              Last worker error: {data.job.last_error}
+              )}
             </div>
-          )}
 
-          {!isPhone && typedMissing && data?.settings && (
-            <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--text)', background: 'var(--amber-tint)', borderRadius: 8, padding: '10px 12px' }}>
-              <strong>Typed kitchen requests are incomplete.</strong> Preset modifiers from Shift4 are applied. Typed requests will be included once lookup access is granted.
-            </div>
-          )}
+            {view === 'review' ? (
+              <>
+                <p className="pu-note">
+                  Oldest first. Each answer is remembered for that dish with those same requests.
+                </p>
+                <div className="pu-list">
+                  {visibleGroups.map(renderReview)}
+                  {!visibleGroups.length && (
+                    <p className="pu-empty" style={{ padding: 8 }}>
+                      {report.length
+                        ? 'Nothing needs review.'
+                        : 'Usage is prepared after each POS sync.'}
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="pu-note">
+                  Every dish sold this day, with or without requests · {doneLines.length} counted · {waitingToday} still in Needs review
+                </p>
+                <div className="pu-done-list">
+                  {doneLines.map(renderDone)}
+                  {!doneLines.length && (
+                    <p className="pu-empty">No counted dishes this day.</p>
+                  )}
+                </div>
+              </>
+            )}
 
-          {data?.settings && isPhone && (
-            <>
-              {filters}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {filteredTickets.map((ticket) => renderTicketCard(ticket, true))}
-                {!filteredTickets.length && emptyTickets}
-              </div>
-            </>
-          )}
+            <p className="pu-note" style={{ paddingTop: 10, borderTop: '1px solid var(--line-soft)' }}>
+              {data.settings.enabled
+                ? (applied
+                  ? 'Counting into inventory · up to date.'
+                  : 'Counting into inventory · waiting for the background update.')
+                : 'Preview only. Inventory is unchanged until you choose Use for inventory.'}
+            </p>
+          </>
+        )}
 
-          {data?.settings && !isPhone && (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 18, alignItems: 'start' }}>
-                <aside style={{ display: 'flex', flexDirection: 'column', gap: 12, background: 'var(--panel)', borderRadius: 12, padding: 14 }}>
-                  {filters}
-                  {filteredTickets.map((ticket) => renderTicketCard(ticket, false))}
-                  {!filteredTickets.length && emptyTickets}
-                </aside>
-
-                {activeTicket ? (
-                  <section aria-labelledby="pu-ticket" style={{ border: '1px solid var(--line)', borderRadius: 12, background: 'var(--shell)', minWidth: 0 }}>
-                    <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-                      <div>
-                        <h2 id="pu-ticket" style={{ margin: 0, fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em' }}>
-                          Ticket {activeTicket.number || '—'}
-                        </h2>
-                        <div style={{ marginTop: 4, fontFamily: MONO, fontSize: 11.5, color: 'var(--muted)' }}>
-                          {shortDate(activeTicket.date)} · {activeTicket.rows.length} {activeTicket.rows.length === 1 ? 'serving' : 'servings'}
-                        </div>
-                      </div>
-                      <Tag status={ticketHeader(activeTicket).tag} />
-                    </div>
-                    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {renderTicketDetail(activeTicket)}
-                    </div>
-                  </section>
-                ) : (
-                  <section style={{ border: '1px dashed var(--line)', borderRadius: 12, padding: 28, color: 'var(--muted)', fontSize: 13.5, textAlign: 'center' }}>
-                    Choose a ticket to see what it used.
-                  </section>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', fontSize: 12.5, color: 'var(--muted)', paddingTop: 10, borderTop: '1px solid var(--line-soft)' }}>
-                <span>
-                  {data.settings.enabled
-                    ? 'Ready servings apply automatically. Servings in review wait without holding up anything else.'
-                    : 'Preview only. Inventory is unchanged until you choose Use for inventory.'}
-                </span>
-                <span style={{ fontFamily: MONO }}>
-                  {blockedRows.length} {blockedRows.length === 1 ? 'SERVING' : 'SERVINGS'} TO REVIEW · {estimatedRows.length} ESTIMATED
-                </span>
-              </div>
-            </>
-          )}
-
-          {!restaurantId && (
-            <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13.5 }}>Choose a restaurant to see its ingredient usage.</p>
-          )}
-        </div>
-      )}
+        {!restaurantId && (
+          <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13.5 }}>
+            Choose a restaurant to see its ingredient usage.
+          </p>
+        )}
+      </div>
 
       {editing && (
         <Dialog
