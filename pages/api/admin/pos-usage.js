@@ -3,6 +3,7 @@ import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { allRows } from '../../../lib/pos/usageServer';
 import { runUsage } from '../../../lib/pos/runUsage';
 import { adjustRecipe, inventoryPortions } from '../../../lib/pos/usageRecipe';
+import { transferPlan } from '../../../lib/pos/transferPlan';
 import {
   rebuildCurrentInventory,
 } from '../../../lib/currentInventory';
@@ -91,6 +92,7 @@ export default withAdminAuth(async function handler(req, res) {
     }
 
     const action = req.body.action;
+    let savedPlan = null;
 
     if (action === 'setup') {
       const date = req.body.startDate;
@@ -257,6 +259,8 @@ export default withAdminAuth(async function handler(req, res) {
         .eq('context_key', req.body.contextKey)
       );
 
+      savedPlan = plan;
+
     } else if (action === 'confirm') {
       const rule = check(await db
         .from('pos_usage_rules')
@@ -281,6 +285,75 @@ export default withAdminAuth(async function handler(req, res) {
         .eq('restaurant_id', restaurantId)
         .eq('context_key', req.body.contextKey)
       );
+
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
+
+      savedPlan = rule.plan;
+    } else if (action === 'apply') {
+      const keys = req.body.targetKeys;
+
+      if (!Array.isArray(keys) || !keys.length || keys.length > 25) {
+        throw new Error('Choose at least one dish');
+      }
+
+      const source = check(await db
+        .from('pos_usage_rules')
+        .select('plan,context,origin')
+        .eq('restaurant_id', restaurantId)
+        .eq('context_key', req.body.sourceKey)
+        .single()
+      );
+
+      if (source.origin !== 'admin') {
+        throw new Error('Save this dish first');
+      }
+
+      const catalog = await allRows(() => db
+        .from('ingredients')
+        .select('id,name,unit')
+        .eq('restaurant_id', restaurantId)
+        .order('id')
+      );
+
+      // Check every dish before saving any, so nothing is half applied.
+      const updates = [];
+
+      for (const key of keys) {
+        const target = check(await db
+          .from('pos_usage_rules')
+          .select('context')
+          .eq('restaurant_id', restaurantId)
+          .eq('context_key', key)
+          .single()
+        );
+
+        const recipe = target.context?.recipe || [];
+        const plan = transferPlan(
+          source.plan,
+          source.context?.recipe || [],
+          recipe
+        );
+
+        if (!plan) {
+          throw new Error(
+            `This change does not fit ${target.context?.dish || 'one of the dishes'}`
+          );
+        }
+
+        adjustRecipe(recipe, plan, catalog);
+        updates.push({ key, plan });
+      }
+
+      for (const { key, plan } of updates) {
+        check(await db
+          .from('pos_usage_rules')
+          .update({ plan, origin: 'admin' })
+          .eq('restaurant_id', restaurantId)
+          .eq('context_key', key)
+        );
+      }
 
       check(await db.rpc('enqueue_pos_usage', {
         p_restaurant_id: restaurantId,
@@ -317,7 +390,7 @@ export default withAdminAuth(async function handler(req, res) {
       }
     }
 
-    return res.json({ ok: true, usage });
+    return res.json({ ok: true, usage, plan: savedPlan });
   } catch (error) {
     return res.status(400).json({
       error: error.message,

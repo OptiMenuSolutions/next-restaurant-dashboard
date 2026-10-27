@@ -5,6 +5,7 @@ import { MONO } from '../../components/client/ClientChrome';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import useIsPhone from '../../lib/admin/useIsPhone';
 import Picker from '../../components/client/Picker';
+import { transferPlan } from '../../lib/pos/transferPlan';
 
 const UNITS = [
   'each', 'slice', 'bunch', 'package',
@@ -46,6 +47,7 @@ const REVIEW_MARKS = {
   dish: ['Which dish is this?', 'var(--red-tint)', 'var(--red)'],
   amount: ['Check this amount', 'var(--amber-tint)', 'var(--amber)'],
   weight: ['Missing a weight', 'var(--accent-tint)', 'var(--accent-deep)'],
+  untracked: ['Can\u2019t count one item', 'color-mix(in srgb, #6b3a8c 14%, var(--shell))', '#6b3a8c'],
   retry: ['Working on it', 'var(--panel)', 'var(--muted)'],
 };
 
@@ -62,8 +64,10 @@ function reviewKind(row) {
       : 'amount';
   }
 
-  const guessed = row.origin !== 'admin' &&
-    (row.plan?.operations || []).some((op) => op.action !== 'remove');
+  if (row.origin === 'admin') return null;
+  if (row.plan?.untracked?.length) return 'untracked';
+
+  const guessed = (row.plan?.operations || []).some((op) => op.action !== 'remove');
 
   return guessed ? 'amount' : null;
 }
@@ -75,6 +79,14 @@ function requestList(row) {
     ...(row.instructions?.requests || []),
     ...modifiers.flatMap((modifier) => modifier.requests || []),
   ].filter((value) => value && String(value).trim());
+}
+
+// Same requests regardless of dish, ignoring a modifier group prefix.
+function requestSignature(row) {
+  return requestList(row)
+    .map((value) => String(value).split(':').pop().trim().toLowerCase())
+    .sort()
+    .join('|');
 }
 
 // What the plan did, in recipe units, one sentence per change.
@@ -244,14 +256,7 @@ export default function PosUsage() {
   const [doneDay, setDoneDay] = useState('');
   const [openKey, setOpenKey] = useState('');
   const [match, setMatch] = useState({});
-  const [fixes, setFixes] = useState({});
-  const [conversion, setConversion] = useState({
-    ingredientId: '',
-    fromUnit: 'each',
-    factor: '',
-    basis: 'estimated',
-    evidence: '',
-  });
+  const [offer, setOffer] = useState(null);
 
   const report = data?.result?.report || [];
   const sorted = [...report].sort((a, b) =>
@@ -407,8 +412,10 @@ export default function PosUsage() {
     setBusy(true);
     setMessage('');
 
+    let result = null;
+
     try {
-      const result = await request('/api/admin/pos-usage', {
+      result = await request('/api/admin/pos-usage', {
         restaurantId,
         action,
         ...extra,
@@ -435,9 +442,12 @@ export default function PosUsage() {
       setEditing(null);
     } catch (error) {
       setMessage(error.message);
+      result = null;
     } finally {
       setBusy(false);
     }
+
+    return result;
   }
 
   function edit(row) {
@@ -467,14 +477,50 @@ export default function PosUsage() {
     setPortions([...totals.values()]);
     setEditing(row);
     setAddId('');
-    setFixes({});
-    setConversion({
-      ingredientId: '',
-      fromUnit: 'each',
-      factor: '',
-      basis: 'estimated',
-      evidence: '',
-    });
+  }
+
+  // The ingredient a Missing a weight reason names (longest name wins).
+  const weightIngredient = (row) => (data?.ingredients || [])
+    .filter((ingredient) => String(row.reason || '').includes(ingredient.name))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+
+  // After an answer is saved, offer it to other dishes in review
+  // that sold with exactly the same request.
+  function offerOthers(sourceRow, plan) {
+    if (!plan) return;
+
+    const signature = requestSignature(sourceRow);
+    if (!signature) return;
+
+    const candidates = reviewGroups
+      .filter((group) =>
+        group.row.context_key &&
+        group.row.context_key !== sourceRow.context_key &&
+        group.row.rule_available &&
+        ['amount', 'untracked'].includes(group.kind) &&
+        requestSignature(group.row) === signature
+      )
+      .flatMap((group) => {
+        const moved = transferPlan(plan, sourceRow.base || [], group.row.base || []);
+        return moved
+          ? [{
+              contextKey: group.row.context_key,
+              dish: group.row.dish,
+              sales: group.sales.length,
+              lines: planLines({ ...group.row, plan: moved }, data.ingredients),
+            }]
+          : [];
+      });
+
+    if (candidates.length) {
+      setOffer({
+        sourceKey: sourceRow.context_key,
+        dish: sourceRow.dish,
+        request: requestList(sourceRow).join(' · '),
+        candidates,
+        checked: [],
+      });
+    }
   }
 
   const selectRestaurant = (
@@ -713,6 +759,7 @@ export default function PosUsage() {
     const pick = match[group.key] ?? options[0]?.id ?? '';
     const picked = data.menus.find((menu) => menu.id === pick);
     const counted = planLines(row, data.ingredients);
+    const counting = row.status === 'ready' && (kind === 'amount' || kind === 'untracked');
     const when = sales.length > 1
       ? `${shortDate(first.date)}${first.date === last.date ? '' : ` – ${shortDate(last.date)}`} · ${sales.length} SALES`
       : `${shortDate(first.date)} · #${first.ticket || '—'}`;
@@ -808,10 +855,16 @@ export default function PosUsage() {
               </>
             )}
 
-            {kind === 'amount' && row.status === 'ready' && (
+            {counting && (
               <>
                 <div className="pu-counted">
-                  <strong>We counted:</strong>
+                  {kind === 'untracked' && (
+                    <>
+                      <strong>Not counted: {row.plan.untracked.join(', ')}</strong>
+                      <span>Not one of your ingredients, so it is left out. Everything else in the dish is counted.</span>
+                    </>
+                  )}
+                  {counted.length > 0 && <strong>We counted:</strong>}
                   {counted.map((text, i) => <span key={i}>{text}</span>)}
                   {row.plan?.explanation && (
                     <span className="pu-note">{row.plan.explanation}</span>
@@ -822,9 +875,14 @@ export default function PosUsage() {
                     type="button"
                     className="om-pri"
                     disabled={busy}
-                    onClick={() => act('confirm', { contextKey: row.context_key })}
+                    onClick={async () => {
+                      const result = await act('confirm', { contextKey: row.context_key });
+                      if (result) offerOthers(row, result.plan);
+                    }}
                   >
-                    {sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
+                    {kind === 'untracked'
+                      ? 'OK, leave it out'
+                      : sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
                   </button>
                   <button type="button" className="om-btn" disabled={busy} onClick={() => edit(row)}>
                     Change amounts
@@ -836,7 +894,7 @@ export default function PosUsage() {
               </>
             )}
 
-            {kind !== 'dish' && !(kind === 'amount' && row.status === 'ready') && (
+            {kind !== 'dish' && !counting && (
               <>
                 {row.reason && <div className="pu-reason">{row.reason}</div>}
                 <div className="pu-buttons">
@@ -844,9 +902,25 @@ export default function PosUsage() {
                     <button type="button" className="om-btn" disabled={busy} onClick={() => act('prepare')}>
                       Retry now
                     </button>
+                  ) : kind === 'weight' ? (
+                    <button
+                      type="button"
+                      className="om-pri"
+                      onClick={() => {
+                        const ingredient = weightIngredient(row);
+                        router.push({
+                          pathname: '/admin/pos-conversions',
+                          query: ingredient
+                            ? { restaurant: restaurantId, ingredient: ingredient.id }
+                            : { restaurant: restaurantId },
+                        });
+                      }}
+                    >
+                      Set the weight
+                    </button>
                   ) : row.rule_available && (
                     <button type="button" className="om-pri" disabled={busy} onClick={() => edit(row)}>
-                      {kind === 'weight' ? 'Set the weight' : 'Set portions'}
+                      Set portions
                     </button>
                   )}
                 </div>
@@ -956,6 +1030,8 @@ export default function PosUsage() {
         .pu-done-row strong { font-size: 13.5px; font-weight: 700; }
         .pu-req { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
         .pu-empty { margin: 0; color: var(--muted); font-size: 13px; padding: 14px 18px; }
+        .pu-offer { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; }
+        .pu-offer input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); }
         @media (max-width: 700px) {
           .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
           .pu-done-row strong { flex: 1 1 100%; }
@@ -1115,30 +1191,6 @@ export default function PosUsage() {
               ...(editing.instructions?.requests || []),
               ...modifiers.flatMap((modifier) => modifier.requests || []),
             ].filter((text) => text && text.trim());
-            const target = data.ingredients.find((ingredient) => ingredient.id === conversion.ingredientId);
-
-            // Only this dish's ingredients, unit mismatches first.
-            const dishParts = [
-              ...(editing.base || []),
-              ...(editing.adjusted || []),
-            ];
-            const dishIngredients = data.ingredients
-              .filter((ingredient) =>
-                dishParts.some((part) => part.id === ingredient.id) ||
-                portions.some((portion) => portion.id === ingredient.id)
-              )
-              .map((ingredient) => ({
-                ingredient,
-                recipeUnit: dishParts.find((part) =>
-                  part.id === ingredient.id &&
-                  part.unit &&
-                  part.unit !== ingredient.unit
-                )?.unit || null,
-              }))
-              .sort((a, b) =>
-                Number(Boolean(b.recipeUnit)) - Number(Boolean(a.recipeUnit)) ||
-                a.ingredient.name.localeCompare(b.ingredient.name)
-              );
 
             return (
               <>
@@ -1213,110 +1265,15 @@ export default function PosUsage() {
                   Saved as a rule for every <strong style={{ color: 'var(--text)' }}>{editing.dish}</strong> with these same instructions. Zero removes an ingredient. Other dishes are not changed.
                 </div>
 
-                <details open={dishIngredients.some(({ recipeUnit }) => recipeUnit)}>
-                  <summary style={{ cursor: 'pointer', color: 'var(--accent-deep)', fontSize: 13, fontWeight: 700, padding: '4px 0' }}>
-                    Fix unit conversions instead
-                  </summary>
-                  {(() => {
-                    const rows = dishIngredients.filter(({ recipeUnit }) => recipeUnit);
-                    const filled = rows
-                      .map(({ ingredient, recipeUnit }) => ({
-                        ingredient,
-                        recipeUnit,
-                        fix: fixes[ingredient.id] || {},
-                      }))
-                      .filter(({ fix }) => fix.factor !== undefined && fix.factor !== '');
-                    const invalid = filled.some(({ fix }) =>
-                      !(Number(fix.factor) > 0) || !String(fix.evidence || '').trim()
-                    );
-                    const update = (id, change) => setFixes({
-                      ...fixes,
-                      [id]: { basis: 'estimated', ...fixes[id], ...change },
-                    });
-
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
-                          Fill in any you know. Each one applies to that ingredient everywhere. Leave a row blank to skip it.
-                        </p>
-                        {!rows.length && (
-                          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>
-                            Every ingredient in this dish already uses its inventory unit.
-                          </p>
-                        )}
-                        {rows.map(({ ingredient, recipeUnit }) => {
-                          const fix = fixes[ingredient.id] || {};
-                          return (
-                            <div key={ingredient.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13.5 }}>
-                                <strong style={{ flex: '1 1 140px', minWidth: 0 }}>{ingredient.name}</strong>
-                                <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>1 {recipeUnit} =</span>
-                                <input
-                                  className="om-field"
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  inputMode="decimal"
-                                  aria-label={`${ingredient.name} ${ingredient.unit} per ${recipeUnit}`}
-                                  value={fix.factor ?? ''}
-                                  disabled={busy}
-                                  style={{ width: 90, textAlign: 'right', fontFamily: MONO }}
-                                  onChange={(event) => update(ingredient.id, { factor: event.target.value })}
-                                />
-                                <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>{ingredient.unit}</span>
-                                <select
-                                  className="om-field"
-                                  aria-label={`${ingredient.name} basis`}
-                                  value={fix.basis || 'estimated'}
-                                  disabled={busy}
-                                  style={{ width: 'auto' }}
-                                  onChange={(event) => update(ingredient.id, { basis: event.target.value })}
-                                >
-                                  <option value="estimated">Estimate</option>
-                                  <option value="measured">Measured</option>
-                                  <option value="package_label">Package label</option>
-                                </select>
-                              </div>
-                              <input
-                                className="om-field"
-                                placeholder="Source or explanation"
-                                aria-label={`${ingredient.name} source`}
-                                value={fix.evidence || ''}
-                                disabled={busy}
-                                onChange={(event) => update(ingredient.id, { evidence: event.target.value })}
-                              />
-                            </div>
-                          );
-                        })}
-                        {invalid && (
-                          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--red)' }}>
-                            Each filled row needs a number above zero and a source.
-                          </p>
-                        )}
-                        <button
-                          type="button"
-                          className="om-btn"
-                          style={{ alignSelf: 'flex-start' }}
-                          disabled={busy || !filled.length || invalid}
-                          onClick={() => act('conversions', {
-                            conversions: filled.map(({ ingredient, recipeUnit, fix }) => ({
-                              ingredientId: ingredient.id,
-                              fromUnit: recipeUnit,
-                              toUnit: ingredient.unit,
-                              factor: Number(fix.factor),
-                              basis: fix.basis || 'estimated',
-                              evidence: fix.evidence.trim(),
-                            })),
-                          })}
-                        >
-                          {filled.length > 1
-                            ? `Save ${filled.length} conversions and recalculate`
-                            : 'Save conversion and recalculate'}
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </details>
+                <p className="pu-note">
+                  Missing or wrong weights are fixed on the{' '}
+                  <a
+                    href={`/admin/pos-conversions?restaurant=${restaurantId}`}
+                    style={{ color: 'var(--accent-deep)', fontWeight: 700 }}
+                  >
+                    Conversions page
+                  </a>.
+                </p>
 
                 {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
 
@@ -1336,13 +1293,18 @@ export default function PosUsage() {
                         Number(portion.quantity) < 0
                       )
                     }
-                    onClick={() => act('rule', {
-                      contextKey: editing.context_key,
-                      portions: portions.map((portion) => ({
-                        ...portion,
-                        quantity: Number(portion.quantity),
-                      })),
-                    })}
+                    onClick={async () => {
+                      const source = editing;
+                      const result = await act('rule', {
+                        contextKey: source.context_key,
+                        portions: portions.map((portion) => ({
+                          ...portion,
+                          quantity: Number(portion.quantity),
+                        })),
+                      });
+
+                      if (result) offerOthers(source, result.plan);
+                    }}
                   >
                     {busy ? 'Saving…' : 'Save and reuse'}
                   </button>
@@ -1350,6 +1312,69 @@ export default function PosUsage() {
               </>
             );
           })()}
+        </Dialog>
+      )}
+
+      {offer && (
+        <Dialog
+          title="Use the same idea on other dishes?"
+          sub={`Saved for ${offer.dish}. These dishes also sold with ${offer.request}. Each one uses its own recipe amounts.`}
+          width={600}
+          showCloseButton
+          onClose={() => { if (!busy) setOffer(null); }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {offer.candidates.map((candidate) => {
+              const on = offer.checked.includes(candidate.contextKey);
+              return (
+                <label key={candidate.contextKey} className="pu-offer">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    disabled={busy}
+                    onChange={() => setOffer({
+                      ...offer,
+                      checked: on
+                        ? offer.checked.filter((key) => key !== candidate.contextKey)
+                        : [...offer.checked, candidate.contextKey],
+                    })}
+                  />
+                  <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: 14.5 }}>{candidate.dish}</strong>
+                      <span className="pu-when">
+                        {candidate.sales} {candidate.sales === 1 ? 'SALE' : 'SALES'}
+                      </span>
+                    </span>
+                    {candidate.lines.map((text, i) => (
+                      <span key={i} style={{ fontSize: 13, color: 'var(--muted)' }}>{text}</span>
+                    ))}
+                  </span>
+                </label>
+              );
+            })}
+            <p className="pu-note">Anything you leave unchecked stays in Needs review.</p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button type="button" className="om-btn" disabled={busy} onClick={() => setOffer(null)}>
+              Just this dish
+            </button>
+            <button
+              type="button"
+              className="om-pri"
+              disabled={busy || !offer.checked.length}
+              onClick={async () => {
+                const result = await act('apply', {
+                  sourceKey: offer.sourceKey,
+                  targetKeys: offer.checked,
+                });
+
+                if (result) setOffer(null);
+              }}
+            >
+              {busy ? 'Saving…' : `Apply to ${offer.checked.length || ''} checked`.replace('  ', ' ')}
+            </button>
+          </div>
         </Dialog>
       )}
     </AdminShell>
