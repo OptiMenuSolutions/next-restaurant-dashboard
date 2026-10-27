@@ -449,7 +449,9 @@ export default function RecipeWorkspace({
 
     setMessage(
       confirm
-        ? 'Recipe confirmed. Calculations are queued.'
+        ? result.released?.length
+          ? `Confirmed. Also put into use: ${result.released.join(', ')}.`
+          : 'Recipe confirmed. Calculations are queued.'
         : 'Draft saved. The active recipe is unchanged.'
     );
   }
@@ -466,6 +468,21 @@ export default function RecipeWorkspace({
   const dishes = nodes.filter(n => n.kind === 'dish');
   const preps = nodes.filter(n => n.kind === 'prep');
   const shown = nodes.filter(n => n.kind === tab);
+
+  // Admin works in two queues: the owner's own uploads to check and approve,
+  // and everything OptiMenu has to build with the kitchen.
+  const queueOf = node => (
+    node.status === 'confirmed' || statusOf(node).key === 'current'
+      ? 'done'
+      : node.source === 'upload' ? 'approve' : 'build'
+  );
+  const groups = admin
+    ? [
+        ['Check and approve now', 'The owner’s own recipes. Uploads go into use as soon as nothing is holding them.', shown.filter(n => queueOf(n) === 'approve')],
+        ['To build with the kitchen', 'OptiMenu’s estimates and dishes with no recipe. They stay off the owner’s costs until you confirm them.', shown.filter(n => queueOf(n) === 'build')],
+        ['Done', 'Confirmed and in use.', shown.filter(n => queueOf(n) === 'done')],
+      ].filter(([, , items]) => items.length)
+    : [[null, null, shown]];
 
   const unitOptions = value => [
     ...(UNITS.includes(value) ? [] : [{ value, label: value || 'Choose unit' }]),
@@ -557,7 +574,15 @@ export default function RecipeWorkspace({
         </button>
       )}
 
-      {shown.map(node => {
+      {groups.map(([title, hint, items]) => (
+        <div key={title || 'all'} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {title && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ ...kicker, color: 'var(--text)', fontWeight: 600 }}>{title} · {items.length}</div>
+              <div style={{ marginTop: 2, fontSize: 12, lineHeight: 1.45, color: 'var(--muted)' }}>{hint}</div>
+            </div>
+          )}
+          {items.map(node => {
         const status = statusOf(node);
         const on = editor?.id === node.id;
         const def = node.published || node.draft;
@@ -585,13 +610,18 @@ export default function RecipeWorkspace({
                 <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', color: 'var(--muted)' }}>{meta}</span>
                 <Tag status={status} />
               </span>
+              {admin && data.holds?.[node.id] && (
+                <span style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--amber)' }}>{data.holds[node.id]}</span>
+              )}
             </span>
             {phone && (
               <span style={{ color: 'var(--faint)', display: 'flex' }}><Icon d={<path d="M9 6l6 6-6 6" />} size={16} /></span>
             )}
           </button>
         );
-      })}
+          })}
+        </div>
+      ))}
 
       {!shown.length && (
         <p style={{ margin: 0, padding: '10px 4px', fontSize: 13, lineHeight: 1.5, color: 'var(--muted)' }}>
@@ -646,6 +676,12 @@ export default function RecipeWorkspace({
         {editor.status === 'skeleton' && (
           <div style={{ background: 'var(--panel)', borderRadius: 12, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
             Built from your menu{editor.description ? `: “${editor.description}”` : ''}. Every amount is blank. Fill them in, then confirm.
+          </div>
+        )}
+
+        {admin && data.holds?.[editor.id] && (
+          <div style={{ background: 'var(--amber-tint, #fbf3e2)', borderRadius: 12, padding: '12px 14px', fontSize: 13, lineHeight: 1.5 }}>
+            From the owner’s upload. Not in use yet: {data.holds[editor.id]}
           </div>
         )}
 
