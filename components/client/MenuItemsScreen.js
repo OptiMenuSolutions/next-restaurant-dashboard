@@ -142,6 +142,8 @@ function decorate(d) {
     estShare: cost ? estCost / cost : 0,
     unpricedCount: Number(d.unpricedCount) || 0,
     awaiting: (Number(d.unpricedCount) || 0) > 0,
+    // No recipe lines and no stored cost: shows a dash, not a 100% margin.
+    noRecipe: lines === 0 && !(cost > 0),
   };
 }
 
@@ -220,7 +222,8 @@ export default function MenuItemsScreen({
 
   // Dishes awaiting pricing have no trustworthy cost — keep them out of
   // every count, filter, and average.
-  const priced = data.filter((d) => !d.awaiting);
+  // Dishes with no recipe have no cost either, so they stay out too.
+  const priced = data.filter((d) => !d.awaiting && !d.noRecipe);
   const belowTarget = priced.filter((d) => d.margin < tgt);
   // Cost rising: plate cost went up over the last 30 days.
   const costRising = priced.filter((d) => (d.move30 || 0) > 0.005);
@@ -388,7 +391,7 @@ export default function MenuItemsScreen({
                           </>
                         ) : (
                           <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                            <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
+                            <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", color: d.noRecipe ? "var(--faint)" : marginColor(d.margin, tgt) }}>{d.noRecipe ? "—" : pct(d.margin)}</span>
                             <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" }}>mgn</span>
                             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10.5, whiteSpace: "nowrap", color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
                           </span>
@@ -492,7 +495,7 @@ export default function MenuItemsScreen({
                           </>
                         ) : (
                           <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</span>
+                            <span style={{ fontSize: 15, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", color: d.noRecipe ? "var(--faint)" : marginColor(d.margin, tgt) }}>{d.noRecipe ? "—" : pct(d.margin)}</span>
                             <span style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>mgn</span>
                             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 10, whiteSpace: "nowrap", color: moveColor(d.move30) }}>{move30Label(d.move30)}</span>
                           </div>
@@ -525,13 +528,13 @@ export default function MenuItemsScreen({
                           <div style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)", marginTop: 3 }}>{d.category}</div>
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: "var(--muted)" }}>{money0(d.price)}</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: d.awaiting ? "var(--faint)" : "var(--text)" }}>{d.awaiting ? "—" : money2(d.cost)}</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", textAlign: "right", whiteSpace: "nowrap", color: d.awaiting || d.noRecipe ? "var(--faint)" : "var(--text)" }}>{d.awaiting || d.noRecipe ? "—" : money2(d.cost)}</div>
                         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                           {d.awaiting ? (
                             <div style={{ fontFamily: MONO, fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--faint)" }}>Pending</div>
                           ) : (
                             <>
-                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: marginColor(d.margin, tgt) }}>{pct(d.margin)}</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", color: d.noRecipe ? "var(--faint)" : marginColor(d.margin, tgt) }}>{d.noRecipe ? "—" : pct(d.margin)}</div>
                               <div style={{ fontFamily: MONO, fontSize: 10.5, color: moveColor(d.move30), marginTop: 2 }}>{move30Label(d.move30)}</div>
                             </>
                           )}
@@ -782,6 +785,7 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   const chip = (() => {
     const base = { display: "inline-flex", alignItems: "center", gap: 7, padding: "4px 10px", borderRadius: 20, fontFamily: MONO, fontSize: stacked ? 9.5 : 10, letterSpacing: "0.08em", fontWeight: 500, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" };
     const dot = (c) => <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, flexShrink: 0 }} />;
+    if (d.noRecipe) return <span style={{ ...base, background: "var(--panel)", color: "var(--muted)" }}>{dot("var(--faint)")}NO RECIPE YET</span>;
     if (awaiting) return <span style={{ ...base, background: "var(--panel)", color: "var(--muted)" }}>{dot("var(--faint)")}AWAITING PRICES · {d.unpricedCount} OF {d.lineCount} UNPRICED</span>;
     if (live) {
       const hit = margin >= tgt;
@@ -798,7 +802,7 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
 
   /* ── where every dollar goes: plate cost vs what the dish keeps ── */
   const dollarBar = (() => {
-    if (awaiting || !price) return null;
+    if (awaiting || d.noRecipe || !price) return null;
     const clamp = (v) => Math.max(0, Math.min(100, v));
     const solidW = clamp((Math.min(realCost, cost) / price) * 100);
     const hatchW = live ? clamp((Math.abs(delta) / price) * 100) : 0;
