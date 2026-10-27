@@ -33,7 +33,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, blockNavigation, recipeSetup, recipeBusy,
+  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, invoiceRows = [], blockNavigation, recipeSetup, recipeBusy,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -69,16 +69,13 @@ export default function OnboardingScreen({
   };
   const removeMenuFile = (i) => setMenuFiles((prev) => prev.filter((_, idx) => idx !== i));
 
-  const [invoiceFiles, setInvoiceFiles] = useState([]);
   const [invoiceDragOver, setInvoiceDragOver] = useState(false);
   const addInvoiceFiles = (fileList) => {
     const newFiles = Array.from(fileList);
-    setInvoiceFiles((prev) => [...prev, ...newFiles]);
-    // Deliberately does NOT call onParseInvoices here — same reasoning as
-    // menu files: parsing fires once, on Continue, with everything they've
-    // added, not once per drop/select.
+    if (!newFiles.length || parsingInvoices) return;
+    // Read right away. The owner adds more or clicks Continue when ready.
+    onParseInvoices?.(newFiles);
   };
-  const removeInvoiceFile = (i) => setInvoiceFiles((prev) => prev.filter((_, idx) => idx !== i));
 
   const inputCls = { width: "100%", background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 8, padding: isPhone ? "12px 12px" : "10px 12px", fontSize: isPhone ? 16 : 14, color: "var(--text)", fontFamily: "'Manrope',sans-serif", outline: "none" };
   const labelCls = { fontSize: 11.5, fontWeight: 600, color: "var(--muted)", marginBottom: 5, display: "block" };
@@ -127,11 +124,6 @@ export default function OnboardingScreen({
       if (step === 3 && menuFiles.length) {
         await onParseMenu?.(menuFiles);
         setMenuFiles([]);
-      }
-
-      if (step === 4 && invoiceFiles.length) {
-        await onParseInvoices?.(invoiceFiles);
-        setInvoiceFiles([]);
       }
 
       if (step === 5) {
@@ -406,8 +398,10 @@ export default function OnboardingScreen({
                       textAlign: "center",
                       background: invoiceDragOver ? "var(--accent-tint)" : "var(--panel)",
                       marginBottom: 16,
-                      cursor: "pointer",
-                      transition: "border-color .15s, background .15s",
+                      cursor: parsingInvoices ? "default" : "pointer",
+                      opacity: parsingInvoices ? 0.55 : 1,
+                      pointerEvents: parsingInvoices ? "none" : "auto",
+                      transition: "border-color .15s, background .15s, opacity .15s",
                     }}
                   >
                     <input
@@ -421,28 +415,38 @@ export default function OnboardingScreen({
                     <div style={{ fontSize: isPhone ? 14 : 12, color: "var(--muted)" }}>{isPhone ? "Tap to take a photo or choose files" : "or click to browse — PDF, JPG or PNG"}</div>
                   </label>
 
-                  {invoiceFiles.length > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 16 }}>
-                      {invoiceFiles.map((f, i) => (
-                        <div key={i} style={{ position: "relative", height: 90, borderRadius: 8, border: "1px solid var(--line)", background: "var(--shell)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, padding: 6, overflow: "hidden" }}>
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /></svg>
-                          <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", wordBreak: "break-word", lineHeight: 1.3 }}>{f.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeInvoiceFile(i)}
-                            aria-label={`Remove ${f.name}`}
-                            style={{ position: "absolute", top: 4, right: 4, width: isPhone ? 28 : 18, height: isPhone ? 28 : 18, borderRadius: "50%", border: "none", background: "var(--panel)", color: "var(--faint)", fontSize: isPhone ? 16 : 12, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
+                  {invoiceRows.length > 0 && (
+                    <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", marginBottom: 12 }}>
+                      {invoiceRows.map((row, i) => {
+                        const [bg, fg, word] = {
+                          reading: ["var(--accent-tint)", "var(--accent-deep)", "Reading"],
+                          saving: ["var(--accent-tint)", "var(--accent-deep)", "Saving"],
+                          saved: ["#e9f5ec", "#2f8a47", "Saved"],
+                          failed: ["#fbeceb", "#b83c33", "Couldn’t read"],
+                        }[row.status];
+                        return (
+                          <div key={row.key} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderTop: i ? "1px solid var(--line-soft)" : "none", fontSize: 13 }}>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--accent-deep)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><path d="M14 2v6h6" /></svg>
+                            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name}</span>
+                            <span style={{ flexShrink: 0, fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 5, padding: "3px 7px", background: bg, color: fg }}>{word}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
-                  <button type="button" onClick={continueStep} style={{ fontSize: isPhone ? 14 : 12.5, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", padding: isPhone ? "12px 0" : 0 }}>
-                    Skip for now — I'll upload invoices later
-                  </button>
+                  {invoiceRows.length > 0 && !parsingInvoices && (
+                    <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--muted)" }}>
+                      {invoiceRows.some((row) => row.status === "failed") && "For any we couldn’t read, try a clearer photo, or add it later from Invoices. "}
+                      Have more invoices? Add them above. Otherwise, click Continue.
+                    </div>
+                  )}
+
+                  {!invoiceRows.length && (
+                    <button type="button" onClick={continueStep} style={{ fontSize: isPhone ? 14 : 12.5, fontWeight: 700, color: "var(--accent-deep)", background: "transparent", border: "none", cursor: "pointer", padding: isPhone ? "12px 0" : 0 }}>
+                      Skip for now — I'll upload invoices later
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -507,8 +511,10 @@ export default function OnboardingScreen({
                     fontWeight: 700,
                   }}
                 >
-                  {savingStep || parsingMenu || parsingInvoices
+                  {savingStep || parsingMenu
                     ? "Saving…"
+                    : parsingInvoices
+                      ? "Reading invoices…"
                     : recipeBusy
                       ? "Save your recipe draft to continue"
                       : step === 5

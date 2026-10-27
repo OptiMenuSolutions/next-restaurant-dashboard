@@ -79,8 +79,8 @@ export default function OnboardingPage() {
       setMenuParsing(false);
     }
   }
-  const [uploadStatus, setUploadStatus] = useState(null); // { message, detail } | null
-  const [uploadError, setUploadError] = useState("");
+  // One row per invoice file: { key, name, status: reading | saving | saved | failed }
+  const [invoiceRows, setInvoiceRows] = useState([]);
   const [parsingInvoices, setParsingInvoices] = useState(false);
 
   // The menu step is already guarded above; the invoice step needs the same
@@ -245,76 +245,76 @@ export default function OnboardingPage() {
           if (!files || !files.length || !restaurantId) return;
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) return;
-          setUploadError("");
-          setParsingInvoices(true);
-          const { parseInvoiceBatch, groupParsedInvoices, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
           const fileArr = Array.from(files);
+          const keys = fileArr.map((file, i) => `${Date.now()}-${i}-${file.name}`);
+          const keyFor = (file) => {
+            const index = fileArr.indexOf(file);
+            return keys[index >= 0 ? index : fileArr.findIndex((f) => f.name === file?.name)];
+          };
+          const setRow = (key, changes) => setInvoiceRows((rows) =>
+            rows.map((row) => (row.key === key ? { ...row, ...changes } : row))
+          );
 
-          // Same speed change as invoices.js — parse every file at once,
-          // since one file's OCR-and-Claude pipeline never depended on
-          // another's. Only saving stays sequential (see below).
-          setUploadStatus({ message: fileArr.length > 1 ? `Reading ${fileArr.length} files...` : `Reading ${fileArr[0].name}...`, detail: null });
-          const parsed = await parseInvoiceBatch(fileArr, restaurantId, session.access_token, (i, fileName, message, detail) => {
-            setUploadStatus({ message: fileArr.length > 1 ? `[${i + 1}/${fileArr.length}] ${fileName}: ${message}` : message, detail });
-          });
+          setInvoiceRows((rows) => [
+            ...rows,
+            ...fileArr.map((file, i) => ({ key: keys[i], name: file.name, status: "reading" })),
+          ]);
+          setParsingInvoices(true);
 
-          // Group by (supplier, invoice_number) — NOT "everything selected
-          // together is one invoice". See groupParsedInvoices's own
-          // comment in lib/uploadInvoice.js for the full reasoning.
-          const groups = groupParsedInvoices(parsed);
+          try {
+            const { parseInvoiceBatch, groupParsedInvoices, saveParsedInvoice, confirmDuplicateInvoice } = await import("../../lib/uploadInvoice");
 
-          for (const group of groups) {
-            let groupInvoiceId = null;
-            for (const item of group.items) {
-              if (item.error) {
-                setUploadError(`${item.file.name}: ${item.error}`);
-                continue;
-              }
-              try {
-                setUploadStatus({ message: `Saving ${item.file.name}...`, detail: null });
-                if (groupInvoiceId) {
-                  const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, groupInvoiceId);
-                  groupInvoiceId = saved.invoiceId;
-                } else if (item.parseResult.duplicate) {
-                  const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
-                  const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
-                  groupInvoiceId = saved.invoiceId;
-                } else {
-                  const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
-                  groupInvoiceId = saved.invoiceId;
+            // Read every file at once; saving stays one at a time.
+            const parsed = await parseInvoiceBatch(fileArr, restaurantId, session.access_token, () => {});
+
+            // Group by (supplier, invoice_number). See groupParsedInvoices in
+            // lib/uploadInvoice.js for why.
+            const groups = groupParsedInvoices(parsed);
+
+            for (const group of groups) {
+              let groupInvoiceId = null;
+              for (const item of group.items) {
+                const key = keyFor(item.file);
+
+                if (item.error) {
+                  console.error("[onboarding] Invoice read failed:", item.file?.name, item.error);
+                  setRow(key, { status: "failed" });
+                  continue;
                 }
-              } catch (err) {
-                console.error("[onboarding] Invoice save failed:", err);
-                setUploadError(`${item.file.name}: ${err.message}`);
+
+                try {
+                  setRow(key, { status: "saving" });
+                  if (groupInvoiceId) {
+                    const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, groupInvoiceId);
+                    groupInvoiceId = saved.invoiceId;
+                  } else if (item.parseResult.duplicate) {
+                    const merge = await askDuplicateConfirm(item.file.name, item.parseResult.duplicate);
+                    const saved = await confirmDuplicateInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, merge);
+                    groupInvoiceId = saved.invoiceId;
+                  } else {
+                    const saved = await saveParsedInvoice(item.parseResult, item.publicUrl, restaurantId, session.access_token, null);
+                    groupInvoiceId = saved.invoiceId;
+                  }
+                  setRow(key, { status: "saved" });
+                } catch (err) {
+                  console.error("[onboarding] Invoice save failed:", err);
+                  setRow(key, { status: "failed" });
+                }
               }
             }
+          } catch (err) {
+            console.error("[onboarding] Invoice reading failed:", err);
+            setInvoiceRows((rows) => rows.map((row) =>
+              keys.includes(row.key) && row.status !== "saved" ? { ...row, status: "failed" } : row
+            ));
+          } finally {
+            setParsingInvoices(false);
           }
-          setUploadStatus(null);
-          setParsingInvoices(false);
         }}
         parsingInvoices={parsingInvoices}
+        invoiceRows={invoiceRows}
       />
-      {(uploadStatus || uploadError) && (
-        <div
-          style={{
-            position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340,
-            background: uploadError ? "#faeae8" : "#e8f7f9",
-            border: `1px solid ${uploadError ? "#c4473e" : "#02a4ba"}`,
-            borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif",
-            fontSize: 13, color: uploadError ? "#c4473e" : "#03808f", boxShadow: "0 10px 30px rgba(17,24,25,0.15)",
-          }}
-        >
-          {uploadError ? (
-            <div style={{ fontWeight: 700 }}>{uploadError}</div>
-          ) : (
-            <>
-              <div style={{ fontWeight: 700 }}>{uploadStatus.message}</div>
-              {uploadStatus.detail && <div style={{ fontSize: 11.5, marginTop: 3, opacity: 0.85 }}>{uploadStatus.detail}</div>}
-            </>
-          )}
-        </div>
-      )}
       {duplicateModal && (
         <DuplicateInvoiceModal
           fileName={duplicateModal.fileName}
@@ -331,11 +331,6 @@ export default function OnboardingPage() {
         onStay={leaveGuard.stay}
         onLeave={leaveGuard.leave}
       />
-      {menuParseError && (
-        <div style={{ position: "fixed", bottom: 16, right: 16, zIndex: 500, maxWidth: 340, background: "#faeae8", border: "1px solid #c4473e", borderRadius: 10, padding: "12px 16px", fontFamily: "'Manrope',sans-serif", fontSize: 13, color: "#c4473e", boxShadow: "0 10px 30px rgba(17,24,25,0.15)" }}>
-          <div style={{ fontWeight: 700 }}>{menuParseError}</div>
-        </div>
-      )}
     </>
   );
 }
