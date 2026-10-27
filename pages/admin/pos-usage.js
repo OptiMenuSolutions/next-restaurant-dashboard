@@ -1096,55 +1096,55 @@ export default function PosUsage() {
       title="POS ingredient usage"
     >
       <style jsx global>{`
-        .pu-seg { display: flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
-        .pu-seg button { flex: 1; min-height: 34px; border: 0; border-radius: 8px; background: transparent; font: 600 12.5px 'Manrope', sans-serif; color: var(--muted); cursor: pointer; white-space: nowrap; padding: 0 12px; }
-        .pu-seg button[aria-pressed="true"] { background: var(--shell); color: var(--text); box-shadow: 0 1px 2px rgba(17,24,25,0.10); }
-        .pu-portion input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
-        .pu-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .pu-day { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
-        .pu-day select { width: auto; min-height: 38px; border-radius: 19px; }
-        .pu-arrows { display: flex; align-items: center; gap: 6px; }
-        .pu-arrows button { width: 40px; height: 40px; border-radius: 20px; border: 1px solid var(--line); background: var(--shell); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
-        .pu-arrows button:disabled { opacity: 0.4; cursor: default; }
-        .pu-arrows span { min-width: 130px; text-align: center; font-size: 15px; font-weight: 800; }
-        .pu-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
-        .pu-list { display: flex; flex-direction: column; gap: 10px; }
-        .pu-card { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-        .pu-card[data-open] { border: 2px solid var(--accent); }
-        .pu-head { width: 100%; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; border: 0; background: transparent; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
-        .pu-mark { display: inline-block; font-size: 11.5px; font-weight: 800; padding: 4px 10px; border-radius: 10px; white-space: nowrap; }
-        .pu-title { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-        .pu-title strong { font-size: 15px; font-weight: 800; }
-        .pu-title > span { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
-        .pu-count { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; background: var(--panel); color: var(--text); padding: 2px 7px; border-radius: 8px; margin-left: 6px; }
-        .pu-when { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--muted); }
-        .pu-body { border-top: 1px solid var(--line-soft); padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
-        .pu-sales { display: flex; gap: 8px; flex-wrap: wrap; }
-        .pu-sales span { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; background: var(--panel); border-radius: 8px; padding: 6px 10px; }
-        .pu-label { font-size: 13px; font-weight: 700; }
-        .pu-choices { display: flex; gap: 8px; flex-wrap: wrap; }
-        .pu-choices button { min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--shell); font: 600 13.5px 'Manrope', sans-serif; color: var(--text); cursor: pointer; }
-        .pu-choices button[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-tint); font-weight: 700; }
-        .pu-counted { background: var(--amber-tint); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
-        .pu-reason { background: var(--red-tint); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.55; }
-        .pu-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-        .pu-more { cursor: pointer; color: var(--accent-deep); font-size: 12.5px; font-weight: 700; padding: 4px 0; }
-        .pu-done-list { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-        .pu-done + .pu-done { border-top: 1px solid var(--line-soft); }
-        .pu-done-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.6fr) 110px 150px; gap: 12px; align-items: center; padding: 13px 18px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
-        .pu-done-row strong { font-size: 13.5px; font-weight: 700; }
-        .pu-req { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
-        .pu-empty { margin: 0; color: var(--muted); font-size: 13px; padding: 14px 18px; }
-        .pu-offer { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; }
-        .pu-offer input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); }
-        .pu-lines { display: flex; flex-direction: column; gap: 8px; }
-        .pu-line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 100px 40px; gap: 8px; align-items: start; }
-        .pu-line[data-missing] { background: var(--amber-tint); border-radius: 10px; padding: 6px; }
-        .pu-line input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
-        @media (max-width: 700px) { .pu-line { grid-template-columns: minmax(0, 1fr) 76px 86px 36px; } }
+        .om-app .pu-seg { display: flex; background: var(--panel); border-radius: 10px; padding: 3px; gap: 2px; }
+        .om-app .pu-seg button { flex: 1; min-height: 34px; border: 0; border-radius: 8px; background: transparent; font: 600 12.5px 'Manrope', sans-serif; color: var(--muted); cursor: pointer; white-space: nowrap; padding: 0 12px; }
+        .om-app .pu-seg button[aria-pressed="true"] { background: var(--shell); color: var(--text); box-shadow: 0 1px 2px rgba(17,24,25,0.10); }
+        .om-app .pu-portion input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .om-app .pu-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .om-app .pu-day { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); }
+        .om-app .pu-day select { width: auto; min-height: 38px; border-radius: 19px; padding: 0 14px; }
+        .om-app .pu-arrows { display: flex; align-items: center; gap: 6px; }
+        .om-app .pu-arrows button { width: 40px; height: 40px; padding: 0; border-radius: 20px; border: 1px solid var(--line); background: var(--shell); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .om-app .pu-arrows button:disabled { opacity: 0.4; cursor: default; }
+        .om-app .pu-arrows span { min-width: 130px; text-align: center; font-size: 15px; font-weight: 800; }
+        .om-app .pu-note { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+        .om-app .pu-list { display: flex; flex-direction: column; gap: 10px; }
+        .om-app .pu-card { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+        .om-app .pu-card[data-open] { border: 2px solid var(--accent); }
+        .om-app .pu-head { width: 100%; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 18px; border: 0; background: transparent; text-align: left; cursor: pointer; color: var(--text); font: inherit; }
+        .om-app .pu-mark { display: inline-block; font-size: 11.5px; font-weight: 800; padding: 4px 10px; border-radius: 10px; white-space: nowrap; }
+        .om-app .pu-title { flex: 1 1 260px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+        .om-app .pu-title strong { font-size: 15px; font-weight: 800; }
+        .om-app .pu-title > span { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+        .om-app .pu-count { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; background: var(--panel); color: var(--text); padding: 2px 7px; border-radius: 8px; margin-left: 6px; }
+        .om-app .pu-when { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--muted); }
+        .om-app .pu-body { border-top: 1px solid var(--line-soft); padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+        .om-app .pu-sales { display: flex; gap: 8px; flex-wrap: wrap; }
+        .om-app .pu-sales span { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; background: var(--panel); border-radius: 8px; padding: 6px 10px; }
+        .om-app .pu-label { font-size: 13px; font-weight: 700; }
+        .om-app .pu-choices { display: flex; gap: 8px; flex-wrap: wrap; }
+        .om-app .pu-choices button { min-height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--shell); font: 600 13.5px 'Manrope', sans-serif; color: var(--text); cursor: pointer; }
+        .om-app .pu-choices button[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-tint); font-weight: 700; }
+        .om-app .pu-counted { background: var(--amber-tint); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+        .om-app .pu-reason { background: var(--red-tint); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.55; }
+        .om-app .pu-buttons { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .om-app .pu-more { cursor: pointer; color: var(--accent-deep); font-size: 12.5px; font-weight: 700; padding: 4px 0; }
+        .om-app .pu-done-list { background: var(--shell); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+        .om-app .pu-done + .pu-done { border-top: 1px solid var(--line-soft); }
+        .om-app .pu-done-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.6fr) 110px 150px; gap: 12px; align-items: center; padding: 13px 18px; border: 0; background: transparent; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+        .om-app .pu-done-row strong { font-size: 13.5px; font-weight: 700; }
+        .om-app .pu-req { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+        .om-app .pu-empty { margin: 0; color: var(--muted); font-size: 13px; padding: 14px 18px; }
+        .om-app .pu-offer { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; }
+        .om-app .pu-offer input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); }
+        .om-app .pu-lines { display: flex; flex-direction: column; gap: 8px; }
+        .om-app .pu-line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 100px 40px; gap: 8px; align-items: start; }
+        .om-app .pu-line[data-missing] { background: var(--amber-tint); border-radius: 10px; padding: 6px; }
+        .om-app .pu-line input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
         @media (max-width: 700px) {
-          .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
-          .pu-done-row strong { flex: 1 1 100%; }
+          .om-app .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+          .om-app .pu-done-row strong { flex: 1 1 100%; }
+          .om-app .pu-line { grid-template-columns: minmax(0, 1fr) 76px 86px 36px; }
         }
       `}</style>
 
