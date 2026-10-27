@@ -199,6 +199,7 @@ export default function RecipeWorkspace({
   const [dirty, setDirty] = useState(false);
   const [targets, setTargets] = useState({});
   const [looping, setLooping] = useState(false);
+  const [matching, setMatching] = useState(null);
   const guard = useLeaveGuard(busy || dirty);
   const opened = useRef(false);
 
@@ -435,10 +436,11 @@ export default function RecipeWorkspace({
     );
   }
 
-  async function save(confirm, node = editor) {
+  async function save(confirm, node = editor, links) {
     const result = await post({
       action: confirm ? 'confirm' : 'save',
       node,
+      ...(links ? { links } : {}),
     });
 
     const saved = result.state.nodes.find(n => n.id === node.id)
@@ -458,6 +460,41 @@ export default function RecipeWorkspace({
     );
   }
 
+  // Admin confirms go through Match ingredients first, so prices come through.
+  async function confirmNode(node = editor) {
+    if (!admin) {
+      await save(true, node);
+      return;
+    }
+
+    const result = await post({ action: 'match', node });
+    const rows = result.matches || [];
+
+    if (!rows.length) {
+      await save(true, node);
+      return;
+    }
+
+    setMatching({
+      node,
+      rows,
+      library: result.library || [],
+      picks: rows.map(r => ((r.status === 'linked' || r.status === 'auto') && r.ingredient ? r.ingredient.id : '')),
+    });
+  }
+
+  async function approveMatches() {
+    const { node, rows, picks } = matching;
+
+    await save(true, node, rows.map((r, i) => ({
+      node_id: r.node_id,
+      index: r.index,
+      ingredient_id: picks[i] === '__new' ? null : picks[i],
+    })));
+
+    setMatching(null);
+  }
+
   if (!data) {
     return (
       <div role="status" style={{ ...card, padding: 18, fontSize: 13.5, color: error ? 'var(--red)' : 'var(--muted)' }}>
@@ -470,6 +507,7 @@ export default function RecipeWorkspace({
   const dishes = nodes.filter(n => n.kind === 'dish');
   const preps = nodes.filter(n => n.kind === 'prep');
   const shown = nodes.filter(n => n.kind === tab);
+  const matchLeft = matching ? matching.picks.filter(p => !p).length : 0;
 
   // Admin works in two queues: the owner's own uploads to check and approve,
   // and everything OptiMenu has to build with the kitchen.
@@ -903,7 +941,7 @@ export default function RecipeWorkspace({
             <button type="button" style={{ ...button, flex: phone ? 1 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => save(false))}>
               Save draft
             </button>
-            <button type="button" style={{ ...primary, flex: phone ? 1.4 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => save(true))}>
+            <button type="button" style={{ ...primary, flex: phone ? 1.4 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => confirmNode())}>
               {editor.kind === 'prep' ? 'Confirm batch' : 'Confirm recipe'}
             </button>
           </div>
@@ -930,7 +968,10 @@ export default function RecipeWorkspace({
       phone={phone}
       onDirty={() => setDirty(true)}
       onSavePrep={savePrep}
-      onSave={(lines, confirm) => run(() => save(confirm, { ...editor, draft: { ...editor.draft, lines } }))}
+      onSave={(lines, confirm) => run(() => {
+        const node = { ...editor, draft: { ...editor.draft, lines } };
+        return confirm ? confirmNode(node) : save(false, node);
+      })}
       onClose={() => select(null)}
     />
   );
@@ -1294,6 +1335,91 @@ export default function RecipeWorkspace({
           )}
         </div>
       ))}
+
+      {matching && (
+        <div role="dialog" aria-modal="true" aria-label="Match ingredients" style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(17,24,25,0.45)', display: 'flex', alignItems: phone ? 'flex-end' : 'center', justifyContent: 'center', padding: phone ? 0 : 20 }}>
+          <div style={{ width: '100%', maxWidth: 840, maxHeight: phone ? '92vh' : '86vh', display: 'flex', flexDirection: 'column', background: 'var(--shell)', borderRadius: phone ? '16px 16px 0 0' : 16, boxShadow: '0 24px 60px rgba(17,24,25,0.25)' }}>
+            <div style={{ padding: phone ? 16 : '18px 22px', borderBottom: '1px solid var(--line)' }}>
+              <div style={kicker}>Before it goes into use</div>
+              <h2 style={{ margin: '4px 0 0', fontSize: 19, fontWeight: 700, letterSpacing: '-0.02em' }}>
+                Match ingredients · {matching.node.name}
+              </h2>
+              <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.5, color: 'var(--muted)' }}>
+                Link each line to what the restaurant buys. Prices come from those invoices. Choose “New ingredient” only when they don’t buy it yet.
+              </p>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: phone ? '4px 16px 16px' : '4px 22px 18px' }}>
+              {[...new Set(matching.rows.map(r => r.node_id))].map(id => {
+                const here = matching.rows.map((r, i) => [r, i]).filter(([r]) => r.node_id === id);
+                const main = id === (matching.node.id || '__new');
+
+                return (
+                  <section key={id} style={{ marginTop: 14 }}>
+                    <div style={{ ...kicker, color: 'var(--text)', fontWeight: 600 }}>
+                      {here[0][0].node_name}{main ? '' : ' · goes into use with it'}
+                    </div>
+
+                    {here.map(([r, i]) => {
+                      const shown = new Set([r.ingredient?.id, ...r.candidates.map(c => c.id)].filter(Boolean));
+                      const priceOf = c => (c.price != null ? `$${Number(c.price).toFixed(2)}/${c.unit}` : 'no price');
+                      const status = {
+                        linked: { text: 'Matched', tone: 'green' },
+                        auto: { text: 'Matched', tone: 'green' },
+                        check: { text: 'Check this', tone: 'amber' },
+                        new: { text: 'No match', tone: 'red' },
+                      }[r.status];
+
+                      return (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : 'minmax(0, 1fr) minmax(0, 1.3fr) 104px', gap: 10, alignItems: 'center', padding: '10px 0', borderTop: '1px solid var(--line-soft)' }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{r.name}</div>
+                            <div style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{r.quantity} {r.unit}</div>
+                          </div>
+                          <Picker
+                            ariaLabel={`Ingredient for ${r.name}`}
+                            value={matching.picks[i]}
+                            placeholder="Choose what they buy"
+                            options={[
+                              ...[r.ingredient, ...r.candidates.filter(c => c.id !== r.ingredient?.id)].filter(Boolean)
+                                .map(c => ({ value: c.id, label: c.name, meta: priceOf(c), group: 'Suggested' })),
+                              ...matching.library.filter(c => !shown.has(c.id) && c.price != null)
+                                .map(c => ({ value: c.id, label: c.name, meta: priceOf(c), group: 'Priced from invoices' })),
+                              ...matching.library.filter(c => !shown.has(c.id) && c.price == null)
+                                .map(c => ({ value: c.id, label: c.name, meta: 'no price', group: 'No price yet' })),
+                              { value: '__new', label: `New ingredient: ${r.name}`, meta: 'no price yet', group: 'New' },
+                            ]}
+                            onChange={value => setMatching(m => ({ ...m, picks: m.picks.map((p, j) => (j === i ? value : p)) }))}
+                          />
+                          <span><Tag status={status} /></span>
+                          {r.note && (
+                            <div style={{ gridColumn: '1 / -1', fontSize: 12, lineHeight: 1.4, color: 'var(--amber)' }}>{r.note}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </section>
+                );
+              })}
+            </div>
+
+            <div style={{ padding: phone ? 12 : '14px 22px', borderTop: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {error && <div role="alert" style={{ fontSize: 13, color: 'var(--red)' }}>{error}</div>}
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                <span style={{ fontSize: 13, color: matchLeft ? 'var(--amber)' : 'var(--muted)' }}>
+                  {matchLeft ? `${matchLeft} ${matchLeft === 1 ? 'line needs' : 'lines need'} a choice` : 'Every line is matched.'}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" style={button} disabled={busy} onClick={() => setMatching(null)}>Cancel</button>
+                  <button type="button" style={primary} disabled={busy || matchLeft > 0} onClick={() => run(approveMatches)}>
+                    {busy ? 'Saving…' : 'Approve and release'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <LeaveGuardModal
         open={!!guard.pendingUrl}
