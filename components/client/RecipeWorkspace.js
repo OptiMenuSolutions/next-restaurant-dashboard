@@ -123,7 +123,7 @@ const TONES = {
 // Plain words for each saved status, shared by the list and the editor.
 function statusOf(node) {
   if (node.status === 'confirmed') return { text: 'Confirmed', tone: 'green', key: 'confirmed' };
-  if (node.status === 'estimated') return { text: 'Estimated by OptiMenu', tone: 'amber', key: 'estimated' };
+  if (node.status === 'estimated') return { text: 'Estimate · not in use yet', tone: 'amber', key: 'estimated' };
   if (node.status === 'skeleton') return { text: 'Needs amounts', tone: 'amber', key: 'skeleton' };
   if (node.status === 'imported') return { text: 'From your upload · in use', tone: 'accent', key: 'imported' };
   // An empty draft (a dish just read from the menu) isn't a recipe yet.
@@ -639,7 +639,7 @@ export default function RecipeWorkspace({
       <fieldset disabled={busy} style={{ border: 0, padding: phone ? 16 : '18px 20px', margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
         {editor.status === 'estimated' && (
           <div style={{ background: 'var(--amber-tint, #fbf3e2)', borderRadius: 12, padding: '12px 14px', fontSize: 13, lineHeight: 1.5 }}>
-            OptiMenu estimated this recipe from your menu. It’s already used for costs. Check the amounts with your kitchen, then confirm.
+            OptiMenu estimated this recipe from the menu. It isn’t used for costs yet. Check the amounts with the kitchen, then confirm to put it in use.
           </div>
         )}
 
@@ -1011,7 +1011,7 @@ export default function RecipeWorkspace({
                   {uploadDone
                     ? 'OptiMenu will check the recipes you uploaded and draft the missing ones in the background.'
                     : 'OptiMenu is drafting recipes for your dishes in the background.'}
-                  {' '}We’ll reach out to book a short setup call to go over them with your kitchen. Until then, costs use these estimates and are marked as estimated.
+                  {' '}We’ll reach out to book a short setup call to go over them with your kitchen. Those dishes stay off your costs until we’ve confirmed them with you.
                 </p>
               </div>
             </section>
