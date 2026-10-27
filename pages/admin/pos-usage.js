@@ -143,6 +143,7 @@ export default function PosUsage() {
   const [addId, setAddId] = useState('');
   const [ticketFilter, setTicketFilter] = useState('all');
   const [fixes, setFixes] = useState({});
+  const [conversion, setConversion] = useState({
     ingredientId: '',
     fromUnit: 'each',
     factor: '',
