@@ -13,6 +13,7 @@ import { adminDb as db, requireAdmin } from '../../../../../lib/admin/requireAdm
 import { writeAuditLog } from '../../../../../lib/admin/withAdminAuth';
 import { generateForRestaurant } from '../../../ai-recommendations';
 import stripe from '../../../../../lib/stripeServer';
+import shift4 from '../../../../../lib/pos/providers/shift4';
 
 export const config = { maxDuration: 60 };
 
@@ -72,6 +73,36 @@ export default async function handler(req, res) {
       .eq('id', r.id)
       .single();
     if (billingError) return res.status(500).json({ error: billingError.message });
+    // Shift4 before anything else: uninstall OptiMenu from every location
+    // this restaurant holds, so the location is free for the next signup.
+    // Already gone counts as done. If Shift4 refuses, nothing is deleted.
+    const locations = new Set();
+
+    for (const table of ['pos_connections', 'shift4_connections']) {
+      const { data: rows, error } = await db.from(table)
+        .select('shift4_location_id')
+        .eq('restaurant_id', r.id)
+        .not('shift4_location_id', 'is', null);
+
+      if (error) return res.status(500).json({ error: error.message });
+
+      for (const row of rows || []) locations.add(String(row.shift4_location_id));
+    }
+
+    for (const locationId of locations) {
+      try {
+        await shift4.removeInstallation(locationId);
+      } catch (e) {
+        const gone = e.status === 404 || /\b404\b|not found/i.test(String(e.message));
+
+        if (!gone) {
+          console.error('[admin/delete-test-account:shift4]', e);
+          return res.status(502).json({
+            error: `Shift4 could not release location ${locationId}: ${e.message}. Nothing was deleted.`,
+          });
+        }
+      }
+    }
 
     // Stripe first. If it fails, the restaurant is left untouched.
     try {
@@ -97,6 +128,7 @@ export default async function handler(req, res) {
     await log('Deleted a test account', {
       stripe_customer_id: billing.stripe_customer_id || null,
       stripe_subscription_id: billing.stripe_subscription_id || null,
+      shift4_locations_released: [...locations],
     });
 
     const { error: purgeError } = await db.rpc('purge_restaurant', { target: r.id });
