@@ -49,6 +49,7 @@ const REVIEW_MARKS = {
   weight: ['Missing a weight', 'var(--accent-tint)', 'var(--accent-deep)'],
   untracked: ['Can\u2019t count one item', 'color-mix(in srgb, #6b3a8c 14%, var(--shell))', '#6b3a8c'],
   retry: ['Working on it', 'var(--panel)', 'var(--muted)'],
+  new: ['New on the POS', 'var(--green-tint)', 'var(--green)'],
 };
 
 // Why a dish needs review, or null when it counts on its own.
@@ -257,6 +258,8 @@ export default function PosUsage() {
   const [openKey, setOpenKey] = useState('');
   const [match, setMatch] = useState({});
   const [offer, setOffer] = useState(null);
+  const [creating, setCreating] = useState(null);
+  const [noting, setNoting] = useState(null);
 
   const report = data?.result?.report || [];
   const sorted = [...report].sort((a, b) =>
@@ -285,6 +288,19 @@ export default function PosUsage() {
     }
 
     groupIndex.get(key).sales.push(row);
+  }
+
+  // POS buttons with no dish that have not sold yet, oldest first.
+  for (const button of [...(data?.newButtons || [])].sort((a, b) =>
+    String(a.first_seen_at || '').localeCompare(String(b.first_seen_at || ''))
+  )) {
+    reviewGroups.push({
+      key: `new:${button.external_id}`,
+      kind: 'new',
+      button,
+      row: { dish: button.name, item_ref: button.external_id },
+      sales: [],
+    });
   }
 
   const days = [...new Set(sorted.map((row) => row.date).filter(Boolean))];
@@ -523,6 +539,74 @@ export default function PosUsage() {
     }
   }
 
+  // Add as a new dish, for a POS button with no matching dish.
+  function openNewDish(row, button) {
+    setMessage('');
+    setCreating({
+      itemRef: row.item_ref,
+      button: row.dish,
+      name: row.dish,
+      price: button?.price ?? null,
+      category: button?.category_name || '',
+      lines: [],
+      notes: '',
+    });
+  }
+
+  async function draftRecipe() {
+    setBusy(true);
+    setMessage('');
+
+    try {
+      const result = await request('/api/admin/pos-usage', {
+        restaurantId,
+        action: 'draft-dish',
+        name: creating.name,
+        category: creating.category,
+      });
+
+      setCreating((old) => old && {
+        ...old,
+        lines: result.lines || [],
+        notes: result.notes || '',
+      });
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setLine(index, changes) {
+    setCreating((old) => old && {
+      ...old,
+      lines: old.lines.map((line, i) => (i === index ? { ...line, ...changes } : line)),
+    });
+  }
+
+  // A picked ingredient or batch prep for a recipe line.
+  function pickLine(id, line) {
+    if (id.startsWith('prep:')) {
+      const prep = (data?.preps || []).find((value) => `prep:${value.id}` === id);
+      return {
+        ...line,
+        prep_id: prep?.id || null,
+        ingredient_id: null,
+        name: prep?.name || line.name,
+        unit: line.unit || prep?.yield_unit || '',
+      };
+    }
+
+    const ingredient = data.ingredients.find((value) => value.id === id);
+    return {
+      ...line,
+      ingredient_id: ingredient?.id || null,
+      prep_id: null,
+      name: ingredient?.name || line.name,
+      unit: line.unit || ingredient?.unit || '',
+    };
+  }
+
   const selectRestaurant = (
     <select
       aria-label="Restaurant"
@@ -755,14 +839,17 @@ export default function PosUsage() {
     const requests = requestList(row);
     const first = sales[0];
     const last = sales[sales.length - 1];
-    const options = kind === 'dish' ? closestMenus(row.dish, data.menus) : [];
+    const matching = kind === 'dish' || kind === 'new';
+    const options = matching ? closestMenus(row.dish, data.menus) : [];
     const pick = match[group.key] ?? options[0]?.id ?? '';
     const picked = data.menus.find((menu) => menu.id === pick);
     const counted = planLines(row, data.ingredients);
     const counting = row.status === 'ready' && (kind === 'amount' || kind === 'untracked');
-    const when = sales.length > 1
-      ? `${shortDate(first.date)}${first.date === last.date ? '' : ` – ${shortDate(last.date)}`} · ${sales.length} SALES`
-      : `${shortDate(first.date)} · #${first.ticket || '—'}`;
+    const when = kind === 'new'
+      ? `FIRST SEEN ${shortDate(group.button?.first_seen_at)}`
+      : sales.length > 1
+        ? `${shortDate(first.date)}${first.date === last.date ? '' : ` – ${shortDate(last.date)}`} · ${sales.length} SALES`
+        : `${shortDate(first.date)} · #${first.ticket || '—'}`;
 
     return (
       <article key={group.key} className="pu-card" data-open={open ? '' : undefined}>
@@ -775,13 +862,15 @@ export default function PosUsage() {
           <span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span>
           <span className="pu-title">
             <strong>
-              {kind === 'dish' ? `“${row.dish}”` : row.dish}
+              {matching ? `“${row.dish}”` : row.dish}
               {sales.length > 1 && <span className="pu-count">×{sales.length}</span>}
             </strong>
             <span>
-              {kind === 'dish'
-                ? 'POS button with no matching dish'
-                : requests.length ? requests.join(' · ') : 'No requests'}
+              {kind === 'new'
+                ? 'On the POS with no dish yet · not sold yet'
+                : kind === 'dish'
+                  ? 'POS button with no matching dish'
+                  : requests.length ? requests.join(' · ') : 'No requests'}
             </span>
           </span>
           <span className="pu-when">{when}</span>
@@ -799,7 +888,7 @@ export default function PosUsage() {
               </div>
             )}
 
-            {kind === 'dish' && (
+            {matching && (
               <>
                 {options.length > 0 && (
                   <>
@@ -844,13 +933,29 @@ export default function PosUsage() {
                     type="button"
                     className="om-btn"
                     disabled={busy}
+                    onClick={() => openNewDish(row, group.button)}
+                  >
+                    Add as a new dish
+                  </button>
+                  <button
+                    type="button"
+                    className="om-btn"
+                    disabled={busy}
+                    onClick={() => setNoting({ name: row.dish, text: '' })}
+                  >
+                    Leave a note
+                  </button>
+                  <button
+                    type="button"
+                    className="om-btn"
+                    disabled={busy}
                     onClick={() => act('map', { itemRef: row.item_ref, menuId: '__exclude__' })}
                   >
                     Not food, skip it
                   </button>
                 </div>
                 <p className="pu-note">
-                  Nothing changes until you confirm. Every past and future sale of this button then counts as that dish.
+                  Nothing changes until you choose. Every past and future sale of this button then counts as that dish.
                 </p>
               </>
             )}
@@ -894,7 +999,7 @@ export default function PosUsage() {
               </>
             )}
 
-            {kind !== 'dish' && !counting && (
+            {!matching && !counting && (
               <>
                 {row.reason && <div className="pu-reason">{row.reason}</div>}
                 <div className="pu-buttons">
@@ -1032,6 +1137,11 @@ export default function PosUsage() {
         .pu-empty { margin: 0; color: var(--muted); font-size: 13px; padding: 14px 18px; }
         .pu-offer { display: flex; gap: 14px; align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; }
         .pu-offer input { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); }
+        .pu-lines { display: flex; flex-direction: column; gap: 8px; }
+        .pu-line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 100px 40px; gap: 8px; align-items: start; }
+        .pu-line[data-missing] { background: var(--amber-tint); border-radius: 10px; padding: 6px; }
+        .pu-line input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        @media (max-width: 700px) { .pu-line { grid-template-columns: minmax(0, 1fr) 76px 86px 36px; } }
         @media (max-width: 700px) {
           .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
           .pu-done-row strong { flex: 1 1 100%; }
@@ -1373,6 +1483,239 @@ export default function PosUsage() {
               }}
             >
               {busy ? 'Saving…' : `Apply to ${offer.checked.length || ''} checked`.replace('  ', ' ')}
+            </button>
+          </div>
+        </Dialog>
+      )}
+
+      {creating && (() => {
+        const lineOptions = [
+          ...(data?.preps || []).map((prep) => ({
+            value: `prep:${prep.id}`,
+            label: prep.name,
+            meta: 'batch prep',
+          })),
+          ...[...(data?.ingredients || [])]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((ingredient) => ({
+              value: ingredient.id,
+              label: ingredient.name,
+              meta: ingredient.unit,
+            })),
+        ];
+        const ready = creating.name.trim() &&
+          creating.lines.length &&
+          creating.lines.every((line) =>
+            (line.ingredient_id || line.prep_id) &&
+            Number(line.quantity) > 0 &&
+            UNITS.includes(line.unit)
+          );
+
+        return (
+          <Dialog
+            title="Add a new dish"
+            sub={`From the POS button “${creating.button}”. Its sales count as estimates until the owner confirms the recipe.`}
+            width={680}
+            showCloseButton
+            onClose={() => { if (!busy) setCreating(null); }}
+          >
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 700 }}>
+              Dish name
+              <input
+                className="om-field"
+                value={creating.name}
+                disabled={busy}
+                onChange={(event) => setCreating({ ...creating, name: event.target.value })}
+              />
+            </label>
+
+            <div className="pu-buttons">
+              <button
+                type="button"
+                className="om-btn"
+                disabled={busy || !creating.name.trim()}
+                onClick={draftRecipe}
+              >
+                {busy ? 'Working…' : creating.lines.length ? 'Draft again with OptiMenu' : 'Draft recipe with OptiMenu'}
+              </button>
+              {creating.lines.length > 0 && (
+                <span className="pu-note">Check every amount before approving.</span>
+              )}
+            </div>
+
+            {creating.notes && <p className="pu-note">{creating.notes}</p>}
+
+            {creating.lines.length > 0 && (
+              <div className="pu-lines">
+                {creating.lines.map((line, index) => {
+                  const value = line.prep_id ? `prep:${line.prep_id}` : line.ingredient_id || '';
+                  return (
+                    <div key={index} className="pu-line" data-missing={value ? undefined : ''}>
+                      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <Picker
+                          value={value}
+                          search
+                          placeholder="Pick an ingredient"
+                          ariaLabel={`Ingredient for line ${index + 1}`}
+                          disabled={busy}
+                          options={lineOptions}
+                          onChange={(id) => { if (id) setLine(index, pickLine(id, line)); }}
+                        />
+                        {!value && line.name && (
+                          <span className="pu-note">
+                            OptiMenu suggested “{line.name}”, which is not one of your ingredients.
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        className="om-field"
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label={`Amount for line ${index + 1}`}
+                        value={line.quantity}
+                        disabled={busy}
+                        onChange={(event) => setLine(index, { quantity: event.target.value })}
+                      />
+                      <select
+                        className="om-field"
+                        aria-label={`Unit for line ${index + 1}`}
+                        value={line.unit}
+                        disabled={busy}
+                        onChange={(event) => setLine(index, { unit: event.target.value })}
+                      >
+                        <option value="">Unit</option>
+                        {UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        className="om-btn"
+                        aria-label={`Remove line ${index + 1}`}
+                        disabled={busy}
+                        style={{ justifyContent: 'center', padding: 0 }}
+                        onClick={() => setCreating({
+                          ...creating,
+                          lines: creating.lines.filter((_, i) => i !== index),
+                        })}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <Picker
+              value=""
+              search
+              placeholder="Search to add an ingredient or batch prep"
+              ariaLabel="Add an ingredient"
+              disabled={busy}
+              options={lineOptions}
+              onChange={(id) => {
+                if (id) {
+                  setCreating({
+                    ...creating,
+                    lines: [
+                      ...creating.lines,
+                      pickLine(id, { quantity: '', unit: '', component: 'Recipe' }),
+                    ],
+                  });
+                }
+              }}
+            />
+
+            <div className="pu-counted">
+              <strong>Until the owner confirms</strong>
+              <span>
+                The dish shows on the owner recipe page as an estimate and stays off their costs. Its sales count as estimates. The owner gets a notification to check it, and once they confirm, past sales are recounted from their recipe.
+              </span>
+            </div>
+
+            {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" className="om-btn" disabled={busy} onClick={() => setCreating(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="om-btn"
+                disabled={busy}
+                onClick={() => {
+                  setNoting({ name: creating.button, text: '' });
+                  setCreating(null);
+                }}
+              >
+                Leave a note instead
+              </button>
+              <button
+                type="button"
+                className="om-pri"
+                disabled={busy || !ready}
+                onClick={async () => {
+                  const name = creating.name.trim();
+                  const result = await act('add-dish', {
+                    itemRef: creating.itemRef,
+                    name,
+                    price: creating.price,
+                    category: creating.category,
+                    notes: creating.notes,
+                    lines: creating.lines.map((line) => ({
+                      ...line,
+                      quantity: Number(line.quantity),
+                    })),
+                  });
+
+                  if (result) {
+                    setCreating(null);
+                    setMessage(`Added ${name}. The owner was asked to confirm its recipe.`);
+                  }
+                }}
+              >
+                {busy ? 'Saving…' : 'Approve and send to owner'}
+              </button>
+            </div>
+          </Dialog>
+        );
+      })()}
+
+      {noting && (
+        <Dialog
+          title="Leave a note"
+          sub={`About the POS button “${noting.name}”. This opens an admin ticket so you can come back to it.`}
+          width={520}
+          showCloseButton
+          onClose={() => { if (!busy) setNoting(null); }}
+        >
+          <textarea
+            className="om-field"
+            rows={4}
+            placeholder="What needs checking?"
+            value={noting.text}
+            disabled={busy}
+            style={{ minHeight: 110, padding: 10, resize: 'vertical' }}
+            onChange={(event) => setNoting({ ...noting, text: event.target.value })}
+          />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button type="button" className="om-btn" disabled={busy} onClick={() => setNoting(null)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="om-pri"
+              disabled={busy || !noting.text.trim()}
+              onClick={async () => {
+                const result = await act('note', { name: noting.name, note: noting.text });
+                if (result) {
+                  setNoting(null);
+                  setMessage('Note saved as an admin ticket.');
+                }
+              }}
+            >
+              {busy ? 'Saving…' : 'Save note'}
             </button>
           </div>
         </Dialog>
