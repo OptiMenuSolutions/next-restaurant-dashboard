@@ -43,6 +43,19 @@ export async function recipeRequest(restaurantId, body, admin = false) {
 
 const clone = value => JSON.parse(JSON.stringify(value));
 
+// Keep the address in step with what's open without a Next.js navigation,
+// which would reload the page.
+function setQuery(changes) {
+  const url = new URL(window.location.href);
+
+  Object.entries(changes).forEach(([key, value]) => {
+    if (value == null) url.searchParams.delete(key);
+    else url.searchParams.set(key, value);
+  });
+
+  window.history.replaceState(window.history.state, '', url);
+}
+
 const blank = () => ({
   yield_quantity: '',
   yield_unit: 'oz',
@@ -187,6 +200,7 @@ export default function RecipeWorkspace({
   const [targets, setTargets] = useState({});
   const [looping, setLooping] = useState(false);
   const guard = useLeaveGuard(busy || dirty);
+  const opened = useRef(false);
 
   const accept = result => {
     latest.current = result;
@@ -203,6 +217,7 @@ export default function RecipeWorkspace({
 
     setData(null);
     latest.current = null;
+    opened.current = false;
 
     let active = true;
 
@@ -220,8 +235,12 @@ export default function RecipeWorkspace({
     };
   }, [restaurantId, admin]);
 
+  // Open the recipe or tab named in the address once, when recipes first load.
+  // After that, clicks update the address without reloading the page.
   useEffect(() => {
-    if (!data || dirty || busy) return;
+    if (!data || opened.current) return;
+
+    opened.current = true;
 
     const selected = data.state.nodes.find(
       n => n.id === router.query.recipe
@@ -230,11 +249,10 @@ export default function RecipeWorkspace({
     if (selected) {
       setEditor(clone(selected));
       setTab(selected.kind);
-    } else if (router.query.recipe !== 'new') {
-      setEditor(null);
-      if (router.query.tab === 'prep' || router.query.tab === 'dish') setTab(router.query.tab);
+    } else if (router.query.tab === 'prep' || router.query.tab === 'dish') {
+      setTab(router.query.tab);
     }
-  }, [data, router.query.recipe, router.query.tab, dirty, busy]);
+  }, [data, router.query.recipe, router.query.tab]);
 
   async function post(body) {
     return accept(await recipeRequest(
@@ -273,16 +291,7 @@ export default function RecipeWorkspace({
     setDirty(false);
     setEditor(node ? clone(node) : null);
 
-    const query = { ...router.query };
-
-    if (node) query.recipe = node.id || 'new';
-    else delete query.recipe;
-
-    router.push(
-      { pathname: router.pathname, query },
-      undefined,
-      { shallow: true, scroll: false }
-    );
+    setQuery({ recipe: node ? node.id || 'new' : null });
   }
 
   const edit = changes => {
@@ -438,14 +447,7 @@ export default function RecipeWorkspace({
     setDirty(false);
     setEditor(clone(saved));
 
-    await router.replace(
-      {
-        pathname: router.pathname,
-        query: { ...router.query, recipe: saved.id },
-      },
-      undefined,
-      { shallow: true, scroll: false }
-    );
+    setQuery({ recipe: saved.id });
 
     setMessage(
       confirm
@@ -531,15 +533,7 @@ export default function RecipeWorkspace({
     setEditor(null);
     setTab(key);
 
-    const query = { ...router.query };
-    delete query.recipe;
-    query.tab = key;
-
-    router.push(
-      { pathname: router.pathname, query },
-      undefined,
-      { shallow: true, scroll: false }
-    );
+    setQuery({ recipe: null, tab: key });
   }
 
   const list = (
@@ -895,8 +889,10 @@ export default function RecipeWorkspace({
               type="button"
               onClick={() => run(async () => {
                 if (!window.confirm('Replace this draft and its batch links with the saved dish recipe?')) return;
-                await post({ action: 'refresh', id: editor.id });
+                const result = await post({ action: 'refresh', id: editor.id });
+                const fresh = result.state.nodes.find(n => n.id === editor.id);
                 setDirty(false);
+                if (fresh) setEditor(clone(fresh));
               })}
               style={{ border: 0, background: 'none', padding: 0, font: "700 13px 'Manrope', sans-serif", color: 'var(--accent-deep)', cursor: 'pointer' }}
             >
