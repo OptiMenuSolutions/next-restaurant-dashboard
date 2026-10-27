@@ -5,6 +5,7 @@ import AdminShell, { PageHead, Dialog } from '../../components/admin/AdminShell'
 import { MONO } from '../../components/client/ClientChrome';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import useIsPhone from '../../lib/admin/useIsPhone';
+import Picker from '../../components/client/Picker';
 
 const UNITS = [
   'each', 'slice', 'bunch', 'package',
@@ -998,36 +999,26 @@ export default function PosUsage() {
                   })}
                 </div>
 
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <select
-                    className="om-field"
-                    aria-label="Add an ingredient"
-                    value={addId}
-                    disabled={busy}
-                    onChange={(event) => setAddId(event.target.value)}
-                    style={{ flex: 1, minWidth: 0 }}
-                  >
-                    <option value="">Add an ingredient</option>
-                    {data.ingredients
-                      .filter((ingredient) => !portions.some((portion) => portion.id === ingredient.id))
-                      .map((ingredient) => (
-                        <option key={ingredient.id} value={ingredient.id}>
-                          {ingredient.name} ({ingredient.unit})
-                        </option>
-                      ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="om-btn"
-                    disabled={busy || !addId}
-                    onClick={() => {
-                      setPortions([...portions, { id: addId, quantity: '' }]);
-                      setAddId('');
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
+                <Picker
+                  value=""
+                  search
+                  placeholder="Search to add an ingredient"
+                  ariaLabel="Add an ingredient"
+                  disabled={busy}
+                  options={data.ingredients
+                    .filter((ingredient) =>
+                      !portions.some((portion) => portion.id === ingredient.id)
+                    )
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((ingredient) => ({
+                      value: ingredient.id,
+                      label: ingredient.name,
+                      meta: ingredient.unit,
+                    }))}
+                  onChange={(id) => {
+                    if (id) setPortions([...portions, { id, quantity: '' }]);
+                  }}
+                />
 
                 <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--muted)', background: 'var(--panel)', borderRadius: 8, padding: '10px 12px' }}>
                   Saved as a rule for every <strong style={{ color: 'var(--text)' }}>{editing.dish}</strong> with these same instructions. Zero removes an ingredient. Other dishes are not changed.
