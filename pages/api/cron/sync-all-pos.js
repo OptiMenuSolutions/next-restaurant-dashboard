@@ -169,12 +169,28 @@ async function handler(req, res) {
     await sendCronAlert('POS sync cron', 'Could not load POS connections, so no sales were synced.', [error.message]);
     return res.status(500).json({ error: error.message });
   }
-  if (!connections?.length) return res.status(200).json({ synced: 0 });
+  // Deactivated accounts keep their connection for reactivation, but no
+  // new sales are pulled during the 60-day retention window.
+  const { data: paused, error: pausedError } = await supabase
+    .from('restaurants')
+    .select('id')
+    .not('deactivated_at', 'is', null);
+
+  if (pausedError) {
+    console.error('[cron:sync-all-pos] Failed to load deactivated restaurants:', pausedError.message);
+    await sendCronAlert('POS sync cron', 'Could not check for deactivated restaurants, so no sales were synced.', [pausedError.message]);
+    return res.status(500).json({ error: pausedError.message });
+  }
+
+  const pausedIds = new Set((paused || []).map((row) => row.id));
+  const live = (connections || []).filter((conn) => !pausedIds.has(conn.restaurant_id));
+
+  if (!live.length) return res.status(200).json({ synced: 0 });
 
   const range = defaultRange();
   const results = { success: [], failed: [] };
 
-  for (const conn of connections) {
+  for (const conn of live) {
     try {
       const counts = await syncConnection(conn, range);
       results.success.push({ restaurantId: conn.restaurant_id, provider: conn.provider, ...counts });
@@ -211,7 +227,7 @@ async function handler(req, res) {
   if (results.failed.length) {
     await sendCronAlert(
       'POS sync cron',
-      `${results.failed.length} of ${connections.length} POS connections failed to sync. Shift4 links remain connected and will retry on the next run. Check the individual errors before requesting reconnection.`,
+      `${results.failed.length} of ${live.length} POS connections failed to sync. Shift4 links remain connected and will retry on the next run. Check the individual errors before requesting reconnection.`,
       results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}: ${f.error}`)
     );
   }

@@ -20,6 +20,7 @@ import { createClient } from '@supabase/supabase-js';
 import stripe from '../../../lib/stripeServer';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
+import shift4 from '../../../lib/pos/providers/shift4';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -57,6 +58,35 @@ async function purgeRestaurant(restaurant) {
   const invoiceFiles = await removeStorageFolder('invoices', restaurantId);
   const menuFiles = await removeStorageFolder('menus', restaurantId);
   console.log(`[purge-deactivated-accounts] ${restaurant.name || restaurantId}: removed ${invoiceFiles} invoice and ${menuFiles} menu files`);
+
+  
+  const recipeFiles = await removeStorageFolder('recipe-books', restaurantId);
+  if (recipeFiles) {
+    console.log(`[purge-deactivated-accounts] ${restaurant.name || restaurantId}: removed ${recipeFiles} recipe files`);
+  }
+
+  // Free the Shift4 location so another account can connect it. A location
+  // OptiMenu is already gone from counts as done. Any other failure stops
+  // here, before the database purge, and tomorrow's run retries.
+  for (const table of ['pos_connections', 'shift4_connections']) {
+    const { data: rows, error: lookupError } = await supabase.from(table)
+      .select('shift4_location_id')
+      .eq('restaurant_id', restaurantId)
+      .not('shift4_location_id', 'is', null);
+
+    if (lookupError) throw new Error(`${table} lookup failed: ${lookupError.message}`);
+
+    for (const row of rows || []) {
+      try {
+        await shift4.removeInstallation(row.shift4_location_id);
+      } catch (err) {
+        const gone = err.status === 404 || /\b404\b|not found/i.test(String(err.message));
+        if (!gone) {
+          throw new Error(`Shift4 could not release location ${row.shift4_location_id}: ${err.message}`);
+        }
+      }
+    }
+  }
 
   // 2. Cancel any lingering Stripe subscription (should already be canceled
   // by deactivate.js; this is a safety net).
