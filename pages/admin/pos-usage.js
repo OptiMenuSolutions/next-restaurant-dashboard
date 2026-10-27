@@ -467,8 +467,22 @@ export default function PosUsage() {
   }
 
   function edit(row) {
-    const parts = row.adjusted || row.base || [];
+    // Start from what was counted, or from the recipe with any parts the
+    // customer left off (No Gravy) already taken out.
+    const recipe = row.counted_base || row.base || [];
+    const parts = row.adjusted || recipe;
     const totals = new Map();
+
+    // Which parts of the plate each ingredient comes from.
+    const from = new Map();
+
+    for (const part of recipe) {
+      const names = from.get(part.id) || new Set();
+      for (const component of part.components || []) {
+        if (component.name) names.add(component.name);
+      }
+      from.set(part.id, names);
+    }
 
     // Each line keeps the unit it was counted in (0.1094 qt of milk);
     // usage converts it to the inventory unit.
@@ -482,6 +496,7 @@ export default function PosUsage() {
         totals.set(part.id, {
           id: part.id,
           unit: part.unit,
+          from: [...(from.get(part.id) || [])],
           quantity: Number.isFinite(quantity) ? String(Number(quantity.toFixed(4))) : '',
         });
       } else if (old.unit === part.unit && old.quantity !== '' && Number.isFinite(quantity)) {
@@ -491,7 +506,10 @@ export default function PosUsage() {
       }
     }
 
-    setPortions([...totals.values()]);
+    // Grouped by part of the plate, in recipe order.
+    setPortions([...totals.values()].sort((a, b) =>
+      String(a.from[0] || '').localeCompare(String(b.from[0] || ''))
+    ));
     setEditing(row);
     setAddId('');
   }
@@ -658,24 +676,69 @@ export default function PosUsage() {
       : Number(row.quantity) > 1 ? `×${row.quantity}` : '×1';
     const reasonBg = status === 'ESTIMATED' ? 'var(--amber-tint)' : 'var(--red-tint)';
     const reason = row.reason || '';
-    const table = (
+    // The recipe by part of the plate, as written (recipe units).
+    const removedParts = new Set(row.removed_components || []);
+    const groups = [];
+
+    for (const part of row.base || []) {
+      const pieces = part.components?.length
+        ? part.components
+        : [{ name: 'Recipe', quantity: part.quantity }];
+
+      for (const piece of pieces) {
+        const name = piece.name || 'Recipe';
+        let group = groups.find((value) => value.name === name);
+
+        if (!group) {
+          group = { name, lines: [] };
+          groups.push(group);
+        }
+
+        group.lines.push({ name: part.name, quantity: Number(piece.quantity), unit: part.unit });
+      }
+    }
+
+    const headStyle = { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 12px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' };
+    const lineStyle = { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 12px', borderTop: '1px solid var(--line-soft)', fontSize: 13 };
+
+    const recipeTable = (
       <div style={{ border: '1px solid var(--line-soft)', borderRadius: 8, overflow: 'hidden' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr) 70px 92px' : 'minmax(0, 1fr) 100px 110px', gap: 10, padding: '7px 12px', background: 'var(--panel)', fontFamily: MONO, fontSize: 9.5, letterSpacing: '0.12em', color: 'var(--muted)' }}>
-          <span>INGREDIENT</span>
-          <span style={{ textAlign: 'right' }}>RECIPE</span>
-          <span style={{ textAlign: 'right' }}>{row.status === 'ready' ? 'THIS ORDER' : 'BASE'}</span>
-        </div>
-        {ingredients.map((part) => (
-          <div key={part.id} style={{ display: 'grid', gridTemplateColumns: isPhone ? 'minmax(0, 1fr) 70px 92px' : 'minmax(0, 1fr) 100px 110px', gap: 10, padding: '7px 12px', borderTop: '1px solid var(--line-soft)', fontSize: 13, alignItems: 'baseline' }}>
-            <span style={{ minWidth: 0, overflowWrap: 'anywhere', color: part.quantity === 0 ? 'var(--muted)' : 'var(--text)', textDecoration: part.quantity === 0 ? 'line-through' : 'none' }}>{part.name}</span>
-            <span style={{ textAlign: 'right', fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>{part.before_label}</span>
-            <span style={{ textAlign: 'right', fontFamily: MONO, fontSize: 12, fontWeight: part.changed ? 700 : 600, color: part.changed ? 'var(--accent-deep)' : 'var(--text)' }}>
-              {Number.isFinite(part.quantity) ? `${formatQty(part.quantity)} ${part.unit || ''}` : '—'}
+        {groups.map((group, index) => {
+          const gone = removedParts.has(group.name);
+          return (
+            <div key={group.name} style={{ borderTop: index ? '1px solid var(--line)' : 0 }}>
+              <div style={headStyle}>
+                <span>{group.name.toUpperCase()}</span>
+                {gone && <span style={{ color: 'var(--red)' }}>REMOVED BY REQUEST</span>}
+              </div>
+              {group.lines.map((line, i) => (
+                <div key={i} style={{ ...lineStyle, color: gone ? 'var(--muted)' : 'var(--text)', textDecoration: gone ? 'line-through' : 'none' }}>
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{line.name}</span>
+                  <span style={{ fontFamily: MONO, fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {Number.isFinite(line.quantity) ? formatQty(line.quantity) : '—'} {line.unit || ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+
+    // What was actually taken out of inventory for this order.
+    const countedTable = row.adjusted?.length ? (
+      <div style={{ border: '1px solid var(--line-soft)', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={headStyle}><span>COUNTED FOR THIS ORDER · INVENTORY UNITS</span></div>
+        {row.adjusted.map((part) => (
+          <div key={part.id} style={lineStyle}>
+            <span style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{part.name}</span>
+            <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
+              {formatQty(part.quantity)} {part.unit || ''}
             </span>
           </div>
         ))}
       </div>
-    );
+    ) : null;
 
     return (
       <article style={{ border: '1px solid var(--line)', borderRadius: 10, padding: isPhone ? 14 : '14px 16px', display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--shell)', minWidth: 0, overflowWrap: 'anywhere' }}>
@@ -744,8 +807,8 @@ export default function PosUsage() {
           </div>
         )}
 
-        {row.status === 'blocked' && ingredients.length > 0 && (
-          <div style={{ marginLeft: indent }}>{table}</div>
+        {row.status === 'blocked' && groups.length > 0 && (
+          <div style={{ marginLeft: indent }}>{recipeTable}</div>
         )}
 
         {status !== 'EXCLUDED' && reason && (
@@ -804,7 +867,8 @@ export default function PosUsage() {
               Ingredients &amp; calculation
             </summary>
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {ingredients.length > 0 && table}
+              {groups.length > 0 && recipeTable}
+              {countedTable}
               {row.plan?.explanation && (
                 <p style={{ margin: 0, color: 'var(--muted)', fontSize: 12.5, lineHeight: 1.6 }}>{row.plan.explanation}</p>
               )}
@@ -1327,6 +1391,11 @@ export default function PosUsage() {
                       <label key={portion.id} className="pu-portion" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 100px 96px 36px', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--line-soft)', alignItems: 'center', fontSize: 13.5, background: needed ? 'var(--amber-tint)' : 'transparent' }}>
                         <span style={{ fontWeight: needed ? 700 : 600, minWidth: 0, overflowWrap: 'anywhere' }}>
                           {ingredient?.name}
+                          {portion.from?.length > 0 && (
+                            <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>
+                              {portion.from.join(' · ')}
+                            </span>
+                          )}
                           {needed && <span style={{ display: 'block', marginTop: 2, fontFamily: MONO, fontSize: 10.5, fontWeight: 600, color: 'var(--amber)' }}>NEEDED</span>}
                         </span>
                         <input
