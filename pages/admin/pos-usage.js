@@ -142,7 +142,7 @@ export default function PosUsage() {
   const [portions, setPortions] = useState([]);
   const [addId, setAddId] = useState('');
   const [ticketFilter, setTicketFilter] = useState('all');
-  const [conversion, setConversion] = useState({
+  const [fixes, setFixes] = useState({});
     ingredientId: '',
     fromUnit: 'each',
     factor: '',
@@ -349,6 +349,7 @@ export default function PosUsage() {
     setPortions([...totals.values()]);
     setEditing(row);
     setAddId('');
+    setFixes({});
     setConversion({
       ingredientId: '',
       fromUnit: 'each',
@@ -1024,108 +1025,109 @@ export default function PosUsage() {
                   Saved as a rule for every <strong style={{ color: 'var(--text)' }}>{editing.dish}</strong> with these same instructions. Zero removes an ingredient. Other dishes are not changed.
                 </div>
 
-                <details>
+                <details open={dishIngredients.some(({ recipeUnit }) => recipeUnit)}>
                   <summary style={{ cursor: 'pointer', color: 'var(--accent-deep)', fontSize: 13, fontWeight: 700, padding: '4px 0' }}>
-                    Fix a unit conversion instead
+                    Fix unit conversions instead
                   </summary>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
-                    <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
-                      Use a package label, a measurement or a documented estimate. It applies to this ingredient everywhere.
-                    </p>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>
-                      Ingredient
-                      <select
-                        className="om-field"
-                        value={conversion.ingredientId}
-                        onChange={(event) => {
-                          const picked = dishIngredients.find(({ ingredient }) =>
-                            ingredient.id === event.target.value
+                  {(() => {
+                    const rows = dishIngredients.filter(({ recipeUnit }) => recipeUnit);
+                    const filled = rows
+                      .map(({ ingredient, recipeUnit }) => ({
+                        ingredient,
+                        recipeUnit,
+                        fix: fixes[ingredient.id] || {},
+                      }))
+                      .filter(({ fix }) => fix.factor !== undefined && fix.factor !== '');
+                    const invalid = filled.some(({ fix }) =>
+                      !(Number(fix.factor) > 0) || !String(fix.evidence || '').trim()
+                    );
+                    const update = (id, change) => setFixes({
+                      ...fixes,
+                      [id]: { basis: 'estimated', ...fixes[id], ...change },
+                    });
+
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)' }}>
+                          Fill in any you know. Each one applies to that ingredient everywhere. Leave a row blank to skip it.
+                        </p>
+                        {!rows.length && (
+                          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>
+                            Every ingredient in this dish already uses its inventory unit.
+                          </p>
+                        )}
+                        {rows.map(({ ingredient, recipeUnit }) => {
+                          const fix = fixes[ingredient.id] || {};
+                          return (
+                            <div key={ingredient.id} style={{ border: '1px solid var(--line)', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 13.5 }}>
+                                <strong style={{ flex: '1 1 140px', minWidth: 0 }}>{ingredient.name}</strong>
+                                <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>1 {recipeUnit} =</span>
+                                <input
+                                  className="om-field"
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  inputMode="decimal"
+                                  aria-label={`${ingredient.name} ${ingredient.unit} per ${recipeUnit}`}
+                                  value={fix.factor ?? ''}
+                                  disabled={busy}
+                                  style={{ width: 90, textAlign: 'right', fontFamily: MONO }}
+                                  onChange={(event) => update(ingredient.id, { factor: event.target.value })}
+                                />
+                                <span style={{ fontFamily: MONO, fontSize: 12, color: 'var(--muted)' }}>{ingredient.unit}</span>
+                                <select
+                                  className="om-field"
+                                  aria-label={`${ingredient.name} basis`}
+                                  value={fix.basis || 'estimated'}
+                                  disabled={busy}
+                                  style={{ width: 'auto' }}
+                                  onChange={(event) => update(ingredient.id, { basis: event.target.value })}
+                                >
+                                  <option value="estimated">Estimate</option>
+                                  <option value="measured">Measured</option>
+                                  <option value="package_label">Package label</option>
+                                </select>
+                              </div>
+                              <input
+                                className="om-field"
+                                placeholder="Source or explanation"
+                                aria-label={`${ingredient.name} source`}
+                                value={fix.evidence || ''}
+                                disabled={busy}
+                                onChange={(event) => update(ingredient.id, { evidence: event.target.value })}
+                              />
+                            </div>
                           );
-                          setConversion({
-                            ...conversion,
-                            ingredientId: event.target.value,
-                            fromUnit: UNITS.includes(picked?.recipeUnit)
-                              ? picked.recipeUnit
-                              : conversion.fromUnit,
-                          });
-                        }}
-                      >
-                        <option value="">Choose an ingredient in this dish</option>
-                        {dishIngredients.map(({ ingredient, recipeUnit }) => (
-                          <option key={ingredient.id} value={ingredient.id}>
-                            {ingredient.name} ({recipeUnit
-                              ? `recipe uses ${recipeUnit}, counted in ${ingredient.unit}`
-                              : ingredient.unit})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 10 }}>
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>
-                        From unit
-                        <select
-                          className="om-field"
-                          value={conversion.fromUnit}
-                          onChange={(event) => setConversion({ ...conversion, fromUnit: event.target.value })}
+                        })}
+                        {invalid && (
+                          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--red)' }}>
+                            Each filled row needs a number above zero and a source.
+                          </p>
+                        )}
+                        <button
+                          type="button"
+                          className="om-btn"
+                          style={{ alignSelf: 'flex-start' }}
+                          disabled={busy || !filled.length || invalid}
+                          onClick={() => act('conversions', {
+                            conversions: filled.map(({ ingredient, recipeUnit, fix }) => ({
+                              ingredientId: ingredient.id,
+                              fromUnit: recipeUnit,
+                              toUnit: ingredient.unit,
+                              factor: Number(fix.factor),
+                              basis: fix.basis || 'estimated',
+                              evidence: fix.evidence.trim(),
+                            })),
+                          })}
                         >
-                          {UNITS.map((unit) => (
-                            <option key={unit} value={unit}>{unit}</option>
-                          ))}
-                        </select>
-                      </label>
-                      <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>
-                        1 {conversion.fromUnit} = this many {target?.unit || 'units'}
-                        <input
-                          className="om-field"
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={conversion.factor}
-                          onChange={(event) => setConversion({ ...conversion, factor: event.target.value })}
-                        />
-                      </label>
-                    </div>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>
-                      Basis
-                      <select
-                        className="om-field"
-                        value={conversion.basis}
-                        onChange={(event) => setConversion({ ...conversion, basis: event.target.value })}
-                      >
-                        <option value="estimated">Estimate</option>
-                        <option value="measured">Measured</option>
-                        <option value="package_label">Package label</option>
-                      </select>
-                    </label>
-                    <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5, fontWeight: 600, color: 'var(--muted)' }}>
-                      Source or explanation
-                      <input
-                        className="om-field"
-                        value={conversion.evidence}
-                        onChange={(event) => setConversion({ ...conversion, evidence: event.target.value })}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="om-btn"
-                      style={{ alignSelf: 'flex-start' }}
-                      disabled={
-                        busy ||
-                        !conversion.ingredientId ||
-                        !conversion.evidence.trim() ||
-                        !Number.isFinite(Number(conversion.factor)) ||
-                        Number(conversion.factor) <= 0 ||
-                        conversion.fromUnit === target?.unit
-                      }
-                      onClick={() => act('conversion', {
-                        ...conversion,
-                        factor: Number(conversion.factor),
-                        toUnit: target?.unit,
-                      })}
-                    >
-                      Save conversion and recalculate
-                    </button>
-                  </div>
+                          {filled.length > 1
+                            ? `Save ${filled.length} conversions and recalculate`
+                            : 'Save conversion and recalculate'}
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </details>
 
                 {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}

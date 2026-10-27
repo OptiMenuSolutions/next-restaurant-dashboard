@@ -160,6 +160,25 @@ export default withAdminAuth(async function handler(req, res) {
         p_basis: req.body.basis,
         p_evidence: req.body.evidence,
       }));
+    } else if (action === 'conversions') {
+      const list = req.body.conversions;
+
+      if (!Array.isArray(list) || !list.length || list.length > 25) {
+        throw new Error('Add at least one conversion');
+      }
+
+      // Saved one by one; usage recalculates once below.
+      for (const item of list) {
+        check(await db.rpc('save_pos_conversion', {
+          p_restaurant_id: restaurantId,
+          p_ingredient_id: item.ingredientId,
+          p_from: String(item.fromUnit || '').trim().toLowerCase(),
+          p_to: String(item.toUnit || '').trim().toLowerCase(),
+          p_factor: item.factor,
+          p_basis: item.basis,
+          p_evidence: item.evidence,
+        }));
+      }
     } else if (action === 'rule') {
       const rule = check(await db
         .from('pos_usage_rules')
