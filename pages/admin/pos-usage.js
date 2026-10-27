@@ -348,6 +348,13 @@ export default function PosUsage() {
     setPortions([...totals.values()]);
     setEditing(row);
     setAddId('');
+    setConversion({
+      ingredientId: '',
+      fromUnit: 'each',
+      factor: '',
+      basis: 'estimated',
+      evidence: '',
+    });
   }
 
   const selectRestaurant = (
@@ -920,6 +927,29 @@ export default function PosUsage() {
             ].filter((text) => text && text.trim());
             const target = data.ingredients.find((ingredient) => ingredient.id === conversion.ingredientId);
 
+            // Only this dish's ingredients, unit mismatches first.
+            const dishParts = [
+              ...(editing.base || []),
+              ...(editing.adjusted || []),
+            ];
+            const dishIngredients = data.ingredients
+              .filter((ingredient) =>
+                dishParts.some((part) => part.id === ingredient.id) ||
+                portions.some((portion) => portion.id === ingredient.id)
+              )
+              .map((ingredient) => ({
+                ingredient,
+                recipeUnit: dishParts.find((part) =>
+                  part.id === ingredient.id &&
+                  part.unit &&
+                  part.unit !== ingredient.unit
+                )?.unit || null,
+              }))
+              .sort((a, b) =>
+                Number(Boolean(b.recipeUnit)) - Number(Boolean(a.recipeUnit)) ||
+                a.ingredient.name.localeCompare(b.ingredient.name)
+              );
+
             return (
               <>
                 {(modifiers.length > 0 || requests.length > 0) && (
@@ -1016,12 +1046,25 @@ export default function PosUsage() {
                       <select
                         className="om-field"
                         value={conversion.ingredientId}
-                        onChange={(event) => setConversion({ ...conversion, ingredientId: event.target.value })}
+                        onChange={(event) => {
+                          const picked = dishIngredients.find(({ ingredient }) =>
+                            ingredient.id === event.target.value
+                          );
+                          setConversion({
+                            ...conversion,
+                            ingredientId: event.target.value,
+                            fromUnit: UNITS.includes(picked?.recipeUnit)
+                              ? picked.recipeUnit
+                              : conversion.fromUnit,
+                          });
+                        }}
                       >
-                        <option value="">Choose an ingredient</option>
-                        {data.ingredients.map((ingredient) => (
+                        <option value="">Choose an ingredient in this dish</option>
+                        {dishIngredients.map(({ ingredient, recipeUnit }) => (
                           <option key={ingredient.id} value={ingredient.id}>
-                            {ingredient.name} ({ingredient.unit})
+                            {ingredient.name} ({recipeUnit
+                              ? `recipe uses ${recipeUnit}, counted in ${ingredient.unit}`
+                              : ingredient.unit})
                           </option>
                         ))}
                       </select>
