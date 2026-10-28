@@ -1878,8 +1878,8 @@ export default function PosUsage() {
     return (
       <div key={piece.id} className="pu-piece">
         <span className="pu-rq">
-          <strong>{piece.texts.join(' + ')}</strong>
-          <small>{from}{piece.label && piece.kind !== 'same_as' ? ` · ${piece.label}` : ''}</small>
+          <strong>{piece.kind !== 'same_as' && piece.label ? piece.label : piece.texts.join(' + ')}</strong>
+          <small>{from} · TICKET SAID {piece.texts.join(' + ').toUpperCase()}</small>
         </span>
 
         {piece.kind === 'same_as' && (
@@ -1958,8 +1958,8 @@ export default function PosUsage() {
             {known.map((piece) => (
               <div key={piece.id} className="pu-known">
                 <span className="pu-rq">
-                  <strong>{piece.texts.join(' + ')}</strong>
-                  <small>{piece.label}</small>
+                  <strong>{piece.label || piece.texts.join(' + ')}</strong>
+                  <small>TICKET SAID {piece.texts.join(' + ').toUpperCase()}</small>
                 </span>
                 <span className="pu-amt">{pieceSummary(piece)}</span>
                 <QTag
