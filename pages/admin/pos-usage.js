@@ -57,6 +57,11 @@ const REVIEW_MARKS = {
 function reviewKind(row) {
   if (row.status === 'excluded') return null;
 
+  // Requests learned one at a time: waiting while any of them is new.
+  if (Array.isArray(row.pieces) && row.status !== 'blocked') {
+    return row.pieces.some((piece) => piece.status !== 'approved') ? 'amount' : null;
+  }
+
   if (row.status === 'blocked') {
     if (row.review) return row.review;
     if (row.retryable) return 'retry';
@@ -655,6 +660,9 @@ export default function PosUsage() {
   const [lineEdit, setLineEdit] = useState(null);
   const [unitsKey, setUnitsKey] = useState('');
   const [checkEdits, setCheckEdits] = useState({});
+  const [pieceEdits, setPieceEdits] = useState({});
+  const [pieceDialog, setPieceDialog] = useState(null);
+  const [skipCategory, setSkipCategory] = useState('');
 
   const report = data?.result?.report || [];
   const sorted = [...report].sort((a, b) =>
@@ -685,25 +693,29 @@ export default function PosUsage() {
     groupIndex.get(key).sales.push(row);
   }
 
-  // POS buttons with no dish that have not sold yet, oldest first.
-  for (const button of [...(data?.newButtons || [])].sort((a, b) =>
-    String(a.first_seen_at || '').localeCompare(String(b.first_seen_at || ''))
-  )) {
-    reviewGroups.push({
+  // POS buttons with no dish that have not sold yet, by POS category.
+  // They have their own tab so they never bury the dishes.
+  const newGroups = [...(data?.newButtons || [])]
+    .sort((a, b) =>
+      String(a.category_name || '').localeCompare(String(b.category_name || '')) ||
+      String(a.name || '').localeCompare(String(b.name || ''))
+    )
+    .map((button) => ({
       key: `new:${button.external_id}`,
       kind: 'new',
       button,
       row: { dish: button.name, item_ref: button.external_id },
       sales: [],
-    });
-  }
+    }));
 
   const days = [...new Set(sorted.map((row) => row.date).filter(Boolean))];
-  const visibleGroups = reviewDay === 'all'
-    ? reviewGroups
-    : reviewGroups.filter((group) =>
-        group.sales.some((sale) => sale.date === reviewDay)
-      );
+  const visibleGroups = view === 'new'
+    ? newGroups
+    : reviewDay === 'all'
+      ? reviewGroups
+      : reviewGroups.filter((group) =>
+          group.sales.some((sale) => sale.date === reviewDay)
+        );
 
   // Done: every counted dish on one day, one line per ticket line.
   const shownDay = days.includes(doneDay) ? doneDay : days[days.length - 1] || '';
@@ -1399,11 +1411,12 @@ export default function PosUsage() {
 
   // The dish: guessed amounts first, editable in place, then every part of
   // the plate folded up. Click a part to open it, a line to change it.
-  function renderRecipe(row, note) {
+  function renderRecipe(row, note, readOnly = false) {
     const view = dishView(row, data.ingredients);
     const key = `${row.line_key}:${row.unit_index || 0}`;
     const unitsOpen = unitsKey === key;
-    const editable = Boolean(row.context_key && row.rule_available);
+    // Dishes read request by request are changed through their requests.
+    const editable = Boolean(row.context_key && row.rule_available) && !readOnly;
     const canOk = editable && !row.plan?.replace_all && row.status === 'ready';
     const checks = checkGroups(view);
     const clearEdit = (name) => setCheckEdits((old) => {
@@ -1641,6 +1654,15 @@ export default function PosUsage() {
     if (kind === 'new') return ['NEW ON POS', 'green'];
     if (kind === 'weight') return ['NO WEIGHT', 'teal'];
     if (kind === 'retry') return ['WORKING', 'mute'];
+
+    // Requests learned one at a time.
+    if (row.pieces?.length && kind === 'amount') {
+      const waiting = row.pieces.filter((piece) => piece.status !== 'approved');
+      if (waiting.some((piece) => piece.unresolved?.length)) return ['NEEDS YOU', 'red'];
+      if (waiting.length && waiting.every((piece) => piece.kind === 'same_as')) return ['SAME?', 'amber'];
+      if (waiting.length) return [`${waiting.length} NEW`, 'amber'];
+    }
+
     if (row.status !== 'ready') return ['NEEDS AMOUNTS', 'red'];
 
     const left = checkGroups(dishView(row, data.ingredients)).length;
@@ -1683,6 +1705,329 @@ export default function PosUsage() {
     );
   }
 
+  // ---- Requests learned one at a time ----------------------------------
+  const ingredientName = (id) =>
+    data.ingredients.find((ingredient) => ingredient.id === id)?.name || 'Unknown ingredient';
+
+  // The recipe's own amount of an ingredient on this order, in one unit.
+  function recipeAmount(row, id) {
+    const lines = (row.counted_base || row.base || []).filter((part) => part.id === id);
+
+    if (!lines.length || !lines.every((part) => part.unit === lines[0].unit)) {
+      return null;
+    }
+
+    return {
+      qty: lines.reduce((sum, part) => sum + Number(part.quantity || 0), 0),
+      unit: lines[0].unit,
+    };
+  }
+
+  function pieceSummary(piece) {
+    const ops = piece.operations || [];
+
+    if (piece.kind === 'none' || !ops.length) return 'no change';
+
+    return ops.map((op) => {
+      if (op.action === 'replace') {
+        return `${ingredientName(op.ingredient_id)} → ${ingredientName(op.target_id)}`;
+      }
+      if (op.action === 'remove') return `−${ingredientName(op.ingredient_id)}`;
+
+      const sign = op.quantity < 0 ? '−' : '+';
+      return `${sign}${formatQty(Math.abs(op.quantity))} ${op.unit} ${ingredientName(op.ingredient_id)}`;
+    }).join(' · ');
+  }
+
+  // A request's changes with any amounts typed on the page.
+  function pieceOps(piece) {
+    return (piece.operations || []).map((op, index) => {
+      const value = pieceEdits[`${piece.id}:${index}`];
+      return value === undefined || op.action === 'remove'
+        ? op
+        : { ...op, quantity: Number(value) };
+    });
+  }
+
+  const pieceEdited = (piece) => (piece.operations || []).some((op, index) =>
+    pieceEdits[`${piece.id}:${index}`] !== undefined
+  );
+
+  async function approvePieces(pieces, operations = null) {
+    const result = await act('requests-approve', {
+      pieces: pieces.map((piece) => ({
+        id: piece.id,
+        ...(operations
+          ? { operations }
+          : pieceEdited(piece) ? { operations: pieceOps(piece) } : {}),
+      })),
+    });
+
+    if (result) {
+      setPieceEdits((old) => {
+        const next = { ...old };
+        for (const piece of pieces) {
+          Object.keys(next).forEach((key) => {
+            if (key.startsWith(`${piece.id}:`)) delete next[key];
+          });
+        }
+        return next;
+      });
+    }
+
+    return result;
+  }
+
+  function openPiece(row, piece) {
+    setMessage('');
+    setPieceDialog({
+      row,
+      piece,
+      ops: pieceOps(piece).map((op) => ({ ...op })),
+      offId: '',
+      addId: '',
+      addQty: '',
+      addUnit: '',
+    });
+  }
+
+  // One change in a new request: what comes off and what goes on.
+  function renderChange(row, piece, op, index) {
+    const key = `${piece.id}:${index}`;
+    const qty = pieceEdits[key] ?? String(Number(Number(op.quantity).toFixed(4)));
+    const amountBox = (label) => (
+      <input
+        className="om-field pu-qty"
+        type="number"
+        step="any"
+        inputMode="decimal"
+        aria-label={label}
+        value={qty}
+        disabled={busy}
+        onChange={(event) => setPieceEdits({ ...pieceEdits, [key]: event.target.value })}
+      />
+    );
+
+    if (op.action === 'replace') {
+      const off = recipeAmount(row, op.ingredient_id);
+      const on = Number(qty);
+      const same = off && off.unit === op.unit && Math.abs(off.qty - on) < 1e-9;
+
+      return (
+        <div key={key} className="pu-swap">
+          <div className="pu-swap-row">
+            <span className="pu-rq"><small className="pu-off">TAKES OFF</small><strong>{ingredientName(op.ingredient_id)}</strong></span>
+            <span className="pu-amt pu-minus">{off ? `−${formatQty(off.qty)} ${off.unit}` : 'all of it'}</span>
+          </div>
+          <div className="pu-swap-row">
+            <span className="pu-rq"><small className="pu-on">PUTS ON</small><strong>{ingredientName(op.target_id)}</strong></span>
+            <span className="pu-amt-edit">
+              <span className="pu-plus">+</span>
+              {amountBox(`${ingredientName(op.target_id)} amount`)}
+              <span className="pu-unit">{op.unit}</span>
+            </span>
+          </div>
+          {off && (
+            <span className={same ? 'pu-same' : 'pu-diff'}>
+              {same && <QTag text="SAME AMOUNT" tone="green" />}
+              {formatQty(off.qty)} {off.unit} off, {formatQty(on)} {op.unit} on
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (op.action === 'remove') {
+      const off = recipeAmount(row, op.ingredient_id);
+
+      return (
+        <div key={key} className="pu-swap-row">
+          <span className="pu-rq"><small className="pu-off">TAKES OFF</small><strong>{ingredientName(op.ingredient_id)}</strong></span>
+          <span className="pu-amt pu-minus">{off ? `−${formatQty(off.qty)} ${off.unit}` : 'all of it'}</span>
+        </div>
+      );
+    }
+
+    const less = Number(qty) < 0;
+
+    return (
+      <div key={key} className="pu-swap-row">
+        <span className="pu-rq">
+          <small className={less ? 'pu-off' : 'pu-on'}>{less ? 'TAKES SOME OFF' : 'PUTS ON'}</small>
+          <strong>{ingredientName(op.ingredient_id)}</strong>
+        </span>
+        <span className="pu-amt-edit">
+          {amountBox(`${ingredientName(op.ingredient_id)} amount`)}
+          <span className="pu-unit">{op.unit}</span>
+        </span>
+      </div>
+    );
+  }
+
+  function renderNewPiece(row, piece) {
+    const from = piece.kind === 'same_as'
+      ? 'NEW WORDING'
+      : piece.kind === 'none'
+        ? (piece.any_dish ? 'COOKING OR SERVICE · ANY DISH' : 'THIS DISH ONLY')
+        : piece.texts.length > 1 ? 'A SWAP · CLAUDE PAIRED THESE' : 'NEW REQUEST';
+    const invalid = (piece.operations || []).some((op, index) => {
+      const value = pieceEdits[`${piece.id}:${index}`];
+      return value !== undefined && (value === '' || !Number.isFinite(Number(value)));
+    });
+
+    return (
+      <div key={piece.id} className="pu-piece">
+        <span className="pu-rq">
+          <strong>{piece.texts.join(' + ')}</strong>
+          <small>{from}{piece.label && piece.kind !== 'same_as' ? ` · ${piece.label}` : ''}</small>
+        </span>
+
+        {piece.kind === 'same_as' && (
+          <>
+            <span className="pu-note">
+              Looks the same as <b>{piece.same_as?.label || piece.same_as?.texts?.join(' + ')}</b>, which you approved before ({pieceSummary(piece)}).
+            </span>
+            <span className="pu-two pu-two-even">
+              <button type="button" className="om-btn" disabled={busy} onClick={() => act('request-not-same', { id: piece.id })}>
+                Not the same
+              </button>
+              <button type="button" className="om-pri" disabled={busy} onClick={() => approvePieces([piece])}>
+                Same as before
+              </button>
+            </span>
+          </>
+        )}
+
+        {piece.kind === 'none' && (
+          <>
+            <span className="pu-note">
+              Never changes ingredients{piece.any_dish ? ', on any dish.' : ' on this dish.'}
+            </span>
+            <button type="button" className="om-pri pu-wide" disabled={busy} onClick={() => approvePieces([piece])}>
+              OK
+            </button>
+          </>
+        )}
+
+        {piece.kind === 'change' && (
+          <>
+            {piece.unresolved?.length > 0 && <div className="pu-reason">{piece.unresolved.join(' ')}</div>}
+            {piece.untracked?.length > 0 && (
+              <span className="pu-note">Not counted: {piece.untracked.join(', ')}. Not one of your ingredients.</span>
+            )}
+            {(piece.operations || []).length > 0 && (
+              <div className="pu-swap-box">
+                {piece.operations.map((op, index) => renderChange(row, piece, op, index))}
+              </div>
+            )}
+            {piece.unresolved?.length > 0 ? (
+              <button type="button" className="om-pri pu-wide" disabled={busy} onClick={() => openPiece(row, piece)}>
+                Set what it changes
+              </button>
+            ) : (
+              <span className="pu-two">
+                <button type="button" className="om-btn" disabled={busy} onClick={() => openPiece(row, piece)}>
+                  Change
+                </button>
+                <button type="button" className="om-pri" disabled={busy || invalid} onClick={() => approvePieces([piece])}>
+                  OK
+                </button>
+              </span>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  function renderPieces(row) {
+    const waiting = row.pieces.filter((piece) => piece.status !== 'approved');
+    const known = row.pieces.filter((piece) => piece.status === 'approved');
+
+    return (
+      <>
+        {waiting.length > 0 && (
+          <div className="pu-box">
+            <div className="pu-thead"><span>NEW ON THIS DISH · {waiting.length} · ONLY THESE NEED YOU</span></div>
+            {waiting.map((piece) => renderNewPiece(row, piece))}
+          </div>
+        )}
+        {known.length > 0 && (
+          <div className="pu-box">
+            <div className="pu-thead"><span>ALREADY KNOWN · APPLIED AUTOMATICALLY</span></div>
+            {known.map((piece) => (
+              <div key={piece.id} className="pu-known">
+                <span className="pu-rq">
+                  <strong>{piece.texts.join(' + ')}</strong>
+                  <small>{piece.label}</small>
+                </span>
+                <span className="pu-amt">{pieceSummary(piece)}</span>
+                <QTag
+                  text={piece.kind === 'none' ? 'SKIPPED' : piece.origin === 'auto' ? 'AUTOMATIC' : 'APPROVED'}
+                  tone={piece.kind === 'none' ? 'mute' : 'green'}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // The list on the left. New POS buttons come grouped by POS category, with
+  // one tap to skip a whole category (tap twice to confirm).
+  function renderQueue() {
+    if (view !== 'new') return visibleGroups.map(renderQueueRow);
+
+    const categories = [];
+
+    for (const group of visibleGroups) {
+      const name = group.button?.category_name || 'No category';
+      let category = categories.find((value) => value.name === name);
+
+      if (!category) {
+        category = { name, groups: [] };
+        categories.push(category);
+      }
+
+      category.groups.push(group);
+    }
+
+    return categories.map((category) => {
+      const armed = skipCategory === category.name;
+
+      return (
+        <div key={category.name}>
+          <div className="pu-cat">
+            <strong>
+              {category.name}
+              <span className="pu-count">{category.groups.length}</span>
+            </strong>
+            <button
+              type="button"
+              className={armed ? 'om-pri' : 'om-btn'}
+              disabled={busy}
+              onClick={async () => {
+                if (!armed) {
+                  setSkipCategory(category.name);
+                  return;
+                }
+
+                setSkipCategory('');
+                await act('exclude-many', {
+                  itemRefs: category.groups.map((group) => group.button.external_id),
+                });
+              }}
+            >
+              {armed ? `Skip all ${category.groups.length}?` : 'Not tracked, skip all'}
+            </button>
+          </div>
+          {category.groups.map(renderQueueRow)}
+        </div>
+      );
+    });
+  }
+
   function renderDetail(group) {
     const { row, kind, sales } = group;
     const index = visibleGroups.findIndex((value) => value.key === group.key);
@@ -1697,10 +2042,16 @@ export default function PosUsage() {
       ? checkGroups(dishView(row, data.ingredients)).length
       : 0;
     const [tagText, tagTone] = groupTag(group);
+    const learned = row.pieces?.length > 0;
+    const waiting = learned
+      ? row.pieces.filter((piece) => piece.status !== 'approved')
+      : [];
     const kicker = kind === 'new'
       ? `NEW ON THE POS · FIRST SEEN ${shortDate(group.button?.first_seen_at)}`
       : `TICKET #${first?.ticket || '—'} · ${shortDate(first?.date)}${sales.length > 1 ? ` · ${sales.length} SALES` : ''}`;
-    const footNote = counting
+    const footNote = learned
+      ? 'Each new request is saved on its own and reused in any combination.'
+      : counting
       ? toCheck
         ? 'Already counted. Nothing moves to Done until you approve.'
         : 'Every amount is checked.'
@@ -1812,14 +2163,21 @@ export default function PosUsage() {
 
           {!matching && (
             <>
-              {counting && (
+              {learned && waiting.length > 0 && (
+                <div className="pu-steps">
+                  <span><b>1</b>Check each new request. Change an amount if it is wrong.</span>
+                  <span><b>2</b>OK them one at a time, or approve the whole dish.</span>
+                  <span><b>3</b>Known requests are already applied.</span>
+                </div>
+              )}
+              {counting && !learned && (
                 <div className="pu-steps">
                   <span><b>1</b>Check each amount under To check. Fix it if it is wrong, then OK.</span>
                   <span><b>2</b>Open a part below only if something looks off.</span>
                   <span><b>3</b>Approve when the dish looks right.</span>
                 </div>
               )}
-              {kind === 'amount' && !counting && (
+              {kind === 'amount' && !counting && !learned && (
                 <div className="pu-steps">
                   <span><b>1</b>Open each part and click a line to set what the kitchen used.</span>
                   <span><b>2</b>Add anything missing with + Add an ingredient.</span>
@@ -1834,9 +2192,15 @@ export default function PosUsage() {
                 </div>
               )}
 
-              {!counting && row.reason && <div className="pu-reason">{row.reason}</div>}
+              {!counting && !learned && row.reason && <div className="pu-reason">{row.reason}</div>}
 
-              {row.base?.length > 0 && renderRecipe(row, counting ? row.plan?.explanation : null)}
+              {learned && renderPieces(row)}
+
+              {row.base?.length > 0 && renderRecipe(
+                row,
+                counting && !learned ? row.plan?.explanation : null,
+                learned
+              )}
             </>
           )}
         </div>
@@ -1852,7 +2216,20 @@ export default function PosUsage() {
             >
               Skip
             </button>
-            {counting && (
+            {learned && waiting.length > 0 && (
+              <button
+                type="button"
+                className="om-pri"
+                disabled={busy || waiting.some((piece) => piece.unresolved?.length)}
+                onClick={async () => {
+                  const after = nextKey(group);
+                  if (await approvePieces(waiting)) setOpenKey(after);
+                }}
+              >
+                {'Approve & next'}
+              </button>
+            )}
+            {counting && !learned && (
               <button
                 type="button"
                 className="om-pri"
@@ -1871,7 +2248,7 @@ export default function PosUsage() {
                   : kind === 'untracked' ? 'OK, leave it out & next' : 'Mark done & next'}
               </button>
             )}
-            {kind === 'amount' && !counting && row.context_key && (
+            {kind === 'amount' && !counting && row.context_key && !learned && (
               <button type="button" className="om-pri" disabled={busy} onClick={() => saveLine(row, { kind: 'none' })}>
                 Save as shown
               </button>
@@ -1908,9 +2285,12 @@ export default function PosUsage() {
     const key = `done:${row.line_key}`;
     const open = openKey === key;
     const requests = requestList(row);
+    // Only plain No ___ requests: counted on their own, nothing to review.
+    const automatic = row.pieces?.length > 0 &&
+      row.pieces.every((piece) => piece.origin === 'auto' || piece.kind === 'none');
     const [label, bg, fg] = row.status === 'excluded'
       ? ['Not food', 'var(--panel)', 'var(--muted)']
-      : row.origin === 'admin'
+      : row.origin === 'admin' && !automatic
         ? ['Reviewed by you', 'var(--green-tint)', 'var(--green)']
         : ['Automatic', 'var(--panel)', 'var(--muted)'];
 
@@ -1931,7 +2311,10 @@ export default function PosUsage() {
           <span><span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span></span>
         </button>
         {open && row.status !== 'excluded' && (
-          <div style={{ padding: '0 18px 16px' }}>{renderRecipe(row, row.plan?.explanation)}</div>
+          <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {row.pieces?.length > 0 && renderPieces(row)}
+            {renderRecipe(row, row.pieces?.length ? null : row.plan?.explanation, row.pieces?.length > 0)}
+          </div>
         )}
       </div>
     );
@@ -2092,6 +2475,40 @@ export default function PosUsage() {
         .om-app .pu-pills { display: flex; gap: 6px; flex-wrap: wrap; }
         .om-app .pu-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; font-weight: 600; background: var(--accent-tint); color: var(--accent-deep); }
         .om-app .pu-back { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: var(--accent-deep); font: 700 14px 'Manrope', sans-serif; cursor: pointer; align-self: flex-start; }
+        .om-app .pu-piece { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line-soft); }
+        .om-app .pu-thead + .pu-piece, .om-app .pu-thead + .pu-known { border-top: 0; }
+        .om-app .pu-rq { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+        .om-app .pu-rq strong { font-size: 13.5px; }
+        .om-app .pu-rq small { font: 500 10.5px 'IBM Plex Mono', monospace; letter-spacing: 0.04em; color: var(--muted); }
+        .om-app .pu-rq small.pu-off { color: var(--red); }
+        .om-app .pu-rq small.pu-on { color: var(--green); }
+        .om-app .pu-swap-box { border: 1px solid var(--line-soft); border-radius: 10px; overflow: hidden; }
+        .om-app .pu-swap { display: flex; flex-direction: column; }
+        .om-app .pu-swap-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border-top: 1px dashed var(--line-soft); }
+        .om-app .pu-swap-box > .pu-swap-row:first-child, .om-app .pu-swap-box > .pu-swap:first-child > .pu-swap-row:first-child { border-top: 0; }
+        .om-app .pu-same, .om-app .pu-diff { display: flex; align-items: center; gap: 8px; padding: 0 10px 10px; font-size: 12.5px; font-weight: 700; }
+        .om-app .pu-same { color: var(--green); }
+        .om-app .pu-diff { color: var(--amber); }
+        .om-app .pu-minus { color: var(--red); }
+        .om-app .pu-plus { color: var(--green); font: 600 15px 'IBM Plex Mono', monospace; }
+        .om-app .pu-amt-edit { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
+        .om-app .pu-qty { width: 64px; padding: 0 6px; text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .om-app .pu-unit { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); min-width: 30px; }
+        .om-app .pu-two { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+        .om-app .pu-two-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+        .om-app .pu-two > button, .om-app .pu-wide { min-height: 42px; justify-content: center; }
+        .om-app .pu-wide { width: 100%; }
+        .om-app .pu-known { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line-soft); }
+        .om-app .pu-cat { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; background: var(--panel); border-top: 1px solid var(--line); }
+        .om-app .pu-cat strong { font-size: 13px; }
+        .om-app .pu-cat .om-btn, .om-app .pu-cat .om-pri { min-height: 30px; padding: 0 12px; font-size: 12px; }
+        .om-app .pu-dialog { display: flex; flex-direction: column; gap: 10px; }
+        .om-app .pu-dialog .pu-two { grid-template-columns: minmax(0, 1fr) auto; }
+        .om-app .pu-dline { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13.5px; }
+        @media (max-width: 700px) {
+          .om-app .pu-known { grid-template-columns: minmax(0, 1fr) auto; }
+          .om-app .pu-known > .pu-amt { grid-column: 1 / -1; text-align: left; }
+        }
         @media (max-width: 700px) {
           .om-app .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
           .om-app .pu-done-row strong { flex: 1 1 100%; }
@@ -2158,11 +2575,20 @@ export default function PosUsage() {
                 }}
                 options={[
                   ['review', `Needs review · ${reviewGroups.length}`],
+                  ...(newGroups.length ? [['new', `New on POS · ${newGroups.length}`]] : []),
                   ['done', 'Done'],
                 ]}
               />
 
-              {view === 'review' ? (
+              {data.matching?.total > 0 && view === 'review' && (
+                <span className="pu-note">
+                  Matching: <b>{data.matching.right} of {data.matching.total} right</b>
+                </span>
+              )}
+
+              {view === 'new' ? (
+                <span className="pu-note">On your POS with no dish yet. Skip what you do not track.</span>
+              ) : view === 'review' ? (
                 <label className="pu-day">
                   Day
                   <select
@@ -2205,7 +2631,7 @@ export default function PosUsage() {
               )}
             </div>
 
-            {view === 'review' ? (
+            {view !== 'done' ? (
               !visibleGroups.length ? (
                 <p className="pu-empty" style={{ padding: 8 }}>
                   {report.length ? 'Nothing needs review.' : 'Usage is prepared after each POS sync.'}
@@ -2222,20 +2648,20 @@ export default function PosUsage() {
                 ) : (
                   <div className="pu-box">
                     <div className="pu-thead" style={{ gridTemplateColumns: '1fr auto' }}>
-                      <span>DISHES · OLDEST FIRST</span>
+                      <span>{view === 'new' ? 'POS BUTTONS · BY CATEGORY' : 'DISHES · OLDEST FIRST'}</span>
                       <span>{visibleGroups.length}</span>
                     </div>
-                    {visibleGroups.map(renderQueueRow)}
+                    {renderQueue()}
                   </div>
                 )
               ) : (
                 <div className="pu-split">
                   <aside className="pu-box pu-queue">
                     <div className="pu-thead" style={{ gridTemplateColumns: '1fr auto' }}>
-                      <span>DISHES · OLDEST FIRST</span>
+                      <span>{view === 'new' ? 'POS BUTTONS · BY CATEGORY' : 'DISHES · OLDEST FIRST'}</span>
                       <span>{visibleGroups.length}</span>
                     </div>
-                    {visibleGroups.map(renderQueueRow)}
+                    {renderQueue()}
                   </aside>
                   {selected && renderDetail(selected)}
                 </div>
@@ -2270,6 +2696,191 @@ export default function PosUsage() {
           </p>
         )}
       </div>
+
+      {pieceDialog && (() => {
+        const { row, piece } = pieceDialog;
+        const update = (changes) => setPieceDialog({ ...pieceDialog, ...changes });
+        const recipeLines = [...new Map(
+          (row.counted_base || row.base || []).map((part) => [part.id, part])
+        ).values()];
+        const bad = pieceDialog.ops.some((op) =>
+          op.action !== 'remove' &&
+          (op.quantity === '' || !Number.isFinite(Number(op.quantity)))
+        );
+
+        return (
+          <Dialog
+            title={piece.texts.join(' + ')}
+            sub={`${row.dish} · what this request changes`}
+            width={520}
+            showCloseButton
+            onClose={() => { if (!busy) setPieceDialog(null); }}
+          >
+            <div className="pu-dialog">
+              {!pieceDialog.ops.length && (
+                <span className="pu-note">No changes yet. Add what comes off and what goes on.</span>
+              )}
+
+              {pieceDialog.ops.map((op, index) => (
+                <div key={index} className="pu-dline">
+                  <span>
+                    {op.action === 'replace'
+                      ? `${ingredientName(op.ingredient_id)} → ${ingredientName(op.target_id)}`
+                      : op.action === 'remove'
+                        ? `Takes off ${ingredientName(op.ingredient_id)}`
+                        : ingredientName(op.ingredient_id)}
+                  </span>
+                  {op.action !== 'remove' ? (
+                    <span className="pu-amt-edit">
+                      <input
+                        className="om-field pu-qty"
+                        type="number"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label="Amount"
+                        value={op.quantity ?? ''}
+                        disabled={busy}
+                        onChange={(event) => update({
+                          ops: pieceDialog.ops.map((value, i) =>
+                            i === index ? { ...value, quantity: event.target.value } : value
+                          ),
+                        })}
+                      />
+                      <span className="pu-unit">{op.unit}</span>
+                    </span>
+                  ) : <span />}
+                  <button
+                    type="button"
+                    className="om-btn"
+                    aria-label="Remove this change"
+                    disabled={busy}
+                    onClick={() => update({ ops: pieceDialog.ops.filter((_, i) => i !== index) })}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              <span className="pu-label">Takes off</span>
+              <span className="pu-two">
+                <select
+                  className="om-field"
+                  aria-label="Recipe ingredient that comes off"
+                  value={pieceDialog.offId}
+                  disabled={busy}
+                  onChange={(event) => update({ offId: event.target.value })}
+                >
+                  <option value="">Choose a recipe ingredient</option>
+                  {recipeLines.map((part) => (
+                    <option key={part.id} value={part.id}>{part.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="om-btn"
+                  disabled={busy || !pieceDialog.offId}
+                  onClick={() => update({
+                    offId: '',
+                    ops: [...pieceDialog.ops, {
+                      action: 'remove',
+                      ingredient_id: pieceDialog.offId,
+                      target_id: null,
+                      quantity: null,
+                      unit: null,
+                    }],
+                  })}
+                >
+                  Add
+                </button>
+              </span>
+
+              <span className="pu-label">Puts on</span>
+              <Picker
+                value={pieceDialog.addId}
+                search
+                placeholder="Search your ingredients"
+                ariaLabel="Ingredient that goes on"
+                disabled={busy}
+                options={[...data.ingredients]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((ingredient) => ({ value: ingredient.id, label: ingredient.name }))}
+                onChange={(id) => update({
+                  addId: id,
+                  addUnit: pieceDialog.addUnit ||
+                    data.ingredients.find((ingredient) => ingredient.id === id)?.unit || '',
+                })}
+              />
+              <span className="pu-two">
+                <span className="pu-amt-edit" style={{ justifyContent: 'flex-start' }}>
+                  <input
+                    className="om-field pu-qty"
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    aria-label="Amount that goes on"
+                    value={pieceDialog.addQty}
+                    disabled={busy}
+                    onChange={(event) => update({ addQty: event.target.value })}
+                  />
+                  <select
+                    className="om-field"
+                    aria-label="Unit"
+                    value={pieceDialog.addUnit}
+                    disabled={busy}
+                    onChange={(event) => update({ addUnit: event.target.value })}
+                  >
+                    <option value="">Unit</option>
+                    {UNITS.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+                  </select>
+                </span>
+                <button
+                  type="button"
+                  className="om-btn"
+                  disabled={
+                    busy ||
+                    !pieceDialog.addId ||
+                    !(Number(pieceDialog.addQty) > 0) ||
+                    !pieceDialog.addUnit
+                  }
+                  onClick={() => update({
+                    addId: '',
+                    addQty: '',
+                    ops: [...pieceDialog.ops, {
+                      action: 'add',
+                      ingredient_id: pieceDialog.addId,
+                      target_id: null,
+                      quantity: Number(pieceDialog.addQty),
+                      unit: pieceDialog.addUnit,
+                      part: piece.texts.join(' + '),
+                    }],
+                  })}
+                >
+                  Add
+                </button>
+              </span>
+
+              {message && <p className="pu-note" role="status">{message}</p>}
+
+              <button
+                type="button"
+                className="om-pri pu-wide"
+                disabled={busy || bad}
+                onClick={async () => {
+                  const result = await approvePieces(
+                    [piece],
+                    pieceDialog.ops.map((op) =>
+                      op.action === 'remove' ? op : { ...op, quantity: Number(op.quantity) }
+                    )
+                  );
+                  if (result) setPieceDialog(null);
+                }}
+              >
+                Save and approve
+              </button>
+            </div>
+          </Dialog>
+        );
+      })()}
 
       {editing && (
         <Dialog

@@ -1,11 +1,16 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { recipeAI } from '../../../lib/recipes/ai';
 import { compile, normalizeUnit, UNITS } from '../../../lib/recipes/compile';
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { allRows } from '../../../lib/pos/usageServer';
 import { runUsage } from '../../../lib/pos/runUsage';
-import { adjustRecipe, inventoryPortions } from '../../../lib/pos/usageRecipe';
+import {
+  adjustRecipe,
+  inventoryPortions,
+  rawRecipe,
+  touchedLines,
+} from '../../../lib/pos/usageRecipe';
 import { transferPlan } from '../../../lib/pos/transferPlan';
 import { removeComponents } from '../../../lib/pos/prepareUsageV2';
 import {
@@ -23,6 +28,12 @@ const check = (result) => {
   if (result.error) throw result.error;
   return result.data;
 };
+
+// Same fingerprint as the usage worker, so an edited request is read again
+// only when its recipe lines change.
+const hash = (value) => createHash('sha256')
+  .update(JSON.stringify(value))
+  .digest('hex');
 
 // Recipe lines from Claude or the admin, checked against this restaurant.
 // strict: every line must be one of its ingredients or batch preps, with
@@ -98,7 +109,16 @@ export default withAdminAuth(async function handler(req, res) {
     }
 
     if (req.method === 'GET') {
-      const [settings, result, menus, ingredients, job, buttons, workspace] =
+      const [
+        settings,
+        result,
+        menus,
+        ingredients,
+        job,
+        buttons,
+        workspace,
+        requestRows,
+      ] =
         await Promise.all([
           db
             .from('pos_usage_settings')
@@ -144,6 +164,12 @@ export default withAdminAuth(async function handler(req, res) {
             .select('state')
             .eq('restaurant_id', restaurantId)
             .maybeSingle(),
+          allRows(() => db
+            .from('pos_usage_requests')
+            .select('id,match_result,rejected_same_as')
+            .eq('restaurant_id', restaurantId)
+            .order('id')
+          ),
         ]);
 
       const dishMap = check(settings)?.dish_map || {};
@@ -171,6 +197,11 @@ export default withAdminAuth(async function handler(req, res) {
           yield_unit: node.published.yield_unit,
         }));
 
+      // How often a proposed same-as match was right.
+      const right = requestRows.filter((row) => row.match_result === 'accepted').length;
+      const wrong = requestRows.reduce((sum, row) =>
+        sum + (row.rejected_same_as || []).length, 0);
+
       return res.json({
         settings: check(settings),
         result: check(result),
@@ -179,6 +210,7 @@ export default withAdminAuth(async function handler(req, res) {
         ingredients,
         newButtons,
         preps,
+        matching: { right, total: right + wrong },
       });
     }
 
@@ -709,6 +741,208 @@ export default withAdminAuth(async function handler(req, res) {
       }));
 
       savedPlan = clean;
+    } else if (action === 'exclude-many') {
+      // A whole POS category with no tracked ingredients, such as the bar.
+      const refs = req.body.itemRefs;
+
+      if (
+        !Array.isArray(refs) ||
+        !refs.length ||
+        refs.length > 500 ||
+        refs.some((ref) => typeof ref !== 'string' || !ref)
+      ) {
+        throw new Error('Choose at least one POS button');
+      }
+
+      const setting = check(await db
+        .from('pos_usage_settings')
+        .select('dish_map')
+        .eq('restaurant_id', restaurantId)
+        .single()
+      );
+
+      const dishMap = { ...setting.dish_map };
+      for (const ref of refs) {
+        if (!dishMap[ref]) dishMap[ref] = '__exclude__';
+      }
+
+      check(await db
+        .from('pos_usage_settings')
+        .update({ dish_map: dishMap })
+        .eq('restaurant_id', restaurantId)
+      );
+
+      // Not sold yet, so usage does not change.
+      return res.json({ ok: true, usage: null, plan: null });
+    } else if (action === 'requests-approve') {
+      // Requests learned one at a time: each is saved on its own and reused
+      // in any combination. operations is sent only when the admin changed it.
+      const list = req.body.pieces;
+
+      if (!Array.isArray(list) || !list.length || list.length > 20) {
+        throw new Error('Nothing to approve');
+      }
+
+      const catalog = await allRows(() => db
+        .from('ingredients')
+        .select('id,name,unit')
+        .eq('restaurant_id', restaurantId)
+        .order('id')
+      );
+
+      const ids = new Set(catalog.map((row) => row.id));
+      const now = new Date().toISOString();
+
+      const cleanOp = (op) => {
+        const action = op?.action;
+
+        if (
+          !['remove', 'add', 'replace'].includes(action) ||
+          !ids.has(op.ingredient_id) ||
+          (action === 'replace' && !ids.has(op.target_id))
+        ) {
+          throw new Error('Choose one of your ingredients');
+        }
+
+        if (
+          action !== 'remove' &&
+          (
+            !Number.isFinite(Number(op.quantity)) ||
+            !String(op.unit || '').trim() ||
+            (action === 'replace' && Number(op.quantity) < 0)
+          )
+        ) {
+          throw new Error('Enter an amount and a unit');
+        }
+
+        return {
+          action,
+          ingredient_id: op.ingredient_id,
+          target_id: action === 'replace' ? op.target_id : null,
+          quantity: action === 'remove' ? null : Number(op.quantity),
+          unit: action === 'remove' ? null : String(op.unit).trim(),
+          basis: 'configured',
+          reason: String(op.reason || 'Set by admin').slice(0, 300),
+          part: String(op.part || '').slice(0, 200),
+        };
+      };
+
+      // The recipe lines an edited change depends on, as the worker sees them.
+      const touchedHash = async (menuId, operations) => {
+        if (!menuId) return null;
+
+        const menu = check(await db
+          .from('menu_items')
+          .select(
+            'id,name,menu_item_components(name,' +
+              'component_ingredients(quantity,unit,ingredients(id)))'
+          )
+          .eq('restaurant_id', restaurantId)
+          .eq('id', menuId)
+          .maybeSingle()
+        );
+
+        const recipe = menu ? rawRecipe(menu, catalog) : [];
+        return recipe.length ? hash(touchedLines(recipe, operations)) : null;
+      };
+
+      // Check every request before saving any.
+      const updates = [];
+
+      for (const item of list) {
+        const row = check(await db
+          .from('pos_usage_requests')
+          .select('*')
+          .eq('restaurant_id', restaurantId)
+          .eq('id', item?.id)
+          .single()
+        );
+
+        const fields = { status: 'approved', approved_at: now };
+
+        if (row.kind === 'pending') {
+          throw new Error('OptiMenu is still reading this request. Try again in a moment.');
+        }
+
+        if (row.kind === 'alias') {
+          const target = check(await db
+            .from('pos_usage_requests')
+            .select('status')
+            .eq('restaurant_id', restaurantId)
+            .eq('id', row.same_as)
+            .single()
+          );
+
+          if (target.status !== 'approved') {
+            throw new Error('Approve the original request first');
+          }
+
+          fields.match_result = 'accepted';
+          fields.decided_at = now;
+        } else if (Array.isArray(item.operations)) {
+          const operations = item.operations.slice(0, 30).map(cleanOp);
+
+          if (!row.menu_item_id && operations.length) {
+            throw new Error('This one applies to every dish, so it cannot change ingredients.');
+          }
+
+          fields.kind = operations.length ? 'change' : 'none';
+          fields.operations = operations;
+          fields.unresolved = [];
+          fields.origin = 'admin';
+          fields.touched_hash = await touchedHash(row.menu_item_id, operations);
+        } else if (row.unresolved?.length) {
+          throw new Error('Set what this request changes first');
+        }
+
+        updates.push({ id: row.id, fields });
+      }
+
+      for (const { id, fields } of updates) {
+        check(await db
+          .from('pos_usage_requests')
+          .update(fields)
+          .eq('restaurant_id', restaurantId)
+          .eq('id', id)
+        );
+      }
+
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
+    } else if (action === 'request-not-same') {
+      // Claude's same-as match was wrong: read this request again on its own,
+      // never suggesting that match again.
+      const row = check(await db
+        .from('pos_usage_requests')
+        .select('*')
+        .eq('restaurant_id', restaurantId)
+        .eq('id', req.body.id)
+        .single()
+      );
+
+      if (row.kind !== 'alias') throw new Error('This request is not a match');
+
+      check(await db
+        .from('pos_usage_requests')
+        .update({
+          kind: 'pending',
+          same_as: null,
+          status: 'pending',
+          match_result: 'rejected',
+          decided_at: new Date().toISOString(),
+          rejected_same_as: [...new Set([
+            ...(row.rejected_same_as || []),
+            row.proposed_same_as || row.same_as,
+          ].filter(Boolean))],
+        })
+        .eq('restaurant_id', restaurantId)
+        .eq('id', row.id)
+      );
+
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
     } else if (action === 'enable') {
       check(await db
         .from('pos_usage_settings')
