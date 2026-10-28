@@ -220,7 +220,9 @@ function dishView(row, ingredients) {
 
   const add = (op, index, id, qty, unit, extra = {}) => {
     const title = op.part || 'Added by request';
-    const section = sectionFor(`add:${title}`, title, 'added', 'Added');
+    // Into the recipe's own part when it has one with that name.
+    const section = sections.find((value) => value.title === title && value.tone !== 'removed') ||
+      sectionFor(`add:${title}`, title, 'added', 'Added');
     section.lines.push({
       key: `add:${title}:${id}:${section.lines.length}`,
       id,
@@ -231,6 +233,7 @@ function dishView(row, ingredients) {
       recipe: null,
       state: 'added',
       opIndex: index,
+      batch: op.batch_portion || null,
       ...flags(op),
       ...extra,
     });
@@ -245,6 +248,7 @@ function dishView(row, ingredients) {
     mine[0].qty = Number(op.quantity);
     mine[0].unit = op.unit;
     mine[0].opIndex = index;
+    mine[0].batch = op.batch_portion || null;
     Object.assign(mine[0], flags(op));
     mine.slice(1).forEach((line) => { line.state = 'merged'; });
   };
@@ -272,6 +276,11 @@ function dishView(row, ingredients) {
     }
   } else {
     (plan?.operations || []).forEach((op, index) => {
+      if (op.action === 'add') {
+        add(op, index, op.ingredient_id, op.quantity, op.unit);
+        return;
+      }
+
       const mine = kept(op.ingredient_id);
 
       if (op.action === 'remove') {
@@ -345,6 +354,34 @@ function editedPlan(row, change, ingredients) {
 
   if (change.kind === 'none') return plan;
 
+  // OK every guessed line in a part at once.
+  if (change.kind === 'okMany') {
+    for (const value of change.lines) {
+      if (ops[value.opIndex]) ops[value.opIndex] = { ...ops[value.opIndex], checked: true };
+    }
+    return plan;
+  }
+
+  // A batch prep portion changed: every line in it scales the same way.
+  if (change.kind === 'scale') {
+    for (const value of change.lines) {
+      const op = ops[value.opIndex];
+      if (!op || !Number.isFinite(Number(op.quantity))) continue;
+
+      ops[value.opIndex] = mark({
+        ...op,
+        quantity: Number((Number(op.quantity) * change.ratio).toFixed(4)),
+        batch_portion: op.batch_portion
+          ? {
+              ...op.batch_portion,
+              quantity: Number((op.batch_portion.quantity * change.ratio).toPrecision(3)),
+            }
+          : null,
+      });
+    }
+    return plan;
+  }
+
   if (change.kind === 'ok') {
     if (ops[line.opIndex]) ops[line.opIndex] = { ...ops[line.opIndex], checked: true };
     return plan;
@@ -364,23 +401,18 @@ function editedPlan(row, change, ingredients) {
     return plan;
   }
 
-  // + Add an ingredient.
+  // + Add an ingredient: counted on top of anything already there, in the
+  // part of the plate chosen.
   if (!line) {
-    if (dishView(row, ingredients).lines.some((value) =>
-      value.id === change.id && value.state !== 'removed'
-    )) {
-      throw new Error('That ingredient is already in this dish. Click its line to change the amount.');
-    }
-
     ops.push({
-      action: 'set',
+      action: 'add',
       ingredient_id: change.id,
       target_id: null,
       quantity: Number(change.qty),
       unit: change.unit,
       basis: 'configured',
       reason: 'Added by admin',
-      part: 'Added by you',
+      part: change.part || 'Added by you',
       checked: true,
     });
     return plan;
@@ -503,6 +535,27 @@ function Tag({ status }) {
   );
 }
 
+// Guessed amounts to check, one row per part of the plate. A batch prep is
+// checked as one portion; other parts with several guesses get one OK.
+function checkGroups(view) {
+  const groups = [];
+
+  for (const section of view.sections) {
+    const lines = section.lines.filter((line) => line.guessed);
+    if (!lines.length) continue;
+
+    const batch = lines.find((line) => line.batch)?.batch || null;
+
+    if (batch || lines.length > 1) {
+      groups.push({ key: `part:${section.key}`, section, lines, batch });
+    } else {
+      groups.push({ key: lines[0].key, section, lines, batch: null, line: lines[0] });
+    }
+  }
+
+  return groups;
+}
+
 const QTONES = {
   amber: ['var(--amber-tint)', 'var(--amber)'],
   red: ['var(--red-tint)', 'var(--red)'],
@@ -525,7 +578,7 @@ function partTag(section) {
   if (section.tone === 'removed') return ['REMOVED', 'red'];
   if (guessed) return [`${guessed} TO CHECK`, 'amber'];
   if (section.tone === 'added') return ['ADDED', 'green'];
-  if (section.lines.some((line) => ['adjusted', 'removed'].includes(line.state))) return ['CHANGED', 'blue'];
+  if (section.lines.some((line) => ['adjusted', 'removed', 'added'].includes(line.state))) return ['CHANGED', 'blue'];
   return ['UNCHANGED', 'mute'];
 }
 
@@ -914,12 +967,20 @@ export default function PosUsage() {
     });
   }
 
-  function openAdd(row) {
+  function openAdd(row, part) {
+    const parts = [...new Set([
+      ...dishView(row, data.ingredients).sections
+        .filter((section) => section.tone !== 'removed')
+        .map((section) => section.title),
+      'Added by you',
+    ])];
+
     setMessage('');
     setLineEdit({
       row,
       line: null,
-      part: 'Added by you',
+      part: part && parts.includes(part) ? part : parts[0],
+      parts,
       ingredientId: '',
       name: '',
       qty: '',
@@ -1344,7 +1405,12 @@ export default function PosUsage() {
     const unitsOpen = unitsKey === key;
     const editable = Boolean(row.context_key && row.rule_available);
     const canOk = editable && !row.plan?.replace_all && row.status === 'ready';
-    const checks = view.lines.filter((line) => line.guessed);
+    const checks = checkGroups(view);
+    const clearEdit = (name) => setCheckEdits((old) => {
+      const next = { ...old };
+      delete next[name];
+      return next;
+    });
 
     const lineButton = (line) => (
       <button
@@ -1375,14 +1441,90 @@ export default function PosUsage() {
               <span style={{ textAlign: 'right' }}>AMOUNT</span>
               <span />
             </div>
-            {checks.map((line) => {
-              const edit = checkEdits[line.key] || {};
+            {checks.map((group) => {
+              const edit = checkEdits[group.key] || {};
+
+              // A portion of a batch prep: one amount, everything scales.
+              if (group.batch) {
+                const qty = edit.qty ?? String(group.batch.quantity);
+                const changed = edit.qty !== undefined &&
+                  Number(edit.qty) !== Number(group.batch.quantity);
+
+                return (
+                  <div key={group.key} className="pu-trow pu-check-grid">
+                    <span className="pu-check-name">
+                      <strong>{group.batch.name}</strong>
+                      <QTag text="GUESSED" tone="amber" />
+                    </span>
+                    <span className="pu-why-text">
+                      Portion of your batch prep. {group.lines.map((line) => line.name).join(', ')} scale with it.
+                    </span>
+                    <span className="pu-check-edit">
+                      <input
+                        className="om-field"
+                        type="number"
+                        min="0"
+                        step="any"
+                        inputMode="decimal"
+                        aria-label={`${group.batch.name} portion`}
+                        value={qty}
+                        disabled={busy}
+                        onChange={(event) => setCheckEdits({ ...checkEdits, [group.key]: { qty: event.target.value } })}
+                      />
+                      <span className="pu-amt" style={{ alignSelf: 'center', minWidth: 44 }}>{group.batch.unit}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="om-btn"
+                      disabled={busy || !(Number(qty) > 0)}
+                      onClick={async () => {
+                        const result = changed
+                          ? await saveLine(row, {
+                              kind: 'scale',
+                              lines: group.lines,
+                              ratio: Number(qty) / Number(group.batch.quantity),
+                            })
+                          : await saveLine(row, { kind: 'okMany', lines: group.lines });
+                        if (result) clearEdit(group.key);
+                      }}
+                    >
+                      {changed ? 'Save' : 'OK'}
+                    </button>
+                  </div>
+                );
+              }
+
+              // Several guesses in one part: one OK for all of them.
+              if (!group.line) {
+                return (
+                  <div key={group.key} className="pu-trow pu-check-grid">
+                    <span className="pu-check-name">
+                      <strong>{group.section.title}</strong>
+                      <QTag text="GUESSED" tone="amber" />
+                    </span>
+                    <span className="pu-why-text">
+                      {group.lines.map((line) => `${line.name} ${amountText(line)}`).join(' · ')}. To change one, open {group.section.title} below.
+                    </span>
+                    <span />
+                    <button
+                      type="button"
+                      className="om-btn"
+                      disabled={busy}
+                      onClick={() => saveLine(row, { kind: 'okMany', lines: group.lines })}
+                    >
+                      OK
+                    </button>
+                  </div>
+                );
+              }
+
+              const line = group.line;
               const qty = edit.qty ?? (Number.isFinite(line.qty) ? String(Number(line.qty.toFixed(4))) : '');
               const unit = edit.unit ?? (line.unit || '');
               const changed = edit.qty !== undefined || edit.unit !== undefined;
 
               return (
-                <div key={line.key} className="pu-trow pu-check-grid">
+                <div key={group.key} className="pu-trow pu-check-grid">
                   <span className="pu-check-name">
                     <strong>{line.name}</strong>
                     <QTag text="GUESSED" tone="amber" />
@@ -1400,14 +1542,14 @@ export default function PosUsage() {
                       aria-label={`${line.name} amount`}
                       value={qty}
                       disabled={busy}
-                      onChange={(event) => setCheckEdits({ ...checkEdits, [line.key]: { ...edit, qty: event.target.value } })}
+                      onChange={(event) => setCheckEdits({ ...checkEdits, [group.key]: { ...edit, qty: event.target.value } })}
                     />
                     <select
                       className="om-field"
                       aria-label={`${line.name} unit`}
                       value={unit}
                       disabled={busy}
-                      onChange={(event) => setCheckEdits({ ...checkEdits, [line.key]: { ...edit, unit: event.target.value } })}
+                      onChange={(event) => setCheckEdits({ ...checkEdits, [group.key]: { ...edit, unit: event.target.value } })}
                     >
                       {[...new Set([unit, ...UNITS])].filter(Boolean).map((value) => (
                         <option key={value} value={value}>{value}</option>
@@ -1422,13 +1564,7 @@ export default function PosUsage() {
                       const result = changed
                         ? await saveLine(row, { kind: 'set', line, id: line.id, qty, unit })
                         : await saveLine(row, { kind: 'ok', line });
-                      if (result) {
-                        setCheckEdits((old) => {
-                          const next = { ...old };
-                          delete next[line.key];
-                          return next;
-                        });
-                      }
+                      if (result) clearEdit(group.key);
                     }}
                   >
                     {changed ? 'Save' : 'OK'}
@@ -1456,6 +1592,12 @@ export default function PosUsage() {
                   <QTag text={tag} tone={tone} />
                 </summary>
                 {section.lines.map(lineButton)}
+                {editable && section.tone !== 'removed' && (
+                  <button type="button" className="pu-sub pu-add-row" disabled={busy} onClick={() => openAdd(row, section.title)}>
+                    <span>+ Add an ingredient to {section.title}</span>
+                    <span />
+                  </button>
+                )}
               </details>
             );
           })}
@@ -1501,7 +1643,7 @@ export default function PosUsage() {
     if (kind === 'retry') return ['WORKING', 'mute'];
     if (row.status !== 'ready') return ['NEEDS AMOUNTS', 'red'];
 
-    const left = dishView(row, data.ingredients).lines.filter((line) => line.guessed).length;
+    const left = checkGroups(dishView(row, data.ingredients)).length;
 
     if (left) return [`${left} TO CHECK`, 'amber'];
     if (kind === 'untracked') return ['CAN\u2019T COUNT 1', 'amber'];
@@ -1552,7 +1694,7 @@ export default function PosUsage() {
     const picked = data.menus.find((menu) => menu.id === pick);
     const counting = row.status === 'ready' && (kind === 'amount' || kind === 'untracked');
     const toCheck = counting
-      ? dishView(row, data.ingredients).lines.filter((line) => line.guessed).length
+      ? checkGroups(dishView(row, data.ingredients)).length
       : 0;
     const [tagText, tagTone] = groupTag(group);
     const kicker = kind === 'new'
@@ -2389,6 +2531,22 @@ export default function PosUsage() {
             onClose={() => { if (!busy) setLineEdit(null); }}
           >
             {!line && (
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 700 }}>
+                Part of the plate
+                <select
+                  className="om-field"
+                  value={lineEdit.part}
+                  disabled={busy}
+                  onChange={(event) => setLineEdit({ ...lineEdit, part: event.target.value })}
+                >
+                  {(lineEdit.parts || [lineEdit.part]).map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            {!line && (
               <Picker
                 value={lineEdit.ingredientId}
                 search
@@ -2493,6 +2651,7 @@ export default function PosUsage() {
                     id: lineEdit.ingredientId,
                     qty: lineEdit.qty,
                     unit: lineEdit.unit,
+                    part: lineEdit.part,
                   });
                   if (result) setLineEdit(null);
                 }}

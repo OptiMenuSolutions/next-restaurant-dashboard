@@ -7,6 +7,7 @@ import { allRows } from '../../../lib/pos/usageServer';
 import { runUsage } from '../../../lib/pos/runUsage';
 import { adjustRecipe, inventoryPortions } from '../../../lib/pos/usageRecipe';
 import { transferPlan } from '../../../lib/pos/transferPlan';
+import { removeComponents } from '../../../lib/pos/prepareUsageV2';
 import {
   rebuildCurrentInventory,
 } from '../../../lib/currentInventory';
@@ -660,7 +661,7 @@ export default withAdminAuth(async function handler(req, res) {
       );
 
       for (const op of plan.operations) {
-        if (!['remove', 'set', 'replace'].includes(op.action)) {
+        if (!['remove', 'set', 'replace', 'add'].includes(op.action)) {
           throw new Error('Invalid change');
         }
 
@@ -685,8 +686,16 @@ export default withAdminAuth(async function handler(req, res) {
         explanation: String(plan.explanation ?? rule.plan?.explanation ?? '').slice(0, 2000),
       };
 
-      // Throws with a plain reason if the changes do not fit the recipe.
-      adjustRecipe(rule.context?.recipe || [], clean, catalog);
+      // Check against the recipe with any No ___ parts already taken off,
+      // the same way usage counts it. Throws a plain reason if it does not fit.
+      const trimmed = removeComponents(
+        rule.context?.recipe || [],
+        {
+          requests: rule.context?.instructions?.requests ?? null,
+          modifiers: rule.context?.instructions?.modifiers || [],
+        }
+      );
+      adjustRecipe(trimmed.base, clean, catalog);
 
       check(await db
         .from('pos_usage_rules')
