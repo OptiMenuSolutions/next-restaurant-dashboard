@@ -143,6 +143,172 @@ function closestMenus(name, menus) {
     .map((entry) => entry.menu);
 }
 
+const GUESSED = ['estimated', 'equal_weight', 'equal_volume'];
+
+// One recipe view: every line of the dish by part of the plate, marked
+// unchanged, removed, added or adjusted by the requests on the ticket.
+function dishView(row, ingredients) {
+  const nameOf = (id) =>
+    ingredients.find((ingredient) => ingredient.id === id)?.name || 'Ingredient';
+  const removedParts = new Set(row.removed_components || []);
+  const requests = requestList(row);
+  const plan = row.status === 'ready' ? row.plan : null;
+  const sections = [];
+  const lines = [];
+
+  const sectionFor = (key, title, tone, why) => {
+    let section = sections.find((value) => value.key === key);
+    if (!section) {
+      section = { key, title, tone, why, lines: [] };
+      sections.push(section);
+    }
+    return section;
+  };
+
+  // Which request took a part of the plate off, such as No Gravy.
+  const removedBy = (partName) => {
+    const have = menuWords(partName).map((word) => word.replace(/s$/, ''));
+    return requests.find((text) => {
+      const match = /\b(?:no|without|hold)\b\s*:?\s*(.+)$/i.exec(String(text));
+      const words = match ? menuWords(match[1]).map((word) => word.replace(/s$/, '')) : [];
+      return words.length && words.every((word) => have.includes(word));
+    });
+  };
+
+  for (const part of row.base || []) {
+    const pieces = part.components?.length
+      ? part.components
+      : [{ name: 'Recipe', quantity: part.quantity }];
+
+    for (const piece of pieces) {
+      const partName = piece.name || 'Recipe';
+      const gone = removedParts.has(partName);
+      const by = gone ? removedBy(partName) : null;
+      const section = sectionFor(
+        `part:${partName}`,
+        partName,
+        gone ? 'removed' : null,
+        gone ? `Removed · ${by || 'by request'}` : ''
+      );
+      const line = {
+        key: `part:${partName}:${part.id}:${section.lines.length}`,
+        id: part.id,
+        name: part.name,
+        part: partName,
+        qty: Number(piece.quantity),
+        unit: part.unit,
+        recipe: `${formatQty(Number(piece.quantity))} ${part.unit || ''}`.trim(),
+        state: gone ? 'removed' : 'same',
+      };
+
+      section.lines.push(line);
+      lines.push(line);
+    }
+  }
+
+  const kept = (id) => lines.filter((line) => line.id === id && line.state !== 'removed');
+  const total = (list) => list.reduce((sum, line) => sum + line.qty, 0);
+
+  const add = (op, id, qty, unit, extra = {}) => {
+    const title = op.part || 'Added by request';
+    const section = sectionFor(`add:${title}`, title, 'added', 'Added');
+    section.lines.push({
+      key: `add:${title}:${id}:${section.lines.length}`,
+      id,
+      name: nameOf(id),
+      part: title,
+      qty: Number(qty),
+      unit,
+      recipe: null,
+      state: 'added',
+      guessed: GUESSED.includes(op.basis),
+      ...extra,
+    });
+  };
+
+  const adjust = (mine, qty, unit) => {
+    const sameUnit = mine.every((line) => line.unit === unit);
+    if (sameUnit && Math.abs(total(mine) - qty) < 1e-9) return;
+
+    mine[0].was = `${formatQty(total(mine))} ${mine[0].unit || ''}`.trim();
+    mine[0].state = 'adjusted';
+    mine[0].qty = Number(qty);
+    mine[0].unit = unit;
+    mine.slice(1).forEach((line) => { line.state = 'merged'; });
+  };
+
+  if (plan?.replace_all) {
+    const sets = new Map(
+      (plan.operations || [])
+        .filter((op) => op.action === 'set')
+        .map((op) => [op.ingredient_id, op])
+    );
+
+    for (const id of new Set(lines.map((line) => line.id))) {
+      const mine = kept(id);
+      if (!mine.length) continue;
+
+      const set = sets.get(id);
+      sets.delete(id);
+
+      if (!set) mine.forEach((line) => { line.state = 'removed'; });
+      else adjust(mine, set.quantity, set.unit);
+    }
+
+    for (const [id, set] of sets) {
+      add({ part: 'Added by you' }, id, set.quantity, set.unit);
+    }
+  } else {
+    for (const op of plan?.operations || []) {
+      const mine = kept(op.ingredient_id);
+
+      if (op.action === 'remove') {
+        mine.forEach((line) => { line.state = 'removed'; });
+      } else if (op.action === 'replace') {
+        const same = ['equal_weight', 'equal_volume'].includes(op.basis);
+        const amount = total(mine);
+        mine.forEach((line) => { line.state = 'removed'; });
+        add(
+          op,
+          op.target_id,
+          same ? amount : op.quantity,
+          same ? mine[0]?.unit : op.unit,
+          { instead: nameOf(op.ingredient_id) }
+        );
+      } else if (mine.length) {
+        adjust(mine, op.quantity, op.unit);
+      } else {
+        add(op, op.ingredient_id, op.quantity, op.unit);
+      }
+    }
+  }
+
+  // A part of the plate shows as removed when every line in it is.
+  for (const section of sections) {
+    if (
+      !section.tone &&
+      section.lines.length &&
+      section.lines.every((line) => line.state === 'removed')
+    ) {
+      section.tone = 'removed';
+      section.why = 'Removed · by request';
+    }
+  }
+
+  return { sections, lines: sections.flatMap((section) => section.lines) };
+}
+
+function amountText(line) {
+  const amount = Number.isFinite(line.qty)
+    ? `${formatQty(line.qty)} ${line.unit || ''}`.trim()
+    : 'same amount';
+
+  if (line.state === 'added') return `+${amount}`;
+  if (line.state === 'adjusted') return `${line.was} → ${amount}`;
+  if (line.state === 'merged') return 'in the total above';
+  return amount;
+}
+
 // Base recipe next to this order's adjusted recipe, one line per ingredient.
 function ingredientRows(row) {
   const base = row.base || [];
@@ -260,6 +426,8 @@ export default function PosUsage() {
   const [offer, setOffer] = useState(null);
   const [creating, setCreating] = useState(null);
   const [noting, setNoting] = useState(null);
+  const [lineEdit, setLineEdit] = useState(null);
+  const [unitsKey, setUnitsKey] = useState('');
 
   const report = data?.result?.report || [];
   const sorted = [...report].sort((a, b) =>
@@ -556,6 +724,81 @@ export default function PosUsage() {
         checked: [],
       });
     }
+  }
+
+  // Click a line in the recipe view.
+  function openLine(row, line) {
+    setMessage('');
+    setLineEdit({
+      row,
+      line,
+      part: line.part,
+      ingredientId: line.id,
+      name: line.name,
+      qty: Number.isFinite(line.qty) ? String(Number(line.qty.toFixed(4))) : '',
+      unit: line.unit || '',
+    });
+  }
+
+  function openAdd(row) {
+    setMessage('');
+    setLineEdit({
+      row,
+      line: null,
+      part: 'Added by you',
+      ingredientId: '',
+      name: '',
+      qty: '',
+      unit: '',
+    });
+  }
+
+  // Saves the whole dish as your answer, with one line changed, removed or
+  // added. change: { line, remove, id, qty, unit }, or null to save as shown.
+  async function saveDish(row, change) {
+    const view = dishView(row, data.ingredients);
+    const totals = new Map();
+    const nameOf = (id) =>
+      data.ingredients.find((ingredient) => ingredient.id === id)?.name || 'An ingredient';
+
+    const push = (id, quantity, unit) => {
+      if (!Number.isFinite(quantity)) {
+        throw new Error(`${nameOf(id)} has no amount yet. Click it and enter one first.`);
+      }
+
+      const old = totals.get(id);
+
+      if (!old) totals.set(id, { id, quantity, unit });
+      else if (old.unit === unit) old.quantity += quantity;
+      else throw new Error(`${nameOf(id)} is in two different units here. Put both lines in the same unit.`);
+    };
+
+    try {
+      for (const line of view.lines) {
+        if (line.state === 'removed' || line.state === 'merged') continue;
+        if (change?.line && line.key === change.line.key) continue;
+        push(line.id, line.qty, line.unit);
+      }
+
+      if (change && !change.remove) {
+        push(change.id, Number(change.qty), change.unit);
+      }
+    } catch (error) {
+      setMessage(error.message);
+      return null;
+    }
+
+    const result = await act('rule', {
+      contextKey: row.context_key,
+      portions: [...totals.values()].map((portion) => ({
+        ...portion,
+        quantity: Number(portion.quantity.toFixed(4)),
+      })),
+    });
+
+    if (result) offerOthers(row, result.plan);
+
+    return result;
   }
 
   // Add as a new dish, for a POS button with no matching dish.
@@ -897,6 +1140,74 @@ export default function PosUsage() {
     );
   }
 
+  // The dish as one recipe: each part of the plate, colored by what the
+  // requests did. Click a line to change it; + adds an ingredient.
+  function renderRecipe(row, note) {
+    const view = dishView(row, data.ingredients);
+    const key = `${row.line_key}:${row.unit_index || 0}`;
+    const unitsOpen = unitsKey === key;
+    const editable = Boolean(row.context_key && row.rule_available);
+
+    return (
+      <div className="pu-view">
+        <div className="pu-recipe">
+          {view.sections.map((section) => (
+            <div key={section.key}>
+              <div className="pu-part">
+                <span>{section.title.toUpperCase()}</span>
+                {section.why && <span className="pu-why" data-tone={section.tone || undefined}>{section.why}</span>}
+              </div>
+              {section.lines.map((line) => (
+                <button
+                  key={line.key}
+                  type="button"
+                  className="pu-line-row"
+                  data-state={line.state}
+                  disabled={busy || !editable || line.state === 'merged'}
+                  onClick={() => openLine(row, line)}
+                >
+                  <span>
+                    {line.name}
+                    {line.instead && <em>instead of {line.instead}</em>}
+                    {line.guessed && <span className="pu-guess">guessed</span>}
+                  </span>
+                  <span className="pu-amt">{amountText(line)}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {editable && (
+            <button type="button" className="pu-line-row pu-add-row" disabled={busy} onClick={() => openAdd(row)}>
+              <span>+ Add an ingredient</span>
+              <span />
+            </button>
+          )}
+        </div>
+
+        {note && <p className="pu-note">{note}</p>}
+
+        {row.adjusted?.length > 0 && (
+          <>
+            <button type="button" className="pu-link" onClick={() => setUnitsKey(unitsOpen ? '' : key)}>
+              {unitsOpen ? 'Hide inventory units' : 'Show inventory units'}
+            </button>
+            {unitsOpen && (
+              <div className="pu-recipe">
+                <div><div className="pu-part"><span>COUNTED FOR THIS ORDER · INVENTORY UNITS</span></div></div>
+                {row.adjusted.map((part) => (
+                  <div key={part.id} className="pu-line-row" style={{ cursor: 'default' }}>
+                    <span>{part.name}</span>
+                    <span className="pu-amt">{formatQty(part.quantity)} {part.unit || ''}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
   function renderReview(group) {
     const { row, kind, sales } = group;
     const [label, bg, fg] = REVIEW_MARKS[kind];
@@ -1025,54 +1336,51 @@ export default function PosUsage() {
               </>
             )}
 
-            {counting && (
+            {!matching && (
               <>
-                <div className="pu-counted">
-                  {kind === 'untracked' && (
-                    <>
-                      <strong>Not counted: {row.plan.untracked.join(', ')}</strong>
-                      <span>Not one of your ingredients, so it is left out. Everything else in the dish is counted.</span>
-                    </>
-                  )}
-                  {counted.length > 0 && <strong>We counted:</strong>}
-                  {counted.map((text, i) => <span key={i}>{text}</span>)}
-                  {row.plan?.explanation && (
-                    <span className="pu-note">{row.plan.explanation}</span>
-                  )}
-                </div>
-                <div className="pu-buttons">
-                  <button
-                    type="button"
-                    className="om-pri"
-                    disabled={busy}
-                    onClick={async () => {
-                      const result = await act('confirm', { contextKey: row.context_key });
-                      if (result) offerOthers(row, result.plan);
-                    }}
-                  >
-                    {kind === 'untracked'
-                      ? 'OK, leave it out'
-                      : sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
-                  </button>
-                  <button type="button" className="om-btn" disabled={busy} onClick={() => edit(row)}>
-                    Change amounts
-                  </button>
-                </div>
-                <p className="pu-note">
-                  Already counted. Your answer is used for every sale of this dish with these requests, past and future.
-                </p>
-              </>
-            )}
+                {kind === 'untracked' && (
+                  <div className="pu-counted">
+                    <strong>Not counted: {row.plan.untracked.join(', ')}</strong>
+                    <span>Not one of your ingredients, so it is left out. Everything else in the dish is counted.</span>
+                  </div>
+                )}
 
-            {!matching && !counting && (
-              <>
-                {row.reason && <div className="pu-reason">{row.reason}</div>}
+                {(kind === 'retry' || kind === 'weight') && row.reason && (
+                  <div className="pu-reason">{row.reason}</div>
+                )}
+
+                {row.base?.length > 0 && renderRecipe(
+                  row,
+                  counting ? row.plan?.explanation : kind === 'amount' ? row.reason : null
+                )}
+
                 <div className="pu-buttons">
-                  {kind === 'retry' ? (
+                  {counting && (
+                    <button
+                      type="button"
+                      className="om-pri"
+                      disabled={busy}
+                      onClick={async () => {
+                        const result = await act('confirm', { contextKey: row.context_key });
+                        if (result) offerOthers(row, result.plan);
+                      }}
+                    >
+                      {kind === 'untracked'
+                        ? 'OK, leave it out'
+                        : sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
+                    </button>
+                  )}
+                  {kind === 'amount' && !counting && row.context_key && (
+                    <button type="button" className="om-pri" disabled={busy} onClick={() => saveDish(row, null)}>
+                      Save as shown
+                    </button>
+                  )}
+                  {kind === 'retry' && (
                     <button type="button" className="om-btn" disabled={busy} onClick={() => act('prepare')}>
                       Retry now
                     </button>
-                  ) : kind === 'weight' ? (
+                  )}
+                  {kind === 'weight' && (
                     <button
                       type="button"
                       className="om-pri"
@@ -1088,20 +1396,17 @@ export default function PosUsage() {
                     >
                       Set the weight
                     </button>
-                  ) : row.rule_available && (
-                    <button type="button" className="om-pri" disabled={busy} onClick={() => edit(row)}>
-                      Set portions
-                    </button>
                   )}
                 </div>
-              </>
-            )}
 
-            {row.base?.length > 0 && (
-              <details>
-                <summary className="pu-more">See the full recipe</summary>
-                <div style={{ marginTop: 8 }}>{renderDish(row, 0)}</div>
-              </details>
+                {(counting || kind === 'amount') && (
+                  <p className="pu-note">
+                    {counting
+                      ? 'Already counted. Click any line to change it. Your answer is used for every sale of this dish with these requests, past and future.'
+                      : 'Click a line to set its amount, or add what the kitchen used. Saving uses these amounts for every sale of this dish with these requests.'}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1136,7 +1441,7 @@ export default function PosUsage() {
           <span><span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span></span>
         </button>
         {open && row.status !== 'excluded' && (
-          <div style={{ padding: '0 18px 16px' }}>{renderDish(row, 0)}</div>
+          <div style={{ padding: '0 18px 16px' }}>{renderRecipe(row, row.plan?.explanation)}</div>
         )}
       </div>
     );
@@ -1206,6 +1511,35 @@ export default function PosUsage() {
         .om-app .pu-line { display: grid; grid-template-columns: minmax(0, 1fr) 90px 100px 40px; gap: 8px; align-items: start; }
         .om-app .pu-line[data-missing] { background: var(--amber-tint); border-radius: 10px; padding: 6px; }
         .om-app .pu-line input { text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .om-app .pu-view { display: flex; flex-direction: column; gap: 10px; }
+        .om-app .pu-recipe { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--shell); }
+        .om-app .pu-part { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 16px; background: var(--panel); font: 600 10.5px 'IBM Plex Mono', monospace; letter-spacing: 0.12em; color: var(--muted); border-top: 1px solid var(--line); }
+        .om-app .pu-recipe > div:first-child > .pu-part { border-top: 0; }
+        .om-app .pu-why { font: 700 11px 'Manrope', sans-serif; letter-spacing: 0; padding: 3px 9px; border-radius: 9px; background: var(--shell); color: var(--muted); white-space: nowrap; }
+        .om-app .pu-why[data-tone="removed"] { background: var(--red-tint); color: var(--red); }
+        .om-app .pu-why[data-tone="added"] { background: var(--green-tint); color: var(--green); }
+        .om-app .pu-line-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border: 0; border-top: 1px solid var(--line-soft); background: transparent; color: var(--text); font: 500 14px 'Manrope', sans-serif; text-align: left; cursor: pointer; }
+        .om-app .pu-line-row:hover:not(:disabled) { background: var(--accent-tint); }
+        .om-app .pu-line-row:disabled { cursor: default; }
+        .om-app .pu-line-row em { font-style: normal; color: var(--muted); font-size: 12.5px; margin-left: 6px; }
+        .om-app .pu-amt { font: 600 13.5px 'IBM Plex Mono', monospace; white-space: nowrap; }
+        .om-app .pu-line-row[data-state="removed"] { color: var(--muted); }
+        .om-app .pu-line-row[data-state="removed"] .pu-amt { color: var(--red); text-decoration: line-through; }
+        .om-app .pu-line-row[data-state="added"] .pu-amt { color: var(--green); }
+        .om-app .pu-line-row[data-state="adjusted"] .pu-amt { color: #24508f; }
+        .om-app .pu-line-row[data-state="merged"] .pu-amt { color: var(--muted); font-weight: 500; }
+        .om-app .pu-guess { font: 700 10.5px 'Manrope', sans-serif; background: var(--amber-tint); color: var(--amber); padding: 2px 7px; border-radius: 8px; margin-left: 8px; }
+        .om-app .pu-add-row { color: var(--accent-deep); font-weight: 700; }
+        .om-app .pu-link { align-self: flex-start; border: 0; background: transparent; padding: 0; color: var(--accent-deep); font: 700 12.5px 'Manrope', sans-serif; cursor: pointer; }
+        .om-app .pu-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .om-app .pu-facts > div { background: var(--panel); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+        .om-app .pu-facts strong { font: 600 15px 'IBM Plex Mono', monospace; color: var(--text); }
+        .om-app .pu-facts > div[data-state="added"] { background: var(--green-tint); }
+        .om-app .pu-facts > div[data-state="added"] strong { color: var(--green); }
+        .om-app .pu-facts > div[data-state="removed"] { background: var(--red-tint); }
+        .om-app .pu-facts > div[data-state="removed"] strong { color: var(--red); }
+        .om-app .pu-facts > div[data-state="adjusted"] strong { color: #24508f; }
+        .om-app .pu-remove { min-height: 42px; padding: 0 4px; border: 0; background: transparent; color: var(--red); font: 700 13.5px 'Manrope', sans-serif; cursor: pointer; }
         @media (max-width: 700px) {
           .om-app .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
           .om-app .pu-done-row strong { flex: 1 1 100%; }
@@ -1593,6 +1927,138 @@ export default function PosUsage() {
           </div>
         </Dialog>
       )}
+
+      {lineEdit && (() => {
+        const line = lineEdit.line;
+        const putBack = line?.state === 'removed';
+        const ready = !busy &&
+          lineEdit.ingredientId &&
+          lineEdit.qty !== '' &&
+          Number(lineEdit.qty) >= 0 &&
+          lineEdit.unit;
+
+        return (
+          <Dialog
+            title={line ? lineEdit.name : 'Add an ingredient'}
+            sub={`${lineEdit.part} · ${lineEdit.row.dish}`}
+            width={480}
+            showCloseButton
+            onClose={() => { if (!busy) setLineEdit(null); }}
+          >
+            {!line && (
+              <Picker
+                value={lineEdit.ingredientId}
+                search
+                placeholder="Search your ingredients"
+                ariaLabel="Ingredient to add"
+                disabled={busy}
+                options={[...data.ingredients]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((ingredient) => ({
+                    value: ingredient.id,
+                    label: ingredient.name,
+                    meta: ingredient.unit,
+                  }))}
+                onChange={(id) => {
+                  const ingredient = data.ingredients.find((value) => value.id === id);
+                  setLineEdit({
+                    ...lineEdit,
+                    ingredientId: id,
+                    name: ingredient?.name || '',
+                    unit: lineEdit.unit || ingredient?.unit || '',
+                  });
+                }}
+              />
+            )}
+
+            {line && (
+              <div className="pu-facts">
+                <div>
+                  <span>In the recipe</span>
+                  <strong>{line.recipe || (line.instead ? `Instead of ${line.instead}` : 'Not in the recipe')}</strong>
+                </div>
+                <div data-state={line.state}>
+                  <span>Counted for this order</span>
+                  <strong>{putBack ? 'Removed' : amountText(line)}</strong>
+                </div>
+              </div>
+            )}
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, fontWeight: 700 }}>
+              Amount for this part of the plate
+              <span style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="om-field"
+                  type="number"
+                  min="0"
+                  step="any"
+                  inputMode="decimal"
+                  aria-label="Amount"
+                  value={lineEdit.qty}
+                  disabled={busy}
+                  style={{ flex: 1, minHeight: 44, textAlign: 'right', fontFamily: MONO }}
+                  onChange={(event) => setLineEdit({ ...lineEdit, qty: event.target.value })}
+                />
+                <select
+                  className="om-field"
+                  aria-label="Unit"
+                  value={lineEdit.unit}
+                  disabled={busy}
+                  style={{ width: 110, minHeight: 44 }}
+                  onChange={(event) => setLineEdit({ ...lineEdit, unit: event.target.value })}
+                >
+                  <option value="">Unit</option>
+                  {[...new Set([lineEdit.unit, ...UNITS])].filter(Boolean).map((unit) => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
+              </span>
+            </label>
+
+            <p className="pu-note">
+              Only this line changes. Saved for every {lineEdit.row.dish} sold with these same requests.
+            </p>
+
+            {message && <p role="status" style={{ margin: 0, fontSize: 13 }}>{message}</p>}
+
+            <div className="pu-buttons">
+              {line && !putBack && (
+                <button
+                  type="button"
+                  className="pu-remove"
+                  disabled={busy}
+                  onClick={async () => {
+                    const result = await saveDish(lineEdit.row, { line, remove: true });
+                    if (result) setLineEdit(null);
+                  }}
+                >
+                  Remove from this order
+                </button>
+              )}
+              <span style={{ flex: 1 }} />
+              <button type="button" className="om-btn" disabled={busy} onClick={() => setLineEdit(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="om-pri"
+                disabled={!ready}
+                onClick={async () => {
+                  const result = await saveDish(lineEdit.row, {
+                    line,
+                    id: lineEdit.ingredientId,
+                    qty: lineEdit.qty,
+                    unit: lineEdit.unit,
+                  });
+                  if (result) setLineEdit(null);
+                }}
+              >
+                {busy ? 'Saving…' : putBack ? 'Put it back' : 'Save'}
+              </button>
+            </div>
+          </Dialog>
+        );
+      })()}
 
       {creating && (() => {
         const lineOptions = [
