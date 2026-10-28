@@ -175,6 +175,11 @@ function dishView(row, ingredients) {
     });
   };
 
+  const flags = (op) => ({
+    guessed: GUESSED.includes(op.basis) && !op.from_recipe && !op.checked,
+    mine: op.checked === true || op.basis === 'configured',
+  });
+
   for (const part of row.base || []) {
     const pieces = part.components?.length
       ? part.components
@@ -196,9 +201,13 @@ function dishView(row, ingredients) {
         name: part.name,
         part: partName,
         qty: Number(piece.quantity),
+        origQty: Number(piece.quantity),
         unit: part.unit,
         recipe: `${formatQty(Number(piece.quantity))} ${part.unit || ''}`.trim(),
         state: gone ? 'removed' : 'same',
+        base: true,
+        // Removed by a request on the ticket; the request decides it.
+        locked: gone,
       };
 
       section.lines.push(line);
@@ -209,7 +218,7 @@ function dishView(row, ingredients) {
   const kept = (id) => lines.filter((line) => line.id === id && line.state !== 'removed');
   const total = (list) => list.reduce((sum, line) => sum + line.qty, 0);
 
-  const add = (op, id, qty, unit, extra = {}) => {
+  const add = (op, index, id, qty, unit, extra = {}) => {
     const title = op.part || 'Added by request';
     const section = sectionFor(`add:${title}`, title, 'added', 'Added');
     section.lines.push({
@@ -221,19 +230,22 @@ function dishView(row, ingredients) {
       unit,
       recipe: null,
       state: 'added',
-      guessed: GUESSED.includes(op.basis),
+      opIndex: index,
+      ...flags(op),
       ...extra,
     });
   };
 
-  const adjust = (mine, qty, unit) => {
-    const sameUnit = mine.every((line) => line.unit === unit);
-    if (sameUnit && Math.abs(total(mine) - qty) < 1e-9) return;
+  const adjust = (mine, op, index) => {
+    const sameUnit = mine.every((line) => line.unit === op.unit);
+    if (sameUnit && Math.abs(total(mine) - op.quantity) < 1e-9) return;
 
     mine[0].was = `${formatQty(total(mine))} ${mine[0].unit || ''}`.trim();
     mine[0].state = 'adjusted';
-    mine[0].qty = Number(qty);
-    mine[0].unit = unit;
+    mine[0].qty = Number(op.quantity);
+    mine[0].unit = op.unit;
+    mine[0].opIndex = index;
+    Object.assign(mine[0], flags(op));
     mine.slice(1).forEach((line) => { line.state = 'merged'; });
   };
 
@@ -252,14 +264,14 @@ function dishView(row, ingredients) {
       sets.delete(id);
 
       if (!set) mine.forEach((line) => { line.state = 'removed'; });
-      else adjust(mine, set.quantity, set.unit);
+      else adjust(mine, { ...set, basis: 'configured' });
     }
 
     for (const [id, set] of sets) {
-      add({ part: 'Added by you' }, id, set.quantity, set.unit);
+      add({ part: 'Added by you', basis: 'configured' }, undefined, id, set.quantity, set.unit);
     }
   } else {
-    for (const op of plan?.operations || []) {
+    (plan?.operations || []).forEach((op, index) => {
       const mine = kept(op.ingredient_id);
 
       if (op.action === 'remove') {
@@ -267,20 +279,24 @@ function dishView(row, ingredients) {
       } else if (op.action === 'replace') {
         const same = ['equal_weight', 'equal_volume'].includes(op.basis);
         const amount = total(mine);
-        mine.forEach((line) => { line.state = 'removed'; });
+        mine.forEach((line) => {
+          line.state = 'removed';
+          line.replaced = true;
+        });
         add(
           op,
+          index,
           op.target_id,
           same ? amount : op.quantity,
           same ? mine[0]?.unit : op.unit,
           { instead: nameOf(op.ingredient_id) }
         );
       } else if (mine.length) {
-        adjust(mine, op.quantity, op.unit);
+        adjust(mine, op, index);
       } else {
-        add(op, op.ingredient_id, op.quantity, op.unit);
+        add(op, index, op.ingredient_id, op.quantity, op.unit);
       }
-    }
+    });
   }
 
   // A part of the plate shows as removed when every line in it is.
@@ -296,6 +312,128 @@ function dishView(row, ingredients) {
   }
 
   return { sections, lines: sections.flatMap((section) => section.lines) };
+}
+
+function amountText(line) {
+  const amount = Number.isFinite(line.qty)
+    ? `${formatQty(line.qty)} ${line.unit || ''}`.trim()
+    : 'same amount';
+
+  if (line.state === 'added') return `+${amount}`;
+  if (line.state === 'adjusted') return `${line.was} → ${amount}`;
+  if (line.state === 'merged') return 'in the total above';
+  return amount;
+}
+
+// Claude's answer for a dish with one line changed. Only that line moves;
+// the dish stays in review. change.kind: ok, set, remove or none.
+function editedPlan(row, change, ingredients) {
+  const ready = row.status === 'ready' && row.plan && !row.plan.replace_all;
+  const plan = {
+    ...(ready ? row.plan : {}),
+    operations: (ready ? row.plan.operations || [] : []).map((op) => ({ ...op })),
+    unresolved: [],
+    untracked: ready ? row.plan.untracked || [] : [],
+    explanation: ready ? row.plan.explanation || '' : 'Amounts set by admin.',
+  };
+
+  delete plan.pending;
+
+  const ops = plan.operations;
+  const line = change.line;
+  const mark = (op) => ({ ...op, basis: 'configured', checked: true, reason: 'Set by admin' });
+
+  if (change.kind === 'none') return plan;
+
+  if (change.kind === 'ok') {
+    if (ops[line.opIndex]) ops[line.opIndex] = { ...ops[line.opIndex], checked: true };
+    return plan;
+  }
+
+  // A line a request added: change or drop that one addition.
+  if (line && line.state === 'added' && ops[line.opIndex]) {
+    if (change.kind === 'remove') {
+      ops.splice(line.opIndex, 1);
+    } else {
+      ops[line.opIndex] = mark({
+        ...ops[line.opIndex],
+        quantity: Number(change.qty),
+        unit: change.unit,
+      });
+    }
+    return plan;
+  }
+
+  // + Add an ingredient.
+  if (!line) {
+    if (dishView(row, ingredients).lines.some((value) =>
+      value.id === change.id && value.state !== 'removed'
+    )) {
+      throw new Error('That ingredient is already in this dish. Click its line to change the amount.');
+    }
+
+    ops.push({
+      action: 'set',
+      ingredient_id: change.id,
+      target_id: null,
+      quantity: Number(change.qty),
+      unit: change.unit,
+      basis: 'configured',
+      reason: 'Added by admin',
+      part: 'Added by you',
+      checked: true,
+    });
+    return plan;
+  }
+
+  // A line from the recipe: the ingredient's new total across the parts of
+  // the plate still on the dish, with only this line changed.
+  const siblings = dishView(row, ingredients).lines.filter((value) =>
+    value.base &&
+    value.id === line.id &&
+    value.key !== line.key &&
+    value.state !== 'removed'
+  );
+  const unit = change.kind === 'remove' ? siblings[0]?.unit : change.unit;
+
+  if (siblings.some((value) => value.unit !== unit)) {
+    throw new Error(`${line.name} is also in another part of this dish in a different unit. Use the same unit.`);
+  }
+
+  const amount = siblings.reduce((sum, value) => sum + value.origQty, 0) +
+    (change.kind === 'remove' ? 0 : Number(change.qty));
+
+  for (let i = ops.length - 1; i >= 0; i -= 1) {
+    if (ops[i].ingredient_id === line.id && ['remove', 'set'].includes(ops[i].action)) {
+      ops.splice(i, 1);
+    }
+  }
+
+  ops.push(amount > 0
+    ? {
+        action: 'set',
+        ingredient_id: line.id,
+        target_id: null,
+        quantity: Number(amount.toFixed(4)),
+        unit,
+        basis: 'configured',
+        reason: 'Set by admin',
+        part: line.part,
+        checked: true,
+      }
+    : {
+        action: 'remove',
+        ingredient_id: line.id,
+        target_id: null,
+        quantity: null,
+        unit: null,
+        basis: 'configured',
+        reason: 'Removed by admin',
+        part: line.part,
+        checked: true,
+      });
+
+  return plan;
 }
 
 function amountText(line) {
@@ -801,6 +939,28 @@ export default function PosUsage() {
     return result;
   }
 
+  // One line at a time: OK a guess, change an amount, remove or add a line.
+  // Approved dishes (an older saved list of amounts) keep the old save.
+  async function saveLine(row, change) {
+    if (row.plan?.replace_all) {
+      if (change.kind === 'ok' || change.kind === 'none') return null;
+      return saveDish(row, change.kind === 'remove'
+        ? { line: change.line, remove: true }
+        : change);
+    }
+
+    let plan;
+
+    try {
+      plan = editedPlan(row, change, data.ingredients);
+    } catch (error) {
+      setMessage(error.message);
+      return null;
+    }
+
+    return act('plan', { contextKey: row.context_key, plan });
+  }
+
   // Add as a new dish, for a POS button with no matching dish.
   function openNewDish(row, button) {
     setMessage('');
@@ -1147,6 +1307,7 @@ export default function PosUsage() {
     const key = `${row.line_key}:${row.unit_index || 0}`;
     const unitsOpen = unitsKey === key;
     const editable = Boolean(row.context_key && row.rule_available);
+    const canOk = editable && !row.plan?.replace_all && row.status === 'ready';
 
     return (
       <div className="pu-view">
@@ -1158,29 +1319,42 @@ export default function PosUsage() {
                 {section.why && <span className="pu-why" data-tone={section.tone || undefined}>{section.why}</span>}
               </div>
               {section.lines.map((line) => (
-                <button
-                  key={line.key}
-                  type="button"
-                  className="pu-line-row"
-                  data-state={line.state}
-                  disabled={busy || !editable || line.state === 'merged'}
-                  onClick={() => openLine(row, line)}
-                >
-                  <span>
-                    {line.name}
-                    {line.instead && <em>instead of {line.instead}</em>}
-                    {line.guessed && <span className="pu-guess">guessed</span>}
-                  </span>
-                  <span className="pu-amt">{amountText(line)}</span>
-                </button>
+                <div key={line.key} className="pu-line-row" data-state={line.state}>
+                  <button
+                    type="button"
+                    className="pu-line-main"
+                    disabled={busy || !editable || line.state === 'merged' || line.locked || line.replaced}
+                    onClick={() => openLine(row, line)}
+                  >
+                    <span>
+                      {line.name}
+                      {line.instead && <em>instead of {line.instead}</em>}
+                      {line.guessed && <span className="pu-guess">guessed</span>}
+                      {!line.guessed && line.mine && <span className="pu-mine">set by you</span>}
+                    </span>
+                    <span className="pu-amt">{amountText(line)}</span>
+                  </button>
+                  {line.guessed && canOk && (
+                    <button
+                      type="button"
+                      className="pu-ok"
+                      disabled={busy}
+                      onClick={() => saveLine(row, { kind: 'ok', line })}
+                    >
+                      OK
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           ))}
           {editable && (
-            <button type="button" className="pu-line-row pu-add-row" disabled={busy} onClick={() => openAdd(row)}>
-              <span>+ Add an ingredient</span>
-              <span />
-            </button>
+            <div className="pu-line-row">
+              <button type="button" className="pu-line-main pu-add-row" disabled={busy} onClick={() => openAdd(row)}>
+                <span>+ Add an ingredient</span>
+                <span />
+              </button>
+            </div>
           )}
         </div>
 
@@ -1195,7 +1369,7 @@ export default function PosUsage() {
               <div className="pu-recipe">
                 <div><div className="pu-part"><span>COUNTED FOR THIS ORDER · INVENTORY UNITS</span></div></div>
                 {row.adjusted.map((part) => (
-                  <div key={part.id} className="pu-line-row" style={{ cursor: 'default' }}>
+                  <div key={part.id} className="pu-unit-row">
                     <span>{part.name}</span>
                     <span className="pu-amt">{formatQty(part.quantity)} {part.unit || ''}</span>
                   </div>
@@ -1221,6 +1395,9 @@ export default function PosUsage() {
     const picked = data.menus.find((menu) => menu.id === pick);
     const counted = planLines(row, data.ingredients);
     const counting = row.status === 'ready' && (kind === 'amount' || kind === 'untracked');
+    const toCheck = counting
+      ? dishView(row, data.ingredients).lines.filter((line) => line.guessed).length
+      : 0;
     const when = kind === 'new'
       ? `FIRST SEEN ${shortDate(group.button?.first_seen_at)}`
       : sales.length > 1
@@ -1365,13 +1542,18 @@ export default function PosUsage() {
                         if (result) offerOthers(row, result.plan);
                       }}
                     >
-                      {kind === 'untracked'
-                        ? 'OK, leave it out'
-                        : sales.length > 1 ? `Correct, count all ${sales.length}` : 'Correct'}
+                      {toCheck > 0
+                        ? 'Approve all'
+                        : kind === 'untracked' ? 'OK, leave it out' : 'Mark done'}
                     </button>
                   )}
+                  {counting && toCheck > 0 && (
+                    <span className="pu-note">
+                      {toCheck} {toCheck === 1 ? 'amount' : 'amounts'} to check. Press OK on each, or click it to change it.
+                    </span>
+                  )}
                   {kind === 'amount' && !counting && row.context_key && (
-                    <button type="button" className="om-pri" disabled={busy} onClick={() => saveDish(row, null)}>
+                    <button type="button" className="om-pri" disabled={busy} onClick={() => saveLine(row, { kind: 'none' })}>
                       Save as shown
                     </button>
                   )}
@@ -1402,8 +1584,10 @@ export default function PosUsage() {
                 {(counting || kind === 'amount') && (
                   <p className="pu-note">
                     {counting
-                      ? 'Already counted. Click any line to change it. Your answer is used for every sale of this dish with these requests, past and future.'
-                      : 'Click a line to set its amount, or add what the kitchen used. Saving uses these amounts for every sale of this dish with these requests.'}
+                      ? toCheck > 0
+                        ? 'Already counted with these amounts. This dish stays here until you press Mark done or Approve all.'
+                        : 'Every amount is checked. Press Mark done to move this dish to Done.'
+                      : 'Click a line to set its amount, or add what the kitchen used, then press Save as shown.'}
                   </p>
                 )}
               </>
@@ -1518,9 +1702,13 @@ export default function PosUsage() {
         .om-app .pu-why { font: 700 11px 'Manrope', sans-serif; letter-spacing: 0; padding: 3px 9px; border-radius: 9px; background: var(--shell); color: var(--muted); white-space: nowrap; }
         .om-app .pu-why[data-tone="removed"] { background: var(--red-tint); color: var(--red); }
         .om-app .pu-why[data-tone="added"] { background: var(--green-tint); color: var(--green); }
-        .om-app .pu-line-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border: 0; border-top: 1px solid var(--line-soft); background: transparent; color: var(--text); font: 500 14px 'Manrope', sans-serif; text-align: left; cursor: pointer; }
-        .om-app .pu-line-row:hover:not(:disabled) { background: var(--accent-tint); }
-        .om-app .pu-line-row:disabled { cursor: default; }
+        .om-app .pu-line-row { display: flex; align-items: center; border-top: 1px solid var(--line-soft); color: var(--text); }
+        .om-app .pu-line-main { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border: 0; background: transparent; color: inherit; font: 500 14px 'Manrope', sans-serif; text-align: left; cursor: pointer; }
+        .om-app .pu-line-main:hover:not(:disabled) { background: var(--accent-tint); }
+        .om-app .pu-line-main:disabled { cursor: default; }
+        .om-app .pu-ok { flex: 0 0 auto; margin-right: 12px; min-height: 30px; padding: 0 14px; border-radius: 15px; border: 1px solid var(--accent); background: var(--shell); color: var(--accent-deep); font: 700 12px 'Manrope', sans-serif; cursor: pointer; }
+        .om-app .pu-mine { font: 700 10.5px 'Manrope', sans-serif; background: var(--accent-tint); color: var(--accent-deep); padding: 2px 7px; border-radius: 8px; margin-left: 8px; }
+        .om-app .pu-unit-row { display: flex; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--line-soft); font-size: 14px; }
         .om-app .pu-line-row em { font-style: normal; color: var(--muted); font-size: 12.5px; margin-left: 6px; }
         .om-app .pu-amt { font: 600 13.5px 'IBM Plex Mono', monospace; white-space: nowrap; }
         .om-app .pu-line-row[data-state="removed"] { color: var(--muted); }
@@ -2028,7 +2216,7 @@ export default function PosUsage() {
                   className="pu-remove"
                   disabled={busy}
                   onClick={async () => {
-                    const result = await saveDish(lineEdit.row, { line, remove: true });
+                    const result = await saveLine(lineEdit.row, { kind: 'remove', line });
                     if (result) setLineEdit(null);
                   }}
                 >
@@ -2044,7 +2232,8 @@ export default function PosUsage() {
                 className="om-pri"
                 disabled={!ready}
                 onClick={async () => {
-                  const result = await saveDish(lineEdit.row, {
+                  const result = await saveLine(lineEdit.row, {
+                    kind: 'set',
                     line,
                     id: lineEdit.ingredientId,
                     qty: lineEdit.qty,

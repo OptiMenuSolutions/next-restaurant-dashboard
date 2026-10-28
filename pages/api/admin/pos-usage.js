@@ -631,6 +631,75 @@ export default withAdminAuth(async function handler(req, res) {
       }));
 
       return res.json({ ok: true, usage: null, plan: null });
+    } else if (action === 'plan') {
+      // One line changed in Claude's answer for this dish. The dish stays
+      // where it is; Mark done or Approve all moves it to Done.
+      const rule = check(await db
+        .from('pos_usage_rules')
+        .select('plan,context,origin')
+        .eq('restaurant_id', restaurantId)
+        .eq('context_key', req.body.contextKey)
+        .single()
+      );
+
+      const plan = req.body.plan;
+
+      if (
+        !plan ||
+        !Array.isArray(plan.operations) ||
+        plan.operations.length > 80
+      ) {
+        throw new Error('Invalid answer for this dish');
+      }
+
+      const catalog = await allRows(() => db
+        .from('ingredients')
+        .select('id,name,unit')
+        .eq('restaurant_id', restaurantId)
+        .order('id')
+      );
+
+      for (const op of plan.operations) {
+        if (!['remove', 'set', 'replace'].includes(op.action)) {
+          throw new Error('Invalid change');
+        }
+
+        if (!catalog.some((ingredient) => ingredient.id === op.ingredient_id)) {
+          throw new Error('Ingredient is not in this restaurant');
+        }
+
+        if (
+          op.quantity != null &&
+          !(Number.isFinite(op.quantity) && op.quantity >= 0)
+        ) {
+          throw new Error('Enter an amount of zero or more');
+        }
+      }
+
+      const clean = {
+        operations: plan.operations,
+        unresolved: [],
+        untracked: Array.isArray(plan.untracked)
+          ? plan.untracked
+          : rule.plan?.untracked || [],
+        explanation: String(plan.explanation ?? rule.plan?.explanation ?? '').slice(0, 2000),
+      };
+
+      // Throws with a plain reason if the changes do not fit the recipe.
+      adjustRecipe(rule.context?.recipe || [], clean, catalog);
+
+      check(await db
+        .from('pos_usage_rules')
+        .update({ plan: clean })
+        .eq('restaurant_id', restaurantId)
+        .eq('context_key', req.body.contextKey)
+      );
+
+      check(await db.rpc('enqueue_pos_usage', {
+        p_restaurant_id: restaurantId,
+      }));
+
+      savedPlan = clean;
     } else if (action === 'enable') {
       check(await db
         .from('pos_usage_settings')
