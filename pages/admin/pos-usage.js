@@ -1723,8 +1723,22 @@ export default function PosUsage() {
     };
   }
 
+  // A request that adds a portion of one batch prep: one amount, and every
+  // ingredient in it scales with that amount.
+  function batchOf(piece) {
+    const ops = piece.operations || [];
+    const first = ops[0]?.batch_portion;
+
+    return first && ops.every((op) =>
+      op.action === 'add' && op.batch_portion?.name === first.name
+    ) ? first : null;
+  }
+
   function pieceSummary(piece) {
     const ops = piece.operations || [];
+    const batch = batchOf(piece);
+
+    if (batch) return `+${formatQty(batch.quantity)} ${batch.unit} ${batch.name}`;
 
     if (piece.kind === 'none' || !ops.length) return 'no change';
 
@@ -1741,6 +1755,17 @@ export default function PosUsage() {
 
   // A request's changes with any amounts typed on the page.
   function pieceOps(piece) {
+    const batch = batchOf(piece);
+    const portion = pieceEdits[`${piece.id}:batch`];
+
+    if (batch && portion !== undefined) {
+      const ratio = Number(portion) / Number(batch.quantity);
+      return piece.operations.map((op) => ({
+        ...op,
+        quantity: Number((Number(op.quantity) * ratio).toFixed(4)),
+      }));
+    }
+
     return (piece.operations || []).map((op, index) => {
       const value = pieceEdits[`${piece.id}:${index}`];
       return value === undefined || op.action === 'remove'
@@ -1749,9 +1774,11 @@ export default function PosUsage() {
     });
   }
 
-  const pieceEdited = (piece) => (piece.operations || []).some((op, index) =>
-    pieceEdits[`${piece.id}:${index}`] !== undefined
-  );
+  const pieceEdited = (piece) =>
+    pieceEdits[`${piece.id}:batch`] !== undefined ||
+    (piece.operations || []).some((op, index) =>
+      pieceEdits[`${piece.id}:${index}`] !== undefined
+    );
 
   async function approvePieces(pieces, operations = null) {
     const result = await act('requests-approve', {
@@ -1870,10 +1897,13 @@ export default function PosUsage() {
       : piece.kind === 'none'
         ? (piece.any_dish ? 'COOKING OR SERVICE · ANY DISH' : 'THIS DISH ONLY')
         : piece.texts.length > 1 ? 'A SWAP · CLAUDE PAIRED THESE' : 'NEW REQUEST';
-    const invalid = (piece.operations || []).some((op, index) => {
-      const value = pieceEdits[`${piece.id}:${index}`];
-      return value !== undefined && (value === '' || !Number.isFinite(Number(value)));
-    });
+    const batch = batchOf(piece);
+    const typedBatch = pieceEdits[`${piece.id}:batch`];
+    const invalid = (typedBatch !== undefined && !(Number(typedBatch) > 0)) ||
+      (piece.operations || []).some((op, index) => {
+        const value = pieceEdits[`${piece.id}:${index}`];
+        return value !== undefined && (value === '' || !Number.isFinite(Number(value)));
+      });
 
     return (
       <div key={piece.id} className="pu-piece">
@@ -1915,7 +1945,37 @@ export default function PosUsage() {
             {piece.untracked?.length > 0 && (
               <span className="pu-note">Not counted: {piece.untracked.join(', ')}. Not one of your ingredients.</span>
             )}
-            {(piece.operations || []).length > 0 && (
+            {batch ? (
+              <div className="pu-swap-box">
+                <div className="pu-swap-row">
+                  <span className="pu-rq">
+                    <small className="pu-on">PUTS ON · YOUR BATCH PREP</small>
+                    <strong>{batch.name}</strong>
+                    <small>
+                      {piece.operations.map((op) => ingredientName(op.ingredient_id)).join(', ')} scale with it
+                    </small>
+                  </span>
+                  <span className="pu-amt-edit">
+                    <span className="pu-plus">+</span>
+                    <input
+                      className="om-field pu-qty"
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      aria-label={`${batch.name} portion`}
+                      value={typedBatch ?? String(batch.quantity)}
+                      disabled={busy}
+                      onChange={(event) => setPieceEdits({
+                        ...pieceEdits,
+                        [`${piece.id}:batch`]: event.target.value,
+                      })}
+                    />
+                    <span className="pu-unit">{batch.unit}</span>
+                  </span>
+                </div>
+              </div>
+            ) : (piece.operations || []).length > 0 && (
               <div className="pu-swap-box">
                 {piece.operations.map((op, index) => renderChange(row, piece, op, index))}
               </div>
