@@ -824,6 +824,7 @@ export default withAdminAuth(async function handler(req, res) {
           basis: 'configured',
           reason: String(op.reason || 'Set by admin').slice(0, 300),
           part: String(op.part || '').slice(0, 200),
+          prep: op.prep ? String(op.prep).slice(0, 200) : null,
         };
       };
 

@@ -1657,7 +1657,9 @@ export default function PosUsage() {
 
     // Requests learned one at a time.
     if (row.pieces?.length && kind === 'amount') {
-      const waiting = row.pieces.filter((piece) => piece.status !== 'approved');
+      const waiting = row.pieces.filter((piece) =>
+        !piece.folded_into && !pieceDone(row, piece)
+      );
       if (waiting.some((piece) => piece.unresolved?.length)) return ['NEEDS YOU', 'red'];
       if (waiting.length && waiting.every((piece) => piece.kind === 'same_as')) return ['SAME?', 'amber'];
       if (waiting.length) return [`${waiting.length} NEW`, 'amber'];
@@ -1734,6 +1736,20 @@ export default function PosUsage() {
     ) ? first : null;
   }
 
+  // A request is done when it and everything folded into it is approved.
+  const pieceDone = (row, piece) => piece.status === 'approved' &&
+    row.pieces.every((other) =>
+      other.folded_into !== piece.id || other.status === 'approved'
+    );
+
+  // What the ticket said for a request, with any folded into it.
+  const ticketSaid = (row, piece) => [
+    ...piece.texts,
+    ...row.pieces
+      .filter((other) => other.folded_into === piece.id)
+      .flatMap((other) => other.texts),
+  ].join(' + ').toUpperCase();
+
   function pieceSummary(piece) {
     const ops = piece.operations || [];
     const batch = batchOf(piece);
@@ -1781,13 +1797,23 @@ export default function PosUsage() {
     );
 
   async function approvePieces(pieces, operations = null) {
+    // Requests folded into these ones are approved with them, as shown.
+    const folded = (selected?.row?.pieces || []).filter((piece) =>
+      piece.status !== 'approved' &&
+      pieces.some((host) => host.id === piece.folded_into) &&
+      !pieces.some((value) => value.id === piece.id)
+    );
+
     const result = await act('requests-approve', {
-      pieces: pieces.map((piece) => ({
-        id: piece.id,
-        ...(operations
-          ? { operations }
-          : pieceEdited(piece) ? { operations: pieceOps(piece) } : {}),
-      })),
+      pieces: [
+        ...pieces.map((piece) => ({
+          id: piece.id,
+          ...(operations
+            ? { operations }
+            : pieceEdited(piece) ? { operations: pieceOps(piece) } : {}),
+        })),
+        ...folded.map((piece) => ({ id: piece.id })),
+      ],
     });
 
     if (result) {
@@ -1909,7 +1935,7 @@ export default function PosUsage() {
       <div key={piece.id} className="pu-piece">
         <span className="pu-rq">
           <strong>{piece.kind !== 'same_as' && piece.label ? piece.label : piece.texts.join(' + ')}</strong>
-          <small>{from} · TICKET SAID {piece.texts.join(' + ').toUpperCase()}</small>
+          <small>{from} · TICKET SAID {ticketSaid(row, piece)}</small>
         </span>
 
         {piece.kind === 'same_as' && (
@@ -2001,8 +2027,10 @@ export default function PosUsage() {
   }
 
   function renderPieces(row) {
-    const waiting = row.pieces.filter((piece) => piece.status !== 'approved');
-    const known = row.pieces.filter((piece) => piece.status === 'approved');
+    // Requests folded into another one on this ticket show inside it.
+    const shown = row.pieces.filter((piece) => !piece.folded_into);
+    const waiting = shown.filter((piece) => !pieceDone(row, piece));
+    const known = shown.filter((piece) => pieceDone(row, piece));
 
     return (
       <>
@@ -2019,7 +2047,7 @@ export default function PosUsage() {
               <div key={piece.id} className="pu-known">
                 <span className="pu-rq">
                   <strong>{piece.label || piece.texts.join(' + ')}</strong>
-                  <small>TICKET SAID {piece.texts.join(' + ').toUpperCase()}</small>
+                  <small>TICKET SAID {ticketSaid(row, piece)}</small>
                 </span>
                 <span className="pu-amt">{pieceSummary(piece)}</span>
                 <QTag
