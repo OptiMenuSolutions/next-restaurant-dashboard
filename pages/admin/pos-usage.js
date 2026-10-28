@@ -1731,8 +1731,11 @@ export default function PosUsage() {
     const ops = piece.operations || [];
     const first = ops[0]?.batch_portion;
 
+    // Every line from the same recipe, in the same proportion.
     return first && ops.every((op) =>
-      op.action === 'add' && op.batch_portion?.name === first.name
+      op.action === 'add' &&
+      op.batch_portion?.name === first.name &&
+      Math.abs(op.batch_portion.quantity - first.quantity) <= 0.02 * first.quantity
     ) ? first : null;
   }
 
@@ -1979,7 +1982,9 @@ export default function PosUsage() {
               <div className="pu-swap-box">
                 <div className="pu-swap-row">
                   <span className="pu-rq">
-                    <small className="pu-on">PUTS ON · YOUR BATCH PREP</small>
+                    <small className="pu-on">
+                      {batch.side ? 'PUTS ON · YOUR SIDE RECIPE' : 'PUTS ON · YOUR BATCH PREP'}
+                    </small>
                     <strong>{batch.name}</strong>
                     <small>
                       {piece.operations.map((op) => ingredientName(op.ingredient_id)).join(', ')} scale with it
