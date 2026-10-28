@@ -503,6 +503,52 @@ function Tag({ status }) {
   );
 }
 
+const QTONES = {
+  amber: ['var(--amber-tint)', 'var(--amber)'],
+  red: ['var(--red-tint)', 'var(--red)'],
+  green: ['var(--green-tint)', 'var(--green)'],
+  blue: ['#e5eefb', '#24508f'],
+  teal: ['var(--accent-tint)', 'var(--accent-deep)'],
+  mute: ['var(--panel)', 'var(--muted)'],
+};
+
+// A small status tag in the admin style.
+function QTag({ text, tone = 'mute' }) {
+  const [bg, fg] = QTONES[tone] || QTONES.mute;
+  return <span className="pu-tag" style={{ background: bg, color: fg }}>{text}</span>;
+}
+
+// The tag on a folded part of the plate.
+function partTag(section) {
+  const guessed = section.lines.filter((line) => line.guessed).length;
+
+  if (section.tone === 'removed') return ['REMOVED', 'red'];
+  if (guessed) return [`${guessed} TO CHECK`, 'amber'];
+  if (section.tone === 'added') return ['ADDED', 'green'];
+  if (section.lines.some((line) => ['adjusted', 'removed'].includes(line.state))) return ['CHANGED', 'blue'];
+  return ['UNCHANGED', 'mute'];
+}
+
+// The one line under a folded part's name.
+function partNote(section) {
+  const count = section.lines.length;
+  const items = `${count} ${count === 1 ? 'ingredient' : 'ingredients'}`;
+
+  if (section.tone === 'removed') {
+    const by = String(section.why || '').replace(/^Removed · /, '');
+    return by && by !== 'by request' ? `${by} on the ticket` : 'Removed by a request';
+  }
+
+  if (section.tone === 'added') {
+    if (section.lines.some((line) => line.guessed)) return `No recipe · ${items}`;
+    if (section.title === 'Added by you') return `Added by you · ${items}`;
+    return `From your recipe · ${items}`;
+  }
+
+  return section.lines.map((line) => line.name).slice(0, 3).join(' · ') +
+    (count > 3 ? ` +${count - 3}` : '');
+}
+
 function Segmented({ options, value, onChange, label }) {
   return (
     <div className="pu-seg" role="group" aria-label={label}>
@@ -555,6 +601,7 @@ export default function PosUsage() {
   const [noting, setNoting] = useState(null);
   const [lineEdit, setLineEdit] = useState(null);
   const [unitsKey, setUnitsKey] = useState('');
+  const [checkEdits, setCheckEdits] = useState({});
 
   const report = data?.result?.report || [];
   const sorted = [...report].sort((a, b) =>
@@ -1289,61 +1336,134 @@ export default function PosUsage() {
     );
   }
 
-  // The dish as one recipe: each part of the plate, colored by what the
-  // requests did. Click a line to change it; + adds an ingredient.
+  // The dish: guessed amounts first, editable in place, then every part of
+  // the plate folded up. Click a part to open it, a line to change it.
   function renderRecipe(row, note) {
     const view = dishView(row, data.ingredients);
     const key = `${row.line_key}:${row.unit_index || 0}`;
     const unitsOpen = unitsKey === key;
     const editable = Boolean(row.context_key && row.rule_available);
     const canOk = editable && !row.plan?.replace_all && row.status === 'ready';
+    const checks = view.lines.filter((line) => line.guessed);
+
+    const lineButton = (line) => (
+      <button
+        key={line.key}
+        type="button"
+        className="pu-sub"
+        data-state={line.state}
+        disabled={busy || !editable || line.state === 'merged' || line.locked || line.replaced}
+        onClick={() => openLine(row, line)}
+      >
+        <span>
+          {line.name}
+          {line.instead && <em>instead of {line.instead}</em>}
+          {line.guessed && <QTag text="GUESSED" tone="amber" />}
+          {!line.guessed && line.mine && <QTag text="SET BY YOU" tone="teal" />}
+        </span>
+        <span className="pu-amt">{amountText(line)}</span>
+      </button>
+    );
 
     return (
       <div className="pu-view">
-        <div className="pu-recipe">
-          {view.sections.map((section) => (
-            <div key={section.key}>
-              <div className="pu-part">
-                <span>{section.title.toUpperCase()}</span>
-                {section.why && <span className="pu-why" data-tone={section.tone || undefined}>{section.why}</span>}
-              </div>
-              {section.lines.map((line) => (
-                <div key={line.key} className="pu-line-row" data-state={line.state}>
+        {checks.length > 0 && canOk && (
+          <div className="pu-box">
+            <div className="pu-thead pu-check-grid">
+              <span>TO CHECK · {checks.length}</span>
+              <span>WHY</span>
+              <span style={{ textAlign: 'right' }}>AMOUNT</span>
+              <span />
+            </div>
+            {checks.map((line) => {
+              const edit = checkEdits[line.key] || {};
+              const qty = edit.qty ?? (Number.isFinite(line.qty) ? String(Number(line.qty.toFixed(4))) : '');
+              const unit = edit.unit ?? (line.unit || '');
+              const changed = edit.qty !== undefined || edit.unit !== undefined;
+
+              return (
+                <div key={line.key} className="pu-trow pu-check-grid">
+                  <span className="pu-check-name">
+                    <strong>{line.name}</strong>
+                    <QTag text="GUESSED" tone="amber" />
+                  </span>
+                  <span className="pu-why-text">
+                    {line.part}{line.instead ? ` · instead of ${line.instead}` : ''} · OptiMenu guessed this amount
+                  </span>
+                  <span className="pu-check-edit">
+                    <input
+                      className="om-field"
+                      type="number"
+                      min="0"
+                      step="any"
+                      inputMode="decimal"
+                      aria-label={`${line.name} amount`}
+                      value={qty}
+                      disabled={busy}
+                      onChange={(event) => setCheckEdits({ ...checkEdits, [line.key]: { ...edit, qty: event.target.value } })}
+                    />
+                    <select
+                      className="om-field"
+                      aria-label={`${line.name} unit`}
+                      value={unit}
+                      disabled={busy}
+                      onChange={(event) => setCheckEdits({ ...checkEdits, [line.key]: { ...edit, unit: event.target.value } })}
+                    >
+                      {[...new Set([unit, ...UNITS])].filter(Boolean).map((value) => (
+                        <option key={value} value={value}>{value}</option>
+                      ))}
+                    </select>
+                  </span>
                   <button
                     type="button"
-                    className="pu-line-main"
-                    disabled={busy || !editable || line.state === 'merged' || line.locked || line.replaced}
-                    onClick={() => openLine(row, line)}
+                    className="om-btn"
+                    disabled={busy || qty === '' || !(Number(qty) >= 0) || !unit}
+                    onClick={async () => {
+                      const result = changed
+                        ? await saveLine(row, { kind: 'set', line, id: line.id, qty, unit })
+                        : await saveLine(row, { kind: 'ok', line });
+                      if (result) {
+                        setCheckEdits((old) => {
+                          const next = { ...old };
+                          delete next[line.key];
+                          return next;
+                        });
+                      }
+                    }}
                   >
-                    <span>
-                      {line.name}
-                      {line.instead && <em>instead of {line.instead}</em>}
-                      {line.guessed && <span className="pu-guess">guessed</span>}
-                      {!line.guessed && line.mine && <span className="pu-mine">set by you</span>}
-                    </span>
-                    <span className="pu-amt">{amountText(line)}</span>
+                    {changed ? 'Save' : 'OK'}
                   </button>
-                  {line.guessed && canOk && (
-                    <button
-                      type="button"
-                      className="pu-ok"
-                      disabled={busy}
-                      onClick={() => saveLine(row, { kind: 'ok', line })}
-                    >
-                      OK
-                    </button>
-                  )}
                 </div>
-              ))}
-            </div>
-          ))}
+              );
+            })}
+          </div>
+        )}
+
+        <div className="pu-box">
+          <div className="pu-thead">
+            <span>{checks.length && canOk ? 'THE REST OF THE DISH' : 'THE DISH'} · CLICK A PART TO SEE ITS INGREDIENTS</span>
+          </div>
+          {view.sections.map((section) => {
+            const [tag, tone] = partTag(section);
+            return (
+              <details key={`${key}:${section.key}`} className="pu-fold">
+                <summary>
+                  <svg className="pu-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                  <span className="pu-pn">
+                    <strong>{section.title}</strong>
+                    <span>{partNote(section)}</span>
+                  </span>
+                  <QTag text={tag} tone={tone} />
+                </summary>
+                {section.lines.map(lineButton)}
+              </details>
+            );
+          })}
           {editable && (
-            <div className="pu-line-row">
-              <button type="button" className="pu-line-main pu-add-row" disabled={busy} onClick={() => openAdd(row)}>
-                <span>+ Add an ingredient</span>
-                <span />
-              </button>
-            </div>
+            <button type="button" className="pu-sub pu-add-row" style={{ borderTopStyle: 'solid' }} disabled={busy} onClick={() => openAdd(row)}>
+              <span>+ Add an ingredient</span>
+              <span />
+            </button>
           )}
         </div>
 
@@ -1355,8 +1475,8 @@ export default function PosUsage() {
               {unitsOpen ? 'Hide inventory units' : 'Show inventory units'}
             </button>
             {unitsOpen && (
-              <div className="pu-recipe">
-                <div><div className="pu-part"><span>COUNTED FOR THIS ORDER · INVENTORY UNITS</span></div></div>
+              <div className="pu-box">
+                <div className="pu-thead"><span>COUNTED FOR THIS ORDER · INVENTORY UNITS</span></div>
                 {row.adjusted.map((part) => (
                   <div key={part.id} className="pu-unit-row">
                     <span>{part.name}</span>
@@ -1371,219 +1491,274 @@ export default function PosUsage() {
     );
   }
 
-  function renderReview(group) {
+  // What a dish in the list is waiting on.
+  function groupTag(group) {
+    const { row, kind } = group;
+
+    if (kind === 'dish') return ['WHICH DISH?', 'red'];
+    if (kind === 'new') return ['NEW ON POS', 'green'];
+    if (kind === 'weight') return ['NO WEIGHT', 'teal'];
+    if (kind === 'retry') return ['WORKING', 'mute'];
+    if (row.status !== 'ready') return ['NEEDS AMOUNTS', 'red'];
+
+    const left = dishView(row, data.ingredients).lines.filter((line) => line.guessed).length;
+
+    if (left) return [`${left} TO CHECK`, 'amber'];
+    if (kind === 'untracked') return ['CAN\u2019T COUNT 1', 'amber'];
+    return ['READY TO APPROVE', 'green'];
+  }
+
+  function renderQueueRow(group) {
+    const [text, tone] = groupTag(group);
+    const first = group.sales[0];
+    const current = !isPhone && selected?.key === group.key;
+    const matching = group.kind === 'dish' || group.kind === 'new';
+
+    return (
+      <button
+        key={group.key}
+        type="button"
+        className="pu-qrow"
+        aria-current={current ? 'true' : undefined}
+        onClick={() => {
+          setOpenKey(group.key);
+          if (isPhone) window.scrollTo(0, 0);
+        }}
+      >
+        <span style={{ minWidth: 0 }}>
+          <strong>
+            {matching ? `“${group.row.dish}”` : group.row.dish}
+            {group.sales.length > 1 && <span className="pu-count">×{group.sales.length}</span>}
+          </strong>
+          <small>
+            {group.kind === 'new'
+              ? 'NOT SOLD YET'
+              : `#${first?.ticket || '—'} · ${shortDate(first?.date)}`}
+          </small>
+        </span>
+        <QTag text={text} tone={tone} />
+      </button>
+    );
+  }
+
+  function renderDetail(group) {
     const { row, kind, sales } = group;
-    const [label, bg, fg] = REVIEW_MARKS[kind];
-    const open = openKey === group.key;
+    const index = visibleGroups.findIndex((value) => value.key === group.key);
     const requests = requestList(row);
     const first = sales[0];
-    const last = sales[sales.length - 1];
     const matching = kind === 'dish' || kind === 'new';
     const options = matching ? closestMenus(row.dish, data.menus) : [];
     const pick = match[group.key] ?? options[0]?.id ?? '';
     const picked = data.menus.find((menu) => menu.id === pick);
-    const counted = planLines(row, data.ingredients);
     const counting = row.status === 'ready' && (kind === 'amount' || kind === 'untracked');
     const toCheck = counting
       ? dishView(row, data.ingredients).lines.filter((line) => line.guessed).length
       : 0;
-    const when = kind === 'new'
-      ? `FIRST SEEN ${shortDate(group.button?.first_seen_at)}`
-      : sales.length > 1
-        ? `${shortDate(first.date)}${first.date === last.date ? '' : ` – ${shortDate(last.date)}`} · ${sales.length} SALES`
-        : `${shortDate(first.date)} · #${first.ticket || '—'}`;
+    const [tagText, tagTone] = groupTag(group);
+    const kicker = kind === 'new'
+      ? `NEW ON THE POS · FIRST SEEN ${shortDate(group.button?.first_seen_at)}`
+      : `TICKET #${first?.ticket || '—'} · ${shortDate(first?.date)}${sales.length > 1 ? ` · ${sales.length} SALES` : ''}`;
+    const footNote = counting
+      ? toCheck
+        ? 'Already counted. Nothing moves to Done until you approve.'
+        : 'Every amount is checked.'
+      : kind === 'amount'
+        ? 'Click a line to set its amount, then Save as shown.'
+        : kind === 'weight'
+          ? 'Set the missing weight and this dish counts.'
+          : kind === 'retry'
+            ? 'OptiMenu is still working on this one.'
+            : '';
 
     return (
-      <article key={group.key} className="pu-card" data-open={open ? '' : undefined}>
-        <button
-          type="button"
-          className="pu-head"
-          aria-expanded={open}
-          onClick={() => setOpenKey(open ? '' : group.key)}
-        >
-          <span className="pu-mark" style={{ background: bg, color: fg }}>{label}</span>
-          <span className="pu-title">
-            <strong>
+      <section key={group.key} className="pu-detail">
+        <div className="pu-dhead">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+            <span className="pu-kicker">{kicker} · {index + 1} OF {visibleGroups.length}</span>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, letterSpacing: '-0.02em' }}>
               {matching ? `“${row.dish}”` : row.dish}
-              {sales.length > 1 && <span className="pu-count">×{sales.length}</span>}
-            </strong>
-            <span>
-              {kind === 'new'
-                ? 'On the POS with no dish yet · not sold yet'
-                : kind === 'dish'
-                  ? 'POS button with no matching dish'
-                  : requests.length ? requests.join(' · ') : 'No requests'}
-            </span>
-          </span>
-          <span className="pu-when">{when}</span>
-        </button>
-
-        {open && (
-          <div className="pu-body">
-            {sales.length > 1 && (
-              <div className="pu-sales">
-                {sales.map((sale) => (
-                  <span key={`${sale.line_key}:${sale.unit_index || 0}`}>
-                    {shortDate(sale.date)} · #{sale.ticket || '—'}
-                  </span>
-                ))}
+            </h2>
+            {matching ? (
+              <span className="pu-note">
+                {kind === 'new'
+                  ? 'On the POS with no dish yet. Not sold yet.'
+                  : 'This POS button does not match a dish on your menu.'}
+              </span>
+            ) : (
+              <div className="pu-pills">
+                {requests.length
+                  ? requests.map((text, i) => <span key={i} className="pu-pill">{text}</span>)
+                  : <span className="pu-pill" style={{ background: 'var(--panel)', color: 'var(--muted)' }}>No requests</span>}
               </div>
             )}
-
-            {matching && (
-              <>
-                {options.length > 0 && (
-                  <>
-                    <span className="pu-label">Closest dishes on the menu</span>
-                    <div className="pu-choices">
-                      {options.map((menu) => (
-                        <button
-                          key={menu.id}
-                          type="button"
-                          aria-pressed={pick === menu.id}
-                          onClick={() => setMatch({ ...match, [group.key]: menu.id })}
-                        >
-                          {menu.name}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                <Picker
-                  value={options.some((menu) => menu.id === pick) ? '' : pick}
-                  search
-                  placeholder="Search all dishes"
-                  ariaLabel={`Search dishes for ${row.dish}`}
-                  disabled={busy}
-                  options={[...data.menus]
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((menu) => ({ value: menu.id, label: menu.name }))}
-                  onChange={(id) => {
-                    if (id) setMatch({ ...match, [group.key]: id });
-                  }}
-                />
-                <div className="pu-buttons">
-                  <button
-                    type="button"
-                    className="om-pri"
-                    disabled={busy || !picked}
-                    onClick={() => act('map', { itemRef: row.item_ref, menuId: pick })}
-                  >
-                    {picked ? `Confirm ${picked.name}` : 'Choose a dish'}
-                  </button>
-                  <button
-                    type="button"
-                    className="om-btn"
-                    disabled={busy}
-                    onClick={() => openNewDish(row, group.button)}
-                  >
-                    Add as a new dish
-                  </button>
-                  <button
-                    type="button"
-                    className="om-btn"
-                    disabled={busy}
-                    onClick={() => setNoting({ name: row.dish, text: '' })}
-                  >
-                    Leave a note
-                  </button>
-                  <button
-                    type="button"
-                    className="om-btn"
-                    disabled={busy}
-                    onClick={() => act('map', { itemRef: row.item_ref, menuId: '__exclude__' })}
-                  >
-                    Not food, skip it
-                  </button>
-                </div>
-                <p className="pu-note">
-                  Nothing changes until you choose. Every past and future sale of this button then counts as that dish.
-                </p>
-              </>
-            )}
-
-            {!matching && (
-              <>
-                {kind === 'untracked' && (
-                  <div className="pu-counted">
-                    <strong>Not counted: {row.plan.untracked.join(', ')}</strong>
-                    <span>Not one of your ingredients, so it is left out. Everything else in the dish is counted.</span>
-                  </div>
-                )}
-
-                {(kind === 'retry' || kind === 'weight') && row.reason && (
-                  <div className="pu-reason">{row.reason}</div>
-                )}
-
-                {row.base?.length > 0 && renderRecipe(
-                  row,
-                  counting ? row.plan?.explanation : kind === 'amount' ? row.reason : null
-                )}
-
-                <div className="pu-buttons">
-                  {counting && (
-                    <button
-                      type="button"
-                      className="om-pri"
-                      disabled={busy}
-                      onClick={async () => {
-                        const result = await act('confirm', { contextKey: row.context_key });
-                        if (result) offerOthers(row, result.plan);
-                      }}
-                    >
-                      {toCheck > 0
-                        ? 'Approve all'
-                        : kind === 'untracked' ? 'OK, leave it out' : 'Mark done'}
-                    </button>
-                  )}
-                  {counting && toCheck > 0 && (
-                    <span className="pu-note">
-                      {toCheck} {toCheck === 1 ? 'amount' : 'amounts'} to check. Press OK on each, or click it to change it.
-                    </span>
-                  )}
-                  {kind === 'amount' && !counting && row.context_key && (
-                    <button type="button" className="om-pri" disabled={busy} onClick={() => saveLine(row, { kind: 'none' })}>
-                      Save as shown
-                    </button>
-                  )}
-                  {kind === 'retry' && (
-                    <button type="button" className="om-btn" disabled={busy} onClick={() => act('prepare')}>
-                      Retry now
-                    </button>
-                  )}
-                  {kind === 'weight' && (
-                    <button
-                      type="button"
-                      className="om-pri"
-                      onClick={() => {
-                        const ingredient = weightIngredient(row);
-                        router.push({
-                          pathname: '/admin/pos-conversions',
-                          query: ingredient
-                            ? { restaurant: restaurantId, ingredient: ingredient.id }
-                            : { restaurant: restaurantId },
-                        });
-                      }}
-                    >
-                      Set the weight
-                    </button>
-                  )}
-                </div>
-
-                {(counting || kind === 'amount') && (
-                  <p className="pu-note">
-                    {counting
-                      ? toCheck > 0
-                        ? 'Already counted with these amounts. This dish stays here until you press Mark done or Approve all.'
-                        : 'Every amount is checked. Press Mark done to move this dish to Done.'
-                      : 'Click a line to set its amount, or add what the kitchen used, then press Save as shown.'}
-                  </p>
-                )}
-              </>
-            )}
           </div>
-        )}
-      </article>
+          <QTag text={tagText} tone={tagTone} />
+        </div>
+
+        <div className="pu-dbody">
+          {sales.length > 1 && (
+            <div className="pu-sales">
+              {sales.map((sale) => (
+                <span key={`${sale.line_key}:${sale.unit_index || 0}`}>
+                  {shortDate(sale.date)} · #{sale.ticket || '—'}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {matching && (
+            <>
+              {options.length > 0 && (
+                <>
+                  <span className="pu-label">Closest dishes on the menu</span>
+                  <div className="pu-choices">
+                    {options.map((menu) => (
+                      <button
+                        key={menu.id}
+                        type="button"
+                        aria-pressed={pick === menu.id}
+                        onClick={() => setMatch({ ...match, [group.key]: menu.id })}
+                      >
+                        {menu.name}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <Picker
+                value={options.some((menu) => menu.id === pick) ? '' : pick}
+                search
+                placeholder="Search all dishes"
+                ariaLabel={`Search dishes for ${row.dish}`}
+                disabled={busy}
+                options={[...data.menus]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((menu) => ({ value: menu.id, label: menu.name }))}
+                onChange={(id) => {
+                  if (id) setMatch({ ...match, [group.key]: id });
+                }}
+              />
+              <div className="pu-buttons">
+                <button
+                  type="button"
+                  className="om-pri"
+                  disabled={busy || !picked}
+                  onClick={() => act('map', { itemRef: row.item_ref, menuId: pick })}
+                >
+                  {picked ? `Confirm ${picked.name}` : 'Choose a dish'}
+                </button>
+                <button type="button" className="om-btn" disabled={busy} onClick={() => openNewDish(row, group.button)}>
+                  Add as a new dish
+                </button>
+                <button type="button" className="om-btn" disabled={busy} onClick={() => setNoting({ name: row.dish, text: '' })}>
+                  Leave a note
+                </button>
+                <button
+                  type="button"
+                  className="om-btn"
+                  disabled={busy}
+                  onClick={() => act('map', { itemRef: row.item_ref, menuId: '__exclude__' })}
+                >
+                  Not food, skip it
+                </button>
+              </div>
+              <p className="pu-note">
+                Nothing changes until you choose. Every past and future sale of this button then counts as that dish.
+              </p>
+            </>
+          )}
+
+          {!matching && (
+            <>
+              {counting && (
+                <div className="pu-steps">
+                  <span><b>1</b>Check each amount under To check. Fix it if it is wrong, then OK.</span>
+                  <span><b>2</b>Open a part below only if something looks off.</span>
+                  <span><b>3</b>Approve when the dish looks right.</span>
+                </div>
+              )}
+              {kind === 'amount' && !counting && (
+                <div className="pu-steps">
+                  <span><b>1</b>Open each part and click a line to set what the kitchen used.</span>
+                  <span><b>2</b>Add anything missing with + Add an ingredient.</span>
+                  <span><b>3</b>Press Save as shown.</span>
+                </div>
+              )}
+
+              {kind === 'untracked' && (
+                <div className="pu-counted">
+                  <strong>Not counted: {row.plan.untracked.join(', ')}</strong>
+                  <span>Not one of your ingredients, so it is left out. Everything else in the dish is counted.</span>
+                </div>
+              )}
+
+              {!counting && row.reason && <div className="pu-reason">{row.reason}</div>}
+
+              {row.base?.length > 0 && renderRecipe(row, counting ? row.plan?.explanation : null)}
+            </>
+          )}
+        </div>
+
+        <div className="pu-dfoot">
+          <span className="pu-note">{footNote}</span>
+          <span className="pu-buttons">
+            <button
+              type="button"
+              className="om-btn"
+              disabled={busy || visibleGroups.length < 2}
+              onClick={() => setOpenKey(nextKey(group))}
+            >
+              Skip
+            </button>
+            {counting && (
+              <button
+                type="button"
+                className="om-pri"
+                disabled={busy}
+                onClick={async () => {
+                  const after = nextKey(group);
+                  const result = await act('confirm', { contextKey: row.context_key });
+                  if (result) {
+                    setOpenKey(after);
+                    offerOthers(row, result.plan);
+                  }
+                }}
+              >
+                {toCheck > 0
+                  ? 'Approve & next'
+                  : kind === 'untracked' ? 'OK, leave it out & next' : 'Mark done & next'}
+              </button>
+            )}
+            {kind === 'amount' && !counting && row.context_key && (
+              <button type="button" className="om-pri" disabled={busy} onClick={() => saveLine(row, { kind: 'none' })}>
+                Save as shown
+              </button>
+            )}
+            {kind === 'retry' && (
+              <button type="button" className="om-pri" disabled={busy} onClick={() => act('prepare')}>
+                Retry now
+              </button>
+            )}
+            {kind === 'weight' && (
+              <button
+                type="button"
+                className="om-pri"
+                onClick={() => {
+                  const ingredient = weightIngredient(row);
+                  router.push({
+                    pathname: '/admin/pos-conversions',
+                    query: ingredient
+                      ? { restaurant: restaurantId, ingredient: ingredient.id }
+                      : { restaurant: restaurantId },
+                  });
+                }}
+              >
+                Set the weight
+              </button>
+            )}
+          </span>
+        </div>
+      </section>
     );
   }
 
@@ -1631,6 +1806,18 @@ export default function PosUsage() {
       </button>
     </section>
   );
+  
+  // The open dish: the clicked one, or on a computer the first in the list.
+  const selected = isPhone
+    ? visibleGroups.find((group) => group.key === openKey) || null
+    : visibleGroups.find((group) => group.key === openKey) || visibleGroups[0] || null;
+
+  // The dish after this one, wrapping to the top.
+  const nextKey = (group) => {
+    const index = visibleGroups.findIndex((value) => value.key === group.key);
+    const next = visibleGroups[index + 1] || visibleGroups[0];
+    return next && next.key !== group.key ? next.key : '';
+  };
 
   return (
     <AdminShell
@@ -1717,10 +1904,70 @@ export default function PosUsage() {
         .om-app .pu-facts > div[data-state="removed"] strong { color: var(--red); }
         .om-app .pu-facts > div[data-state="adjusted"] strong { color: #24508f; }
         .om-app .pu-remove { min-height: 42px; padding: 0 4px; border: 0; background: transparent; color: var(--red); font: 700 13.5px 'Manrope', sans-serif; cursor: pointer; }
+        .om-app .pu-tag { display: inline-block; font: 600 10px 'IBM Plex Mono', monospace; letter-spacing: 0.08em; border-radius: 5px; padding: 3px 7px; white-space: nowrap; }
+        .om-app .pu-kicker { font: 500 10.5px 'IBM Plex Mono', monospace; letter-spacing: 0.16em; color: var(--muted); }
+        .om-app .pu-box { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--shell); }
+        .om-app .pu-thead { display: grid; gap: 10px; padding: 7px 12px; background: var(--panel); font: 500 9.5px 'IBM Plex Mono', monospace; letter-spacing: 0.12em; color: var(--muted); }
+        .om-app .pu-trow { display: grid; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line-soft); align-items: center; }
+        .om-app .pu-check-grid { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) 160px 64px; }
+        .om-app .pu-check-name { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13.5px; }
+        .om-app .pu-why-text { font-size: 12.5px; color: var(--muted); }
+        .om-app .pu-check-edit { display: flex; gap: 6px; justify-content: flex-end; }
+        .om-app .pu-check-edit input { width: 72px; flex: 0 0 72px; text-align: right; font-family: 'IBM Plex Mono', monospace; padding: 0 8px; }
+        .om-app .pu-check-edit select { width: 76px; flex: 0 0 76px; padding: 0 6px; }
+        .om-app .pu-fold { border-top: 1px solid var(--line-soft); }
+        .om-app .pu-fold summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; }
+        .om-app .pu-fold summary::-webkit-details-marker { display: none; }
+        .om-app .pu-fold summary:hover { background: var(--panel); }
+        .om-app .pu-chev { width: 14px; height: 14px; color: var(--muted); transition: transform 0.15s; }
+        .om-app .pu-fold[open] .pu-chev { transform: rotate(90deg); }
+        .om-app .pu-pn { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+        .om-app .pu-pn strong { font-size: 13.5px; }
+        .om-app .pu-pn span { font-size: 12px; color: var(--muted); }
+        .om-app .pu-sub { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 12px 8px 38px; border: 0; border-top: 1px dashed var(--line-soft); background: transparent; color: var(--text); font: 500 13px 'Manrope', sans-serif; text-align: left; cursor: pointer; }
+        .om-app .pu-sub:hover:not(:disabled) { background: var(--accent-tint); }
+        .om-app .pu-sub:disabled { cursor: default; }
+        .om-app .pu-sub em { font-style: normal; color: var(--muted); font-size: 12px; margin-left: 6px; }
+        .om-app .pu-sub .pu-tag { margin-left: 6px; }
+        .om-app .pu-sub[data-state="removed"] { color: var(--muted); }
+        .om-app .pu-sub[data-state="removed"] .pu-amt { color: var(--red); text-decoration: line-through; }
+        .om-app .pu-sub[data-state="added"] .pu-amt { color: var(--green); }
+        .om-app .pu-sub[data-state="adjusted"] .pu-amt { color: #24508f; }
+        .om-app .pu-sub[data-state="merged"] .pu-amt { color: var(--muted); font-weight: 500; }
+        .om-app .pu-steps { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); background: var(--panel); border-radius: 8px; padding: 9px 12px; }
+        .om-app .pu-steps b { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--accent-deep); margin-right: 4px; }
+        .om-app .pu-split { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 18px; align-items: start; }
+        .om-app .pu-queue { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+        .om-app .pu-qrow { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border: 0; border-top: 1px solid var(--line-soft); background: transparent; text-align: left; font: inherit; color: var(--text); cursor: pointer; }
+        .om-app .pu-qrow:hover { background: var(--panel); }
+        .om-app .pu-qrow[aria-current="true"] { background: var(--accent-tint); box-shadow: inset 3px 0 0 var(--accent); }
+        .om-app .pu-qrow strong { display: block; font-size: 13.5px; }
+        .om-app .pu-qrow small { font: 500 10.5px 'IBM Plex Mono', monospace; color: var(--muted); }
+        .om-app .pu-detail { border: 1px solid var(--line); border-radius: 12px; background: var(--shell); min-width: 0; }
+        .om-app .pu-dhead { padding: 16px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+        .om-app .pu-dbody { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+        .om-app .pu-dfoot { padding: 12px 18px; border-top: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--shell); border-radius: 0 0 12px 12px; }
+        .om-app .pu-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+        .om-app .pu-pill { display: inline-flex; align-items: center; min-height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; font-weight: 600; background: var(--accent-tint); color: var(--accent-deep); }
+        .om-app .pu-back { display: flex; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: var(--accent-deep); font: 700 14px 'Manrope', sans-serif; cursor: pointer; align-self: flex-start; }
         @media (max-width: 700px) {
           .om-app .pu-done-row { display: flex; flex-wrap: wrap; gap: 6px 12px; }
           .om-app .pu-done-row strong { flex: 1 1 100%; }
           .om-app .pu-line { grid-template-columns: minmax(0, 1fr) 76px 86px 36px; }
+          .om-app .pu-split { grid-template-columns: minmax(0, 1fr); }
+          .om-app .pu-queue { position: static; max-height: none; }
+          .om-app .pu-detail { border: 0; border-radius: 0; }
+          .om-app .pu-dhead { padding: 0 0 12px; }
+          .om-app .pu-dbody { padding: 12px 0; }
+          .om-app .pu-dfoot { position: sticky; bottom: calc(64px + env(safe-area-inset-bottom)); margin: 0 -16px; padding: 10px 16px; border-radius: 0; z-index: 5; }
+          .om-app .pu-dfoot > .pu-note { display: none; }
+          .om-app .pu-dfoot .pu-buttons { width: 100%; flex-wrap: nowrap; }
+          .om-app .pu-dfoot .om-pri { flex: 1; min-height: 44px; justify-content: center; }
+          .om-app .pu-dfoot .om-btn { min-height: 44px; }
+          .om-app .pu-check-grid { grid-template-columns: minmax(0, 1fr) auto; }
+          .om-app .pu-check-grid > .pu-why-text { grid-column: 1 / -1; }
+          .om-app .pu-check-edit { justify-content: flex-start; }
+          .om-app .pu-thead.pu-check-grid > span:not(:first-child) { display: none; }
         }
       `}</style>
 
@@ -1817,21 +2064,40 @@ export default function PosUsage() {
             </div>
 
             {view === 'review' ? (
-              <>
-                <p className="pu-note">
-                  Oldest first. Each answer is remembered for that dish with those same requests.
+              !visibleGroups.length ? (
+                <p className="pu-empty" style={{ padding: 8 }}>
+                  {report.length ? 'Nothing needs review.' : 'Usage is prepared after each POS sync.'}
                 </p>
-                <div className="pu-list">
-                  {visibleGroups.map(renderReview)}
-                  {!visibleGroups.length && (
-                    <p className="pu-empty" style={{ padding: 8 }}>
-                      {report.length
-                        ? 'Nothing needs review.'
-                        : 'Usage is prepared after each POS sync.'}
-                    </p>
-                  )}
+              ) : isPhone ? (
+                selected ? (
+                  <>
+                    <button type="button" className="pu-back" onClick={() => setOpenKey('')}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+                      All dishes
+                    </button>
+                    {renderDetail(selected)}
+                  </>
+                ) : (
+                  <div className="pu-box">
+                    <div className="pu-thead" style={{ gridTemplateColumns: '1fr auto' }}>
+                      <span>DISHES · OLDEST FIRST</span>
+                      <span>{visibleGroups.length}</span>
+                    </div>
+                    {visibleGroups.map(renderQueueRow)}
+                  </div>
+                )
+              ) : (
+                <div className="pu-split">
+                  <aside className="pu-box pu-queue">
+                    <div className="pu-thead" style={{ gridTemplateColumns: '1fr auto' }}>
+                      <span>DISHES · OLDEST FIRST</span>
+                      <span>{visibleGroups.length}</span>
+                    </div>
+                    {visibleGroups.map(renderQueueRow)}
+                  </aside>
+                  {selected && renderDetail(selected)}
                 </div>
-              </>
+              )
             ) : (
               <>
                 <p className="pu-note">
