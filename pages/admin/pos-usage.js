@@ -436,17 +436,6 @@ function editedPlan(row, change, ingredients) {
   return plan;
 }
 
-function amountText(line) {
-  const amount = Number.isFinite(line.qty)
-    ? `${formatQty(line.qty)} ${line.unit || ''}`.trim()
-    : 'same amount';
-
-  if (line.state === 'added') return `+${amount}`;
-  if (line.state === 'adjusted') return `${line.was} → ${amount}`;
-  if (line.state === 'merged') return 'in the total above';
-  return amount;
-}
-
 // Base recipe next to this order's adjusted recipe, one line per ingredient.
 function ingredientRows(row) {
   const base = row.base || [];
