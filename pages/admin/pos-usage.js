@@ -1794,7 +1794,7 @@ export default function PosUsage() {
   // One change in a new request: what comes off and what goes on.
   function renderChange(row, piece, op, index) {
     const key = `${piece.id}:${index}`;
-    const qty = pieceEdits[key] ?? String(Number(Number(op.quantity).toFixed(4)));
+    const qty = pieceEdits[key] ?? String(Number(Number(op.quantity).toFixed(3)));
     const amountBox = (label) => (
       <input
         className="om-field pu-qty"
@@ -2492,20 +2492,23 @@ export default function PosUsage() {
         .om-app .pu-minus { color: var(--red); }
         .om-app .pu-plus { color: var(--green); font: 600 15px 'IBM Plex Mono', monospace; }
         .om-app .pu-amt-edit { display: flex; align-items: center; gap: 4px; justify-content: flex-end; }
-        .om-app .pu-qty { width: 64px; padding: 0 6px; text-align: right; font-family: 'IBM Plex Mono', monospace; }
+        .om-app .pu-qty { width: 84px; padding: 0 6px; text-align: right; font-family: 'IBM Plex Mono', monospace; }
         .om-app .pu-unit { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); min-width: 30px; }
-        .om-app .pu-two { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
-        .om-app .pu-two-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
-        .om-app .pu-two > button, .om-app .pu-wide { min-height: 42px; justify-content: center; }
-        .om-app .pu-wide { width: 100%; }
+        .om-app .pu-two { display: flex; justify-content: flex-end; gap: 8px; }
+        .om-app .pu-two > button, .om-app .pu-wide { min-height: 36px; min-width: 96px; justify-content: center; }
+        .om-app .pu-wide { align-self: flex-end; }
         .om-app .pu-known { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line-soft); }
         .om-app .pu-cat { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; background: var(--panel); border-top: 1px solid var(--line); }
         .om-app .pu-cat strong { font-size: 13px; }
         .om-app .pu-cat .om-btn, .om-app .pu-cat .om-pri { min-height: 30px; padding: 0 12px; font-size: 12px; }
         .om-app .pu-dialog { display: flex; flex-direction: column; gap: 10px; }
-        .om-app .pu-dialog .pu-two { grid-template-columns: minmax(0, 1fr) auto; }
+        .om-app .pu-dialog .pu-two { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
         .om-app .pu-dline { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-size: 13.5px; }
         @media (max-width: 700px) {
+          .om-app .pu-two { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+          .om-app .pu-two-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+          .om-app .pu-two > button, .om-app .pu-wide { min-height: 44px; }
+          .om-app .pu-wide { align-self: stretch; width: 100%; }
           .om-app .pu-known { grid-template-columns: minmax(0, 1fr) auto; }
           .om-app .pu-known > .pu-amt { grid-column: 1 / -1; text-align: left; }
         }
