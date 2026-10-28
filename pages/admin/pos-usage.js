@@ -1922,7 +1922,11 @@ export default function PosUsage() {
       ? 'NEW WORDING'
       : piece.kind === 'none'
         ? (piece.any_dish ? 'COOKING OR SERVICE · ANY DISH' : 'THIS DISH ONLY')
-        : piece.texts.length > 1 ? 'A SWAP · CLAUDE PAIRED THESE' : 'NEW REQUEST';
+        : piece.texts.length > 1
+          ? ((piece.operations || []).some((op) => op.action === 'replace')
+            ? 'A SWAP · CLAUDE PAIRED THESE'
+            : 'CLAUDE READ THESE TOGETHER')
+          : 'NEW REQUEST';
     const batch = batchOf(piece);
     const typedBatch = pieceEdits[`${piece.id}:batch`];
     const invalid = (typedBatch !== undefined && !(Number(typedBatch) > 0)) ||
