@@ -774,9 +774,9 @@ globalThis.__BUILD_MANIFEST = {
   "devFiles": [],
   "polyfillFiles": [],
   "lowPriorityFiles": [
-    "static/Np_yd6lWIRDVssqR6tjMa/_buildManifest.js",
-    "static/Np_yd6lWIRDVssqR6tjMa/_ssgManifest.js",
-    "static/Np_yd6lWIRDVssqR6tjMa/_clientMiddlewareManifest.js"
+    "static/5G-jJcAnOjSxXFG2rCIV3/_buildManifest.js",
+    "static/5G-jJcAnOjSxXFG2rCIV3/_ssgManifest.js",
+    "static/5G-jJcAnOjSxXFG2rCIV3/_clientMiddlewareManifest.js"
   ],
   "rootMainFiles": [],
   "rootMainFilesTree": {},
