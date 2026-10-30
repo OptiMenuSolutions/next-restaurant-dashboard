@@ -1,1 +1,6 @@
-"use strict";(()=>{var a={};a.id=220,a.ids=[220],a.modules={361:a=>{a.exports=require("next/dist/compiled/next-server/pages.runtime.prod.js")},2015:a=>{a.exports=require("react")},3873:a=>{a.exports=require("path")},8732:a=>{a.exports=require("react/jsx-runtime")},9674:(a,b,c)=>{c.r(b),c.d(b,{default:()=>f});var d=c(8732),e=c(2341);function f(){return(0,d.jsxs)(e.Html,{lang:"en",children:[(0,d.jsx)(e.Head,{}),(0,d.jsxs)("body",{children:[(0,d.jsx)(e.Main,{}),(0,d.jsx)(e.NextScript,{})]})]})}}};var b=require("../webpack-runtime.js");b.C(a);var c=b.X(0,[341],()=>b(b.s=9674));module.exports=c})();
+var R=require("../chunks/ssr/[turbopack]_runtime.js")("server/pages/_document.js")
+R.c("server/chunks/ssr/[externals]__1sy3vrx._.js")
+R.c("server/chunks/ssr/_1l29u3y._.js")
+R.c("server/chunks/ssr/[root-of-the-server]__03mfte8._.js")
+R.m(31224)
+module.exports=R.m(31224).exports
