@@ -43,5 +43,10 @@
     "@types/react": "19.1.9",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6"
+  },
+  "overrides": {
+    "@vercel/cli-config": {
+      "zod": "4.6.6"
+    }
   }
 }
