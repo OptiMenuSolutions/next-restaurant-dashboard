@@ -304,6 +304,8 @@ export async function generateForRestaurant(
     diagnostics.usage = null;
     diagnostics.context = null;
     diagnostics.generation = null;
+    diagnostics.selectionAudit = null;
+    diagnostics.selectionAuditSummary = null;
   }
 
   let enriched = [];
@@ -1678,6 +1680,103 @@ Never invent financial rankings or figures.
   validRecommendations.forEach((rec, index) => {
     rec.priority = index + 1;
   });
+
+  // Recommendation Lab selection audit.
+  // Distinguishes Claude omissions from server rejections and fallbacks.
+  if (weightedLabMode && diagnostics) {
+    const normalizeAuditName = value =>
+      String(value || '').toLowerCase().trim();
+
+    const finalByName = new Map(
+      validRecommendations.map(rec => [
+        normalizeAuditName(rec.title),
+        rec,
+      ])
+    );
+
+    const auditCandidates = menuOnlyLabMode
+      ? labCandidates
+      : scoring.shortlist;
+
+    diagnostics.selectionAudit = auditCandidates.map((item, index) => {
+      const key = normalizeAuditName(item.name);
+
+      const events = diagnostics.events.filter(event =>
+        normalizeAuditName(event.dish) === key
+      );
+
+      const finalRecommendation = finalByName.get(key);
+
+      const claudeAccepted = events.some(event =>
+        event.stage === 'claude' &&
+        event.outcome === 'accepted'
+      );
+
+      const fallbackAccepted = events.some(event =>
+        event.stage === 'fallback' &&
+        event.outcome === 'accepted'
+      );
+
+      const rejection = events.find(event =>
+        event.stage === 'validation' &&
+        event.outcome === 'rejected'
+      );
+
+      const skipped = events.find(event =>
+        event.stage === 'claude' &&
+        event.outcome === 'skipped'
+      );
+
+      let status = 'not_selected';
+      let reason = 'Claude did not select this dish.';
+
+      if (finalRecommendation && fallbackAccepted) {
+        status = 'fallback_selected';
+        reason = 'Selected by server fallback after Claude selection.';
+      } else if (finalRecommendation && claudeAccepted) {
+        status = 'claude_selected';
+        reason = 'Selected by Claude and accepted by server validation.';
+      } else if (finalRecommendation) {
+        status = 'selected';
+        reason = 'Included in the final recommendations.';
+      } else if (rejection) {
+        status = 'rejected';
+        reason = rejection.reason;
+      } else if (skipped) {
+        status = 'skipped';
+        reason = skipped.reason;
+      }
+
+      return {
+        rank: index + 1,
+        name: item.name,
+        score: item.recommendationScoring?.totalScore ?? null,
+        status,
+        reason,
+        finalPosition: finalRecommendation?.priority ?? null,
+        events: events.map(event => ({
+          stage: event.stage,
+          outcome: event.outcome,
+          reason: event.reason,
+        })),
+      };
+    });
+
+    diagnostics.selectionAuditSummary = {
+      selected: diagnostics.selectionAudit.filter(item =>
+        item.finalPosition !== null
+      ).length,
+      rejected: diagnostics.selectionAudit.filter(item =>
+        item.status === 'rejected'
+      ).length,
+      skipped: diagnostics.selectionAudit.filter(item =>
+        item.status === 'skipped'
+      ).length,
+      notSelected: diagnostics.selectionAudit.filter(item =>
+        item.status === 'not_selected'
+      ).length,
+    };
+  }
 
   // A talking point that names another selected dish, and not its own, was
   // written for the wrong ticket. Drop it so the ticket uses its description.
