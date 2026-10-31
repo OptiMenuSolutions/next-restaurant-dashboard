@@ -620,7 +620,7 @@ Never invent financial rankings or figures.
       console.warn(
         `[ai-recommendations] Rejected unknown menu item: ${rec?.title}`
       );
-      return false;
+      return reject('Dish not found in the eligible menu');
     }
 
         // A recommendation's type must have a verifiable basis.
@@ -634,7 +634,7 @@ Never invent financial rankings or figures.
         console.warn(
           `[ai-recommendations] Rejected inventory recommendation without verified expiring ingredients: ${rec.title}`
         );
-        return false;
+        return reject('No verified ingredient expiring within five days');
       }
     }
 
@@ -646,7 +646,7 @@ Never invent financial rankings or figures.
       console.warn(
         `[ai-recommendations] Rejected margin recommendation without verified profitability: ${rec.title}`
       );
-      return false;
+      return reject('Verified profitability data is unavailable');
     }
 
     if (
@@ -656,14 +656,14 @@ Never invent financial rankings or figures.
       console.warn(
         `[ai-recommendations] Rejected trending recommendation without matched POS sales: ${rec.title}`
       );
-      return false;
+      return reject('No matched recent POS sales for this dish');
     }
 
     if (!['inventory', 'margin', 'trending'].includes(rec.type)) {
       console.warn(
         `[ai-recommendations] Rejected unknown recommendation type: ${rec.title}`
       );
-      return false;
+      return reject('Unsupported recommendation type');
     }
 
     const reason = String(rec.reason_selected || '');
@@ -1218,6 +1218,12 @@ Never invent financial rankings or figures.
       ).length,
       rejectedCandidates: diagnostics.events.filter(
         event => event.stage === 'validation' && event.outcome === 'rejected'
+      ).length,
+      skippedClaudeCandidates: diagnostics.events.filter(
+        event => event.stage === 'claude' && event.outcome === 'skipped'
+      ).length,
+      skippedFallbackCandidates: diagnostics.events.filter(
+        event => event.stage === 'fallback' && event.outcome === 'skipped'
       ).length,
       finalRecommendations: validRecommendations.length,
     };

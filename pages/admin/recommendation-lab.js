@@ -644,14 +644,32 @@ function RecommendationLab() {
 
             {latest.count < 3 && (
               <div style={{
-                padding: '10px 12px',
+                padding: '12px 14px',
                 marginBottom: 14,
                 borderRadius: 8,
                 background: 'var(--amber-tint)',
                 color: 'var(--amber)',
                 fontSize: 12.5,
+                lineHeight: 1.6,
               }}>
-                Only {latest.count} eligible recommendations were returned.
+                <strong>
+                  Only {latest.count} of 3 recommendations generated.
+                </strong>
+
+                <div style={{ marginTop: 5 }}>
+                  {latest.diagnostics?.generation?.rejectedCandidates > 0
+                    ? `${latest.diagnostics.generation.rejectedCandidates} candidate validation failures were recorded.`
+                    : latest.diagnostics?.generation?.skippedClaudeCandidates > 0
+                      ? `${latest.diagnostics.generation.skippedClaudeCandidates} Claude candidates were skipped.`
+                      : 'No candidate validation failures were recorded.'}
+                </div>
+
+                <div style={{ marginTop: 5 }}>
+                  Review the Generation diagnostics below to identify
+                  individual rejection reasons. Missing verified costs,
+                  inventory opportunities, or POS sales may also limit
+                  the available recommendations.
+                </div>
               </div>
             )}
 
@@ -788,7 +806,9 @@ function RecommendationLab() {
                   ['Claude candidates', latest.diagnostics.generation?.returnedByClaude],
                   ['Claude accepted', latest.diagnostics.generation?.acceptedFromClaude],
                   ['Rejected', latest.diagnostics.generation?.rejectedCandidates],
+                  ['Claude skipped', latest.diagnostics.generation?.skippedClaudeCandidates],
                   ['Fallbacks accepted', latest.diagnostics.generation?.acceptedFallbacks],
+                  ['Fallbacks skipped', latest.diagnostics.generation?.skippedFallbackCandidates],
                 ].map(([label, value]) => (
                   <div key={label} style={{
                     padding: '9px 12px',
