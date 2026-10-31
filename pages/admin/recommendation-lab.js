@@ -25,6 +25,9 @@ function RecommendationLab() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [results, setResults] = useState([]);
+  const [readiness, setReadiness] = useState(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState('');
 
   const loadRestaurants = useCallback(async () => {
     setLoadingRestaurants(true);
@@ -64,6 +67,47 @@ function RecommendationLab() {
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, []);
+
+    useEffect(() => {
+    if (!restaurantId) {
+      setReadiness(null);
+      setReadinessError('');
+      setReadinessLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    setReadiness(null);
+    setReadinessError('');
+    setReadinessLoading(true);
+
+    async function loadReadiness() {
+      try {
+        const response = await adminFetch(
+          `/api/admin/data-readiness?restaurantId=${encodeURIComponent(restaurantId)}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Could not load data readiness');
+        }
+
+        if (!cancelled) setReadiness(data.readiness || null);
+      } catch (err) {
+        if (!cancelled) setReadinessError(err.message);
+      } finally {
+        if (!cancelled) setReadinessLoading(false);
+      }
+    }
+
+    loadReadiness();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [restaurantId, adminFetch]);
 
   const filteredRestaurants = restaurants.filter(restaurant =>
     restaurant.name.toLowerCase().includes(search.toLowerCase())
@@ -317,8 +361,210 @@ function RecommendationLab() {
         </div>
       </Card>
 
+
+      {restaurantId && (
+        <Card
+          title="Restaurant data readiness"
+          right={
+            <a
+              className="om-btn"
+              href={`/admin/restaurants/${restaurantId}`}
+              style={{ fontSize: 12 }}
+            >
+              Restaurant overview →
+            </a>
+          }
+        >
+          {readinessLoading ? (
+            <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+              Checking restaurant data…
+            </div>
+          ) : readinessError ? (
+            <div style={{ color: 'var(--red)', fontSize: 13 }}>
+              {readinessError}
+            </div>
+          ) : readiness ? (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+                flexWrap: 'wrap',
+                marginBottom: 12,
+              }}>
+                <div style={{
+                  fontFamily: MONO,
+                  fontSize: 28,
+                  fontWeight: 800,
+                }}>
+                  {readiness.score}
+                  <span style={{
+                    fontSize: 13,
+                    color: 'var(--muted)',
+                    fontWeight: 500,
+                  }}>
+                    /100
+                  </span>
+                </div>
+
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: readiness.isDemo
+                    ? 'var(--muted)'
+                    : readiness.status === 'ready'
+                      ? 'var(--green)'
+                      : readiness.status === 'partial'
+                        ? 'var(--amber)'
+                        : 'var(--red)',
+                }}>
+                  {readiness.isDemo
+                    ? 'Demo data'
+                    : readiness.status === 'ready'
+                      ? 'Ready'
+                      : readiness.status === 'partial'
+                        ? 'Partially ready'
+                        : 'Limited data'}
+                </span>
+              </div>
+
+              <div style={{
+                height: 6,
+                background: 'var(--line)',
+                borderRadius: 20,
+                overflow: 'hidden',
+                marginBottom: 17,
+              }}>
+                <div style={{
+                  width: `${readiness.score}%`,
+                  height: '100%',
+                  borderRadius: 20,
+                  background: readiness.status === 'ready'
+                    ? 'var(--green)'
+                    : readiness.status === 'partial'
+                      ? 'var(--amber)'
+                      : 'var(--red)',
+                }} />
+              </div>
+
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isPhone
+                  ? 'minmax(0, 1fr)'
+                  : 'repeat(2, minmax(0, 1fr))',
+                gap: 10,
+              }}>
+                {readiness.checks.map(check => (
+                  <div
+                    key={check.id}
+                    style={{
+                      border: '1px solid var(--line)',
+                      borderRadius: 8,
+                      padding: '11px 13px',
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}>
+                      <span>{check.label}</span>
+                      <span style={{
+                        fontFamily: MONO,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {check.score}/{check.weight}
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 11.5,
+                      color: 'var(--muted)',
+                      marginTop: 6,
+                      lineHeight: 1.5,
+                    }}>
+                      {check.detail}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {!readiness.isDemo && readiness.actions?.length > 0 && (
+                <div style={{
+                  marginTop: 16,
+                  paddingTop: 14,
+                  borderTop: '1px solid var(--line-soft)',
+                }}>
+                  <div style={{
+                    fontSize: 12,
+                    fontWeight: 800,
+                    marginBottom: 10,
+                  }}>
+                    Action required · {readiness.actions.length} issues
+                  </div>
+
+                  {readiness.actions.map(action => (
+                    <div
+                      key={action.id}
+                      style={{
+                        display: 'flex',
+                        gap: 9,
+                        padding: '7px 0',
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      <span style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        flexShrink: 0,
+                        marginTop: 5,
+                        background: action.priority === 'medium'
+                          ? 'var(--amber)'
+                          : 'var(--red)',
+                      }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700 }}>
+                          {action.title}
+                        </div>
+                        <div style={{
+                          fontSize: 11.5,
+                          color: 'var(--muted)',
+                          marginTop: 3,
+                        }}>
+                          {action.detail}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{
+                marginTop: 14,
+                color: 'var(--muted)',
+                fontSize: 11.5,
+                lineHeight: 1.6,
+              }}>
+                Readiness is informational. Dry runs remain available
+                regardless of score. Review the restaurant's Overview
+                tab for issue impact and repair instructions.
+              </div>
+            </>
+          ) : (
+            <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+              No readiness assessment available.
+            </div>
+          )}
+        </Card>
+      )}
+
       {error && (
         <div role="alert" style={{
+
           padding: '12px 14px',
           borderRadius: 10,
           background: 'var(--red-tint)',

@@ -191,7 +191,21 @@ function RestaurantPage({ id }) {
 
 
 function ReadinessActions({ actions = [], isDemo = false, onNavigate }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState({});
+
+  function openDish(dishId) {
+    onNavigate('Menu');
+
+    router.push({
+      pathname: router.pathname,
+      query: {
+        ...router.query,
+        tab: 'Menu',
+        dish: String(dishId),
+      },
+    }, undefined, { shallow: true });
+  }
 
   const colors = {
     critical: 'var(--red)',
@@ -378,9 +392,23 @@ function ReadinessActions({ actions = [], isDemo = false, onNavigate }) {
                                 borderBottom: '1px solid var(--line-soft)',
                               }}
                             >
-                              <div style={{ fontSize: 12, fontWeight: 700 }}>
-                                {item.name}
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => openDish(item.id)}
+                                style={{
+                                  padding: 0,
+                                  border: 0,
+                                  background: 'none',
+                                  color: 'var(--accent-deep)',
+                                  fontFamily: 'inherit',
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                {item.name} →
+                              </button>
 
                               {item.reasons?.length > 0 && (
                                 <div style={{
@@ -959,7 +987,7 @@ function Menu({ id }) {
     router.push({ pathname: router.pathname, query }, undefined, { shallow: true });
   }
 
-  if (isPhone && dishId) {
+  if (dishId) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <button type="button" className="om-btn" onClick={closeRecipe} style={{ alignSelf: 'flex-start' }}>← Menu</button>
