@@ -5,6 +5,7 @@ import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import useIsPhone from '../../lib/admin/useIsPhone';
 import { Card } from '../../components/admin/ui';
 import { MONO } from '../../components/client/ClientChrome';
+import { DEFAULT_RECOMMENDATION_CONFIG } from '../../lib/ai/recommendationScoring';
 
 const TYPE_LABELS = {
   inventory: 'INVENTORY',
@@ -28,6 +29,23 @@ function RecommendationLab() {
   const [readiness, setReadiness] = useState(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
   const [readinessError, setReadinessError] = useState('');
+  const [scoringConfig, setScoringConfig] = useState({
+    ...DEFAULT_RECOMMENDATION_CONFIG,
+  });
+
+  const scoringTotal =
+    scoringConfig.inventoryWeight +
+    scoringConfig.profitabilityWeight +
+    scoringConfig.salesWeight;
+
+  const scoringValid = scoringTotal === 100;
+
+  function updateScoringConfig(key, value) {
+    setScoringConfig(previous => ({
+      ...previous,
+      [key]: value,
+    }));
+  }
 
   const loadRestaurants = useCallback(async () => {
     setLoadingRestaurants(true);
@@ -118,7 +136,7 @@ function RecommendationLab() {
   );
 
   async function runTest() {
-    if (!restaurantId || running) return;
+    if (!restaurantId || running || !scoringValid) return;
 
     setRunning(true);
     setError('');
@@ -130,7 +148,10 @@ function RecommendationLab() {
         '/api/admin/test-ai-recommendations',
         {
           method: 'POST',
-          body: JSON.stringify({ restaurantId }),
+          body: JSON.stringify({
+            restaurantId,
+            scoringConfig,
+          }),
         }
       );
 
@@ -168,6 +189,216 @@ function RecommendationLab() {
         title="Recommendation Lab"
         sub="Test Tonight's Dish against restaurant data without saving or publishing recommendations."
       />
+
+            <Card title="Recommendation weights">
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+          gap: 12,
+          marginBottom: 18,
+        }}>
+          <div style={{
+            fontSize: 12.5,
+            color: 'var(--muted)',
+            lineHeight: 1.6,
+            maxWidth: 600,
+          }}>
+            Adjust how OptiMenu scores inventory urgency,
+            verified profitability, and customer demand.
+            These settings apply only to this test session.
+          </div>
+
+          <button
+            type="button"
+            className="om-btn"
+            onClick={() => setScoringConfig({
+              ...DEFAULT_RECOMMENDATION_CONFIG,
+            })}
+          >
+            Reset defaults
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 18 }}>
+          {[
+            ['inventoryWeight', 'Inventory urgency'],
+            ['profitabilityWeight', 'Profitability'],
+            ['salesWeight', 'Customer demand'],
+          ].map(([key, label]) => (
+            <div key={key} style={{ display: 'grid', gap: 9 }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}>
+                <label style={{
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                }}>
+                  {label}
+                </label>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}>
+                  <input
+                    className="om-field"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={scoringConfig[key]}
+                    onChange={event => {
+                      const value = Number(event.target.value);
+                      if (
+                        Number.isFinite(value) &&
+                        value >= 0 &&
+                        value <= 100
+                      ) {
+                        updateScoringConfig(key, value);
+                      }
+                    }}
+                    aria-label={`${label} percentage`}
+                    style={{
+                      width: 70,
+                      minWidth: 0,
+                      textAlign: 'right',
+                      fontFamily: MONO,
+                      fontWeight: 800,
+                    }}
+                  />
+                  <span style={{
+                    fontSize: 12,
+                    color: 'var(--muted)',
+                  }}>
+                    %
+                  </span>
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value={scoringConfig[key]}
+                onChange={event =>
+                  updateScoringConfig(key, Number(event.target.value))
+                }
+                aria-label={`${label} slider`}
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--accent)',
+                  cursor: 'pointer',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          marginTop: 20,
+          paddingTop: 14,
+          borderTop: '1px solid var(--line)',
+        }}>
+          <span style={{
+            fontSize: 12,
+            color: 'var(--muted)',
+          }}>
+            Total allocation
+          </span>
+
+          <span style={{
+            fontFamily: MONO,
+            fontSize: 14,
+            fontWeight: 800,
+            color: scoringValid
+              ? 'var(--green)'
+              : 'var(--red)',
+          }}>
+            {scoringTotal}% / 100%
+          </span>
+        </div>
+
+        {!scoringValid && (
+          <div style={{
+            marginTop: 9,
+            color: 'var(--red)',
+            fontSize: 12,
+          }}>
+            Adjust the percentages to total 100% before testing.
+          </div>
+        )}
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: isPhone
+            ? 'minmax(0, 1fr)'
+            : 'minmax(0, 1fr) auto',
+          alignItems: 'end',
+          gap: 14,
+          marginTop: 20,
+          paddingTop: 16,
+          borderTop: '1px solid var(--line)',
+        }}>
+          <div style={{ display: 'grid', gap: 7 }}>
+            <label style={{
+              fontSize: 12.5,
+              fontWeight: 700,
+            }}>
+              Candidate shortlist size
+            </label>
+
+            <div style={{
+              color: 'var(--muted)',
+              fontSize: 11.5,
+            }}>
+              Number of ranked dishes available for selection.
+            </div>
+          </div>
+
+          <select
+            className="om-field"
+            value={scoringConfig.shortlistSize}
+            onChange={event =>
+              updateScoringConfig(
+                'shortlistSize',
+                Number(event.target.value)
+              )
+            }
+            style={{
+              width: isPhone ? '100%' : 120,
+              fontFamily: MONO,
+            }}
+          >
+            {[3, 5, 8, 10, 12, 15, 20, 25].map(size => (
+              <option key={size} value={size}>
+                {size} dishes
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{
+          marginTop: 16,
+          fontSize: 11.5,
+          color: 'var(--muted)',
+          lineHeight: 1.6,
+        }}>
+          Preview mode: weights and shortlist size affect the
+          scoring diagnostics, not Claude's selections yet.
+          Production recommendations remain unchanged.
+        </div>
+      </Card>
 
       <Card title="Run a test">
         <div style={{
@@ -324,7 +555,7 @@ function RecommendationLab() {
           <button
             type="button"
             className="om-pri"
-            disabled={!restaurantId || running}
+            disabled={!restaurantId || running || !scoringValid}
             onClick={runTest}
             style={{
               minHeight: 38,
@@ -745,6 +976,150 @@ function RecommendationLab() {
             </div>
           </Card>
 
+          {latest.diagnostics?.scoring && (
+            <Card title="Weighted candidate ranking">
+              <div style={{
+                color: 'var(--muted)',
+                fontSize: 12,
+                lineHeight: 1.6,
+                marginBottom: 14,
+              }}>
+                Scoring preview ·{' '}
+                {latest.diagnostics.scoring.totalCandidates} eligible dishes ·{' '}
+                {latest.diagnostics.scoring.shortlist.length} shortlisted
+              </div>
+
+              <div style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 8,
+                marginBottom: 16,
+              }}>
+                {[
+                  ['Inventory', latest.diagnostics.scoring.config.inventoryWeight],
+                  ['Profitability', latest.diagnostics.scoring.config.profitabilityWeight],
+                  ['Sales', latest.diagnostics.scoring.config.salesWeight],
+                ].map(([label, value]) => (
+                  <div key={label} style={{
+                    border: '1px solid var(--line)',
+                    borderRadius: 7,
+                    padding: '8px 11px',
+                    fontSize: 12,
+                  }}>
+                    <span style={{ color: 'var(--muted)' }}>
+                      {label}
+                    </span>
+                    <strong style={{
+                      marginLeft: 8,
+                      fontFamily: MONO,
+                    }}>
+                      {value}%
+                    </strong>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gap: 9 }}>
+                {latest.diagnostics.scoring.shortlist.map((item, index) => (
+                  <details key={`${item.name}-${index}`} style={{
+                    border: '1px solid var(--line)',
+                    borderRadius: 9,
+                    padding: '12px 14px',
+                    minWidth: 0,
+                  }}>
+                    <summary style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                      flexWrap: 'wrap',
+                    }}>
+                      <span style={{
+                        fontSize: 12.5,
+                        fontWeight: 800,
+                        overflowWrap: 'anywhere',
+                      }}>
+                        {index + 1}. {item.name}
+                      </span>
+
+                      <span style={{
+                        fontFamily: MONO,
+                        fontWeight: 800,
+                        fontSize: 12,
+                        color: 'var(--accent-deep)',
+                      }}>
+                        {item.totalScore === null
+                          ? 'MENU ONLY'
+                          : `${item.totalScore.toFixed(1)} / 100`}
+                      </span>
+                    </summary>
+
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: isPhone
+                        ? 'minmax(0, 1fr)'
+                        : 'repeat(3, minmax(0, 1fr))',
+                      gap: 10,
+                      marginTop: 14,
+                    }}>
+                      {[
+                        ['Inventory', 'inventory'],
+                        ['Profitability', 'profitability'],
+                        ['Sales', 'sales'],
+                      ].map(([label, key]) => (
+                        <div key={key} style={{
+                          padding: 11,
+                          borderRadius: 7,
+                          background: 'var(--panel)',
+                          border: '1px solid var(--line)',
+                          minWidth: 0,
+                        }}>
+                          <div style={{
+                            fontSize: 10,
+                            color: 'var(--muted)',
+                            fontFamily: MONO,
+                          }}>
+                            {label.toUpperCase()}
+                          </div>
+
+                          <div style={{
+                            fontSize: 18,
+                            fontWeight: 800,
+                            marginTop: 6,
+                            fontFamily: MONO,
+                          }}>
+                            {item.scores[key] === null
+                              ? '—'
+                              : item.scores[key].toFixed(1)}
+                          </div>
+
+                          <div style={{
+                            fontSize: 11,
+                            color: 'var(--muted)',
+                            marginTop: 4,
+                          }}>
+                            Effective weight:{' '}
+                            {item.effectiveWeights[key].toFixed(1)}%
+                          </div>
+
+                          <div style={{
+                            fontSize: 11,
+                            color: 'var(--muted)',
+                            marginTop: 3,
+                          }}>
+                            Contribution:{' '}
+                            {item.contributions[key].toFixed(1)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </Card>
+          )}
+          
           {latest.diagnostics && (
             <Card title="Generation diagnostics">
               <div style={{
