@@ -315,7 +315,7 @@ export default function AnalyticsScreen({
       { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
       { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
       { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, note: `Target ${targetFoodCost}%`, bar: true },
-      { label: "Gross margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
+      { label: "Verified gross profit", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
     ];
     const mGap = span <= 7 ? 12 : span <= 14 ? 6 : 2;
     const syncLine = syncStamp || (posConnected ? `${posSystem} · synced` : "Manual upload");
@@ -562,7 +562,7 @@ export default function AnalyticsScreen({
     { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
     { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
     { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, bar: true },
-    { label: "Gross margin", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
+    { label: "Verified gross profit", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
   ];
 
   return (

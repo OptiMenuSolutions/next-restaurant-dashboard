@@ -53,7 +53,17 @@ const sectionHead = { display: "flex", justifyContent: "space-between", alignIte
 const hint = { fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.1em", color: "var(--faint)", whiteSpace: "nowrap" };
 
 export default function MenuCosting({ dishes, tgt, onPick, NavLink }) {
-  const priced = useMemo(() => (dishes || []).filter((d) => !d.awaiting && d.price > 0), [dishes]);
+  const priced = useMemo(
+    () => (dishes || []).filter(
+      (d) =>
+        !d.awaiting &&
+        !d.noRecipe &&
+        d.cost != null &&
+        Number.isFinite(d.cost) &&
+        d.price > 0
+    ),
+    [dishes]
+  );
   const waiting = useMemo(() => (dishes || []).filter((d) => d.awaiting), [dishes]);
   const below = useMemo(() => priced.filter((d) => d.margin < tgt).sort((a, b) => a.margin - b.margin), [priced, tgt]);
   const above = useMemo(() => priced.filter((d) => d.margin >= tgt).sort((a, b) => b.margin - a.margin), [priced, tgt]);

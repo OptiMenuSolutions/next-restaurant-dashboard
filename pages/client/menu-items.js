@@ -14,7 +14,8 @@ import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
 const EMPTY_LIST = [];
 import { parseMenuFiles } from "../../lib/parseMenu";
 import { fetchSampleData } from "../../lib/seedSampleData";
-import { calculateStandardizedCost, getUnitCategory, hasUnitMismatch } from "../../lib/standardizedUnits";
+import { calculateStandardizedCost } from "../../lib/standardizedUnits";
+import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -77,23 +78,34 @@ function toDish(row, costHistory, covers, opts = {}) {
       const unitPrice = priced ? num(g.last_price) : 0;
       const recipeUnit = ci.unit || g.unit || "ea";
       const ingredientUnit = g.unit || recipeUnit;
-      // The recipe's unit (set once, at menu-parse time) and the
-      // ingredient's CURRENT unit (which confirm-invoice.js can silently
-      // change on every real invoice — e.g. standardizing "lb" to "oz")
-      // can drift apart over an ingredient's life. A plain quantity x
-      // unitPrice multiply then silently assumes they still match — this
-      // converts first, and flags rather than guesses when it can't.
+
+      const verifiedCost = opts.trustPrices
+        ? calculateStandardizedCost(
+            num(ci.quantity),
+            recipeUnit,
+            unitPrice,
+            ingredientUnit,
+            g.name
+          )
+        : calculateVerifiedIngredientCost(
+            num(ci.quantity),
+            recipeUnit,
+            g
+          );
+
+      const conversionMissing = verifiedCost === null;
+
       return {
         name: g.name || "Ingredient",
         unit: recipeUnit,
-        quantity: num(ci.quantity), // raw number — needed for live what-if math below
+        quantity: num(ci.quantity),
         qty: [ci.quantity, recipeUnit].filter(Boolean).join(" "),
         unitPrice,
-        cost: calculateStandardizedCost(num(ci.quantity), recipeUnit, unitPrice, ingredientUnit, g.name),
-        costThen: null, // per-line history is not stored; the Δ column shows "—"
+        cost: conversionMissing ? null : verifiedCost,
+        costThen: null,
         estimated: !!g.is_estimated,
-        unitMismatch: hasUnitMismatch(recipeUnit, ingredientUnit),
-        unpriced: !priced,
+        unitMismatch: conversionMissing && priced,
+        unpriced: !priced || conversionMissing,
         lastOrdered: g.last_ordered_at || null,
       };
     }),
@@ -106,19 +118,34 @@ function toDish(row, costHistory, covers, opts = {}) {
     const unitPrice = priced ? num(g.last_price) : 0;
     const recipeUnit = g.unit || "ea";
     const ingredientUnit = g.unit || recipeUnit;
-    const unitMismatch =
-      recipeUnit !== ingredientUnit && getUnitCategory(recipeUnit) !== getUnitCategory(ingredientUnit);
+
+    const verifiedCost = opts.trustPrices
+      ? calculateStandardizedCost(
+          num(mi.quantity),
+          recipeUnit,
+          unitPrice,
+          ingredientUnit,
+          g.name
+        )
+      : calculateVerifiedIngredientCost(
+          num(mi.quantity),
+          recipeUnit,
+          g
+        );
+
+    const conversionMissing = verifiedCost === null;
+
     return {
       name: g.name || "Ingredient",
       unit: recipeUnit,
       quantity: num(mi.quantity),
       qty: [mi.quantity, recipeUnit].filter(Boolean).join(" "),
       unitPrice,
-      cost: calculateStandardizedCost(num(mi.quantity), recipeUnit, unitPrice, ingredientUnit),
+      cost: conversionMissing ? null : verifiedCost,
       costThen: null,
       estimated: !!g.is_estimated,
-      unitMismatch,
-      unpriced: !priced,
+      unitMismatch: conversionMissing && priced,
+      unpriced: !priced || conversionMissing,
       lastOrdered: g.last_ordered_at || null,
     };
   });
@@ -131,11 +158,17 @@ function toDish(row, costHistory, covers, opts = {}) {
   // invoice touches the dish, so it goes stale after any costing fix.
   const allLines = components.flatMap((c) => c.ingredients);
   const unpricedCount = allLines.filter((i) => i.unpriced).length;
-  const recipeCost = allLines.reduce((n, i) => n + i.cost, 0);
-  // Stored menu_items.cost was computed from AI price guesses — only fall
-  // back to it for dishes with no recipe rows at all (tour sample data).
+  const recipeCost = unpricedCount
+    ? null
+    : allLines.reduce((n, i) => n + i.cost, 0);
+
+  // Never use a partial recipe total as the dish's actual cost.
+  // The screen's existing awaiting state hides unavailable margins.
   const cost = allLines.length ? recipeCost : num(row.cost);
-  const costThen = history.length ? price - (history[0].value / 100) * price : cost;
+
+  const costThen = history.length
+    ? price - (history[0].value / 100) * price
+    : cost;
 
   // Plate cost change over the last 30 days, read from the saved cost
   // history (recomputeMenuCosts dates each row to its invoice). Rows arrive
@@ -354,9 +387,33 @@ export default function MenuItemsPage() {
           .from("menu_items")
           .select(`
             id, name, price, cost, category,
-            menu_item_components(id, name, cost,
-              component_ingredients(id, quantity, unit, ingredients:ingredient_id(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))),
-            menu_item_ingredients(quantity, ingredients(id, name, unit, last_price, is_estimated, price_approved_at, last_ordered_at))
+             menu_item_components(
+               id, name, cost,
+               component_ingredients(
+                 id, quantity, unit,
+                 ingredients:ingredient_id(
+                   id, name, unit, last_price, is_estimated,
+                   price_approved_at, last_ordered_at,
+                   ingredient_unit_conversions(
+                     id, ingredient_id, from_unit, to_unit,
+                     factor, basis, evidence
+                   ),
+                   ingredient_conversion_default_links(
+                     ingredient_conversion_defaults(
+                       id, label, from_unit, to_unit,
+                       factor, basis, evidence, source_url
+                     )
+                   )
+                 )
+               )
+             ),
+             menu_item_ingredients(
+               quantity,
+               ingredients(
+                 id, name, unit, last_price, is_estimated,
+                 price_approved_at, last_ordered_at
+               )
+             )
           `)
           .eq("restaurant_id", restaurantId)
           .is("archived_at", null)
@@ -421,7 +478,15 @@ export default function MenuItemsPage() {
 
   const periodLabel = useMemo(
     () => {
-      const costed = items.filter((i) => !i.unpricedCount).length;
+      const costed = items.filter(
+        (i) =>
+          !i.unpricedCount &&
+          i.components?.some((c) => c.ingredients?.length > 0) &&
+          i.cost != null &&
+          Number.isFinite(i.cost) &&
+          i.price > 0
+      ).length;
+
       return `Tonight’s prices · ${costed} of ${items.length} dishes costed · target margin ${Math.round(targetMargin)}%`;
     },
     [items, targetMargin]

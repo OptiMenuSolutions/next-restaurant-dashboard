@@ -112,19 +112,45 @@ function decorate(d) {
     return {
       ...c,
       ingredients: ings,
-      cost: ings.reduce((a, i) => a + (Number(i.cost) || 0), 0),
-      costThen: ings.reduce((a, i) => a + (Number(i.costThen != null ? i.costThen : i.cost) || 0), 0),
+      cost: ings.some((i) => i.cost == null || i.unpriced)
+        ? null
+        : ings.reduce((a, i) => a + Number(i.cost), 0),
+      costThen: ings.some((i) => i.cost == null || i.unpriced)
+        ? null
+        : ings.reduce(
+            (a, i) => a + Number(i.costThen != null ? i.costThen : i.cost),
+            0
+          ),
       allEstimated: ings.length > 0 && ings.every((i) => i.estimated),
       /* no per-line history available -> the Δ column shows "—" */
       unknownMove: ings.length > 0 && ings.every((i) => i.costThen == null),
     };
   });
   const lines = components.reduce((a, c) => a + c.ingredients.length, 0);
-  const cost = d.cost != null ? Number(d.cost) : components.reduce((a, c) => a + c.cost, 0);
-  const costThen = d.costThen != null ? Number(d.costThen) : components.reduce((a, c) => a + c.costThen, 0);
+  const hasUnpriced = components.some((c) =>
+    c.ingredients.some((i) => i.unpriced || i.cost == null)
+  );
+
+  const cost = hasUnpriced
+    ? null
+    : d.cost != null
+      ? Number(d.cost)
+      : components.reduce((a, c) => a + c.cost, 0);
+
+  const costThen = hasUnpriced
+    ? null
+    : d.costThen != null
+      ? Number(d.costThen)
+      : components.reduce((a, c) => a + c.costThen, 0);
+
   const price = Number(d.price) || 0;
-  const margin = price ? ((price - cost) / price) * 100 : 0;
-  const marginThen = price ? ((price - costThen) / price) * 100 : 0;
+  const margin = cost != null && price > 0
+    ? ((price - cost) / price) * 100
+    : null;
+
+  const marginThen = costThen != null && price > 0
+    ? ((price - costThen) / price) * 100
+    : null;
   const estIngs = components.flatMap((c) => c.ingredients).filter((i) => i.estimated);
   const estCost = estIngs.reduce((a, i) => a + (Number(i.cost) || 0), 0);
   return {
@@ -135,7 +161,9 @@ function decorate(d) {
     costThen,
     margin,
     marginThen,
-    drift: margin - marginThen,
+    drift: margin != null && marginThen != null
+      ? margin - marginThen
+      : null,
     covers: Number(d.covers) || 0,
     history: d.history || [],
     estCount: estIngs.length,
@@ -223,7 +251,14 @@ export default function MenuItemsScreen({
   // Dishes awaiting pricing have no trustworthy cost — keep them out of
   // every count, filter, and average.
   // Dishes with no recipe have no cost either, so they stay out too.
-  const priced = data.filter((d) => !d.awaiting && !d.noRecipe);
+  const priced = data.filter(
+    (d) =>
+      !d.awaiting &&
+      !d.noRecipe &&
+      d.cost != null &&
+      Number.isFinite(d.cost) &&
+      d.price > 0
+  );
   const belowTarget = priced.filter((d) => d.margin < tgt);
   // Cost rising: plate cost went up over the last 30 days.
   const costRising = priced.filter((d) => (d.move30 || 0) > 0.005);
@@ -594,15 +629,56 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
       </div>
     );
   }
-  const revenue = data.reduce((a, d) => a + d.price * d.covers, 0);
-  const weighted = revenue ? (data.reduce((a, d) => a + (d.price - d.cost) * d.covers, 0) / revenue) * 100 : 0;
-  const avgDrift = data.reduce((a, d) => a + d.drift, 0) / data.length;
-  const slippers = data.slice().sort((a, b) => a.drift - b.drift).slice(0, 5);
+  const costed = data.filter(
+    (d) => !d.awaiting && !d.noRecipe && d.cost != null && d.price > 0
+  );
+
+  const revenue = costed.reduce(
+    (a, d) => a + d.price * d.covers,
+    0
+  );
+
+  const weighted = revenue > 0
+    ? (
+        costed.reduce(
+          (a, d) => a + (d.price - d.cost) * d.covers,
+          0
+        ) / revenue
+      ) * 100
+    : null;
+
+  const drifted = costed.filter(
+    (d) => d.drift != null && Number.isFinite(d.drift)
+  );
+
+  const avgDrift = drifted.length
+    ? drifted.reduce((a, d) => a + d.drift, 0) / drifted.length
+    : null;
+
+  const slippers = drifted
+    .slice()
+    .sort((a, b) => a.drift - b.drift)
+    .slice(0, 5);
 
   const stats = [
-    { label: "Below target", value: String(belowTarget.length), color: "var(--text)", note: `of ${data.length} dishes` },
-    { label: "Food cost", value: pct(100 - weighted), color: "var(--text)", note: "weighted by covers" },
-    { label: "Menu drift", value: ppLabel(avgDrift), color: ppColor(avgDrift), note: "average across the menu" },
+    {
+      label: "Below target",
+      value: String(belowTarget.length),
+      color: "var(--text)",
+      note: `of ${costed.length} costed dishes`,
+    },
+    {
+      label: "Food cost",
+      value: weighted != null ? pct(100 - weighted) : "—",
+      color: "var(--text)",
+      note: "weighted by covers",
+    },
+    {
+      label: "Menu drift",
+      value: avgDrift != null ? ppLabel(avgDrift) : "—",
+      color: avgDrift != null ? ppColor(avgDrift) : "var(--muted)",
+      note: "average across costed dishes",
+    },
   ];
 
   return (
@@ -611,7 +687,7 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05 }}>The menu, at today’s costs</div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 7 }}>
-            {periodLabel || `${data.length} dishes costed · target margin ${pct(tgt)}`}
+            Tonight’s prices · {costed.length} of {data.length} dishes costed · target margin {pct(tgt)}
           </div>
           {onUploadMenu && (
             <button
@@ -625,7 +701,7 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{pct(weighted)}</div>
+          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{weighted != null ? pct(weighted) : "—"}</div>
           <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>Weighted margin</div>
         </div>
       </div>
@@ -726,8 +802,12 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   // unit-converted (oz↔lb etc.). Multiplying qty × ing.unitPrice directly
   // skipped that conversion and under-costed mixed-unit lines.
   const recipeUnitPrice = (ing) => {
+    if (ing.unpriced || ing.cost == null) return null;
+
     const q = Number(ing.quantity);
-    return q ? (Number(ing.cost) || 0) / q : (Number(ing.unitPrice) || 0);
+    if (q > 0) return Number(ing.cost) / q;
+
+    return null;
   };
   const typedQty = (ci, ii) => {
     const k = ingKey(ci, ii);
@@ -739,22 +819,73 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
     const v = typedQty(ci, ii);
     return v != null && Math.abs(v - (Number(ing.quantity) || 0)) > 1e-9;
   };
-  const lineCost = (ci, ii, ing, useSandbox) =>
-    useSandbox && isChanged(ci, ii, ing) ? typedQty(ci, ii) * recipeUnitPrice(ing) : Number(ing.cost) || 0;
-  const compCost = (ci, c, useSandbox) => c.ingredients.reduce((a, ing, ii) => a + lineCost(ci, ii, ing, useSandbox), 0);
+  const lineCost = (ci, ii, ing, useSandbox) => {
+    if (ing.unpriced || ing.cost == null) return null;
 
-  const changes = d.components.reduce((n, c, ci) => n + c.ingredients.filter((ing, ii) => isChanged(ci, ii, ing)).length, 0);
-  const realSum = d.components.reduce((a, c, ci) => a + compCost(ci, c, false), 0);
-  const sbSum = d.components.reduce((a, c, ci) => a + compCost(ci, c, true), 0);
-  const realCost = Number(d.cost) || 0;
-  const sbCost = Math.max(0, realCost + (sbSum - realSum));
-  const live = sandbox && changes > 0; // sandbox numbers differ from the real ones
+    if (useSandbox && isChanged(ci, ii, ing)) {
+      const perUnit = recipeUnitPrice(ing);
+      if (perUnit == null) return null;
+      return typedQty(ci, ii) * perUnit;
+    }
+
+    return Number(ing.cost);
+  };
+
+  const compCost = (ci, c, useSandbox) => {
+    let total = 0;
+
+    for (let ii = 0; ii < c.ingredients.length; ii++) {
+      const value = lineCost(ci, ii, c.ingredients[ii], useSandbox);
+      if (value == null) return null;
+      total += value;
+    }
+
+    return total;
+  };
+
+  const changes = d.components.reduce(
+    (n, c, ci) =>
+      n + c.ingredients.filter((ing, ii) => isChanged(ci, ii, ing)).length,
+    0
+  );
+
+  const realSumParts = d.components.map((c, ci) =>
+    compCost(ci, c, false)
+  );
+
+  const sbSumParts = d.components.map((c, ci) =>
+    compCost(ci, c, true)
+  );
+
+  const realSum = realSumParts.some((v) => v == null)
+    ? null
+    : realSumParts.reduce((a, v) => a + v, 0);
+
+  const sbSum = sbSumParts.some((v) => v == null)
+    ? null
+    : sbSumParts.reduce((a, v) => a + v, 0);
+
+  const realCost = d.cost == null ? null : Number(d.cost);
+
+  const sbCost = realCost == null || realSum == null || sbSum == null
+    ? null
+    : Math.max(0, realCost + (sbSum - realSum));
+
+  const live = sandbox && changes > 0 && sbCost != null;
   const cost = live ? sbCost : realCost;
-  const marginOf = (c) => (price ? ((price - c) / price) * 100 : 0);
+
+  const marginOf = (c) =>
+    c != null && price > 0
+      ? ((price - c) / price) * 100
+      : null;
+
   const realMargin = marginOf(realCost);
   const margin = marginOf(cost);
-  const keep = price - cost;
-  const delta = sbCost - realCost; // negative = the sandbox saves money
+  const keep = cost == null ? null : price - cost;
+
+  const delta = sbCost != null && realCost != null
+    ? sbCost - realCost
+    : null;
 
   const awaiting = d.awaiting;
   const under = !awaiting && price > 0 && realMargin < tgt;
@@ -763,9 +894,12 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   const covers = Number(d.covers) || 0;
 
   // Reach the target: price rounded up to the next .95 (same rule as Menu costing).
-  const tp = realCost / (1 - tgt / 100);
-  let reprice = Math.ceil(tp) - 0.05;
-  if (reprice < tp) reprice += 1;
+  const tp = realCost != null && tgt < 100
+    ? realCost / (1 - tgt / 100)
+    : null;
+
+  let reprice = tp == null ? null : Math.ceil(tp) - 0.05;
+  if (tp != null && reprice < tp) reprice += 1;
   const trimTo = price * (1 - tgt / 100);
   const lever = allLines.filter((i) => !i.unpriced).sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0))[0];
 

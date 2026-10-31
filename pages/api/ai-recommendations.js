@@ -21,7 +21,7 @@ import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
 import { getShelfLife, isProtein } from '../../lib/shelfLife';
 import { loadCurrentInventory } from '../../lib/currentInventory';
-import { calculateStandardizedCost } from '../../lib/standardizedUnits';
+import { calculateVerifiedIngredientCost } from '../../lib/verifiedIngredientCost';
 import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
 import { buildPrompt } from '../../lib/ai/prompts/tonightsDish';
 
@@ -99,7 +99,15 @@ async function loadRestaurantContext(restaurantId) {
             quantity,
             unit,
             ingredients:ingredient_id (
-              id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at
+              id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at,
+              ingredient_unit_conversions (
+                id, ingredient_id, from_unit, to_unit, factor, basis, evidence
+              ),
+              ingredient_conversion_default_links (
+                ingredient_conversion_defaults (
+                  id, label, from_unit, to_unit, factor, basis, evidence, source_url
+                )
+              )
             )
           )
         )
@@ -141,16 +149,43 @@ async function loadRestaurantContext(restaurantId) {
     // were computed from the menu parser's AI guesses and must not be used.
     // If any ingredient is an unapproved guess, the margin is unknown — the
     // dish stays eligible for waste / sales / variety picks.
-    const lines = (item.menu_item_components || []).flatMap(c => c.component_ingredients || []);
+    const lines = (item.menu_item_components || []).flatMap(
+      c => c.component_ingredients || []
+    );
+
     let cost = null;
-    if (lines.length && lines.every(ci => ci.ingredients && (ci.ingredients.is_estimated === false || ci.ingredients.price_approved_at))) {
-      cost = lines.reduce((sum, ci) => {
-        const g = ci.ingredients;
-        const recipeUnit = ci.unit || g.unit || 'each';
-        return sum + calculateStandardizedCost(
-          parseFloat(ci.quantity || 0), recipeUnit, parseFloat(g.last_price || 0), g.unit || recipeUnit, g.name || ''
+
+    if (lines.length) {
+      let total = 0;
+      let fullyCosted = true;
+
+      for (const line of lines) {
+        const ingredient = line.ingredients;
+
+        const approved =
+          ingredient &&
+          (ingredient.is_estimated === false || !!ingredient.price_approved_at);
+
+        if (!approved) {
+          fullyCosted = false;
+          break;
+        }
+
+        const lineCost = calculateVerifiedIngredientCost(
+          line.quantity,
+          line.unit,
+          ingredient
         );
-      }, 0);
+
+        if (lineCost == null) {
+          fullyCosted = false;
+          break;
+        }
+
+        total += lineCost;
+      }
+
+      if (fullyCosted) cost = total;
     }
     const margin = cost != null ? ((price - cost) / price) * 100 : null;
     const marginDollars = cost != null ? price - cost : null;

@@ -17,7 +17,7 @@ import useSWR from "swr";
 import { useGuardedAccount } from "../../lib/useAccount";
 
 const EMPTY_DASH = { ingredients: [], menuItems: [], wasteRisk: [], stats: null };
-import { calculateStandardizedCost } from "../../lib/standardizedUnits";
+import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
 
 /**
  * pages/client/dashboard.js — "Tonight's Pass" dashboard, v5 shell.
@@ -50,9 +50,15 @@ function pricedCost(item, trust = false) {
     const g = ci.ingredients || {};
     if (!(g.is_estimated === false || !!g.price_approved_at)) return null;
     const recipeUnit = ci.unit || g.unit || "each";
-    total += calculateStandardizedCost(
-      Number(ci.quantity) || 0, recipeUnit, Number(g.last_price) || 0, g.unit || recipeUnit, g.name || ""
+    const lineCost = calculateVerifiedIngredientCost(
+      Number(ci.quantity) || 0,
+      recipeUnit,
+      g
     );
+
+    if (lineCost === null) return null;
+
+    total += lineCost;
   }
   return total;
 }
@@ -422,7 +428,26 @@ export default function DashboardPage() {
           supabase.from("invoices").select("date, amount").eq("restaurant_id", restaurantId).gte("date", `${new Date().getFullYear()}-01-01`),
           supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
           supabase.from("menu_items")
-            .select("id,name,price,cost,category,menu_item_components(id,name,cost,component_ingredients(quantity,unit,ingredients(id,name,unit,last_price,is_estimated,price_approved_at)))")
+          .select(`
+            id, name, price, cost, category,
+            menu_item_components(
+              id, name, cost,
+              component_ingredients(
+                quantity, unit,
+                ingredients(
+                  id, name, unit, last_price, is_estimated, price_approved_at,
+                  ingredient_unit_conversions(
+                    id, ingredient_id, from_unit, to_unit, factor, basis, evidence
+                  ),
+                  ingredient_conversion_default_links(
+                    ingredient_conversion_defaults(
+                      id, label, from_unit, to_unit, factor, basis, evidence, source_url
+                    )
+                  )
+                )
+              )
+            )
+          `)
             .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
           loadCurrentInventory(supabase, restaurantId),
         ]);

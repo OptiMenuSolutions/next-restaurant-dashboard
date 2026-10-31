@@ -15,7 +15,7 @@ const EMPTY_LIST = [];
 const EMPTY_COSTS = {};
 import CsvImportPreview from "../../components/CsvImportPreview";
 import { fetchSampleData } from "../../lib/seedSampleData";
-import { calculateStandardizedCost } from "../../lib/standardizedUnits";
+import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -62,16 +62,36 @@ const dowOf = (iso) => (new Date(`${iso}T12:00:00`).getDay() + 6) % 7; // Mon = 
    still unpriced, so analytics never shows a margin built on AI guesses.
    A dish with no recipe rows falls back to its stored cost, same as Menu Items. */
 function allowedPlateCost(m) {
-  const lines = (m.menu_item_components || []).flatMap((c) => c.component_ingredients || []);
-  if (!lines.length) return num(m.cost) || null;
+  const lines = (m.menu_item_components || []).flatMap(
+    (c) => c.component_ingredients || []
+  );
+
+  if (!lines.length) return null;
+
   let total = 0;
-  for (const l of lines) {
-    const g = l.ingredients;
-    if (!g) return null;
-    const allowed = g.is_estimated === false || !!g.price_approved_at;
-    if (!allowed || !(num(g.last_price) > 0)) return null;
-    total += calculateStandardizedCost(num(l.quantity), l.unit, num(g.last_price), g.unit, g.name || "");
+
+  for (const line of lines) {
+    const ingredient = line.ingredients;
+
+    if (!ingredient) return null;
+
+    const approved =
+      ingredient.is_estimated === false ||
+      !!ingredient.price_approved_at;
+
+    if (!approved) return null;
+
+    const cost = calculateVerifiedIngredientCost(
+      line.quantity,
+      line.unit,
+      ingredient
+    );
+
+    if (cost == null) return null;
+
+    total += cost;
   }
+
   return total;
 }
 
@@ -142,7 +162,25 @@ export default function AnalyticsPage() {
         const [{ data: realMenu }, { data: realSessions }, { data: realPos }, realSales] = await Promise.all([
           supabase
             .from("menu_items")
-            .select("name, price, cost, category, menu_item_components(component_ingredients(quantity, unit, ingredients(name, unit, last_price, is_estimated, price_approved_at)))")
+            .select(`
+              name, price, cost, category,
+              menu_item_components(
+                component_ingredients(
+                  quantity, unit,
+                  ingredients(
+                    name, unit, last_price, is_estimated, price_approved_at,
+                    ingredient_unit_conversions(
+                      id, ingredient_id, from_unit, to_unit, factor, basis, evidence
+                    ),
+                    ingredient_conversion_default_links(
+                      ingredient_conversion_defaults(
+                        id, label, from_unit, to_unit, factor, basis, evidence, source_url
+                      )
+                    )
+                  )
+                )
+              )
+            `)
             .eq("restaurant_id", restaurantId)
             .limit(500),
           supabase.from("upload_sessions").select("*").eq("restaurant_id", restaurantId).order("uploaded_at", { ascending: false }).limit(1),
