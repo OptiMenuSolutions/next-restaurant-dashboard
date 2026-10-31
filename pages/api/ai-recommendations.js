@@ -24,6 +24,7 @@ import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateVerifiedIngredientCost } from '../../lib/verifiedIngredientCost';
 import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
 import { buildPrompt } from '../../lib/ai/prompts/tonightsDish';
+import { buildWeightedPrompt } from '../../lib/ai/prompts/weightedTonightsDish';
 import {
   scoreRecommendationCandidates,
   validateRecommendationConfig,
@@ -50,6 +51,20 @@ function isEntreeCategory(category) {
   if (!category) return false;
   const lower = category.toLowerCase();
   return !EXCLUDED_CATEGORY_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+function isEligibleRecommendationDish(item) {
+  if (!isEntreeCategory(item.category)) return false;
+
+  const name = String(item.name || '').toLowerCase().trim();
+
+  // Exclude kids' dishes even when their category is mislabeled.
+  const kidsDishPattern =
+    /\b(?:kids?|kiddie|children'?s|child'?s|junior|little ones)\b/i;
+
+  if (kidsDishPattern.test(name)) return false;
+
+  return true;
 }
 
 // ─── Expiring ingredients: same source as the dashboard Waste Risk panel ─────
@@ -144,7 +159,7 @@ async function loadRestaurantContext(restaurantId) {
     salesLast7[key] = (salesLast7[key] || 0) + parseFloat(s.quantity_sold || 0);
   }
 
-  const entreeItems = menuItems.filter(item => isEntreeCategory(item.category));
+  const entreeItems = menuItems.filter(isEligibleRecommendationDish);
   const enriched = entreeItems.map(item => {
     const price = parseFloat(item.price || 0);
     if (price === 0) return null;
@@ -321,15 +336,18 @@ export async function generateForRestaurant(
     ),
   }));
 
-    // Preview weighted scoring during Recommendation Lab dry runs.
-  // Production selection remains unchanged at this checkpoint.
-  if (dryRun && diagnostics) {
-    const config = validateRecommendationConfig(scoringConfig || {});
+  // Experimental weighted selection is limited to admin dry runs.
+  // Normal production generation continues using the legacy prompt.
+  const weightedLabMode = dryRun && diagnostics !== null;
 
-    const scoring = scoreRecommendationCandidates(
-      safeEnriched,
-      config
-    );
+  const scoring = weightedLabMode
+    ? scoreRecommendationCandidates(
+        safeEnriched,
+        validateRecommendationConfig(scoringConfig || {})
+      )
+    : null;
+
+  if (scoring && diagnostics) {
 
     diagnostics.scoring = {
       config: scoring.config,
@@ -347,7 +365,7 @@ export async function generateForRestaurant(
       })),
     };
   }
-  
+
   const verifiedMarginItems = safeEnriched
     .filter(item =>
       Number.isFinite(item.margin) &&
@@ -400,13 +418,21 @@ Never confuse percentage rankings with dollar-profit rankings.
 Never invent financial rankings or figures.
 `;
 
-  const prompt = buildPrompt(
-    safeEnriched,
-    usableExpiringIngredients,
-    history,
-    dayOfWeek,
-    currentDate
-  ) + verifiedMarginContext;
+  const prompt = weightedLabMode
+    ? buildWeightedPrompt(
+        scoring.shortlist,
+        history,
+        dayOfWeek,
+        currentDate,
+        scoring.config
+      )
+    : buildPrompt(
+        safeEnriched,
+        usableExpiringIngredients,
+        history,
+        dayOfWeek,
+        currentDate
+      ) + verifiedMarginContext;
 
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -994,6 +1020,16 @@ Never invent financial rankings or figures.
     return true;
   };
 
+  // Claude may only select dishes supplied in the ranked shortlist.
+  // Server fallback behavior will be updated in Checkpoint 5B.
+  const allowedClaudeNames = weightedLabMode
+    ? new Set(
+        scoring.shortlist.map(item =>
+          item.name.toLowerCase().trim()
+        )
+      )
+    : null;
+
   // Validate original recommendations and remove duplicate dishes.
   const validRecommendations = [];
   const selectedNames = new Set();
@@ -1007,6 +1043,16 @@ Never invent financial rankings or figures.
         'claude',
         'skipped',
         !key ? 'Missing dish title' : 'Duplicate dish title',
+        rec.title
+      );
+      continue;
+    }
+
+    if (allowedClaudeNames && !allowedClaudeNames.has(key)) {
+      recordDiagnostic(
+        'claude',
+        'skipped',
+        'Dish is outside the weighted shortlist',
         rec.title
       );
       continue;
@@ -1027,7 +1073,9 @@ Never invent financial rankings or figures.
   // Fill remaining slots using verified server data.
   // No second Claude call is made.
   if (validRecommendations.length < 3) {
-    const fallbackCandidates = safeEnriched
+    const fallbackCandidates = (
+      weightedLabMode ? scoring.shortlist : safeEnriched
+    )
       .filter(item => {
         const key = item.name.toLowerCase().trim();
 
