@@ -27,9 +27,6 @@ function RecommendationLab() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [results, setResults] = useState([]);
-  const [readiness, setReadiness] = useState(null);
-  const [readinessLoading, setReadinessLoading] = useState(false);
-  const [readinessError, setReadinessError] = useState('');
   const [scoringConfig, setScoringConfig] = useState({
     ...DEFAULT_RECOMMENDATION_CONFIG,
   });
@@ -86,47 +83,6 @@ function RecommendationLab() {
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
   }, []);
-
-    useEffect(() => {
-    if (!restaurantId) {
-      setReadiness(null);
-      setReadinessError('');
-      setReadinessLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    setReadiness(null);
-    setReadinessError('');
-    setReadinessLoading(true);
-
-    async function loadReadiness() {
-      try {
-        const response = await adminFetch(
-          `/api/admin/data-readiness?restaurantId=${encodeURIComponent(restaurantId)}`
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Could not load data readiness');
-        }
-
-        if (!cancelled) setReadiness(data.readiness || null);
-      } catch (err) {
-        if (!cancelled) setReadinessError(err.message);
-      } finally {
-        if (!cancelled) setReadinessLoading(false);
-      }
-    }
-
-    loadReadiness();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [restaurantId, adminFetch]);
 
   const filteredRestaurants = restaurants.filter(restaurant =>
     restaurant.name.toLowerCase().includes(search.toLowerCase())
@@ -191,215 +147,164 @@ function RecommendationLab() {
         sub="Test Tonight's Dish against restaurant data without saving or publishing recommendations."
       />
 
-            <Card title="Recommendation weights">
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          flexWrap: 'wrap',
-          gap: 12,
-          marginBottom: 18,
-        }}>
-          <div style={{
-            fontSize: 12.5,
-            color: 'var(--muted)',
-            lineHeight: 1.6,
-            maxWidth: 600,
-          }}>
-            Adjust how OptiMenu scores inventory urgency,
-            verified profitability, and customer demand.
-            These settings apply only to this test session.
-          </div>
+<Card title="Recommendation weights">
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap',
+    marginBottom: 14,
+  }}>
+    <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+      Test-only weights · Total {scoringTotal}%
+    </span>
 
-          <button
-            type="button"
-            className="om-btn"
-            onClick={() => setScoringConfig({
-              ...DEFAULT_RECOMMENDATION_CONFIG,
-            })}
-          >
-            Reset defaults
-          </button>
-        </div>
+    <button
+      type="button"
+      className="om-btn"
+      onClick={() => setScoringConfig({
+        ...DEFAULT_RECOMMENDATION_CONFIG,
+      })}
+    >
+      Reset defaults
+    </button>
+  </div>
 
-        <div style={{ display: 'grid', gap: 18 }}>
-          {[
-            ['inventoryWeight', 'Inventory urgency'],
-            ['profitabilityWeight', 'Profitability'],
-            ['salesWeight', 'Customer demand'],
-          ].map(([key, label]) => (
-            <div key={key} style={{ display: 'grid', gap: 9 }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-              }}>
-                <label style={{
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                }}>
-                  {label}
-                </label>
-
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}>
-                  <input
-                    className="om-field"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={scoringConfig[key]}
-                    onChange={event => {
-                      const value = Number(event.target.value);
-                      if (
-                        Number.isFinite(value) &&
-                        value >= 0 &&
-                        value <= 100
-                      ) {
-                        updateScoringConfig(key, value);
-                      }
-                    }}
-                    aria-label={`${label} percentage`}
-                    style={{
-                      width: 70,
-                      minWidth: 0,
-                      textAlign: 'right',
-                      fontFamily: MONO,
-                      fontWeight: 800,
-                    }}
-                  />
-                  <span style={{
-                    fontSize: 12,
-                    color: 'var(--muted)',
-                  }}>
-                    %
-                  </span>
-                </div>
-              </div>
-
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={scoringConfig[key]}
-                onChange={event =>
-                  updateScoringConfig(key, Number(event.target.value))
-                }
-                aria-label={`${label} slider`}
-                style={{
-                  width: '100%',
-                  accentColor: 'var(--accent)',
-                  cursor: 'pointer',
-                }}
-              />
-            </div>
-          ))}
-        </div>
-
+  <div style={{
+    display: 'grid',
+    gridTemplateColumns: isPhone
+      ? 'minmax(0, 1fr)'
+      : 'repeat(3, minmax(0, 1fr))',
+    gap: 10,
+  }}>
+    {[
+      ['inventoryWeight', 'Inventory urgency'],
+      ['profitabilityWeight', 'Profitability'],
+      ['salesWeight', 'Customer demand'],
+    ].map(([key, label]) => (
+      <div key={key} style={{
+        minWidth: 0,
+        border: '1px solid var(--line)',
+        borderRadius: 10,
+        padding: 13,
+        background: 'var(--panel)',
+      }}>
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          gap: 12,
-          marginTop: 20,
-          paddingTop: 14,
-          borderTop: '1px solid var(--line)',
+          gap: 8,
+          marginBottom: 12,
         }}>
-          <span style={{
-            fontSize: 12,
-            color: 'var(--muted)',
-          }}>
-            Total allocation
+          <span style={{ fontSize: 12, fontWeight: 800 }}>
+            {label}
           </span>
 
-          <span style={{
-            fontFamily: MONO,
-            fontSize: 14,
-            fontWeight: 800,
-            color: scoringValid
-              ? 'var(--green)'
-              : 'var(--red)',
-          }}>
-            {scoringTotal}% / 100%
-          </span>
-        </div>
-
-        {!scoringValid && (
-          <div style={{
-            marginTop: 9,
-            color: 'var(--red)',
-            fontSize: 12,
-          }}>
-            Adjust the percentages to total 100% before testing.
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input
+              className="om-field"
+              type="number"
+              min="0"
+              max="100"
+              step="1"
+              value={scoringConfig[key]}
+              onChange={event => {
+                const value = Number(event.target.value);
+                if (
+                  Number.isFinite(value) &&
+                  value >= 0 &&
+                  value <= 100
+                ) {
+                  updateScoringConfig(key, value);
+                }
+              }}
+              aria-label={`${label} percentage`}
+              style={{
+                width: 57,
+                minWidth: 0,
+                textAlign: 'right',
+                fontFamily: MONO,
+                fontWeight: 800,
+              }}
+            />
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              %
+            </span>
           </div>
-        )}
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isPhone
-            ? 'minmax(0, 1fr)'
-            : 'minmax(0, 1fr) auto',
-          alignItems: 'end',
-          gap: 14,
-          marginTop: 20,
-          paddingTop: 16,
-          borderTop: '1px solid var(--line)',
-        }}>
-          <div style={{ display: 'grid', gap: 7 }}>
-            <label style={{
-              fontSize: 12.5,
-              fontWeight: 700,
-            }}>
-              Candidate shortlist size
-            </label>
-
-            <div style={{
-              color: 'var(--muted)',
-              fontSize: 11.5,
-            }}>
-              Number of ranked dishes available for selection.
-            </div>
-          </div>
-
-          <select
-            className="om-field"
-            value={scoringConfig.shortlistSize}
-            onChange={event =>
-              updateScoringConfig(
-                'shortlistSize',
-                Number(event.target.value)
-              )
-            }
-            style={{
-              width: isPhone ? '100%' : 120,
-              fontFamily: MONO,
-            }}
-          >
-            {[3, 5, 8, 10, 12, 15, 20, 25].map(size => (
-              <option key={size} value={size}>
-                {size} dishes
-              </option>
-            ))}
-          </select>
         </div>
 
-        <div style={{
-          marginTop: 16,
-          fontSize: 11.5,
-          color: 'var(--muted)',
-          lineHeight: 1.6,
-        }}>
-          Preview mode: weights and shortlist size affect the
-          scoring diagnostics, not Claude's selections yet.
-          Production recommendations remain unchanged.
-        </div>
-      </Card>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="5"
+          value={scoringConfig[key]}
+          onChange={event =>
+            updateScoringConfig(key, Number(event.target.value))
+          }
+          aria-label={`${label} slider`}
+          style={{
+            display: 'block',
+            width: '100%',
+            accentColor: 'var(--accent)',
+            cursor: 'pointer',
+          }}
+        />
+      </div>
+    ))}
+  </div>
+
+  {!scoringValid && (
+    <div style={{
+      marginTop: 10,
+      fontSize: 12,
+      color: 'var(--red)',
+    }}>
+      Weights must total 100% before running a test.
+    </div>
+  )}
+
+  <div style={{
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 13,
+    flexWrap: 'wrap',
+  }}>
+    <label style={{ fontSize: 12, fontWeight: 700 }}>
+      Candidate shortlist
+    </label>
+
+    <select
+      className="om-field"
+      value={scoringConfig.shortlistSize}
+      onChange={event =>
+        updateScoringConfig(
+          'shortlistSize',
+          Number(event.target.value)
+        )
+      }
+      style={{ width: 130, fontFamily: MONO }}
+    >
+      {[3, 5, 8, 10, 12, 15, 20, 25].map(size => (
+        <option key={size} value={size}>
+          {size} dishes
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <div style={{
+    marginTop: 10,
+    fontSize: 11,
+    color: 'var(--muted)',
+  }}>
+    Menu-only mode evaluates the full menu without a shortlist.
+    These controls do not change production settings.
+  </div>
+</Card>
 
       <Card title="Run a test">
         <div style={{
@@ -593,207 +498,6 @@ function RecommendationLab() {
         </div>
       </Card>
 
-
-      {restaurantId && (
-        <Card
-          title="Restaurant data readiness"
-          right={
-            <a
-              className="om-btn"
-              href={`/admin/restaurants/${restaurantId}`}
-              style={{ fontSize: 12 }}
-            >
-              Restaurant overview →
-            </a>
-          }
-        >
-          {readinessLoading ? (
-            <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-              Checking restaurant data…
-            </div>
-          ) : readinessError ? (
-            <div style={{ color: 'var(--red)', fontSize: 13 }}>
-              {readinessError}
-            </div>
-          ) : readiness ? (
-            <>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                flexWrap: 'wrap',
-                marginBottom: 12,
-              }}>
-                <div style={{
-                  fontFamily: MONO,
-                  fontSize: 28,
-                  fontWeight: 800,
-                }}>
-                  {readiness.score}
-                  <span style={{
-                    fontSize: 13,
-                    color: 'var(--muted)',
-                    fontWeight: 500,
-                  }}>
-                    /100
-                  </span>
-                </div>
-
-                <span style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: readiness.isDemo
-                    ? 'var(--muted)'
-                    : readiness.status === 'ready'
-                      ? 'var(--green)'
-                      : readiness.status === 'partial'
-                        ? 'var(--amber)'
-                        : 'var(--red)',
-                }}>
-                  {readiness.isDemo
-                    ? 'Demo data'
-                    : readiness.status === 'ready'
-                      ? 'Ready'
-                      : readiness.status === 'partial'
-                        ? 'Partially ready'
-                        : 'Limited data'}
-                </span>
-              </div>
-
-              <div style={{
-                height: 6,
-                background: 'var(--line)',
-                borderRadius: 20,
-                overflow: 'hidden',
-                marginBottom: 17,
-              }}>
-                <div style={{
-                  width: `${readiness.score}%`,
-                  height: '100%',
-                  borderRadius: 20,
-                  background: readiness.status === 'ready'
-                    ? 'var(--green)'
-                    : readiness.status === 'partial'
-                      ? 'var(--amber)'
-                      : 'var(--red)',
-                }} />
-              </div>
-
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isPhone
-                  ? 'minmax(0, 1fr)'
-                  : 'repeat(2, minmax(0, 1fr))',
-                gap: 10,
-              }}>
-                {readiness.checks.map(check => (
-                  <div
-                    key={check.id}
-                    style={{
-                      border: '1px solid var(--line)',
-                      borderRadius: 8,
-                      padding: '11px 13px',
-                      minWidth: 0,
-                    }}
-                  >
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 10,
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}>
-                      <span>{check.label}</span>
-                      <span style={{
-                        fontFamily: MONO,
-                        whiteSpace: 'nowrap',
-                      }}>
-                        {check.score}/{check.weight}
-                      </span>
-                    </div>
-                    <div style={{
-                      fontSize: 11.5,
-                      color: 'var(--muted)',
-                      marginTop: 6,
-                      lineHeight: 1.5,
-                    }}>
-                      {check.detail}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {!readiness.isDemo && readiness.actions?.length > 0 && (
-                <div style={{
-                  marginTop: 16,
-                  paddingTop: 14,
-                  borderTop: '1px solid var(--line-soft)',
-                }}>
-                  <div style={{
-                    fontSize: 12,
-                    fontWeight: 800,
-                    marginBottom: 10,
-                  }}>
-                    Action required · {readiness.actions.length} issues
-                  </div>
-
-                  {readiness.actions.map(action => (
-                    <div
-                      key={action.id}
-                      style={{
-                        display: 'flex',
-                        gap: 9,
-                        padding: '7px 0',
-                        alignItems: 'flex-start',
-                      }}
-                    >
-                      <span style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        flexShrink: 0,
-                        marginTop: 5,
-                        background: action.priority === 'medium'
-                          ? 'var(--amber)'
-                          : 'var(--red)',
-                      }} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700 }}>
-                          {action.title}
-                        </div>
-                        <div style={{
-                          fontSize: 11.5,
-                          color: 'var(--muted)',
-                          marginTop: 3,
-                        }}>
-                          {action.detail}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{
-                marginTop: 14,
-                color: 'var(--muted)',
-                fontSize: 11.5,
-                lineHeight: 1.6,
-              }}>
-                Readiness is informational. Dry runs remain available
-                regardless of score. Review the restaurant's Overview
-                tab for issue impact and repair instructions.
-              </div>
-            </>
-          ) : (
-            <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-              No readiness assessment available.
-            </div>
-          )}
-        </Card>
-      )}
-
       {error && (
         <div role="alert" style={{
 
@@ -816,483 +520,496 @@ function RecommendationLab() {
         </Card>
       )}
 
-      {latest && (
-        <>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: isPhone
-              ? 'repeat(2, minmax(0, 1fr))'
-              : 'repeat(3, minmax(0, 1fr))',
-            gap: 10,
-          }}>
-            {[
-              ['RECOMMENDATIONS', `${latest.count} / 3`],
-              ['EXECUTION TIME', `${latest.elapsedSeconds.toFixed(1)}s`],
-              ['CLAUDE CALLS', latest.diagnostics?.usage?.claudeCalls ?? '—'],
-              ['INPUT TOKENS', latest.diagnostics?.usage?.inputTokens?.toLocaleString() ?? '—'],
-              ['OUTPUT TOKENS', latest.diagnostics?.usage?.outputTokens?.toLocaleString() ?? '—'],
-              [
-                'ESTIMATED COST',
-                latest.diagnostics?.usage?.estimatedCostUsd != null
-                  ? `$${latest.diagnostics.usage.estimatedCostUsd.toFixed(4)}`
-                  : '—',
-              ],
-            ].map(([label, value]) => (
-              <div key={label} style={{
-                padding: isPhone ? 13 : 18,
-                background: 'var(--panel)',
-                border: '1px solid var(--line)',
-                borderRadius: 12,
-                minWidth: 0,
-              }}>
-                <div style={{
-                  color: 'var(--muted)',
-                  fontFamily: MONO,
-                  fontSize: 10,
-                  letterSpacing: '0.1em',
-                }}>
-                  {label}
-                </div>
-                <div style={{
-                  marginTop: 7,
-                  fontSize: isPhone ? 22 : 26,
-                  fontWeight: 800,
-                  letterSpacing: '-0.03em',
-                }}>
-                  {value}
-                </div>
-              </div>
-            ))}
-          </div>
+{latest && (
+  <>
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      flexWrap: 'wrap',
+      padding: '10px 13px',
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      background: 'var(--panel)',
+      fontSize: 12,
+    }}>
+      <strong>{latest.restaurantName}</strong>
 
-          <Card title={`Results · ${latest.restaurantName}`}>
+      <span style={{ color: 'var(--muted)' }}>
+        {latest.count}/3 recommendations
+        {' · '}
+        {latest.elapsedSeconds.toFixed(1)}s
+        {' · '}
+        {latest.diagnostics?.usage?.estimatedCostUsd != null
+          ? `$${latest.diagnostics.usage.estimatedCostUsd.toFixed(4)}`
+          : 'Cost unavailable'}
+      </span>
+    </div>
+
+    <Card title="Tonight's Dish">
+      <div style={{
+        fontSize: 11,
+        color: 'var(--muted)',
+        marginBottom: 13,
+      }}>
+        {latest.date} · Test preview only
+      </div>
+
+      {latest.count < 3 && (
+        <div style={{
+          marginBottom: 12,
+          padding: 10,
+          background: 'var(--amber-tint)',
+          color: 'var(--amber)',
+          borderRadius: 8,
+          fontSize: 12,
+        }}>
+          Only {latest.count} of 3 recommendations generated.
+          Check the audit and validation events below.
+        </div>
+      )}
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: isPhone
+          ? 'minmax(0, 1fr)'
+          : 'repeat(3, minmax(0, 1fr))',
+        gap: 12,
+        alignItems: 'stretch',
+      }}>
+        {latest.recommendations.map((rec, index) => (
+          <div
+            key={`${rec.title}-${index}`}
+            style={{
+              minWidth: 0,
+              background: '#f7f7f5',
+              color: '#141a1b',
+              border: '1px solid #e0e2e0',
+              borderRadius: 9,
+              padding: '16px 15px',
+              boxShadow: '0 3px 9px rgba(0,0,0,0.05)',
+            }}
+          >
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 8,
+              alignItems: 'center',
+              marginBottom: 15,
+            }}>
+              <span style={{
+                fontFamily: MONO,
+                fontSize: 9,
+                letterSpacing: '0.1em',
+                color: '#5a6669',
+              }}>
+                {['PUSH TONIGHT', 'RECOMMEND', 'MENTION'][index]}
+              </span>
+
+              <span style={{
+                width: 7,
+                height: 7,
+                flexShrink: 0,
+                borderRadius: '50%',
+                background: [
+                  '#02a4ba',
+                  '#3f9c56',
+                  '#c1871c',
+                ][index],
+              }} />
+            </div>
+
+            <div style={{
+              fontSize: 16,
+              fontWeight: 800,
+              lineHeight: 1.3,
+              overflowWrap: 'anywhere',
+            }}>
+              {rec.title}
+            </div>
+
+            <div style={{
+              marginTop: 7,
+              fontFamily: MONO,
+              fontSize: 9,
+              color: '#03808f',
+            }}>
+              {TYPE_LABELS[rec.type] || rec.type?.toUpperCase()}
+            </div>
+
+            <div style={{
+              borderTop: '1px dashed #d2d5d1',
+              margin: '14px 0',
+            }} />
+
+            <div style={{
+              fontFamily: MONO,
+              fontSize: 9,
+              color: '#687270',
+              marginBottom: 5,
+            }}>
+              WHY TONIGHT
+            </div>
+
             <div style={{
               fontSize: 12,
-              color: 'var(--muted)',
-              marginBottom: 14,
+              lineHeight: 1.6,
+              overflowWrap: 'anywhere',
             }}>
-              {latest.date} · Generated for testing only
+              {rec.reason_selected || '—'}
             </div>
 
-            {latest.count < 3 && (
-              <div style={{
-                padding: '12px 14px',
-                marginBottom: 14,
-                borderRadius: 8,
-                background: 'var(--amber-tint)',
-                color: 'var(--amber)',
-                fontSize: 12.5,
-                lineHeight: 1.6,
-              }}>
-                <strong>
-                  Only {latest.count} of 3 recommendations generated.
-                </strong>
+            <div style={{
+              borderTop: '1px dashed #d2d5d1',
+              margin: '14px 0',
+            }} />
 
-                <div style={{ marginTop: 5 }}>
-                  {latest.diagnostics?.generation?.rejectedCandidates > 0
-                    ? `${latest.diagnostics.generation.rejectedCandidates} candidate validation failures were recorded.`
-                    : latest.diagnostics?.generation?.skippedClaudeCandidates > 0
-                      ? `${latest.diagnostics.generation.skippedClaudeCandidates} Claude candidates were skipped.`
-                      : 'No candidate validation failures were recorded.'}
-                </div>
-
-                <div style={{ marginTop: 5 }}>
-                  Review the Generation diagnostics below to identify
-                  individual rejection reasons. Missing verified costs,
-                  inventory opportunities, or POS sales may also limit
-                  the available recommendations.
-                </div>
-              </div>
-            )}
-
-            {latest.recommendations.length === 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-                No eligible recommendations were returned.
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gap: 12 }}>
-              {latest.recommendations.map((rec, index) => (
-                <div key={`${rec.title}-${index}`} style={{
-                  padding: isPhone ? 13 : 18,
-                  border: '1px solid var(--line)',
-                  borderRadius: 10,
-                  minWidth: 0,
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: 10,
-                    marginBottom: 12,
-                  }}>
-                    <div style={{
-                      fontSize: 15,
-                      fontWeight: 800,
-                      minWidth: 0,
-                      overflowWrap: 'anywhere',
-                    }}>
-                      {index + 1}. {rec.title}
-                    </div>
-                    <span style={{
-                      fontFamily: MONO,
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: 'var(--accent-deep)',
-                      background: 'var(--accent-tint)',
-                      borderRadius: 5,
-                      padding: '5px 8px',
-                    }}>
-                      {TYPE_LABELS[rec.type] || rec.type?.toUpperCase()}
-                    </span>
-                  </div>
-
-                  {[
-                    ['WHY SELECTED', rec.reason_selected],
-                    ['DESCRIPTION', rec.description],
-                    ['STAFF TALKING POINT', rec.talking_point],
-                  ].map(([label, value]) => (
-                    <div key={label} style={{ marginTop: 12 }}>
-                      <div style={{
-                        fontFamily: MONO,
-                        fontSize: 10,
-                        letterSpacing: '0.09em',
-                        color: 'var(--muted)',
-                        marginBottom: 5,
-                      }}>
-                        {label}
-                      </div>
-                      <div style={{
-                        fontSize: 13,
-                        lineHeight: 1.65,
-                        overflowWrap: 'anywhere',
-                      }}>
-                        {value || '—'}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
+            <div style={{
+              fontFamily: MONO,
+              fontSize: 9,
+              color: '#687270',
+              marginBottom: 5,
+            }}>
+              SAY THIS
             </div>
-          </Card>
 
-          {latest.diagnostics?.scoring && (
-            <Card title={
-              latest.diagnostics.scoring.mode === 'menu-only'
-                ? 'Full-menu selection'
-                : 'Weighted candidate ranking'
-            }>
-              <div style={{
-                color: 'var(--muted)',
-                fontSize: 12,
-                lineHeight: 1.6,
-                marginBottom: 14,
-              }}>
-                {latest.diagnostics.scoring.mode === 'menu-only'
-                  ? `Menu-only mode · All ${latest.diagnostics.scoring.totalCandidates} eligible dishes evaluated by Claude · No shortlist or verified profit scores`
-                  : `Scoring preview · ${latest.diagnostics.scoring.totalCandidates} eligible dishes · ${latest.diagnostics.scoring.shortlist.length} shortlisted`}
-              </div>
+            <div style={{
+              fontSize: 12,
+              lineHeight: 1.65,
+              fontWeight: 600,
+              overflowWrap: 'anywhere',
+            }}>
+              {rec.talking_point || rec.description || '—'}
+            </div>
 
-              {latest.diagnostics.scoring.mode !== 'menu-only' && (
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-                marginBottom: 16,
-              }}>
-                {[
-                  ['Inventory', latest.diagnostics.scoring.config.inventoryWeight],
-                  ['Profitability', latest.diagnostics.scoring.config.profitabilityWeight],
-                  ['Sales', latest.diagnostics.scoring.config.salesWeight],
-                ].map(([label, value]) => (
-                  <div key={label} style={{
-                    border: '1px solid var(--line)',
-                    borderRadius: 7,
-                    padding: '8px 11px',
-                    fontSize: 12,
-                  }}>
-                    <span style={{ color: 'var(--muted)' }}>
-                      {label}
-                    </span>
-                    <strong style={{
-                      marginLeft: 8,
-                      fontFamily: MONO,
-                    }}>
-                      {value}%
-                    </strong>
-                  </div>
-                ))}
-              </div>
-              )}
-
-              {latest.diagnostics.scoring.mode !== 'menu-only' && (
-
-              <div style={{ display: 'grid', gap: 9 }}>
-                {latest.diagnostics.scoring.shortlist.map((item, index) => (
-                  <details key={`${item.name}-${index}`} style={{
-                    border: '1px solid var(--line)',
-                    borderRadius: 9,
-                    padding: '12px 14px',
-                    minWidth: 0,
-                  }}>
-                    <summary style={{
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 12,
-                      flexWrap: 'wrap',
-                    }}>
-                      <span style={{
-                        fontSize: 12.5,
-                        fontWeight: 800,
-                        overflowWrap: 'anywhere',
-                      }}>
-                        {index + 1}. {item.name}
-                      </span>
-
-                      <span style={{
-                        fontFamily: MONO,
-                        fontWeight: 800,
-                        fontSize: 12,
-                        color: 'var(--accent-deep)',
-                      }}>
-                        {item.totalScore === null
-                          ? 'MENU ONLY'
-                          : `${item.totalScore.toFixed(1)} / 100`}
-                      </span>
-                    </summary>
-
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: isPhone
-                        ? 'minmax(0, 1fr)'
-                        : 'repeat(3, minmax(0, 1fr))',
-                      gap: 10,
-                      marginTop: 14,
-                    }}>
-                      {[
-                        ['Inventory', 'inventory'],
-                        ['Profitability', 'profitability'],
-                        ['Sales', 'sales'],
-                      ].map(([label, key]) => (
-                        <div key={key} style={{
-                          padding: 11,
-                          borderRadius: 7,
-                          background: 'var(--panel)',
-                          border: '1px solid var(--line)',
-                          minWidth: 0,
-                        }}>
-                          <div style={{
-                            fontSize: 10,
-                            color: 'var(--muted)',
-                            fontFamily: MONO,
-                          }}>
-                            {label.toUpperCase()}
-                          </div>
-
-                          <div style={{
-                            fontSize: 18,
-                            fontWeight: 800,
-                            marginTop: 6,
-                            fontFamily: MONO,
-                          }}>
-                            {item.scores[key] === null
-                              ? '—'
-                              : item.scores[key].toFixed(1)}
-                          </div>
-
-                          <div style={{
-                            fontSize: 11,
-                            color: 'var(--muted)',
-                            marginTop: 4,
-                          }}>
-                            Effective weight:{' '}
-                            {item.effectiveWeights[key].toFixed(1)}%
-                          </div>
-
-                          <div style={{
-                            fontSize: 11,
-                            color: 'var(--muted)',
-                            marginTop: 3,
-                          }}>
-                            Contribution:{' '}
-                            {item.contributions[key].toFixed(1)}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                ))}
-              </div>
-              )}
-            </Card>
-          )}
-
-          {latest.diagnostics && (
-            <Card title="Generation diagnostics">
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: isPhone
-                  ? 'repeat(2, minmax(0, 1fr))'
-                  : 'repeat(3, minmax(0, 1fr))',
-                gap: 10,
-                marginBottom: 22,
-              }}>
-                {[
-                  ['ELIGIBLE MENU ITEMS', latest.diagnostics.context?.eligibleMenuItems],
-                  ['VERIFIED MARGINS', latest.diagnostics.context?.verifiedMarginItems],
-                  ['EXPIRING INGREDIENTS', latest.diagnostics.context?.expiringIngredients],
-                  ['DISHES WITH INVENTORY RISK', latest.diagnostics.context?.dishesWithExpiringIngredients],
-                  ['DISHES WITH POS SALES', latest.diagnostics.context?.dishesWithMatchedSales],
-                  ['RECENT RECOMMENDATIONS', latest.diagnostics.context?.recentRecommendations],
-                ].map(([label, value]) => (
-                  <div key={label} style={{
-                    padding: 14,
-                    border: '1px solid var(--line)',
-                    borderRadius: 9,
-                    minWidth: 0,
-                  }}>
-                    <div style={{
-                      fontFamily: MONO,
-                      fontSize: 10,
-                      letterSpacing: '0.08em',
-                      color: 'var(--muted)',
-                    }}>
-                      {label}
-                    </div>
-                    <div style={{
-                      fontSize: 23,
-                      fontWeight: 800,
-                      marginTop: 8,
-                    }}>
-                      {value ?? '—'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{
-                fontSize: 13,
-                fontWeight: 800,
-                marginBottom: 12,
-              }}>
-                Generation breakdown
-              </div>
-
-              <div style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-                marginBottom: 22,
-              }}>
-                {[
-                  ['Claude candidates', latest.diagnostics.generation?.returnedByClaude],
-                  ['Claude accepted', latest.diagnostics.generation?.acceptedFromClaude],
-                  ['Rejected', latest.diagnostics.generation?.rejectedCandidates],
-                  ['Claude skipped', latest.diagnostics.generation?.skippedClaudeCandidates],
-                  ['Fallbacks accepted', latest.diagnostics.generation?.acceptedFallbacks],
-                  ['Fallbacks skipped', latest.diagnostics.generation?.skippedFallbackCandidates],
-                ].map(([label, value]) => (
-                  <div key={label} style={{
-                    padding: '9px 12px',
-                    background: 'var(--panel)',
-                    border: '1px solid var(--line)',
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}>
-                    <span style={{ color: 'var(--muted)' }}>
-                      {label}
-                    </span>
-                    <span style={{
-                      marginLeft: 8,
-                      fontFamily: MONO,
-                      fontWeight: 800,
-                    }}>
-                      {value ?? '—'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              <details style={{
-                borderTop: '1px solid var(--line)',
-                paddingTop: 16,
-              }}>
+            {rec.description && (
+              <details style={{ marginTop: 14 }}>
                 <summary style={{
                   cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 800,
+                  fontSize: 10,
+                  color: '#5a6669',
                 }}>
-                  Validation and fallback events ({
-                    latest.diagnostics.events?.length || 0
-                  })
+                  Dish description
                 </summary>
 
                 <div style={{
-                  display: 'grid',
-                  gap: 0,
-                  marginTop: 14,
+                  marginTop: 8,
+                  fontSize: 11,
+                  lineHeight: 1.6,
                 }}>
-                  {(latest.diagnostics.events || []).length === 0 ? (
-                    <div style={{
-                      color: 'var(--muted)',
-                      fontSize: 12,
-                    }}>
-                      No validation or fallback events recorded.
-                    </div>
-                  ) : (
-                    latest.diagnostics.events.map((event, index) => (
-                      <div key={index} style={{
-                        display: 'grid',
-                        gridTemplateColumns: isPhone
-                          ? 'minmax(0, 1fr)'
-                          : '105px 90px minmax(0, 1fr)',
-                        gap: 10,
-                        padding: '11px 0',
-                        borderBottom: '1px solid var(--line-soft)',
-                        fontSize: 12,
-                        alignItems: 'start',
-                      }}>
-                        <span style={{
-                          fontFamily: MONO,
-                          fontSize: 10,
-                          color: 'var(--muted)',
-                          textTransform: 'uppercase',
-                        }}>
-                          {event.stage}
-                        </span>
-
-                        <span style={{
-                          fontWeight: 800,
-                          color: event.outcome === 'rejected'
-                            ? 'var(--red)'
-                            : event.outcome === 'accepted'
-                              ? 'var(--accent-deep)'
-                              : 'var(--amber)',
-                          textTransform: 'capitalize',
-                        }}>
-                          {event.outcome}
-                        </span>
-
-                        <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                          {event.dish && (
-                            <span style={{ fontWeight: 800 }}>
-                              {event.dish} —{' '}
-                            </span>
-                          )}
-                          {event.reason}
-                        </div>
-                      </div>
-                    ))
-                  )}
+                  {rec.description}
                 </div>
               </details>
-            </Card>
-          )}
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+
+    <Card title="Selection audit">
+      {latest.diagnostics?.selectionAudit ? (
+        <>
+          <div style={{
+            display: 'flex',
+            gap: 14,
+            flexWrap: 'wrap',
+            marginBottom: 13,
+            color: 'var(--muted)',
+            fontSize: 11,
+          }}>
+            <span>
+              Selected: {latest.diagnostics.selectionAuditSummary?.selected ?? 0}
+            </span>
+            <span>
+              Rejected: {latest.diagnostics.selectionAuditSummary?.rejected ?? 0}
+            </span>
+            <span>
+              Skipped: {latest.diagnostics.selectionAuditSummary?.skipped ?? 0}
+            </span>
+            <span>
+              Not selected: {latest.diagnostics.selectionAuditSummary?.notSelected ?? 0}
+            </span>
+          </div>
+
+          <div style={{
+            border: '1px solid var(--line)',
+            borderRadius: 9,
+            overflow: 'hidden',
+          }}>
+            {latest.diagnostics.selectionAudit.map((item, index) => (
+              <details
+                key={`${item.name}-${index}`}
+                style={{
+                  borderBottom: index <
+                    latest.diagnostics.selectionAudit.length - 1
+                    ? '1px solid var(--line-soft)'
+                    : 'none',
+                }}
+              >
+                <summary style={{
+                  display: 'grid',
+                  gridTemplateColumns: isPhone
+                    ? '24px minmax(0, 1fr) auto'
+                    : '35px minmax(0, 1fr) 85px 110px',
+                  gap: 9,
+                  alignItems: 'center',
+                  padding: '11px 12px',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                }}>
+                  <span style={{
+                    fontFamily: MONO,
+                    color: 'var(--muted)',
+                  }}>
+                    {index + 1}
+                  </span>
+
+                  <strong style={{
+                    minWidth: 0,
+                    overflowWrap: 'anywhere',
+                  }}>
+                    {item.name}
+                  </strong>
+
+                  {!isPhone && (
+                    <span style={{
+                      fontFamily: MONO,
+                      color: 'var(--accent-deep)',
+                    }}>
+                      {item.score == null
+                        ? '—'
+                        : item.score.toFixed(1)}
+                    </span>
+                  )}
+
+                  <span style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    color: item.finalPosition != null
+                      ? 'var(--green)'
+                      : item.status === 'rejected'
+                        ? 'var(--red)'
+                        : 'var(--muted)',
+                  }}>
+                    {item.finalPosition != null
+                      ? `Selected #${item.finalPosition}`
+                      : String(item.status || 'Unknown').replaceAll('_', ' ')}
+                  </span>
+                </summary>
+
+                <div style={{
+                  padding: '0 12px 13px',
+                  fontSize: 12,
+                  lineHeight: 1.65,
+                  color: 'var(--muted)',
+                }}>
+                  {item.score != null && isPhone && (
+                    <div style={{ marginBottom: 7 }}>
+                      Score: {item.score.toFixed(1)} / 100
+                    </div>
+                  )}
+
+                  <div>{item.reason || 'No reason recorded.'}</div>
+
+                  {(item.events || []).map((event, eventIndex) => (
+                    <div
+                      key={eventIndex}
+                      style={{
+                        marginTop: 8,
+                        paddingTop: 8,
+                        borderTop: '1px solid var(--line-soft)',
+                      }}
+                    >
+                      <strong>
+                        {event.stage} · {event.outcome}
+                      </strong>
+                      {' — '}
+                      {event.reason}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ))}
+          </div>
         </>
+      ) : (
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+          Selection audit unavailable for this test.
+        </div>
       )}
+    </Card>
+
+    <details style={{
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      padding: '13px 15px',
+    }}>
+      <summary style={{
+        cursor: 'pointer',
+        fontWeight: 800,
+        fontSize: 13,
+      }}>
+        Weighted candidate ranking
+      </summary>
+
+      <div style={{
+        marginTop: 14,
+        display: 'grid',
+        gap: 7,
+      }}>
+        {latest.diagnostics?.scoring?.mode === 'menu-only' ? (
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+            Full-menu selection: all{' '}
+            {latest.diagnostics.scoring.totalCandidates} eligible dishes
+            evaluated without weighted scoring.
+          </div>
+        ) : (
+          (latest.diagnostics?.scoring?.shortlist || []).map(
+            (item, index) => (
+              <details key={`${item.name}-${index}`} style={{
+                border: '1px solid var(--line)',
+                borderRadius: 7,
+                padding: '9px 11px',
+              }}>
+                <summary style={{
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}>
+                  {index + 1}. {item.name}
+                  {' · '}
+                  {item.totalScore == null
+                    ? 'Unscored'
+                    : `${item.totalScore.toFixed(1)} / 100`}
+                </summary>
+
+                <div style={{
+                  marginTop: 9,
+                  display: 'grid',
+                  gap: 5,
+                  fontSize: 11,
+                  color: 'var(--muted)',
+                }}>
+                  {[
+                    ['Inventory', 'inventory'],
+                    ['Profitability', 'profitability'],
+                    ['Sales', 'sales'],
+                  ].map(([label, key]) => (
+                    <div key={key}>
+                      {label}: {item.scores?.[key] == null
+                        ? 'Unavailable'
+                        : item.scores[key].toFixed(1)}
+                      {' · '}
+                      Effective weight:{' '}
+                      {item.effectiveWeights?.[key]?.toFixed(1) ?? '—'}%
+                      {' · '}
+                      Contribution:{' '}
+                      {item.contributions?.[key]?.toFixed(1) ?? '—'}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )
+          )
+        )}
+      </div>
+    </details>
+
+    <details style={{
+      border: '1px solid var(--line)',
+      borderRadius: 10,
+      padding: '13px 15px',
+    }}>
+      <summary style={{
+        cursor: 'pointer',
+        fontWeight: 800,
+        fontSize: 13,
+      }}>
+        Generation diagnostics
+      </summary>
+
+      <div style={{
+        marginTop: 14,
+        display: 'grid',
+        gridTemplateColumns: isPhone
+          ? 'repeat(2, minmax(0, 1fr))'
+          : 'repeat(3, minmax(0, 1fr))',
+        gap: 9,
+      }}>
+        {[
+          ['Eligible menu items', latest.diagnostics?.context?.eligibleMenuItems],
+          ['Verified margins', latest.diagnostics?.context?.verifiedMarginItems],
+          ['Expiring ingredients', latest.diagnostics?.context?.expiringIngredients],
+          ['POS matches', latest.diagnostics?.context?.dishesWithMatchedSales],
+          ['Claude candidates', latest.diagnostics?.generation?.returnedByClaude],
+          ['Accepted', latest.diagnostics?.generation?.acceptedFromClaude],
+          ['Rejected', latest.diagnostics?.generation?.rejectedCandidates],
+          ['Fallbacks', latest.diagnostics?.generation?.acceptedFallbacks],
+          ['Input tokens', latest.diagnostics?.usage?.inputTokens],
+          ['Output tokens', latest.diagnostics?.usage?.outputTokens],
+          ['Claude calls', latest.diagnostics?.usage?.claudeCalls],
+        ].map(([label, value]) => (
+          <div key={label} style={{
+            border: '1px solid var(--line)',
+            borderRadius: 8,
+            padding: 11,
+          }}>
+            <div style={{
+              fontSize: 10,
+              color: 'var(--muted)',
+            }}>
+              {label}
+            </div>
+
+            <div style={{
+              marginTop: 5,
+              fontSize: 18,
+              fontWeight: 800,
+              fontFamily: MONO,
+            }}>
+              {value?.toLocaleString?.() ?? '—'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16 }}>
+        <strong style={{ fontSize: 12 }}>
+          Validation events
+        </strong>
+
+        {(latest.diagnostics?.events || []).length === 0 ? (
+          <div style={{
+            marginTop: 9,
+            fontSize: 12,
+            color: 'var(--muted)',
+          }}>
+            No events recorded.
+          </div>
+        ) : (
+          (latest.diagnostics.events || []).map((event, index) => (
+            <div key={index} style={{
+              borderBottom: '1px solid var(--line-soft)',
+              padding: '9px 0',
+              fontSize: 12,
+              lineHeight: 1.5,
+            }}>
+              <strong>
+                {event.stage} · {event.outcome}
+              </strong>
+              {event.dish ? ` · ${event.dish}` : ''}
+              <div style={{ color: 'var(--muted)' }}>
+                {event.reason}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </details>
+  </>
+)}
 
       {results.length > 0 && (
         <Card title="Session history">
