@@ -24,7 +24,7 @@ export const SECTIONS = [
   { label: 'Restaurants', href: '/admin/restaurants', subs: [['All restaurants', '/admin/restaurants'], ['Support inbox', '/admin/support'], ['Tag kits', '/admin/tags']] },
   { label: 'Sales', href: '/admin/pipeline', subs: [['Pipeline', '/admin/pipeline'], ['Calendar', '/admin/calendar'], ['Testimonials', '/admin/testimonials']] },
   { label: 'Data quality', href: '/admin/review', subs: [['Review queue', '/admin/review'], ['Cost approvals', '/admin/costs'], ['Ingredient library', '/admin/ingredients']] },
-  { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['Ingredient usage', '/admin/pos-usage'], ['Conversions', '/admin/pos-conversions'], ['AI & parsing', '/admin/ai'], ['Jobs & health', '/admin/health']] },
+  { label: 'Platform', href: '/admin/pos', subs: [['POS connections', '/admin/pos'], ['Ingredient usage', '/admin/pos-usage'], ['Conversions', '/admin/pos-conversions'], ['AI & parsing', '/admin/ai'], ['Recommendation Lab', '/admin/recommendation-lab'], ['Jobs & health', '/admin/health']] },
   { label: 'Business', href: '/admin/revenue', subs: [['Revenue & billing', '/admin/revenue'], ['Expenses & deadlines', '/admin/finances'], ['Settings', '/admin/settings']] },
 ];
 
