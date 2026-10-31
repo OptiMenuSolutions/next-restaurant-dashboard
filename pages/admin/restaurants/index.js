@@ -28,6 +28,76 @@ function planText(s) {
   return s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
+function ReadinessIndicator({ readiness, compact = false }) {
+  if (!readiness || readiness.score == null) {
+    return (
+      <span style={{
+        color: 'var(--muted)',
+        fontSize: 12,
+      }}>
+        —
+      </span>
+    );
+  }
+
+  const color = readiness.score >= 80
+    ? 'var(--green)'
+    : readiness.score >= 40
+      ? 'var(--amber)'
+      : 'var(--red)';
+
+  const label = readiness.isDemo
+    ? 'Demo'
+    : readiness.status === 'ready'
+      ? 'Ready'
+      : readiness.status === 'partial'
+        ? 'Partial'
+        : 'Limited';
+
+  return (
+    <div style={{ minWidth: 0, width: compact ? '100%' : 110 }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        marginBottom: 6,
+      }}>
+        <span style={{
+          fontFamily: MONO,
+          fontSize: 12,
+          fontWeight: 800,
+          color: 'var(--text)',
+        }}>
+          {readiness.score}%
+        </span>
+
+        <span style={{
+          fontSize: 10.5,
+          fontWeight: 700,
+          color,
+        }}>
+          {label}
+        </span>
+      </div>
+
+      <div style={{
+        height: 5,
+        background: 'var(--line)',
+        borderRadius: 10,
+        overflow: 'hidden',
+      }}>
+        <div style={{
+          width: `${readiness.score}%`,
+          height: '100%',
+          background: color,
+          borderRadius: 10,
+        }} />
+      </div>
+    </div>
+  );
+}
+
 function RestaurantsPage() {
   const { adminFetch } = useAdminFetch();
   const isPhone = useIsPhone();
@@ -35,6 +105,7 @@ function RestaurantsPage() {
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('ALL');
   const [q, setQ] = useState('');
+  const [readiness, setReadiness] = useState({});
 
   const load = useCallback(async () => {
     setError('');
@@ -48,6 +119,38 @@ function RestaurantsPage() {
     }
   }, [adminFetch]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadReadiness() {
+      try {
+        const res = await adminFetch('/api/admin/data-readiness');
+        if (!res.ok) throw new Error('Could not load data readiness');
+
+        const json = await res.json();
+
+        if (!cancelled) {
+          setReadiness(
+            Object.fromEntries(
+              (json.readiness || []).map(item => [
+                item.restaurantId,
+                item,
+              ])
+            )
+          );
+        }
+      } catch (err) {
+        console.error('[restaurants] Data readiness:', err);
+      }
+    }
+
+    loadReadiness();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminFetch]);
 
   const all = data?.restaurants || [];
   const rows = useMemo(() => {
@@ -90,6 +193,7 @@ function RestaurantsPage() {
             <tr>
               <th scope="col" style={{ ...th, paddingLeft: 18, width: 250 }}>RESTAURANT</th>
               <th scope="col" style={th}>STATUS</th>
+              <th scope="col" style={th}>DATA READINESS</th>
               <th scope="col" style={th}>SETUP</th>
               <th scope="col" style={th}>POS</th>
               <th scope="col" style={th}>LAST INVOICE</th>
@@ -101,10 +205,10 @@ function RestaurantsPage() {
           </thead>
           <tbody>
             {!data && (
-              <tr><td colSpan={9} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>Loading…</td></tr>
             )}
             {data && rows.length === 0 && (
-              <tr><td colSpan={9} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>No restaurants match.</td></tr>
+              <tr><td colSpan={10} style={{ ...td, textAlign: 'center', padding: 30, color: 'var(--muted)' }}>No restaurants match.</td></tr>
             )}
             {rows.map((r) => {
               const week = r.views.reduce((a, b) => a + b, 0);
@@ -121,6 +225,9 @@ function RestaurantsPage() {
                     </span>
                   </td>
                   <td style={td}><StatusChip status={r.status} /></td>
+                  <td style={td}>
+                    <ReadinessIndicator readiness={readiness[r.id]} />
+                  </td>
                   <td style={td}>
                     <div aria-label={`${r.setupDone} of 5 setup steps done`} style={{ display: 'flex', gap: 3 }}>
                       {r.setup.map((ok, i) => <span key={i} title={STEP_NAMES[i]} style={{ width: 16, height: 6, borderRadius: 2, background: ok ? 'var(--accent)' : 'var(--line)' }} />)}
@@ -178,6 +285,31 @@ function RestaurantsPage() {
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {[r.town, r.owner?.name].filter(Boolean).join(' · ') || '—'}
                 </div>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  minWidth: 0,
+                }}>
+                  <span style={{
+                    fontFamily: MONO,
+                    fontSize: 10,
+                    color: 'var(--muted)',
+                    letterSpacing: '0.08em',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    DATA READINESS
+                  </span>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <ReadinessIndicator
+                      readiness={readiness[r.id]}
+                      compact
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <div aria-label={`${r.setupDone} of 5 setup steps done`} style={{ display: 'flex', gap: 4 }}>
                     {r.setup.map((ok, i) => <span key={i} title={STEP_NAMES[i]} style={{ flex: 1, height: 6, borderRadius: 3, background: ok ? 'var(--accent)' : 'var(--line)' }} />)}
@@ -204,7 +336,7 @@ function RestaurantsPage() {
         )}
       </section>
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>
-        Setup bars, in order: menu parsed · first invoice · POS connected · tags placed · scanner added. Staff page views count every tag tap. Their sales come from the restaurant’s POS for last month. Open a restaurant to see why its dot is that color.
+        Health reflects account status and operational checks. Data Readiness measures menu, recipe, ingredient pricing, and POS data availability. Setup bars, in order: menu parsed · first invoice · POS connected · tags placed · scanner added. Staff page views count every tag tap. Their sales come from the restaurant’s POS for last month.
       </p>
     </>
   );

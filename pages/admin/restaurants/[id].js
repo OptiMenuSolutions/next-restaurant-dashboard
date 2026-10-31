@@ -57,6 +57,12 @@ function RestaurantPage({ id }) {
     }
   }, [isPhone, router.query.tab]);
   const { data, error, load } = useLoad(`/api/admin/restaurant/${id}`);
+  const {
+    data: readinessData,
+    error: readinessError,
+    load: reloadReadiness,
+  } = useLoad(`/api/admin/data-readiness?restaurantId=${encodeURIComponent(id)}`);
+
   const [running, setRunning] = useState(false);
   const [flash, setFlash] = useState('');
 
@@ -164,7 +170,17 @@ function RestaurantPage({ id }) {
         ))}
       </div>
 
-      {tab === 'Overview' && <Overview data={data} act={act} reload={load} />}
+      {tab === 'Overview' && (
+        <Overview
+          data={data}
+          act={act}
+          reload={load}
+          readiness={readinessData?.readiness || null}
+          readinessError={readinessError}
+          reloadReadiness={reloadReadiness}
+          onNavigate={setTab}
+        />
+      )}
       {tab === 'Activity' && <Activity id={id} />}
       {tab === 'Menu' && <Menu id={id} />}
       {tab === 'Invoices' && <Invoices id={id} />}
@@ -173,7 +189,285 @@ function RestaurantPage({ id }) {
   );
 }
 
-function Overview({ data, act, reload }) {
+
+function ReadinessActions({ actions = [], isDemo = false, onNavigate }) {
+  const [expanded, setExpanded] = useState({});
+
+  const colors = {
+    critical: 'var(--red)',
+    high: 'var(--red)',
+    medium: 'var(--amber)',
+  };
+
+  const visibleActions = isDemo ? [] : actions;
+
+  return (
+    <Card
+      title="Action required"
+      right={
+        <span style={{
+          fontFamily: MONO,
+          fontSize: 11,
+          color: visibleActions.length ? 'var(--amber)' : 'var(--green)',
+          fontWeight: 700,
+        }}>
+          {isDemo
+            ? 'DEMO ACCOUNT'
+            : visibleActions.length
+              ? `${visibleActions.length} ISSUES`
+              : 'ALL CLEAR'}
+        </span>
+      }
+    >
+      {isDemo ? (
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+          Internal demo data. Production action items are not tracked for this account.
+        </div>
+      ) : visibleActions.length === 0 ? (
+        <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+          No issues detected by the current Data Readiness checks.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 0 }}>
+          {visibleActions.map((action, index) => {
+            const open = Boolean(expanded[action.id]);
+            const color = colors[action.priority] || 'var(--muted)';
+
+            return (
+              <div
+                key={action.id}
+                style={{
+                  borderTop: index
+                    ? '1px solid var(--line-soft)'
+                    : 'none',
+                  padding: '13px 0',
+                }}
+              >
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setExpanded(previous => ({
+                    ...previous,
+                    [action.id]: !previous[action.id],
+                  }))}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: 0,
+                    border: 0,
+                    background: 'none',
+                    color: 'var(--text)',
+                    cursor: 'pointer',
+                    fontFamily: "'Manrope', sans-serif",
+                  }}
+                >
+                  <span style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: color,
+                    flexShrink: 0,
+                    marginTop: 6,
+                  }} />
+
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{
+                      display: 'block',
+                      fontSize: 13,
+                      fontWeight: 800,
+                    }}>
+                      {action.title}
+                    </span>
+                    <span style={{
+                      display: 'block',
+                      fontSize: 12,
+                      color: 'var(--muted)',
+                      marginTop: 4,
+                      lineHeight: 1.5,
+                    }}>
+                      {action.detail}
+                    </span>
+                  </span>
+
+                  <span style={{
+                    fontFamily: MONO,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color,
+                    textTransform: 'uppercase',
+                    flexShrink: 0,
+                    paddingTop: 3,
+                  }}>
+                    {action.priority}
+                  </span>
+
+                  <span style={{
+                    color: 'var(--muted)',
+                    fontSize: 14,
+                    paddingTop: 1,
+                  }}>
+                    {open ? '−' : '+'}
+                  </span>
+                </button>
+
+                {open && (
+                  <div style={{
+                    margin: '13px 0 0 18px',
+                    padding: '14px',
+                    borderRadius: 9,
+                    background: 'var(--panel)',
+                    border: '1px solid var(--line)',
+                    display: 'grid',
+                    gap: 13,
+                  }}>
+                    <div>
+                      <div style={{
+                        fontFamily: MONO,
+                        fontSize: 10,
+                        color: 'var(--muted)',
+                        letterSpacing: '0.1em',
+                        marginBottom: 5,
+                      }}>
+                        IMPACT ON THE RESTAURANT
+                      </div>
+                      <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+                        {action.impact}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div style={{
+                        fontFamily: MONO,
+                        fontSize: 10,
+                        color: 'var(--muted)',
+                        letterSpacing: '0.1em',
+                        marginBottom: 5,
+                      }}>
+                        HOW TO FIX IT
+                      </div>
+                      <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+                        {action.fix}
+                      </div>
+                    </div>
+
+                    {action.affected?.length > 0 && (
+                      <details>
+                        <summary style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}>
+                          View affected dishes ({action.affected.length})
+                        </summary>
+
+                        <div style={{
+                          marginTop: 9,
+                          maxHeight: 240,
+                          overflowY: 'auto',
+                          display: 'grid',
+                          gap: 0,
+                        }}>
+                          {action.affected.map(item => (
+                            <div
+                              key={item.id}
+                              style={{
+                                padding: '8px 0',
+                                borderBottom: '1px solid var(--line-soft)',
+                              }}
+                            >
+                              <div style={{ fontSize: 12, fontWeight: 700 }}>
+                                {item.name}
+                              </div>
+
+                              {item.reasons?.length > 0 && (
+                                <div style={{
+                                  fontSize: 11,
+                                  color: 'var(--muted)',
+                                  marginTop: 3,
+                                }}>
+                                  {item.reasons.join(' · ')}
+                                </div>
+                              )}
+
+                              {item.ingredients?.length > 0 && (
+                                <div style={{
+                                  fontSize: 11,
+                                  color: 'var(--muted)',
+                                  marginTop: 3,
+                                }}>
+                                  Ingredients: {item.ingredients.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 10,
+                      flexWrap: 'wrap',
+                    }}>
+                      <span style={{
+                        fontSize: 11,
+                        color: 'var(--muted)',
+                      }}>
+                        Assigned to: {action.owner}
+                      </span>
+
+                      {action.id === 'missing-menu' ||
+                       action.id === 'missing-recipes' ||
+                       action.id === 'unverified-costs' ? (
+                        <button
+                          type="button"
+                          className="om-btn"
+                          onClick={() => onNavigate('Menu')}
+                        >
+                          Review menu →
+                        </button>
+                      ) : action.id === 'invoice-freshness' ? (
+                        <button
+                          type="button"
+                          className="om-btn"
+                          onClick={() => onNavigate('Invoices')}
+                        >
+                          Review invoices →
+                        </button>
+                      ) : (
+                        <span style={{
+                          fontSize: 11,
+                          color: 'var(--muted)',
+                        }}>
+                          Review POS integration settings
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Overview({
+  data,
+  act,
+  reload,
+  readiness,
+  readinessError,
+  reloadReadiness,
+  onNavigate,
+}) {
   const isPhone = useIsPhone();
   const r = data.restaurant;
   const [note, setNote] = useState('');
@@ -220,8 +514,271 @@ function Overview({ data, act, reload }) {
           </div>
         </Card>
 
+
+        <ReadinessActions
+          actions={readiness?.actions || []}
+          isDemo={Boolean(readiness?.isDemo)}
+          onNavigate={onNavigate}
+        />
+
+        <Card
+          title="Data readiness"
+          right={
+            <button
+              type="button"
+              onClick={reloadReadiness}
+              className="om-btn"
+              style={{ minHeight: 30, fontSize: 12 }}
+            >
+              Refresh
+            </button>
+          }
+        >
+          {readinessError ? (
+            <div style={{ fontSize: 13, color: 'var(--red)' }}>
+              Could not load Data Readiness: {readinessError}
+            </div>
+          ) : !readiness ? (
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+              Calculating data readiness…
+            </div>
+          ) : (
+            <>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 14,
+                flexWrap: 'wrap',
+                marginBottom: 14,
+              }}>
+                <div>
+                  <div style={{
+                    fontFamily: MONO,
+                    fontSize: 34,
+                    fontWeight: 800,
+                    letterSpacing: '-0.04em',
+                    lineHeight: 1.2,
+                  }}>
+                    {readiness.score}
+                    <span style={{
+                      fontSize: 15,
+                      color: 'var(--muted)',
+                      fontWeight: 500,
+                    }}>
+                      /100
+                    </span>
+                  </div>
+                  <div style={{
+                    fontSize: 12,
+                    color: 'var(--muted)',
+                    marginTop: 4,
+                  }}>
+                    Operational data completeness
+                  </div>
+                </div>
+
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: readiness.status === 'ready'
+                    ? 'var(--green)'
+                    : readiness.status === 'partial'
+                      ? 'var(--amber)'
+                      : 'var(--red)',
+                }}>
+                  {readiness.isDemo
+                    ? 'Demo data'
+                    : readiness.status === 'ready'
+                      ? 'Ready'
+                      : readiness.status === 'partial'
+                        ? 'Partially ready'
+                        : 'Limited data'}
+                </span>
+              </div>
+
+              <div style={{
+                height: 7,
+                background: 'var(--line)',
+                borderRadius: 20,
+                overflow: 'hidden',
+                marginBottom: 18,
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${readiness.score}%`,
+                  borderRadius: 20,
+                  background: readiness.status === 'ready'
+                    ? 'var(--green)'
+                    : readiness.status === 'partial'
+                      ? 'var(--amber)'
+                      : 'var(--red)',
+                }} />
+              </div>
+
+              <div style={{ display: 'grid', gap: 0 }}>
+                {readiness.checks.map((check, index) => {
+                  const color = check.status === 'ready'
+                    ? 'var(--green)'
+                    : check.status === 'partial'
+                      ? 'var(--amber)'
+                      : 'var(--red)';
+
+                  return (
+                    <div
+                      key={check.id}
+                      style={{
+                        display: 'flex',
+                        gap: 12,
+                        alignItems: 'flex-start',
+                        padding: '12px 0',
+                        borderTop: index
+                          ? '1px solid var(--line-soft)'
+                          : 'none',
+                      }}
+                    >
+                      <span style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: color,
+                        flexShrink: 0,
+                        marginTop: 6,
+                      }} />
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                        }}>
+                          {check.label}
+                        </div>
+
+                        <div style={{
+                          fontSize: 12,
+                          color: 'var(--muted)',
+                          marginTop: 4,
+                          lineHeight: 1.5,
+                        }}>
+                          {check.detail}
+                        </div>
+
+                        {check.status !== 'ready' && (
+                          <div style={{
+                            fontSize: 11.5,
+                            color: 'var(--muted)',
+                            marginTop: 5,
+                          }}>
+                            Next: {check.action}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{
+                        fontFamily: MONO,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {check.score}/{check.weight}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{
+                marginTop: 16,
+                padding: '13px 14px',
+                border: '1px solid var(--line)',
+                borderRadius: 9,
+                background: 'var(--panel)',
+              }}>
+                <div style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  color: 'var(--muted)',
+                  marginBottom: 7,
+                }}>
+                  POS DATA SOURCE
+                </div>
+
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}>
+                  {readiness.pos.dataSource}
+                </div>
+
+                <div style={{
+                  fontSize: 12,
+                  color: 'var(--muted)',
+                  marginTop: 5,
+                }}>
+                  {readiness.pos.hasLiveConnection
+                    ? `${readiness.pos.provider || 'POS'} · active connection`
+                    : 'Recent sales records do not establish an active POS integration.'}
+                </div>
+              </div>
+
+              <div style={{
+                marginTop: 12,
+                padding: '13px 14px',
+                border: '1px solid var(--line)',
+                borderRadius: 9,
+                background: 'var(--panel)',
+              }}>
+                <div style={{
+                  fontFamily: MONO,
+                  fontSize: 10,
+                  letterSpacing: '0.1em',
+                  color: 'var(--muted)',
+                  marginBottom: 7,
+                }}>
+                  INVOICE FRESHNESS
+                </div>
+
+                <div style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}>
+                  {readiness.invoice.ageDays == null
+                    ? 'No invoices recorded'
+                    : `Latest invoice: ${readiness.invoice.ageDays} days ago`}
+                </div>
+
+                <div style={{
+                  fontSize: 12,
+                  color: 'var(--muted)',
+                  marginTop: 5,
+                  lineHeight: 1.5,
+                }}>
+                  {readiness.invoice.status === 'stale'
+                    ? 'Recent ingredient prices may need verification.'
+                    : readiness.invoice.status === 'missing'
+                      ? 'No invoice history is available to assess price freshness.'
+                      : 'Invoice activity is recent.'}
+                </div>
+              </div>
+
+              <div style={{
+                marginTop: 12,
+                fontSize: 11.5,
+                color: 'var(--muted)',
+                lineHeight: 1.5,
+              }}>
+                Data Readiness is separate from account Health.
+                Ingredient pricing coverage does not guarantee
+                that every recipe has a verified margin.
+              </div>
+            </>
+          )}
+        </Card>
+
         <Card title="Setup">
           {r.setup.map((ok, i) => (
+
             <div key={i} style={{ display: 'flex', gap: 10, alignItems: isPhone ? 'flex-start' : 'center', flexWrap: isPhone ? 'wrap' : 'nowrap', fontSize: 13.5, padding: '4px 0' }}>
               <span style={{ width: 20, flexShrink: 0, fontWeight: 800, color: ok ? 'var(--green)' : 'var(--faint)' }}>{ok ? '✓' : '○'}</span>
               <span style={{ fontWeight: 600, width: isPhone ? 105 : 140, flexShrink: 0 }}>{STEP_NAMES[i]}</span>
