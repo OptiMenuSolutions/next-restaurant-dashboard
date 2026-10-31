@@ -658,26 +658,57 @@ Never invent financial rankings or figures.
     return sentences.join(' ').trim();
   };
 
+
   const shortenText = (value, maxWords, maxCharacters) => {
-    const words = String(value || '')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .split(' ')
-      .filter(Boolean);
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
 
-    let result = words.slice(0, maxWords).join(' ');
+    const wordCount = value =>
+      value.trim().split(/\s+/).filter(Boolean).length;
 
-    if (result.length > maxCharacters) {
-      result = result.slice(0, maxCharacters + 1);
-      result = result.slice(
-        0,
-        Math.max(0, result.lastIndexOf(' '))
-      );
+    const fits = value =>
+      value.length <= maxCharacters &&
+      wordCount(value) <= maxWords;
+
+    if (fits(text)) return text;
+
+    // Prefer a complete sentence, but do not discard useful
+    // descriptions merely because Claude omitted punctuation.
+    const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z"'])/);
+    let result = '';
+
+    for (const sentence of sentences) {
+      const next = `${result} ${sentence.trim()}`.trim();
+      if (!fits(next)) break;
+      result = next;
     }
 
-    return result.trim().replace(/[,\s;:–—-]+$/, '');
-  };
+    if (result) {
+      return /[.!?]$/.test(result) ? result : `${result}.`;
+    }
 
+    // If the first sentence is too long, shorten it at a word
+    // boundary and finish cleanly instead of returning nothing.
+    const words = text.split(/\s+/);
+    const kept = [];
+
+    for (const word of words) {
+      const candidate = [...kept, word].join(' ');
+      if (
+        kept.length >= maxWords ||
+        candidate.length > maxCharacters - 1
+      ) break;
+
+      kept.push(word);
+    }
+
+    const shortened = kept.join(' ').replace(/[,;:–—-]+$/, '').trim();
+    if (!shortened) return '';
+
+    return /[.!?]$/.test(shortened)
+      ? shortened
+      : `${shortened}.`;
+  };
 
   const cleanRecommendation = (rec) => {
     const title = String(rec?.title || '').toLowerCase().trim();
@@ -687,42 +718,47 @@ Never invent financial rankings or figures.
 
     const isLabFeature = weightedLabMode && rec.type === 'feature';
 
-    // Preserve server-verified explanations for inventory,
-    // profitability, sales, and recent-history exceptions.
+    // Production keeps its existing verified explanations.
     if (isLabFeature) {
-      const listedPrice = Number.isFinite(menuItem.price)
-        ? `$${menuItem.price.toFixed(2)}`
-        : null;
-
       const originalReason = String(rec.reason_selected || '')
         .replace(/\s+/g, ' ')
         .trim();
 
-      // Claude's qualitative judgment is useful, but cannot
-      // be presented as verified profitability.
-      // Discard quantitative and unsupported operational claims.
-      const hasUnsupportedClaims =
-        /\$|\d+\s*%|\b(?:margin|food cost|best.?sell|top.?sell|popular|customer favorite|verified|inventory|sales data|guaranteed)\b/i
-          .test(originalReason);
+      // Remove unsupported financial and operational assertions
+      // sentence by sentence rather than discarding everything.
+      const unsupportedReasonClaims =
+        /\$\s*\d|\b\d+(?:\.\d+)?\s*%|\b(?:best[- ]sell(?:ing|er)?|top[- ]sell(?:ing|er)?|popular|customer favorite|verified margin|verified profit|inventory|sales data|guaranteed|actual food cost|known margin|highest margin|most profitable|proven profit)\b/i;
 
-      const qualitativeReason = !hasUnsupportedClaims
-        ? originalReason
-            .replace(/\b(?:gross\s+)?profit(?:ability|able|s)?\b/gi,
-              'contribution potential')
-            .replace(/\s+/g, ' ')
-            .trim()
+      const reasonSentences = originalReason
+        .split(/(?<=[.!?])\s+(?=[A-Z"'])/);
+
+      const safeReason = reasonSentences
+        .map(sentence => sentence.trim())
+        .filter(sentence =>
+          sentence &&
+          !unsupportedReasonClaims.test(sentence)
+        )
+        .join(' ')
+        .trim();
+
+      const judgment = safeReason
+        ? shortenText(safeReason, 45, 300)
         : '';
 
-      const basis = listedPrice
-        ? `Listed menu price: ${listedPrice}.`
-        : 'Evaluated from the available menu description.';
+      const fallbackJudgment =
+        'The dish may offer attractive gross profit potential based on its listed price and menu description.';
 
-      const judgment = qualitativeReason
-        ? shortenText(qualitativeReason, 23, 155)
-        : 'Selected for its potential contribution and menu appeal.';
+      const qualifiedJudgment = judgment
+        ? `Unverified profit-potential hypothesis: ${judgment}`
+        : fallbackJudgment;
+
+      const priceStatement = Number.isFinite(menuItem.price)
+        ? `Listed menu price: $${menuItem.price.toFixed(2)}.`
+        : 'Evaluated using the available menu information.';
 
       rec.reason_selected =
-        `${judgment} ${basis} Actual ingredient costs are unverified.`;
+        `${qualifiedJudgment} ${priceStatement} ` +
+        'Actual ingredient costs and gross profit are unverified.';
     } else {
       rec.reason_selected = buildVerifiedReason(rec, menuItem);
     }
@@ -738,46 +774,62 @@ Never invent financial rankings or figures.
       .replace(/\s+/g, ' ')
       .trim();
 
+    // Preserve legacy production behavior exactly.
+    if (!weightedLabMode) {
+      rec.description =
+        !description || unsupportedStaffClaims.test(description)
+          ? menuItem.description || menuItem.name
+          : description;
+
+      rec.talking_point =
+        !talkingPoint || unsupportedStaffClaims.test(talkingPoint)
+          ? `I'd recommend the ${menuItem.name} tonight.`
+          : talkingPoint;
+
+      return rec;
+    }
+
+    const removeUnsupportedSentences = value => {
+      const sentences = String(value || '')
+        .split(/(?<=[.!?])\s+(?=[A-Z"'])/);
+
+      return sentences
+        .map(sentence => sentence.trim())
+        .filter(sentence =>
+          sentence &&
+          !unsupportedStaffClaims.test(sentence)
+        )
+        .join(' ')
+        .trim();
+    };
+
     const safeDescription =
-      !description || unsupportedStaffClaims.test(description)
-        ? menuItem.description || menuItem.name
-        : description;
+      removeUnsupportedSentences(description) ||
+      removeUnsupportedSentences(menuItem.description) ||
+      menuItem.name;
 
     const safeTalkingPoint =
-      !talkingPoint || unsupportedStaffClaims.test(talkingPoint)
-        ? `I'd recommend the ${menuItem.name} tonight.`
-        : talkingPoint;
+      removeUnsupportedSentences(talkingPoint);
 
-    if (weightedLabMode) {
-      rec.description = shortenText(
-        safeDescription,
-        18,
-        110
-      );
+    rec.description =
+      shortenText(safeDescription, 30, 200) ||
+      `${menuItem.name} is available tonight.`;
 
-      rec.talking_point = shortenText(
-        safeTalkingPoint,
-        25,
-        165
-      );
+    const fallbackTalkingPoint = rec.description !== menuItem.name
+      ? `I'd recommend the ${menuItem.name} tonight. ${rec.description}`
+      : `I'd recommend the ${menuItem.name} tonight.`;
 
-      // Ensure that truncation never leaves a completely empty field.
-      if (!rec.description) {
-        rec.description = menuItem.name;
-      }
-
-      if (!rec.talking_point) {
-        rec.talking_point =
-          `I'd recommend the ${menuItem.name} tonight.`;
-      }
-    } else {
-      // Keep legacy production formatting unchanged.
-      rec.description = safeDescription;
-      rec.talking_point = safeTalkingPoint;
-    }
+    rec.talking_point =
+      shortenText(
+        safeTalkingPoint || fallbackTalkingPoint,
+        38,
+        240
+      ) ||
+      `I'd recommend the ${menuItem.name} tonight.`;
 
     return rec;
   };
+
 
 
   const isValidRecommendation = (rec, selected = []) => {
