@@ -658,36 +658,127 @@ Never invent financial rankings or figures.
     return sentences.join(' ').trim();
   };
 
+  const shortenText = (value, maxWords, maxCharacters) => {
+    const words = String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean);
+
+    let result = words.slice(0, maxWords).join(' ');
+
+    if (result.length > maxCharacters) {
+      result = result.slice(0, maxCharacters + 1);
+      result = result.slice(
+        0,
+        Math.max(0, result.lastIndexOf(' '))
+      );
+    }
+
+    return result.trim().replace(/[,\s;:–—-]+$/, '');
+  };
+
+
   const cleanRecommendation = (rec) => {
     const title = String(rec?.title || '').toLowerCase().trim();
     const menuItem = menuByName.get(title);
 
     if (!menuItem) return rec;
 
-    // Ignore Claude's operational explanation entirely.
-    // Inventory, financial, POS and rotation facts come from the server.
-    rec.reason_selected = buildVerifiedReason(rec, menuItem);
+    const isLabFeature = weightedLabMode && rec.type === 'feature';
 
-    // Staff-facing language may be written by Claude, but must not
-    // contain unsupported popularity or internal financial claims.
+    // Preserve server-verified explanations for inventory,
+    // profitability, sales, and recent-history exceptions.
+    if (isLabFeature) {
+      const listedPrice = Number.isFinite(menuItem.price)
+        ? `$${menuItem.price.toFixed(2)}`
+        : null;
+
+      const originalReason = String(rec.reason_selected || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      // Claude's qualitative judgment is useful, but cannot
+      // be presented as verified profitability.
+      // Discard quantitative and unsupported operational claims.
+      const hasUnsupportedClaims =
+        /\$|\d+\s*%|\b(?:margin|food cost|best.?sell|top.?sell|popular|customer favorite|verified|inventory|sales data|guaranteed)\b/i
+          .test(originalReason);
+
+      const qualitativeReason = !hasUnsupportedClaims
+        ? originalReason
+            .replace(/\b(?:gross\s+)?profit(?:ability|able|s)?\b/gi,
+              'contribution potential')
+            .replace(/\s+/g, ' ')
+            .trim()
+        : '';
+
+      const basis = listedPrice
+        ? `Listed menu price: ${listedPrice}.`
+        : 'Evaluated from the available menu description.';
+
+      const judgment = qualitativeReason
+        ? shortenText(qualitativeReason, 23, 155)
+        : 'Selected for its potential contribution and menu appeal.';
+
+      rec.reason_selected =
+        `${judgment} ${basis} Actual ingredient costs are unverified.`;
+    } else {
+      rec.reason_selected = buildVerifiedReason(rec, menuItem);
+    }
+
     const unsupportedStaffClaims =
       /\b(?:most popular|really popular|very popular|popular|best[- ]selling|customer favorite|guest favorite|fan favorite|crowd favorite|house favorite|crowd-pleasing|top seller|bestseller|best seller|gross margin|profit margin|profit per cover|food cost|verified margin|margin ranking|inventory at risk|waste risk|returns? per plate|returns? per dish|strongest returns?|most profitable|highest[- ]margin|best value|great value|excellent value|value plates?|strongest value)\b/i;
 
-    const description = String(rec.description || '').trim();
-    const talkingPoint = String(rec.talking_point || '').trim();
+    const description = String(rec.description || '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
-    rec.description =
+    const talkingPoint = String(rec.talking_point || '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const safeDescription =
       !description || unsupportedStaffClaims.test(description)
-        ? menuItem.name
+        ? menuItem.description || menuItem.name
         : description;
 
-    rec.talking_point =
+    const safeTalkingPoint =
       !talkingPoint || unsupportedStaffClaims.test(talkingPoint)
         ? `I'd recommend the ${menuItem.name} tonight.`
         : talkingPoint;
 
+    if (weightedLabMode) {
+      rec.description = shortenText(
+        safeDescription,
+        18,
+        110
+      );
+
+      rec.talking_point = shortenText(
+        safeTalkingPoint,
+        25,
+        165
+      );
+
+      // Ensure that truncation never leaves a completely empty field.
+      if (!rec.description) {
+        rec.description = menuItem.name;
+      }
+
+      if (!rec.talking_point) {
+        rec.talking_point =
+          `I'd recommend the ${menuItem.name} tonight.`;
+      }
+    } else {
+      // Keep legacy production formatting unchanged.
+      rec.description = safeDescription;
+      rec.talking_point = safeTalkingPoint;
+    }
+
     return rec;
   };
+
 
   const isValidRecommendation = (rec, selected = []) => {
     const title = String(rec?.title || '').toLowerCase().trim();
@@ -813,7 +904,11 @@ Never invent financial rankings or figures.
         `${rec.description || ''} ${rec.talking_point || ''}`
       );
 
-    if (menuItem.margin == null && claimsMargin) {
+    if (
+      menuItem.margin == null &&
+      claimsMargin &&
+      !(weightedLabMode && rec.type === 'feature')
+    ) {
       console.warn(
         `[ai-recommendations] Rejected unverified margin claim: ${rec.title}`
       );
