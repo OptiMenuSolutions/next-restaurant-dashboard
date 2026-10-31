@@ -30,11 +30,13 @@ export default withAdminAuth(async function handler(req, res) {
       weekday: 'long',
     }).format(now);
 
+    const diagnostics = {};
+
     const recommendations = await generateForRestaurant(
       restaurantId,
       currentDate,
       dayOfWeek,
-      { dryRun: true }
+      { dryRun: true, diagnostics }
     );
 
     return res.status(200).json({
@@ -43,6 +45,7 @@ export default withAdminAuth(async function handler(req, res) {
       date: currentDate,
       count: recommendations.length,
       recommendations,
+      diagnostics,
     });
   } catch (error) {
     console.error('[test-ai-recommendations] Error:', error);

@@ -266,8 +266,26 @@ export async function generateForRestaurant(
   restaurantId,
   currentDate,
   dayOfWeek,
-  { dryRun = false } = {}
+  { dryRun = false, diagnostics = null } = {}
 ) {
+  const recordDiagnostic = (stage, outcome, reason, dish = null) => {
+    if (!diagnostics) return;
+
+    diagnostics.events.push({
+      stage,
+      outcome,
+      reason,
+      ...(dish ? { dish } : {}),
+    });
+  };
+
+  if (diagnostics) {
+    diagnostics.events = [];
+    diagnostics.usage = null;
+    diagnostics.context = null;
+    diagnostics.generation = null;
+  }
+
   let enriched = [];
   let expiringIngredients = [];
   let history = [];
@@ -304,6 +322,21 @@ export async function generateForRestaurant(
       Number.isFinite(item.margin) &&
       Number.isFinite(item.marginDollars)
     );
+
+  if (diagnostics) {
+    diagnostics.context = {
+      eligibleMenuItems: safeEnriched.length,
+      verifiedMarginItems: verifiedMarginItems.length,
+      expiringIngredients: usableExpiringIngredients.length,
+      dishesWithExpiringIngredients: safeEnriched.filter(item =>
+        item.expiringIngredients.length > 0
+      ).length,
+      dishesWithMatchedSales: safeEnriched.filter(item =>
+        Number.isFinite(item.qty7d) && item.qty7d > 0
+      ).length,
+      recentRecommendations: history.length,
+    };
+  }
 
   const rankBy = (field) =>
     [...verifiedMarginItems].sort(
@@ -577,6 +610,11 @@ Never invent financial rankings or figures.
   const isValidRecommendation = (rec, selected = []) => {
     const title = String(rec?.title || '').toLowerCase().trim();
     const menuItem = menuByName.get(title);
+
+    const reject = (reason) => {
+      recordDiagnostic('validation', 'rejected', reason, rec?.title);
+      return false;
+    };
 
     if (!menuItem) {
       console.warn(
@@ -933,7 +971,15 @@ Never invent financial rankings or figures.
   for (const rec of recommendations) {
     const key = String(rec.title || '').toLowerCase().trim();
 
-    if (!key || selectedNames.has(key)) continue;
+    if (!key || selectedNames.has(key)) {
+      recordDiagnostic(
+        'claude',
+        'skipped',
+        !key ? 'Missing dish title' : 'Duplicate dish title',
+        rec.title
+      );
+      continue;
+    }
 
     cleanRecommendation(rec);
 
@@ -944,6 +990,7 @@ Never invent financial rankings or figures.
 
     validRecommendations.push(rec);
     selectedNames.add(key);
+    recordDiagnostic('claude', 'accepted', 'Passed validation', rec.title);
   }
 
   // Fill remaining slots using verified server data.
@@ -1057,6 +1104,12 @@ Never invent financial rankings or figures.
         console.info(
           `[ai-recommendations] Skipped duplicate inventory opportunity: ${item.name}`
         );
+        recordDiagnostic(
+          'fallback',
+          'skipped',
+          'Inventory opportunity already covered',
+          item.name
+        );
         continue;
       }
 
@@ -1081,6 +1134,13 @@ Never invent financial rankings or figures.
 
       validRecommendations.push(fallback);
       selectedNames.add(key);
+
+      recordDiagnostic(
+        'fallback',
+        'accepted',
+        'Verified server-generated fallback',
+        item.name
+      );
 
       console.info(
         `[ai-recommendations] Added verified fallback: ${item.name}`
@@ -1123,7 +1183,7 @@ Never invent financial rankings or figures.
     }
   }
 
-  console.info('[ai-recommendations] Generation summary:', {
+  const generationSummary = {
     restaurantId,
     date: currentDate,
     dryRun,
@@ -1131,7 +1191,39 @@ Never invent financial rankings or figures.
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
     recommendationCount: validRecommendations.length,
-  });
+  };
+
+  if (diagnostics) {
+    diagnostics.usage = {
+      model: 'claude-sonnet-4-6',
+      claudeCalls: totalClaudeCalls,
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      estimatedCostUsd:
+        Math.round(
+          (
+            (totalInputTokens * 3.00 +
+              totalOutputTokens * 15.00) / 1_000_000
+          ) * 1_000_000
+        ) / 1_000_000,
+    };
+
+    diagnostics.generation = {
+      returnedByClaude: recommendations.length,
+      acceptedFromClaude: diagnostics.events.filter(
+        event => event.stage === 'claude' && event.outcome === 'accepted'
+      ).length,
+      acceptedFallbacks: diagnostics.events.filter(
+        event => event.stage === 'fallback' && event.outcome === 'accepted'
+      ).length,
+      rejectedCandidates: diagnostics.events.filter(
+        event => event.stage === 'validation' && event.outcome === 'rejected'
+      ).length,
+      finalRecommendations: validRecommendations.length,
+    };
+  }
+
+  console.info('[ai-recommendations] Generation summary:', generationSummary);
 
   return validRecommendations;
 }
