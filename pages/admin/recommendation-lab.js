@@ -11,6 +11,7 @@ const TYPE_LABELS = {
   inventory: 'INVENTORY',
   margin: 'MARGIN',
   trending: 'SALES',
+  feature: 'MENU FEATURE',
 };
 
 function RecommendationLab() {
@@ -1119,7 +1120,7 @@ function RecommendationLab() {
               </div>
             </Card>
           )}
-          
+
           {latest.diagnostics && (
             <Card title="Generation diagnostics">
               <div style={{

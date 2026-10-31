@@ -569,6 +569,12 @@ Never invent financial rankings or figures.
 
     const sentences = [];
 
+    if (rec.type === 'feature' && weightedLabMode) {
+      sentences.push(
+        'Selected as a menu feature to provide variety in tonight’s staff recommendations.'
+      );
+    }
+
     const displayedIngredients =
       rec.verifiedFallbackIngredientIds?.length
         ? ingredients.filter(ingredient =>
@@ -716,7 +722,12 @@ Never invent financial rankings or figures.
       return reject('No matched recent POS sales for this dish');
     }
 
-    if (!['inventory', 'margin', 'trending'].includes(rec.type)) {
+    if (![
+      'inventory',
+      'margin',
+      'trending',
+      ...(weightedLabMode ? ['feature'] : []),
+    ].includes(rec.type)) {
       console.warn(
         `[ai-recommendations] Rejected unknown recommendation type: ${rec.title}`
       );
@@ -1070,9 +1081,200 @@ Never invent financial rankings or figures.
     recordDiagnostic('claude', 'accepted', 'Passed validation', rec.title);
   }
 
-  // Fill remaining slots using verified server data.
-  // No second Claude call is made.
-  if (validRecommendations.length < 3) {
+  // Weighted Lab fallback: fill from the ranked shortlist using
+  // verified evidence, rotation safeguards, and dish variety.
+  // The legacy production fallback remains below.
+  if (weightedLabMode && validRecommendations.length < 3) {
+    const primaryProtein = name => {
+      const lower = String(name || '').toLowerCase();
+
+      for (const protein of [
+        'chicken', 'shrimp', 'salmon', 'beef', 'steak',
+        'pork', 'turkey', 'lamb', 'tuna', 'fish', 'tofu',
+      ]) {
+        if (new RegExp(`\\b${protein}\\b`).test(lower)) {
+          return protein;
+        }
+      }
+
+      return null;
+    };
+
+    const candidates = scoring.shortlist
+      .filter(item => {
+        const key = item.name.toLowerCase().trim();
+
+        if (selectedNames.has(key)) return false;
+
+        const recentlyRecommended = history.some(entry =>
+          String(entry.title || '').toLowerCase().trim() === key &&
+          daysSince(entry.date) >= 1 &&
+          daysSince(entry.date) <= 3
+        );
+
+        const urgentInventory = (item.expiringIngredients || [])
+          .some(ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 3
+          );
+
+        return !recentlyRecommended || urgentInventory;
+      });
+
+    // Prefer different dish families and primary proteins.
+    // Try the strongest candidates first, with a variety penalty.
+    while (validRecommendations.length < 3 && candidates.length > 0) {
+      const selectedItems = validRecommendations
+        .map(rec =>
+          menuByName.get(rec.title.toLowerCase().trim())
+        )
+        .filter(Boolean);
+
+      const ranked = candidates.map(item => {
+        const family = normalizeDishFamily(item.name);
+        const protein = primaryProtein(item.name);
+
+        const sameFamily = selectedItems.some(existing =>
+          normalizeDishFamily(existing.name) === family
+        );
+
+        const sameProtein = protein && selectedItems.some(existing =>
+          primaryProtein(existing.name) === protein
+        );
+
+        const varietyPenalty =
+          (sameFamily ? 50 : 0) +
+          (sameProtein ? 15 : 0);
+
+        return {
+          item,
+          adjustedScore:
+            (item.recommendationScoring.totalScore ?? 0) -
+            varietyPenalty,
+          sameFamily,
+        };
+      }).sort((a, b) =>
+        b.adjustedScore - a.adjustedScore ||
+        a.item.name.localeCompare(b.item.name)
+      );
+
+      const candidate = ranked[0];
+      const item = candidate.item;
+
+      candidates.splice(candidates.indexOf(item), 1);
+
+      // Do not repeat dish variants unless an urgent,
+      // distinct inventory opportunity justifies it.
+      if (candidate.sameFamily) {
+        const coveredIds = new Set(
+          selectedItems.flatMap(existing =>
+            (existing.expiringIngredients || [])
+              .filter(ingredient =>
+                ingredient.daysLeft > 0 &&
+                ingredient.daysLeft <= 5 &&
+                ingredient.ingredientId != null
+              )
+              .map(ingredient => String(ingredient.ingredientId))
+          )
+        );
+
+        const distinctUrgent = (item.expiringIngredients || [])
+          .some(ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 3 &&
+            ingredient.ingredientId != null &&
+            !coveredIds.has(String(ingredient.ingredientId))
+          );
+
+        if (!distinctUrgent) {
+          recordDiagnostic(
+            'fallback',
+            'skipped',
+            'Similar dish family already selected',
+            item.name
+          );
+          continue;
+        }
+      }
+
+      const coveredInventoryIds = new Set(
+        validRecommendations
+          .filter(rec => rec.type === 'inventory')
+          .flatMap(rec => {
+            const existing = menuByName.get(
+              rec.title.toLowerCase().trim()
+            );
+
+            return (existing?.expiringIngredients || [])
+              .filter(ingredient =>
+                ingredient.daysLeft > 0 &&
+                ingredient.daysLeft <= 5 &&
+                ingredient.ingredientId != null
+              )
+              .map(ingredient => String(ingredient.ingredientId))
+          })
+      );
+
+      const distinctInventoryIds = (item.expiringIngredients || [])
+        .filter(ingredient =>
+          ingredient.daysLeft > 0 &&
+          ingredient.daysLeft <= 5 &&
+          ingredient.ingredientId != null &&
+          !coveredInventoryIds.has(String(ingredient.ingredientId))
+        )
+        .map(ingredient => String(ingredient.ingredientId));
+
+      const hasMargin =
+        Number.isFinite(item.margin) &&
+        Number.isFinite(item.marginDollars);
+
+      const hasSales =
+        Number.isFinite(item.qty7d) &&
+        item.qty7d > 0;
+
+      const type = distinctInventoryIds.length > 0
+        ? 'inventory'
+        : hasMargin
+          ? 'margin'
+          : hasSales
+            ? 'trending'
+            : 'feature';
+
+      const fallback = cleanRecommendation({
+        title: item.name,
+        type,
+        verifiedFallbackIngredientIds:
+          type === 'inventory' ? distinctInventoryIds : [],
+        description: item.description || item.name,
+        talking_point: `I'd recommend the ${item.name} tonight.`,
+        priority: validRecommendations.length + 1,
+      });
+
+      if (!isValidRecommendation(fallback, validRecommendations)) {
+        recordDiagnostic(
+          'fallback',
+          'skipped',
+          'Failed server validation',
+          item.name
+        );
+        continue;
+      }
+
+      validRecommendations.push(fallback);
+      selectedNames.add(item.name.toLowerCase().trim());
+
+      recordDiagnostic(
+        'fallback',
+        'accepted',
+        `Weighted shortlist fallback (${type})`,
+        item.name
+      );
+    }
+  }
+
+  // Existing production fallback. Weighted Lab tests use the
+  // new fallback above and must never escape the shortlist.
+  if (!weightedLabMode && validRecommendations.length < 3) {
     const fallbackCandidates = (
       weightedLabMode ? scoring.shortlist : safeEnriched
     )
