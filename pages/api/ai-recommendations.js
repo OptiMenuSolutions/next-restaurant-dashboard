@@ -24,6 +24,10 @@ import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateVerifiedIngredientCost } from '../../lib/verifiedIngredientCost';
 import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
 import { buildPrompt } from '../../lib/ai/prompts/tonightsDish';
+import {
+  scoreRecommendationCandidates,
+  validateRecommendationConfig,
+} from '../../lib/ai/recommendationScoring';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -266,7 +270,7 @@ export async function generateForRestaurant(
   restaurantId,
   currentDate,
   dayOfWeek,
-  { dryRun = false, diagnostics = null } = {}
+  { dryRun = false, diagnostics = null, scoringConfig = null } = {}
 ) {
   const recordDiagnostic = (stage, outcome, reason, dish = null) => {
     if (!diagnostics) return;
@@ -317,6 +321,33 @@ export async function generateForRestaurant(
     ),
   }));
 
+    // Preview weighted scoring during Recommendation Lab dry runs.
+  // Production selection remains unchanged at this checkpoint.
+  if (dryRun && diagnostics) {
+    const config = validateRecommendationConfig(scoringConfig || {});
+
+    const scoring = scoreRecommendationCandidates(
+      safeEnriched,
+      config
+    );
+
+    diagnostics.scoring = {
+      config: scoring.config,
+      totalCandidates: scoring.candidates.length,
+      shortlist: scoring.shortlist.map(item => ({
+        name: item.name,
+        category: item.category,
+        scores: item.recommendationScoring.scores,
+        effectiveWeights: item.recommendationScoring.effectiveWeights,
+        contributions: item.recommendationScoring.contributions,
+        totalScore: item.recommendationScoring.totalScore,
+        mode: item.recommendationScoring.mode,
+        expiringIngredientIds:
+          item.recommendationScoring.expiringIngredientIds,
+      })),
+    };
+  }
+  
   const verifiedMarginItems = safeEnriched
     .filter(item =>
       Number.isFinite(item.margin) &&

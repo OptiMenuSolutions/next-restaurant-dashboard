@@ -1,12 +1,13 @@
 import { withAdminAuth } from '../../../lib/admin/withAdminAuth';
 import { generateForRestaurant } from '../ai-recommendations';
+import { validateRecommendationConfig } from '../../../lib/ai/recommendationScoring';
 
 export default withAdminAuth(async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { restaurantId } = req.body || {};
+  const { restaurantId, scoringConfig } = req.body || {};
 
   if (
     typeof restaurantId !== 'string' ||
@@ -31,12 +32,17 @@ export default withAdminAuth(async function handler(req, res) {
     }).format(now);
 
     const diagnostics = {};
+    const config = validateRecommendationConfig(scoringConfig || {});
 
     const recommendations = await generateForRestaurant(
       restaurantId,
       currentDate,
       dayOfWeek,
-      { dryRun: true, diagnostics }
+      {
+        dryRun: true,
+        diagnostics,
+        scoringConfig: config,
+      }
     );
 
     return res.status(200).json({
