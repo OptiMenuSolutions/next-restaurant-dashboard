@@ -68,6 +68,7 @@ async function getExpiringIngredients(restaurantId) {
         r.daysLeft >= -2
     )
     .map((r) => ({
+      ingredientId: r.ingredientId,
       name: r.name,
       daysLeft: r.daysLeft,
       unit: r.unit,
@@ -92,7 +93,7 @@ async function loadRestaurantContext(restaurantId) {
     supabase
       .from('menu_items')
       .select(`
-        id, name, price, cost, category,
+        id, name, description, price, cost, category,
         menu_item_components (
           cost,
           component_ingredients (
@@ -190,25 +191,26 @@ async function loadRestaurantContext(restaurantId) {
     const margin = cost != null ? ((price - cost) / price) * 100 : null;
     const marginDollars = cost != null ? price - cost : null;
 
-    // Find expiring ingredients in this dish
-    const expiringInThisDish = [];
-    (item.menu_item_components || []).forEach(comp => {
-      (comp.component_ingredients || []).forEach(ci => {
-        const ingName = (ci.ingredients?.name || '').toLowerCase().trim();
-        if (!ingName) return;
-        const ingWords = ingName.split(' ');
-        const match = expiringIngredients.find(e => {
-          const eName = e.name.toLowerCase().trim();
-          const eWords = eName.split(' ');
-          // Require at least 2 words to match, or full name match
-          if (eName === ingName) return true;
-          if (ingWords.length >= 2 && eWords.some(w => w.length > 3 && ingName.includes(w))) return true;
-          if (eWords.length >= 2 && ingWords.some(w => w.length > 3 && eName.includes(w))) return true;
-          return false;
-        });
-        if (match) expiringInThisDish.push({ name: match.name, daysLeft: match.daysLeft, isProtein: match.isProtein });
-      });
-    });
+    // Match expiring inventory to recipe ingredients by database ID.
+    // Similar ingredient names alone are not evidence of a match.
+    const recipeIngredientIds = new Set(
+      lines
+        .map(line => line.ingredients?.id)
+        .filter(Boolean)
+        .map(String)
+    );
+
+    const expiringInThisDish = expiringIngredients
+      .filter(ingredient =>
+        ingredient.ingredientId != null &&
+        recipeIngredientIds.has(String(ingredient.ingredientId))
+      )
+      .map(ingredient => ({
+        ingredientId: ingredient.ingredientId,
+        name: ingredient.name,
+        daysLeft: ingredient.daysLeft,
+        isProtein: ingredient.isProtein,
+      }));
 
     // Tighter POS name matching — require meaningful word overlap, not just first word
     const itemWords = item.name.toLowerCase().trim().split(' ').filter(w => w.length > 3);
@@ -221,6 +223,7 @@ async function loadRestaurantContext(restaurantId) {
 
     return {
       name: item.name,
+      description: String(item.description || '').trim(),
       price,
       margin: margin != null ? Math.round(margin * 10) / 10 : null,
       marginDollars: marginDollars != null ? Math.round(marginDollars * 100) / 100 : null,
@@ -259,7 +262,12 @@ async function getRecentHistory(restaurantId, currentDate) {
 }
 
 // ─── Core generation logic (shared with cron) ─────────────────────────────────
-export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek) {
+export async function generateForRestaurant(
+  restaurantId,
+  currentDate,
+  dayOfWeek,
+  { dryRun = false } = {}
+) {
   let enriched = [];
   let expiringIngredients = [];
   let history = [];
@@ -273,13 +281,86 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     console.error(`[ai-recommendations] Context load error for ${restaurantId}:`, ctxErr.message);
   }
 
-  const prompt = buildPrompt(enriched, expiringIngredients, history, dayOfWeek, currentDate);
+  // Only ingredients with remaining usable shelf life can drive
+  // waste-prevention recommendations.
+  const usableExpiringIngredients = expiringIngredients.filter(
+    ingredient =>
+      Number.isFinite(ingredient.daysLeft) &&
+      ingredient.daysLeft > 0
+  );
+
+  // Keep dish-level inventory context consistent with the filtered list.
+  const safeEnriched = enriched.map(item => ({
+    ...item,
+    expiringIngredients: (item.expiringIngredients || []).filter(
+      ingredient =>
+        Number.isFinite(ingredient.daysLeft) &&
+        ingredient.daysLeft > 0
+    ),
+  }));
+
+  const verifiedMarginItems = safeEnriched
+    .filter(item =>
+      Number.isFinite(item.margin) &&
+      Number.isFinite(item.marginDollars)
+    );
+
+  const rankBy = (field) =>
+    [...verifiedMarginItems].sort(
+      (a, b) =>
+        b[field] - a[field] ||
+        a.name.localeCompare(b.name)
+    );
+
+  const percentageRankings = rankBy('margin');
+  const dollarRankings = rankBy('marginDollars');
+
+  const verifiedMarginContext = `
+━━━ SERVER-VERIFIED MARGIN RANKINGS ━━━
+
+Only dishes with fully verified ingredient costs are included.
+
+GROSS MARGIN PERCENTAGE:
+${percentageRankings.map((item, index) =>
+  `${index + 1}. ${item.name}: ${item.margin}%`
+).join('\n') || 'No verified margins available'}
+
+GROSS PROFIT PER COVER:
+${dollarRankings.map((item, index) =>
+  `${index + 1}. ${item.name}: $${item.marginDollars.toFixed(2)}`
+).join('\n') || 'No verified margins available'}
+
+These rankings are calculated by the server using verified costs.
+Use the appropriate ranking when making financial comparisons.
+Never confuse percentage rankings with dollar-profit rankings.
+Never invent financial rankings or figures.
+`;
+
+  const prompt = buildPrompt(
+    safeEnriched,
+    usableExpiringIngredients,
+    history,
+    dayOfWeek,
+    currentDate
+  ) + verifiedMarginContext;
+
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalClaudeCalls = 0;
+
+  const trackGenerationUsage = (usage) => {
+    totalClaudeCalls += 1;
+    totalInputTokens += usage?.input_tokens || 0;
+    totalOutputTokens += usage?.output_tokens || 0;
+  };
 
   const message = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4000, // 1000 truncated larger menus mid-JSON (Echo Tap failed the cron on several days)
+    max_tokens: 6000, // 1000 truncated larger menus mid-JSON (Echo Tap failed the cron on several days)
     messages: [{ role: 'user', content: prompt }],
   });
+
+  trackGenerationUsage(message.usage);
 
   await logAiUsage({
     feature: 'dish_recs',
@@ -298,7 +379,19 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     aiResponse = JSON.parse(cleaned);
   } catch {
     const match = cleaned.match(/\{[\s\S]*\}/);
-    aiResponse = match ? JSON.parse(match[0]) : { recommendations: [] };
+
+    if (match) {
+      try {
+        aiResponse = JSON.parse(match[0]);
+      } catch {
+        console.warn(
+          `[ai-recommendations] Could not parse Claude response for ${restaurantId}`
+        );
+        aiResponse = { recommendations: [] };
+      }
+    } else {
+      aiResponse = { recommendations: [] };
+    }
   }
 
   // Titles must be exact dish names so the dashboard can find each dish's
@@ -311,30 +404,736 @@ export async function generateForRestaurant(restaurantId, currentDate, dayOfWeek
     const title = exactNames.get(raw.toLowerCase()) || exactNames.get(stripped.toLowerCase()) || stripped || raw;
     return { ...rec, title };
   });
+
+  // Reject recommendations that reference expired inventory.
+  // An expired inventory estimate does not automatically disqualify
+  // a dish, but it must never justify recommending that dish.
+  const expiredNames = expiringIngredients
+    .filter(ingredient => ingredient.daysLeft <= 0)
+    .map(ingredient => ingredient.name.toLowerCase().trim())
+    .filter(Boolean);
+
+  const menuByName = new Map(
+    safeEnriched.map(item => [item.name.toLowerCase().trim(), item])
+  );
+
+  // Verify financial claims against the calculated, approved menu data.
+
+  const normalizeDishFamily = (name) => {
+    const normalized = String(name || '')
+      .toLowerCase()
+      .trim()
+      .replace(/[–—]/g, '-');
+
+    // "Stir-Fry - Chicken" and "Stir-Fry - Vegetarian"
+    // are variants of the same dish family.
+    if (normalized.includes(' - ')) {
+      return normalized.split(' - ')[0].trim();
+    }
+
+    // Recognize other common protein variants of a shared dish.
+    return normalized
+      .replace(/\b(chicken|shrimp|vegetarian|veggie|beef|pork|tofu)\b/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  };
+
+  const ingredientNamesFor = (item) =>
+    new Set(
+      (item?.expiringIngredients || [])
+        .filter(ingredient => ingredient.daysLeft > 0)
+        .map(ingredient => ingredient.name.toLowerCase().trim())
+    );
+
+  const daysSince = (dateString) => {
+    const current = Date.parse(`${currentDate}T00:00:00Z`);
+    const previous = Date.parse(`${dateString}T00:00:00Z`);
+
+    if (!Number.isFinite(current) || !Number.isFinite(previous)) {
+      return Infinity;
+    }
+
+    return Math.round((current - previous) / 86400000);
+  };
+
+  const buildVerifiedReason = (rec, menuItem) => {
+    const title = menuItem.name.toLowerCase().trim();
+
+    const recentAppearance = history.find(entry =>
+      String(entry.title || '').toLowerCase().trim() === title &&
+      daysSince(entry.date) >= 1 &&
+      daysSince(entry.date) <= 3
+    );
+
+    const ingredients = (menuItem.expiringIngredients || [])
+      .filter(ingredient =>
+        Number.isFinite(ingredient.daysLeft) &&
+        ingredient.daysLeft > 0 &&
+        ingredient.daysLeft <= 5
+      )
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+
+    const urgentIngredients = ingredients.filter(
+      ingredient => ingredient.daysLeft <= 3
+    );
+
+    const sentences = [];
+
+    const displayedIngredients =
+      rec.verifiedFallbackIngredientIds?.length
+        ? ingredients.filter(ingredient =>
+            rec.verifiedFallbackIngredientIds.includes(
+              String(ingredient.ingredientId)
+            )
+          )
+        : ingredients;
+
+    if (rec.type === 'inventory' && displayedIngredients.length > 0) {
+      const details = displayedIngredients.slice(0, 2).map(ingredient =>
+        `${ingredient.name}: ${ingredient.daysLeft} day${
+          ingredient.daysLeft === 1 ? '' : 's'
+        } remaining`
+      );
+
+      sentences.push(
+        `Expiring recipe ingredients — ${details.join('; ')}.`
+      );
+    }
+
+    if (
+      rec.type === 'margin' &&
+      Number.isFinite(menuItem.margin) &&
+      Number.isFinite(menuItem.marginDollars)
+    ) {
+      const dollarRank = dollarRankings.findIndex(
+        item => item.name.toLowerCase().trim() === title
+      ) + 1;
+
+      const percentageRank = percentageRankings.findIndex(
+        item => item.name.toLowerCase().trim() === title
+      ) + 1;
+
+      sentences.push(
+        `Gross profit per cover: $${menuItem.marginDollars.toFixed(2)} ` +
+        `(${dollarRank} of ${dollarRankings.length} verified dishes); ` +
+        `gross margin: ${menuItem.margin.toFixed(1)}% ` +
+        `(${percentageRank} of ${percentageRankings.length}).`
+      );
+    }
+
+    if (rec.type === 'trending' && Number.isFinite(menuItem.qty7d)) {
+      sentences.push(
+        `Matched POS sales over the last 7 days: ${menuItem.qty7d} units.`
+      );
+    }
+
+    if (recentAppearance && urgentIngredients.length > 0) {
+      const urgentNames = [
+        ...new Set(urgentIngredients.map(ingredient => ingredient.name))
+      ].slice(0, 2).join(' and ');
+
+      sentences.push(
+        `Repeat exception: last recommended ${recentAppearance.date}; ` +
+        `${urgentNames} ${
+          urgentIngredients.length === 1 ? 'has' : 'have'
+        } 3 days or less remaining.`
+      );
+    }
+
+    return sentences.join(' ').trim();
+  };
+
+  const cleanRecommendation = (rec) => {
+    const title = String(rec?.title || '').toLowerCase().trim();
+    const menuItem = menuByName.get(title);
+
+    if (!menuItem) return rec;
+
+    // Ignore Claude's operational explanation entirely.
+    // Inventory, financial, POS and rotation facts come from the server.
+    rec.reason_selected = buildVerifiedReason(rec, menuItem);
+
+    // Staff-facing language may be written by Claude, but must not
+    // contain unsupported popularity or internal financial claims.
+    const unsupportedStaffClaims =
+      /\b(?:most popular|really popular|very popular|popular|best[- ]selling|customer favorite|guest favorite|fan favorite|crowd favorite|house favorite|crowd-pleasing|top seller|bestseller|best seller|gross margin|profit margin|profit per cover|food cost|verified margin|margin ranking|inventory at risk|waste risk|returns? per plate|returns? per dish|strongest returns?|most profitable|highest[- ]margin|best value|great value|excellent value|value plates?|strongest value)\b/i;
+
+    const description = String(rec.description || '').trim();
+    const talkingPoint = String(rec.talking_point || '').trim();
+
+    rec.description =
+      !description || unsupportedStaffClaims.test(description)
+        ? menuItem.name
+        : description;
+
+    rec.talking_point =
+      !talkingPoint || unsupportedStaffClaims.test(talkingPoint)
+        ? `I'd recommend the ${menuItem.name} tonight.`
+        : talkingPoint;
+
+    return rec;
+  };
+
+  const isValidRecommendation = (rec, selected = []) => {
+    const title = String(rec?.title || '').toLowerCase().trim();
+    const menuItem = menuByName.get(title);
+
+    if (!menuItem) {
+      console.warn(
+        `[ai-recommendations] Rejected unknown menu item: ${rec?.title}`
+      );
+      return false;
+    }
+
+        // A recommendation's type must have a verifiable basis.
+    if (rec.type === 'inventory') {
+      const hasUsableExpiringIngredient =
+        (menuItem.expiringIngredients || []).some(
+          ingredient => ingredient.daysLeft > 0 && ingredient.daysLeft <= 5
+        );
+
+      if (!hasUsableExpiringIngredient) {
+        console.warn(
+          `[ai-recommendations] Rejected inventory recommendation without verified expiring ingredients: ${rec.title}`
+        );
+        return false;
+      }
+    }
+
+    if (
+      rec.type === 'margin' &&
+      (!Number.isFinite(menuItem.margin) ||
+       !Number.isFinite(menuItem.marginDollars))
+    ) {
+      console.warn(
+        `[ai-recommendations] Rejected margin recommendation without verified profitability: ${rec.title}`
+      );
+      return false;
+    }
+
+    if (
+      rec.type === 'trending' &&
+      (!Number.isFinite(menuItem.qty7d) || menuItem.qty7d <= 0)
+    ) {
+      console.warn(
+        `[ai-recommendations] Rejected trending recommendation without matched POS sales: ${rec.title}`
+      );
+      return false;
+    }
+
+    if (!['inventory', 'margin', 'trending'].includes(rec.type)) {
+      console.warn(
+        `[ai-recommendations] Rejected unknown recommendation type: ${rec.title}`
+      );
+      return false;
+    }
+
+    const reason = String(rec.reason_selected || '');
+    const description = String(rec.description || '');
+    const talkingPoint = String(rec.talking_point || '');
+    const combinedText = `${reason} ${rec.description || ''} ${rec.talking_point || ''}`.toLowerCase();
+
+        // Reject inventory claims involving ingredients that are not
+    // linked to this dish's recipe by ingredient ID.
+    const verifiedRecipeIngredientIds = new Set(
+      (menuItem.expiringIngredients || [])
+        .filter(ingredient => ingredient.ingredientId != null)
+        .map(ingredient => String(ingredient.ingredientId))
+    );
+
+    const unsupportedInventoryClaims = usableExpiringIngredients.some(ingredient => {
+      if (ingredient.ingredientId == null) return false;
+
+      const ingredientId = String(ingredient.ingredientId);
+
+      if (verifiedRecipeIngredientIds.has(ingredientId)) return false;
+
+      const escapedName = String(ingredient.name || '')
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      if (!escapedName) return false;
+
+      const mentionsIngredient = new RegExp(
+        `(^|[^a-z])${escapedName}(?=$|[^a-z])`,
+        'i'
+      ).test(reason);
+
+      return mentionsIngredient;
+    });
+
+    if (unsupportedInventoryClaims) {
+      console.warn(
+        `[ai-recommendations] Rejected unsupported ingredient claim: ${rec.title}`
+      );
+      return false;
+    }
+
+    const referencesExpiredInventory = expiredNames.some(name => {
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^a-z])${escaped}(?=$|[^a-z])`, 'i')
+        .test(combinedText);
+    });
+
+    if (referencesExpiredInventory) {
+      console.warn(
+        `[ai-recommendations] Rejected expired-inventory reference: ${rec.title}`
+      );
+      return false;
+    }
+
+    const claimsMargin =
+      rec.type === 'margin' ||
+      /\b(margin|profit|profitable|food cost)\b/i.test(reason) ||
+      /\b(margin|profit|profitable|food cost)\b/i.test(
+        `${rec.description || ''} ${rec.talking_point || ''}`
+      );
+
+    if (menuItem.margin == null && claimsMargin) {
+      console.warn(
+        `[ai-recommendations] Rejected unverified margin claim: ${rec.title}`
+      );
+      return false;
+    }
+
+        // Validate explicit financial rankings against server-calculated data.
+    const financialRankingClaims = [
+      {
+        pattern: /\b(?:ranks?\s+)?(\d+)(?:st|nd|rd|th)\s+(?:in|for)\s+gross\s+margin\b/gi,
+        rankings: percentageRankings,
+        label: 'gross margin percentage',
+      },
+      {
+        pattern: /\b(?:ranks?\s+)?(\d+)(?:st|nd|rd|th)\s+(?:in|for)\s+gross\s+profit\s+per\s+cover\b/gi,
+        rankings: dollarRankings,
+        label: 'gross profit per cover',
+      },
+    ];
+
+    for (const claim of financialRankingClaims) {
+      for (const match of reason.matchAll(claim.pattern)) {
+        const claimedRank = Number(match[1]);
+        const actualRank = claim.rankings.findIndex(
+          item => item.name.toLowerCase().trim() === title
+        ) + 1;
+
+        if (actualRank === 0 || claimedRank !== actualRank) {
+          console.warn(
+            `[ai-recommendations] Rejected incorrect ${claim.label} ranking: ${rec.title}`
+          );
+          return false;
+        }
+      }
+    }
+
+    // Validate financial figures in both margin and profit statements.
+    const financialSentences = `${reason} ${description}`
+      .split(/[.!?](?:\s|$)/)
+      .filter(sentence =>
+        /\b(?:margin|profit|profitable)\b/i.test(sentence)
+      );
+
+    for (const sentence of financialSentences) {
+      const percentages = /\bmargin\b/i.test(sentence)
+        ? [...sentence.matchAll(/(\d+(?:\.\d+)?)\s*%/g)]
+        : [];
+
+      for (const match of percentages) {
+        const claimed = Number(match[1]);
+
+        if (
+          menuItem.margin == null ||
+          Math.abs(claimed - menuItem.margin) > 0.15
+        ) {
+          console.warn(
+            `[ai-recommendations] Rejected incorrect margin percentage: ${rec.title}`
+          );
+          return false;
+        }
+      }
+
+      // Match dollar figures explicitly described as margin or profit
+      // per cover, rather than inventory dollars at risk.
+      const dollarMatches = [
+        ...sentence.matchAll(
+          /\$(\d+(?:\.\d+)?)\s*(?:gross\s*)?(?:profit|margin)/gi
+        ),
+        ...sentence.matchAll(
+          /(?:profit|margin)\s*(?:per\s*cover|per\s*dish|\/cover)?\s*(?:of|at|:)?\s*\$(\d+(?:\.\d+)?)/gi
+        ),
+        ...sentence.matchAll(
+          /(?:gross\s+)?profit\s+per\s+(?:cover|dish|plate)\s+(?:of|at|is|equals)?\s*\$(\d+(?:\.\d+)?)/gi
+        ),
+      ];
+
+      for (const match of dollarMatches) {
+        if (
+          menuItem.marginDollars == null ||
+          Math.abs(Number(match[1]) - menuItem.marginDollars) > 0.015
+        ) {
+          console.warn(
+            `[ai-recommendations] Rejected incorrect dollar margin: ${rec.title}`
+          );
+          return false;
+        }
+      }
+    }
+
+    // Staff-facing text should describe the dish, not expose
+    // financial or inventory analysis intended for the operator.
+    const staffText = `${description} ${talkingPoint}`;
+
+    const containsInternalMetrics =
+      /\b(?:gross margin|profit per cover|profit margin|food cost|inventory at risk|waste risk|verified margin|margin ranking)\b/i
+        .test(staffText) ||
+      /\b\d+(?:\.\d+)?\s*%\s*(?:margin|profit)\b/i
+        .test(staffText);
+
+    if (containsInternalMetrics) {
+      console.warn(
+        `[ai-recommendations] Cleaning financial jargon in staff ticket: ${rec.title}`
+      );
+
+      rec.description = menuItem.name;
+      rec.talking_point = `I'd recommend the ${menuItem.name} tonight.`;
+    }
+
+    // Enforce the last-three-nights rotation rule using actual dates.
+    const recentlyRecommended = history.some(entry =>
+      entry.title.toLowerCase().trim() === title &&
+      daysSince(entry.date) >= 1 &&
+      daysSince(entry.date) <= 3
+    );
+
+    const urgentIngredients = (menuItem.expiringIngredients || [])
+      .filter(ingredient =>
+        ingredient.daysLeft > 0 &&
+        ingredient.daysLeft <= 3
+      );
+
+    if (recentlyRecommended) {
+      // A recently recommended dish cannot be described as
+      // rotation-eligible without acknowledging its exception.
+      const falselyClaimsEligibility =
+        /\b(?:rotation[- ]eligible|rotation[- ]clear|eligible by rotation|outside the (?:last|past) 3 nights|not (?:recommended|selected|featured) in the (?:last|past) 3 nights)\b/i
+          .test(reason);
+
+      if (falselyClaimsEligibility) {
+        console.warn(
+          `[ai-recommendations] Rejected incorrect rotation claim: ${rec.title}`
+        );
+        return false;
+      }
+
+      const hasWasteException =
+        rec.type === 'inventory' &&
+        urgentIngredients.length > 0;
+
+      if (!hasWasteException) {
+        console.warn(
+          `[ai-recommendations] Rejected recent rotation: ${rec.title}`
+        );
+        return false;
+      }
+
+      if (!reason.includes('Repeat exception: last recommended ')) {
+        console.warn(
+          `[ai-recommendations] Rejected missing server-verified rotation exception: ${rec.title}`
+        );
+        return false;
+      }
+    }
+
+    // Prevent multiple inventory recommendations from addressing
+    // exactly the same expiring inventory opportunity.
+    if (rec.type === 'inventory') {
+      const coveredIngredientIds = new Set(
+        selected
+          .filter(existing => existing.type === 'inventory')
+          .flatMap(existing => {
+            const existingItem = menuByName.get(
+              String(existing.title || '').toLowerCase().trim()
+            );
+
+            return (existingItem?.expiringIngredients || [])
+              .filter(ingredient =>
+                ingredient.daysLeft > 0 &&
+                ingredient.daysLeft <= 5 &&
+                ingredient.ingredientId != null
+              )
+              .map(ingredient => String(ingredient.ingredientId));
+          })
+      );
+
+      const candidateIngredientIds = (menuItem.expiringIngredients || [])
+        .filter(ingredient =>
+          ingredient.daysLeft > 0 &&
+          ingredient.daysLeft <= 5 &&
+          ingredient.ingredientId != null
+        )
+        .map(ingredient => String(ingredient.ingredientId));
+
+      if (
+        coveredIngredientIds.size > 0 &&
+        candidateIngredientIds.length > 0 &&
+        candidateIngredientIds.every(id => coveredIngredientIds.has(id))
+      ) {
+        console.warn(
+          `[ai-recommendations] Rejected duplicate inventory opportunity: ${rec.title}`
+        );
+        return false;
+      }
+    }
+
+    // Prevent variants of the same dish from consuming multiple tickets
+    // solely because they share the same expiring ingredients.
+    const family = normalizeDishFamily(menuItem.name);
+    const currentIngredients = ingredientNamesFor(menuItem);
+
+    for (const existing of selected) {
+      const existingItem = menuByName.get(
+        existing.title.toLowerCase().trim()
+      );
+
+      if (!existingItem) continue;
+
+      if (normalizeDishFamily(existingItem.name) !== family) continue;
+
+      const existingIngredients = ingredientNamesFor(existingItem);
+
+      const hasDistinctUrgentIngredient =
+        (menuItem.expiringIngredients || []).some(ingredient =>
+          ingredient.daysLeft > 0 &&
+          ingredient.daysLeft <= 3 &&
+          !existingIngredients.has(ingredient.name.toLowerCase().trim())
+        );
+
+      const sharedIngredients = [...currentIngredients].filter(
+        name => existingIngredients.has(name)
+      );
+
+      if (
+        sharedIngredients.length > 0 &&
+        !hasDistinctUrgentIngredient
+      ) {
+        console.warn(
+          `[ai-recommendations] Rejected redundant dish variant: ${rec.title} vs ${existing.title}`
+        );
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  // Validate original recommendations and remove duplicate dishes.
+  const validRecommendations = [];
+  const selectedNames = new Set();
+  const rejectedNames = new Set();
+
+  for (const rec of recommendations) {
+    const key = String(rec.title || '').toLowerCase().trim();
+
+    if (!key || selectedNames.has(key)) continue;
+
+    cleanRecommendation(rec);
+
+    if (!isValidRecommendation(rec, validRecommendations)) {
+      rejectedNames.add(key);
+      continue;
+    }
+
+    validRecommendations.push(rec);
+    selectedNames.add(key);
+  }
+
+  // Fill remaining slots using verified server data.
+  // No second Claude call is made.
+  if (validRecommendations.length < 3) {
+    const fallbackCandidates = safeEnriched
+      .filter(item => {
+        const key = item.name.toLowerCase().trim();
+
+        if (selectedNames.has(key)) return false;
+        if (rejectedNames.has(key)) return false;
+
+        const recentlyRecommended = history.some(entry =>
+          String(entry.title || '').toLowerCase().trim() === key &&
+          daysSince(entry.date) >= 1 &&
+          daysSince(entry.date) <= 3
+        );
+
+        const urgentInventory = (item.expiringIngredients || []).some(
+          ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 3
+        );
+
+        if (recentlyRecommended && !urgentInventory) return false;
+
+        const hasInventory = (item.expiringIngredients || []).some(
+          ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 5
+        );
+
+        const hasMargin =
+          Number.isFinite(item.margin) &&
+          Number.isFinite(item.marginDollars);
+
+        return hasInventory || hasMargin;
+      })
+      .map(item => {
+        const urgentIngredients = (item.expiringIngredients || [])
+          .filter(ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 3
+          );
+
+        const expiringIngredientsForDish = (item.expiringIngredients || [])
+          .filter(ingredient =>
+            ingredient.daysLeft > 0 &&
+            ingredient.daysLeft <= 5
+          );
+
+        const hasMargin =
+          Number.isFinite(item.margin) &&
+          Number.isFinite(item.marginDollars);
+
+        const type = expiringIngredientsForDish.length > 0
+          ? 'inventory'
+          : 'margin';
+
+        // Prioritize urgent inventory, then verified profitability.
+        const score =
+          urgentIngredients.length * 1000 +
+          expiringIngredientsForDish.length * 100 +
+          (hasMargin ? Math.max(0, item.marginDollars) : 0);
+
+        return { item, type, score };
+      })
+      .sort((a, b) =>
+        b.score - a.score ||
+        a.item.name.localeCompare(b.item.name)
+      );
+
+    for (const candidate of fallbackCandidates) {
+      if (validRecommendations.length >= 3) break;
+
+      const { item, type } = candidate;
+      const key = item.name.toLowerCase().trim();
+
+      // Identify expiring ingredients not already represented
+      // by accepted inventory recommendations.
+      const coveredIngredientIds = new Set(
+        validRecommendations
+          .filter(rec => rec.type === 'inventory')
+          .flatMap(rec => {
+            const selectedItem = menuByName.get(
+              rec.title.toLowerCase().trim()
+            );
+
+            return (selectedItem?.expiringIngredients || [])
+              .filter(ingredient =>
+                ingredient.daysLeft > 0 &&
+                ingredient.daysLeft <= 5 &&
+                ingredient.ingredientId != null
+              )
+              .map(ingredient => String(ingredient.ingredientId));
+          })
+      );
+
+      const distinctIngredientIds = (item.expiringIngredients || [])
+        .filter(ingredient =>
+          ingredient.daysLeft > 0 &&
+          ingredient.daysLeft <= 5 &&
+          ingredient.ingredientId != null &&
+          !coveredIngredientIds.has(String(ingredient.ingredientId))
+        )
+        .map(ingredient => String(ingredient.ingredientId));
+
+      // Skip inventory fallbacks that only repeat an existing
+      // inventory opportunity.
+      if (type === 'inventory' && distinctIngredientIds.length === 0) {
+        console.info(
+          `[ai-recommendations] Skipped duplicate inventory opportunity: ${item.name}`
+        );
+        continue;
+      }
+
+      const fallback = cleanRecommendation({
+        title: item.name,
+        type,
+        verifiedFallbackIngredientIds:
+          type === 'inventory' ? distinctIngredientIds : [],
+        description: item.description || item.name,
+        talking_point: item.description
+          ? `If you're considering the ${item.name}, it's worth a look tonight.`
+          : `I'd recommend the ${item.name} tonight.`,
+        priority: validRecommendations.length + 1,
+      });
+
+      if (!isValidRecommendation(fallback, validRecommendations)) {
+        console.info(
+          `[ai-recommendations] Skipped ineligible fallback: ${item.name}`
+        );
+        continue;
+      }
+
+      validRecommendations.push(fallback);
+      selectedNames.add(key);
+
+      console.info(
+        `[ai-recommendations] Added verified fallback: ${item.name}`
+      );
+    }
+  }
+
+  // Preserve original valid ticket order and append replacements.
+  validRecommendations.forEach((rec, index) => {
+    rec.priority = index + 1;
+  });
+
   // A talking point that names another selected dish, and not its own, was
   // written for the wrong ticket. Drop it so the ticket uses its description.
-  for (const rec of recommendations) {
+  for (const rec of validRecommendations) {
     const own = rec.title.toLowerCase();
-    const others = recommendations.filter((r) => r !== rec).map((r) => r.title.toLowerCase());
+    const others = validRecommendations.filter((r) => r !== rec).map((r) => r.title.toLowerCase());
     const tp = String(rec.talking_point || '').toLowerCase();
     if (tp && !tp.includes(own) && others.some((o) => o && tp.includes(o))) rec.talking_point = null;
   }
 
-  // Cache the result
-  try {
-    await supabase
-      .from('ai_recommendations')
-      .upsert({
-        restaurant_id: restaurantId,
-        generated_date: currentDate,
-        recommendations,
-        type: 'general',
-      });
-  } catch (cacheWriteErr) {
-    console.error(`[ai-recommendations] Cache write error for ${restaurantId}:`, cacheWriteErr.message);
+  // Save only during normal generation, never during a dry run.
+  if (!dryRun) {
+    try {
+      const { error } = await supabase
+        .from('ai_recommendations')
+        .upsert({
+          restaurant_id: restaurantId,
+          generated_date: currentDate,
+          recommendations: validRecommendations,
+          type: 'general',
+        });
+
+      if (error) throw error;
+    } catch (cacheWriteErr) {
+      console.error(
+        `[ai-recommendations] Cache write error for ${restaurantId}:`,
+        cacheWriteErr.message
+      );
+    }
   }
 
-  return recommendations;
+  console.info('[ai-recommendations] Generation summary:', {
+    restaurantId,
+    date: currentDate,
+    dryRun,
+    claudeCalls: totalClaudeCalls,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    recommendationCount: validRecommendations.length,
+  });
+
+  return validRecommendations;
 }
 
 // What a staff page is allowed to see from a ticket.
