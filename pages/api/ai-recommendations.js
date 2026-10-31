@@ -547,6 +547,32 @@ Never invent financial rankings or figures.
       .trim();
   };
 
+  // Additional grouping for Lab selection only.
+  // The legacy production dish-family logic remains unchanged.
+  const labDishFamily = (name) => {
+    const normalized = String(name || '')
+      .toLowerCase()
+      .trim();
+
+    const families = [
+      ['burger', /\bburgers?\b/],
+      ['stir-fry', /\bstir[\s-]*fr(?:y|ies)\b/],
+      ['pizza', /\bpizzas?\b/],
+      ['taco', /\btacos?\b/],
+      ['quesadilla', /\bquesadillas?\b/],
+      ['pasta', /\b(?:pasta|linguini|linguine|spaghetti|fettuccine|penne|rigatoni)\b/],
+      ['sandwich', /\b(?:sandwich|panini|sub|hoagie)\b/],
+    ];
+
+    const match = families.find(([, pattern]) =>
+      pattern.test(normalized)
+    );
+
+    return match
+      ? match[0]
+      : normalizeDishFamily(name);
+  };
+
   const ingredientNamesFor = (item) =>
     new Set(
       (item?.expiringIngredients || [])
@@ -1156,8 +1182,54 @@ Never invent financial rankings or figures.
       }
     }
 
-    // Prevent variants of the same dish from consuming multiple tickets
-    // solely because they share the same expiring ingredients.
+    // Lab only: prevent multiple dishes from the same family
+    // when the candidate pool has enough distinct families.
+    if (weightedLabMode && selected.length > 0) {
+      const candidateFamily = labDishFamily(menuItem.name);
+
+      const duplicateFamily = selected.some(existing =>
+        labDishFamily(existing.title) === candidateFamily
+      );
+
+      const distinctAvailableFamilies = new Set(
+        labCandidates.map(item => labDishFamily(item.name))
+      ).size;
+
+      const selectedIngredientIds = new Set(
+        selected.flatMap(existing => {
+          const existingItem = menuByName.get(
+            String(existing.title || '').toLowerCase().trim()
+          );
+
+          return (existingItem?.expiringIngredients || [])
+            .filter(ingredient =>
+              ingredient.daysLeft > 0 &&
+              ingredient.daysLeft <= 5 &&
+              ingredient.ingredientId != null
+            )
+            .map(ingredient => String(ingredient.ingredientId));
+        })
+      );
+
+      const distinctUrgentOpportunity =
+        rec.type === 'inventory' &&
+        (menuItem.expiringIngredients || []).some(ingredient =>
+          ingredient.daysLeft > 0 &&
+          ingredient.daysLeft <= 3 &&
+          ingredient.ingredientId != null &&
+          !selectedIngredientIds.has(String(ingredient.ingredientId))
+        );
+
+      if (
+        duplicateFamily &&
+        distinctAvailableFamilies >= 3 &&
+        !distinctUrgentOpportunity
+      ) {
+        return reject('Dish family already represented');
+      }
+    }
+
+    // Preserve existing variant validation for both modes.
     const family = normalizeDishFamily(menuItem.name);
     const currentIngredients = ingredientNamesFor(menuItem);
 
@@ -1297,11 +1369,11 @@ Never invent financial rankings or figures.
         .filter(Boolean);
 
       const ranked = candidates.map(item => {
-        const family = normalizeDishFamily(item.name);
+        const family = labDishFamily(item.name);
         const protein = primaryProtein(item.name);
 
         const sameFamily = selectedItems.some(existing =>
-          normalizeDishFamily(existing.name) === family
+          labDishFamily(existing.name) === family
         );
 
         const sameProtein = protein && selectedItems.some(existing =>
@@ -1331,7 +1403,12 @@ Never invent financial rankings or figures.
 
       // Do not repeat dish variants unless an urgent,
       // distinct inventory opportunity justifies it.
-      if (candidate.sameFamily) {
+      if (
+        candidate.sameFamily &&
+        new Set(labCandidates.map(entry =>
+          labDishFamily(entry.name)
+        )).size >= 3
+      ) {
         const coveredIds = new Set(
           selectedItems.flatMap(existing =>
             (existing.expiringIngredients || [])
