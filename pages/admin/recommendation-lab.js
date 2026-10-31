@@ -978,18 +978,23 @@ function RecommendationLab() {
           </Card>
 
           {latest.diagnostics?.scoring && (
-            <Card title="Weighted candidate ranking">
+            <Card title={
+              latest.diagnostics.scoring.mode === 'menu-only'
+                ? 'Full-menu selection'
+                : 'Weighted candidate ranking'
+            }>
               <div style={{
                 color: 'var(--muted)',
                 fontSize: 12,
                 lineHeight: 1.6,
                 marginBottom: 14,
               }}>
-                Scoring preview ·{' '}
-                {latest.diagnostics.scoring.totalCandidates} eligible dishes ·{' '}
-                {latest.diagnostics.scoring.shortlist.length} shortlisted
+                {latest.diagnostics.scoring.mode === 'menu-only'
+                  ? `Menu-only mode · All ${latest.diagnostics.scoring.totalCandidates} eligible dishes evaluated by Claude · No shortlist or verified profit scores`
+                  : `Scoring preview · ${latest.diagnostics.scoring.totalCandidates} eligible dishes · ${latest.diagnostics.scoring.shortlist.length} shortlisted`}
               </div>
 
+              {latest.diagnostics.scoring.mode !== 'menu-only' && (
               <div style={{
                 display: 'flex',
                 flexWrap: 'wrap',
@@ -1019,6 +1024,9 @@ function RecommendationLab() {
                   </div>
                 ))}
               </div>
+              )}
+
+              {latest.diagnostics.scoring.mode !== 'menu-only' && (
 
               <div style={{ display: 'grid', gap: 9 }}>
                 {latest.diagnostics.scoring.shortlist.map((item, index) => (
@@ -1118,6 +1126,7 @@ function RecommendationLab() {
                   </details>
                 ))}
               </div>
+              )}
             </Card>
           )}
 

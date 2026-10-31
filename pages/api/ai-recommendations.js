@@ -29,6 +29,7 @@ import {
   scoreRecommendationCandidates,
   validateRecommendationConfig,
 } from '../../lib/ai/recommendationScoring';
+import { buildMenuOnlyPrompt } from '../../lib/ai/prompts/menuOnlyTonightsDish';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -347,9 +348,20 @@ export async function generateForRestaurant(
       )
     : null;
 
-  if (scoring && diagnostics) {
+  const menuOnlyLabMode =
+    weightedLabMode &&
+    scoring.candidates.every(item =>
+      item.recommendationScoring.totalScore === null
+    );
 
+  const labCandidates = menuOnlyLabMode
+    ? safeEnriched
+    : scoring?.shortlist || [];
+
+  if (scoring && diagnostics) {
     diagnostics.scoring = {
+      mode: menuOnlyLabMode ? 'menu-only' : 'weighted',
+      fullMenuEvaluated: menuOnlyLabMode,
       config: scoring.config,
       totalCandidates: scoring.candidates.length,
       shortlist: scoring.shortlist.map(item => ({
@@ -418,15 +430,22 @@ Never confuse percentage rankings with dollar-profit rankings.
 Never invent financial rankings or figures.
 `;
 
-  const prompt = weightedLabMode
-    ? buildWeightedPrompt(
-        scoring.shortlist,
+  const prompt = menuOnlyLabMode
+    ? buildMenuOnlyPrompt(
+        labCandidates,
         history,
         dayOfWeek,
-        currentDate,
-        scoring.config
+        currentDate
       )
-    : buildPrompt(
+    : weightedLabMode
+      ? buildWeightedPrompt(
+          scoring.shortlist,
+          history,
+          dayOfWeek,
+          currentDate,
+          scoring.config
+        )
+      : buildPrompt(
         safeEnriched,
         usableExpiringIngredients,
         history,
@@ -1035,7 +1054,7 @@ Never invent financial rankings or figures.
   // Server fallback behavior will be updated in Checkpoint 5B.
   const allowedClaudeNames = weightedLabMode
     ? new Set(
-        scoring.shortlist.map(item =>
+        labCandidates.map(item =>
           item.name.toLowerCase().trim()
         )
       )
@@ -1100,7 +1119,7 @@ Never invent financial rankings or figures.
       return null;
     };
 
-    const candidates = scoring.shortlist
+    const candidates = labCandidates
       .filter(item => {
         const key = item.name.toLowerCase().trim();
 
@@ -1232,7 +1251,9 @@ Never invent financial rankings or figures.
         Number.isFinite(item.qty7d) &&
         item.qty7d > 0;
 
-      const type = distinctInventoryIds.length > 0
+      const type = menuOnlyLabMode
+        ? 'feature'
+        : distinctInventoryIds.length > 0
         ? 'inventory'
         : hasMargin
           ? 'margin'
