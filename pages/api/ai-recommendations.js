@@ -484,6 +484,29 @@ Never invent financial rankings or figures.
     console.warn(`[ai-recommendations] Response hit max_tokens for ${restaurantId}, output truncated`);
   }
   const raw = message.content[0]?.text || '{}';
+
+  if (weightedLabMode) {
+    try {
+      const parsed = JSON.parse(
+        raw.replace(/```json|```/g, '').trim()
+      );
+
+      console.log(
+        '[Recommendation Lab] Claude talking points:',
+        JSON.stringify(
+          (parsed.recommendations || []).map(rec => ({
+            title: rec.title,
+            talking_point: rec.talking_point,
+          })),
+          null,
+          2
+        )
+      );
+    } catch {
+      console.warn('[Recommendation Lab] Could not inspect raw talking points');
+    }
+  }
+
   const cleaned = raw.replace(/```json|```/g, '').trim();
   let aiResponse;
   try {
@@ -843,17 +866,27 @@ Never invent financial rankings or figures.
       shortenText(safeDescription, 30, 200) ||
       `${menuItem.name} is available tonight.`;
 
-    const fallbackTalkingPoint = rec.description !== menuItem.name
-      ? `I'd recommend the ${menuItem.name} tonight. ${rec.description}`
-      : `I'd recommend the ${menuItem.name} tonight.`;
+    const hasUsefulDescription =
+      rec.description.toLowerCase().trim() !==
+      menuItem.name.toLowerCase().trim();
+
+    const fallbackTalkingPoint = hasUsefulDescription
+      ? `If you're looking for something tonight, I'd suggest the ${menuItem.name}. ${rec.description}`
+      : `If you're deciding what to order, I'd suggest the ${menuItem.name}.`;
+
+    const genericTalkingPoint =
+      /^(?:i(?:'d| would) recommend|if you(?:'re| are) considering|it(?:'s| is) worth a look)/i
+        .test(safeTalkingPoint);
 
     rec.talking_point =
       shortenText(
-        safeTalkingPoint || fallbackTalkingPoint,
+        safeTalkingPoint && !genericTalkingPoint
+          ? safeTalkingPoint
+          : fallbackTalkingPoint,
         38,
         240
       ) ||
-      `I'd recommend the ${menuItem.name} tonight.`;
+      `I'd suggest the ${menuItem.name} tonight.`;
 
     return rec;
   };
@@ -1285,6 +1318,7 @@ Never invent financial rankings or figures.
   const validRecommendations = [];
   const selectedNames = new Set();
   const rejectedNames = new Set();
+  let labUsedFallback = false;
 
   for (const rec of recommendations) {
     const key = String(rec.title || '').toLowerCase().trim();
@@ -1509,6 +1543,7 @@ Never invent financial rankings or figures.
 
       validRecommendations.push(fallback);
       selectedNames.add(item.name.toLowerCase().trim());
+      labUsedFallback = true;
 
       recordDiagnostic(
         'fallback',
@@ -1672,6 +1707,169 @@ Never invent financial rankings or figures.
 
       console.info(
         `[ai-recommendations] Added verified fallback: ${item.name}`
+      );
+    }
+  }
+
+  // Lab only: when server validation replaces a Claude selection,
+  // rewrite the final talking points together for consistency and variety.
+  if (weightedLabMode && labUsedFallback && validRecommendations.length > 0) {
+    try {
+      const finalDishes = validRecommendations.map(rec => {
+        const menuItem = menuByName.get(
+          String(rec.title || '').toLowerCase().trim()
+        );
+
+        return {
+          title: rec.title,
+          description: menuItem?.description || rec.description || rec.title,
+        };
+      });
+
+      const talkingPointPrompt = `
+You are writing guest-facing talking points for restaurant servers.
+
+The following dishes have ALREADY been selected by the restaurant's
+recommendation system. Do not change the dishes or their order.
+
+Write exactly one talking point for each dish.
+
+RULES:
+- Each talking point must be one natural sentence of 20 words or fewer.
+- It must sound like something a real server would say to a guest.
+- Make the dish sound appealing using only its supplied description.
+- Do not invent ingredients, preparation methods, flavors, or claims.
+- Do not mention inventory, expiration, profit, margins, sales, or pricing.
+- Do not claim popularity, value, or superiority without evidence.
+- All talking points must have noticeably different openings,
+  sentence structures, and conversational approaches.
+- Do not repeat templates such as "I'd recommend" or
+  "If you're looking for."
+- Do not merely repeat the dish description.
+- Do not add information that is absent from the supplied descriptions.
+
+FINAL DISHES:
+${JSON.stringify(finalDishes, null, 2)}
+
+Return ONLY valid JSON in this format:
+{
+  "talking_points": [
+    {
+      "title": "Exact dish name",
+      "talking_point": "One natural sentence."
+    }
+  ]
+}
+`;
+
+      const talkingPointMessage = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 700,
+        messages: [
+          { role: 'user', content: talkingPointPrompt },
+        ],
+      });
+
+      trackGenerationUsage(talkingPointMessage.usage);
+
+      try {
+        await logAiUsage({
+          feature: 'dish_recs',
+          model: 'claude-sonnet-4-6',
+          usage: talkingPointMessage.usage,
+          restaurantId,
+        });
+      } catch (usageError) {
+        console.error(
+          '[ai-recommendations] Could not log talking-point usage:',
+          usageError
+        );
+      }
+
+      if (talkingPointMessage.stop_reason !== 'end_turn') {
+        throw new Error('Talking-point response was incomplete');
+      }
+
+      const responseText = talkingPointMessage.content
+        .filter(block => block.type === 'text')
+        .map(block => block.text)
+        .join('')
+        .replace(/```json|```/g, '')
+        .trim();
+
+      const parsed = JSON.parse(responseText);
+      const points = parsed.talking_points;
+
+      if (
+        !Array.isArray(points) ||
+        points.length !== validRecommendations.length
+      ) {
+        throw new Error('Talking-point count does not match final dishes');
+      }
+
+      const generatedByTitle = new Map();
+
+      for (const point of points) {
+        const title = String(point.title || '').toLowerCase().trim();
+        const value = String(point.talking_point || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (
+          !title ||
+          !value ||
+          generatedByTitle.has(title) ||
+          value.split(/\s+/).length > 20 ||
+          /[.!?]\s+\S/.test(value)
+        ) {
+          throw new Error('Invalid generated talking point');
+        }
+
+        generatedByTitle.set(title, value);
+      }
+
+      const rewritten = validRecommendations.map(rec => {
+        const title = String(rec.title || '').toLowerCase().trim();
+        const value = generatedByTitle.get(title);
+
+        if (!value) {
+          throw new Error(`Missing talking point for ${rec.title}`);
+        }
+
+        const menuItem = menuByName.get(title);
+
+        const candidate = cleanRecommendation({
+          ...rec,
+          talking_point: value,
+        });
+
+        if (
+          !menuItem ||
+          candidate.talking_point !== value ||
+          candidate.talking_point.split(/\s+/).length > 20 ||
+          /\b(?:gross margin|profit|food cost|inventory|waste risk|expir(?:y|ation)|best value|bestseller|customer favorite)\b/i.test(value)
+        ) {
+          throw new Error(`Unsafe talking point for ${rec.title}`);
+        }
+
+        return value;
+      });
+
+      validRecommendations.forEach((rec, index) => {
+        rec.talking_point = rewritten[index];
+      });
+
+      console.info(
+        '[Recommendation Lab] Rewrote final talking points:',
+        validRecommendations.map(rec => ({
+          title: rec.title,
+          talking_point: rec.talking_point,
+        }))
+      );
+    } catch (error) {
+      console.warn(
+        '[Recommendation Lab] Talking-point rewrite failed:',
+        error
       );
     }
   }
