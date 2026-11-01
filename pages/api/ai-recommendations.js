@@ -23,7 +23,6 @@ import { getShelfLife, isProtein } from '../../lib/shelfLife';
 import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateVerifiedIngredientCost } from '../../lib/verifiedIngredientCost';
 import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
-import { buildPrompt } from '../../lib/ai/prompts/tonightsDish';
 import { buildWeightedPrompt } from '../../lib/ai/prompts/weightedTonightsDish';
 import {
   scoreRecommendationCandidates,
@@ -339,26 +338,21 @@ export async function generateForRestaurant(
     ),
   }));
 
-  // Experimental weighted selection is limited to admin dry runs.
-  // Normal production generation continues using the legacy prompt.
-  const weightedLabMode = dryRun && diagnostics !== null;
+  // Production and Recommendation Lab share the same scoring engine.
+  // Only admin dry runs may override the default scoring configuration.
 
-  const scoring = weightedLabMode
-    ? scoreRecommendationCandidates(
-        safeEnriched,
-        validateRecommendationConfig(scoringConfig || {})
-      )
-    : null;
+  const scoring = scoreRecommendationCandidates(
+    safeEnriched,
+    validateRecommendationConfig(
+      dryRun && diagnostics !== null ? scoringConfig || {} : {}
+    )
+  );
 
-  const menuOnlyLabMode =
-    weightedLabMode &&
-    scoring.candidates.every(item =>
-      item.recommendationScoring.totalScore === null
-    );
+  const menuOnlyLabMode = scoring.candidates.every(item =>
+    item.recommendationScoring.totalScore === null
+  );
 
-  const labCandidates = menuOnlyLabMode
-    ? safeEnriched
-    : scoring?.shortlist || [];
+  const labCandidates = scoring.shortlist;
 
   if (scoring && diagnostics) {
     diagnostics.scoring = {
@@ -411,27 +405,6 @@ export async function generateForRestaurant(
   const percentageRankings = rankBy('margin');
   const dollarRankings = rankBy('marginDollars');
 
-  const verifiedMarginContext = `
-━━━ SERVER-VERIFIED MARGIN RANKINGS ━━━
-
-Only dishes with fully verified ingredient costs are included.
-
-GROSS MARGIN PERCENTAGE:
-${percentageRankings.map((item, index) =>
-  `${index + 1}. ${item.name}: ${item.margin}%`
-).join('\n') || 'No verified margins available'}
-
-GROSS PROFIT PER COVER:
-${dollarRankings.map((item, index) =>
-  `${index + 1}. ${item.name}: $${item.marginDollars.toFixed(2)}`
-).join('\n') || 'No verified margins available'}
-
-These rankings are calculated by the server using verified costs.
-Use the appropriate ranking when making financial comparisons.
-Never confuse percentage rankings with dollar-profit rankings.
-Never invent financial rankings or figures.
-`;
-
   const prompt = menuOnlyLabMode
     ? buildMenuOnlyPrompt(
         labCandidates,
@@ -439,21 +412,13 @@ Never invent financial rankings or figures.
         dayOfWeek,
         currentDate
       )
-    : weightedLabMode
-      ? buildWeightedPrompt(
-          scoring.shortlist,
-          history,
-          dayOfWeek,
-          currentDate,
-          scoring.config
-        )
-      : buildPrompt(
-        safeEnriched,
-        usableExpiringIngredients,
+    : buildWeightedPrompt(
+        scoring.shortlist,
         history,
         dayOfWeek,
-        currentDate
-      ) + verifiedMarginContext;
+        currentDate,
+        scoring.config
+      );
 
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
@@ -485,7 +450,7 @@ Never invent financial rankings or figures.
   }
   const raw = message.content[0]?.text || '{}';
 
-  if (weightedLabMode) {
+  if (diagnostics) {
     try {
       const parsed = JSON.parse(
         raw.replace(/```json|```/g, '').trim()
@@ -639,7 +604,7 @@ Never invent financial rankings or figures.
 
     const sentences = [];
 
-    if (rec.type === 'feature' && weightedLabMode) {
+    if (rec.type === 'feature') {
       sentences.push(
         'Selected as a menu feature to provide variety in tonight’s staff recommendations.'
       );
@@ -767,10 +732,9 @@ Never invent financial rankings or figures.
 
     if (!menuItem) return rec;
 
-    const isLabFeature = weightedLabMode && rec.type === 'feature';
-
-    // Production keeps its existing verified explanations.
-    if (isLabFeature) {
+    // Menu-only features use qualified explanations when
+    // verified profitability data is unavailable.
+    if (rec.type === 'feature') {
       const originalReason = String(rec.reason_selected || '')
         .replace(/\s+/g, ' ')
         .trim();
@@ -825,21 +789,7 @@ Never invent financial rankings or figures.
       .replace(/\s+/g, ' ')
       .trim();
 
-    // Preserve legacy production behavior exactly.
-    if (!weightedLabMode) {
-      rec.description =
-        !description || unsupportedStaffClaims.test(description)
-          ? menuItem.description || menuItem.name
-          : description;
-
-      rec.talking_point =
-        !talkingPoint || unsupportedStaffClaims.test(talkingPoint)
-          ? `I'd recommend the ${menuItem.name} tonight.`
-          : talkingPoint;
-
-      return rec;
-    }
-
+    // Apply the same staff-facing language safeguards in all modes.
     const removeUnsupportedSentences = value => {
       const sentences = String(value || '')
         .split(/(?<=[.!?])\s+(?=[A-Z"'])/);
@@ -949,7 +899,7 @@ Never invent financial rankings or figures.
       'inventory',
       'margin',
       'trending',
-      ...(weightedLabMode ? ['feature'] : []),
+      'feature',
     ].includes(rec.type)) {
       console.warn(
         `[ai-recommendations] Rejected unknown recommendation type: ${rec.title}`
@@ -1020,7 +970,7 @@ Never invent financial rankings or figures.
     if (
       menuItem.margin == null &&
       claimsMargin &&
-      !(weightedLabMode && rec.type === 'feature')
+      rec.type !== 'feature'
     ) {
       console.warn(
         `[ai-recommendations] Rejected unverified margin claim: ${rec.title}`
@@ -1217,9 +1167,9 @@ Never invent financial rankings or figures.
       }
     }
 
-    // Lab only: prevent multiple dishes from the same family
-    // when the candidate pool has enough distinct families.
-    if (weightedLabMode && selected.length > 0) {
+    // Prevent multiple dishes from the same family when the
+    // candidate pool has enough distinct families.
+    if (selected.length > 0) {
       const candidateFamily = labDishFamily(menuItem.name);
 
       const duplicateFamily = selected.some(existing =>
@@ -1305,20 +1255,17 @@ Never invent financial rankings or figures.
   };
 
   // Claude may only select dishes supplied in the ranked shortlist.
-  // Server fallback behavior will be updated in Checkpoint 5B.
-  const allowedClaudeNames = weightedLabMode
-    ? new Set(
-        labCandidates.map(item =>
-          item.name.toLowerCase().trim()
-        )
-      )
-    : null;
+  const allowedClaudeNames = new Set(
+    labCandidates.map(item =>
+      item.name.toLowerCase().trim()
+    )
+  );
 
   // Validate original recommendations and remove duplicate dishes.
   const validRecommendations = [];
   const selectedNames = new Set();
   const rejectedNames = new Set();
-  let labUsedFallback = false;
+  let usedFallback = false;
 
   for (const rec of recommendations) {
     const key = String(rec.title || '').toLowerCase().trim();
@@ -1333,7 +1280,7 @@ Never invent financial rankings or figures.
       continue;
     }
 
-    if (allowedClaudeNames && !allowedClaudeNames.has(key)) {
+    if (!allowedClaudeNames.has(key)) {
       recordDiagnostic(
         'claude',
         'skipped',
@@ -1355,10 +1302,9 @@ Never invent financial rankings or figures.
     recordDiagnostic('claude', 'accepted', 'Passed validation', rec.title);
   }
 
-  // Weighted Lab fallback: fill from the ranked shortlist using
+  // Shared fallback: fill from the ranked shortlist using
   // verified evidence, rotation safeguards, and dish variety.
-  // The legacy production fallback remains below.
-  if (weightedLabMode && validRecommendations.length < 3) {
+  if (validRecommendations.length < 3) {
     const primaryProtein = name => {
       const lower = String(name || '').toLowerCase();
 
@@ -1543,7 +1489,7 @@ Never invent financial rankings or figures.
 
       validRecommendations.push(fallback);
       selectedNames.add(item.name.toLowerCase().trim());
-      labUsedFallback = true;
+      usedFallback = true;
 
       recordDiagnostic(
         'fallback',
@@ -1554,166 +1500,9 @@ Never invent financial rankings or figures.
     }
   }
 
-  // Existing production fallback. Weighted Lab tests use the
-  // new fallback above and must never escape the shortlist.
-  if (!weightedLabMode && validRecommendations.length < 3) {
-    const fallbackCandidates = (
-      weightedLabMode ? scoring.shortlist : safeEnriched
-    )
-      .filter(item => {
-        const key = item.name.toLowerCase().trim();
-
-        if (selectedNames.has(key)) return false;
-        if (rejectedNames.has(key)) return false;
-
-        const recentlyRecommended = history.some(entry =>
-          String(entry.title || '').toLowerCase().trim() === key &&
-          daysSince(entry.date) >= 1 &&
-          daysSince(entry.date) <= 3
-        );
-
-        const urgentInventory = (item.expiringIngredients || []).some(
-          ingredient =>
-            ingredient.daysLeft > 0 &&
-            ingredient.daysLeft <= 3
-        );
-
-        if (recentlyRecommended && !urgentInventory) return false;
-
-        const hasInventory = (item.expiringIngredients || []).some(
-          ingredient =>
-            ingredient.daysLeft > 0 &&
-            ingredient.daysLeft <= 5
-        );
-
-        const hasMargin =
-          Number.isFinite(item.margin) &&
-          Number.isFinite(item.marginDollars);
-
-        return hasInventory || hasMargin;
-      })
-      .map(item => {
-        const urgentIngredients = (item.expiringIngredients || [])
-          .filter(ingredient =>
-            ingredient.daysLeft > 0 &&
-            ingredient.daysLeft <= 3
-          );
-
-        const expiringIngredientsForDish = (item.expiringIngredients || [])
-          .filter(ingredient =>
-            ingredient.daysLeft > 0 &&
-            ingredient.daysLeft <= 5
-          );
-
-        const hasMargin =
-          Number.isFinite(item.margin) &&
-          Number.isFinite(item.marginDollars);
-
-        const type = expiringIngredientsForDish.length > 0
-          ? 'inventory'
-          : 'margin';
-
-        // Prioritize urgent inventory, then verified profitability.
-        const score =
-          urgentIngredients.length * 1000 +
-          expiringIngredientsForDish.length * 100 +
-          (hasMargin ? Math.max(0, item.marginDollars) : 0);
-
-        return { item, type, score };
-      })
-      .sort((a, b) =>
-        b.score - a.score ||
-        a.item.name.localeCompare(b.item.name)
-      );
-
-    for (const candidate of fallbackCandidates) {
-      if (validRecommendations.length >= 3) break;
-
-      const { item, type } = candidate;
-      const key = item.name.toLowerCase().trim();
-
-      // Identify expiring ingredients not already represented
-      // by accepted inventory recommendations.
-      const coveredIngredientIds = new Set(
-        validRecommendations
-          .filter(rec => rec.type === 'inventory')
-          .flatMap(rec => {
-            const selectedItem = menuByName.get(
-              rec.title.toLowerCase().trim()
-            );
-
-            return (selectedItem?.expiringIngredients || [])
-              .filter(ingredient =>
-                ingredient.daysLeft > 0 &&
-                ingredient.daysLeft <= 5 &&
-                ingredient.ingredientId != null
-              )
-              .map(ingredient => String(ingredient.ingredientId));
-          })
-      );
-
-      const distinctIngredientIds = (item.expiringIngredients || [])
-        .filter(ingredient =>
-          ingredient.daysLeft > 0 &&
-          ingredient.daysLeft <= 5 &&
-          ingredient.ingredientId != null &&
-          !coveredIngredientIds.has(String(ingredient.ingredientId))
-        )
-        .map(ingredient => String(ingredient.ingredientId));
-
-      // Skip inventory fallbacks that only repeat an existing
-      // inventory opportunity.
-      if (type === 'inventory' && distinctIngredientIds.length === 0) {
-        console.info(
-          `[ai-recommendations] Skipped duplicate inventory opportunity: ${item.name}`
-        );
-        recordDiagnostic(
-          'fallback',
-          'skipped',
-          'Inventory opportunity already covered',
-          item.name
-        );
-        continue;
-      }
-
-      const fallback = cleanRecommendation({
-        title: item.name,
-        type,
-        verifiedFallbackIngredientIds:
-          type === 'inventory' ? distinctIngredientIds : [],
-        description: item.description || item.name,
-        talking_point: item.description
-          ? `If you're considering the ${item.name}, it's worth a look tonight.`
-          : `I'd recommend the ${item.name} tonight.`,
-        priority: validRecommendations.length + 1,
-      });
-
-      if (!isValidRecommendation(fallback, validRecommendations)) {
-        console.info(
-          `[ai-recommendations] Skipped ineligible fallback: ${item.name}`
-        );
-        continue;
-      }
-
-      validRecommendations.push(fallback);
-      selectedNames.add(key);
-
-      recordDiagnostic(
-        'fallback',
-        'accepted',
-        'Verified server-generated fallback',
-        item.name
-      );
-
-      console.info(
-        `[ai-recommendations] Added verified fallback: ${item.name}`
-      );
-    }
-  }
-
-  // Lab only: when server validation replaces a Claude selection,
+  // When server validation replaces a Claude selection,
   // rewrite the final talking points together for consistency and variety.
-  if (weightedLabMode && labUsedFallback && validRecommendations.length > 0) {
+  if (usedFallback && validRecommendations.length > 0) {
     try {
       const finalDishes = validRecommendations.map(rec => {
         const menuItem = menuByName.get(
@@ -1860,7 +1649,7 @@ Return ONLY valid JSON in this format:
       });
 
       console.info(
-        '[Recommendation Lab] Rewrote final talking points:',
+        '[ai-recommendations] Rewrote final talking points:',
         validRecommendations.map(rec => ({
           title: rec.title,
           talking_point: rec.talking_point,
@@ -1881,7 +1670,7 @@ Return ONLY valid JSON in this format:
 
   // Recommendation Lab selection audit.
   // Distinguishes Claude omissions from server rejections and fallbacks.
-  if (weightedLabMode && diagnostics) {
+  if (diagnostics) {
     const normalizeAuditName = value =>
       String(value || '').toLowerCase().trim();
 
@@ -1976,13 +1765,27 @@ Return ONLY valid JSON in this format:
     };
   }
 
-  // A talking point that names another selected dish, and not its own, was
-  // written for the wrong ticket. Drop it so the ticket uses its description.
+  // A talking point that names another selected dish, but not its own,
+  // should fall back to the current dish's verified description.
   for (const rec of validRecommendations) {
     const own = rec.title.toLowerCase();
-    const others = validRecommendations.filter((r) => r !== rec).map((r) => r.title.toLowerCase());
-    const tp = String(rec.talking_point || '').toLowerCase();
-    if (tp && !tp.includes(own) && others.some((o) => o && tp.includes(o))) rec.talking_point = null;
+    const others = validRecommendations
+      .filter(other => other !== rec)
+      .map(other => other.title.toLowerCase());
+
+    const talkingPoint = String(rec.talking_point || '').toLowerCase();
+
+    if (
+      talkingPoint &&
+      !talkingPoint.includes(own) &&
+      others.some(title => title && talkingPoint.includes(title))
+    ) {
+      const menuItem = menuByName.get(own);
+
+      rec.talking_point = menuItem?.description
+        ? shortenText(menuItem.description, 20, 200)
+        : `I'd suggest the ${rec.title} tonight.`;
+    }
   }
 
   // Save only during normal generation, never during a dry run.
