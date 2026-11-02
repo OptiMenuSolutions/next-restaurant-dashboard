@@ -1058,7 +1058,7 @@ export default function PassDashboard({
                 const col = TONE[w.tone] || TONE.ok;
                 return (
                   <div
-                    key={w.name}
+                    key={w.id}
                     style={{
                       flex: "0 0 auto",
                       minHeight: "46px",
@@ -1701,7 +1701,7 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buc
           {visibleWaste.map((w) => {
             const col = TONE[w.tone] || TONE.ok;
             return (
-              <div key={w.name} style={{ padding: "11px 0 10px", borderTop: "1px solid var(--line-soft)" }}>
+              <div key={w.id} style={{ padding: "11px 0 10px", borderTop: "1px solid var(--line-soft)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "9px" }}>
                   <span style={{ width: "7px", height: "7px", borderRadius: "50%", flexShrink: 0, background: col }} />
                   <span style={{ flex: 1, minWidth: 0, fontSize: "14px", fontWeight: 600, textTransform: "capitalize", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>

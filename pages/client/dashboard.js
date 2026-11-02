@@ -223,6 +223,11 @@ function toWaste(wasteRisk) {
       const dl = Number(w.daysLeft);
       const qty = qtyLabelOf(w);
       return {
+        id: w.countLineId
+          ? `count:${w.countLineId}`
+          : w.invoiceItemId
+            ? `invoice:${w.invoiceItemId}`
+            : JSON.stringify([w.name, w.invoiceId, w.deliveryDate]),
         name: w.name,
         qty: qty ? qty + " remaining" : "",
         left: dl <= 0 ? "Use today" : dl === 1 ? "1 day left" : dl + " days left",
