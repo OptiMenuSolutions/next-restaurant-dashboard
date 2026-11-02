@@ -51,7 +51,7 @@ function healthChecks(f) {
   const good = [];
   if (f.conn?.status === 'connected' && f.conn.last_synced_at && !f.health.reasons.some((r) => r.startsWith('POS'))) good.push(`POS synced ${ago(f.conn.last_synced_at)}`);
   if (f.hasDishToday) good.push('Tonight’s Dish ran today');
-  if (f.views[6] > 0) good.push(`Staff page opened ${f.views[6]} time${f.views[6] === 1 ? '' : 's'} yesterday`);
+  if (f.views[6] > 0) good.push(`Staff page opened ${f.views[6]} time${f.views[6] === 1 ? '' : 's'} today`);
   if (f.lastInvoice && Date.now() - new Date(f.lastInvoice).getTime() < 3 * 86400000) good.push(`Invoice uploaded ${ago(f.lastInvoice)}`);
   if (!f.unreviewedCount && f.invoiceCount) good.push('Every invoice reviewed');
   return [...bad, ...good.map((t) => ({ t, ok: true }))];
@@ -111,11 +111,32 @@ async function activity(id) {
   for (const s of scans.data || []) out.push({ ts: s.created_at, kind: 'SCAN', text: `Scanner sent ${s.pages || 1} page${s.pages === 1 ? '' : 's'} · ${s.status}${s.error ? ' · ' + s.error : ''}` });
   for (const r of recs.data || []) out.push({ ts: r.generated_date + 'T11:00:00Z', kind: 'DISH', text: `Tonight’s Dish: ${(r.recommendations || []).map((x) => x.title).slice(0, 3).join(', ')}` });
   const tapDays = new Map();
+
   for (const t of taps) {
     const d = etDate(new Date(t.tapped_at));
-    tapDays.set(d, (tapDays.get(d) || 0) + 1);
+    const existing = tapDays.get(d);
+
+    if (existing) {
+      existing.count += 1;
+
+      if (new Date(t.tapped_at) < new Date(existing.firstTapAt)) {
+        existing.firstTapAt = t.tapped_at;
+      }
+    } else {
+      tapDays.set(d, {
+        count: 1,
+        firstTapAt: t.tapped_at,
+      });
+    }
   }
-  for (const [d, n] of tapDays) out.push({ ts: d + 'T23:59:00-05:00', kind: 'STAFF', text: `Staff page opened ${n} time${n === 1 ? '' : 's'}` });
+
+  for (const { count, firstTapAt } of tapDays.values()) {
+    out.push({
+      ts: firstTapAt,
+      kind: 'STAFF',
+      text: `Staff page opened ${count} time${count === 1 ? '' : 's'}`,
+    });
+  }
   for (const a of audit.data || []) out.push({ ts: a.created_at, kind: 'ADMIN', text: `${a.admin_name}: ${a.action}${a.reason ? ' · ' + a.reason : ''}` });
   for (const n of notes.data || []) out.push({ ts: n.created_at, kind: 'NOTE', text: `${n.admin_name}: ${n.body}` });
   for (const u of usage.data || []) out.push({ ts: u.created_at, kind: 'MENU', text: 'Menu read by AI' });
