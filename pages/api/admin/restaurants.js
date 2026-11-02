@@ -54,11 +54,15 @@ export default withAdminAuth(async function handler(req, res) {
     const invoiceCountMap = {};
     const invoiceTotalMap = {};
     const failedInvoiceMap = {};
+    const lastInvoiceMap = {};
     for (const inv of invoices || []) {
       invoiceCountMap[inv.restaurant_id] = (invoiceCountMap[inv.restaurant_id] || 0) + 1;
       invoiceTotalMap[inv.restaurant_id] = (invoiceTotalMap[inv.restaurant_id] || 0) + parseFloat(inv.amount || 0);
       if (inv.parse_status === 'failed') {
         failedInvoiceMap[inv.restaurant_id] = (failedInvoiceMap[inv.restaurant_id] || 0) + 1;
+      }
+      if (inv.created_at && (!lastInvoiceMap[inv.restaurant_id] || inv.created_at > lastInvoiceMap[inv.restaurant_id])) {
+        lastInvoiceMap[inv.restaurant_id] = inv.created_at;
       }
     }
 
@@ -105,6 +109,7 @@ export default withAdminAuth(async function handler(req, res) {
         menu_item_count: menuCount,
         ingredient_count: ingredientCount,
         failed_invoices: failedInvoices,
+        last_invoice_at: lastInvoiceMap[r.id] || null,
         health,
       };
     });
