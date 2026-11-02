@@ -8,7 +8,8 @@ import StaffBriefing from '../../components/staff/StaffBriefing';
 
 const CODE_RE = /^[a-z0-9]{12}$/;
 
-export default function TagPage({ restaurantName, cachedRecommendations, code, askSpot, testTap }) {
+export default function TagPage({ restaurantName, cachedRecommendations, code, askSpot, tagLabel, takenSpots, testTap }) {
+  // Returns ok, taken (someone else saved a spot first) or error.
   async function saveSpot(spot) {
     try {
       const res = await fetch('/api/t/spot', {
@@ -16,9 +17,11 @@ export default function TagPage({ restaurantName, cachedRecommendations, code, a
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, spot }),
       });
-      return res.ok;
+      if (res.ok) return 'ok';
+      if (res.status === 409) return 'taken';
+      return 'error';
     } catch {
-      return false;
+      return 'error';
     }
   }
 
@@ -41,6 +44,8 @@ export default function TagPage({ restaurantName, cachedRecommendations, code, a
       requestBody={{ tagCode: code }}
       askSpot={askSpot}
       onSaveSpot={saveSpot}
+      tagLabel={tagLabel}
+      takenSpots={takenSpots}
     />
   );
 }
@@ -55,7 +60,7 @@ const forStaff = (r) => ({
 
 export async function getServerSideProps({ params, res }) {
   res.setHeader('Cache-Control', 'no-store');
-  const dead = { props: { restaurantName: null, cachedRecommendations: [], code: null, askSpot: false, testTap: null } };
+  const dead = { props: { restaurantName: null, cachedRecommendations: [], code: null, askSpot: false, tagLabel: null, takenSpots: [], testTap: null } };
 
   const code = String(params.code || '').toLowerCase();
   if (!CODE_RE.test(code)) return dead;
@@ -125,12 +130,28 @@ export async function getServerSideProps({ params, res }) {
     .eq('generated_date', today)
     .limit(1);
 
+  // On a first tap, the spots other tags here already have, so the prompt
+  // can mark them. Only spot names leave the server.
+  let takenSpots = [];
+  if (!tag.spot) {
+    const { data: otherTags } = await supabase
+      .from('nfc_tags')
+      .select('spot')
+      .eq('restaurant_id', tag.restaurant_id)
+      .eq('status', 'active')
+      .neq('id', tag.id)
+      .not('spot', 'is', null);
+    takenSpots = [...new Set((otherTags || []).map((t) => t.spot))];
+  }
+
   return {
     props: {
       restaurantName: tag.restaurants.name,
       cachedRecommendations: (cachedRows?.[0]?.recommendations || []).slice(0, 3).map(forStaff),
       code,
       askSpot: !tag.spot,
+      tagLabel: !tag.spot ? tag.label || null : null,
+      takenSpots,
     },
   };
 }
