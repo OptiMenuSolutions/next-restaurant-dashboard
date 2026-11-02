@@ -1904,18 +1904,54 @@ export default function PosUsage() {
       );
     }
 
-    const less = Number(qty) < 0;
+    const change = Number(qty);
+    const less = change < 0;
+    const base = recipeAmount(row, op.ingredient_id);
+    const hasIngredient = (row.counted_base || row.base || [])
+      .some((part) => part.id === op.ingredient_id);
+
+    const comparable = !hasIngredient || base?.unit === op.unit;
+    const baseQty = hasIngredient ? base?.qty : 0;
+    const validAmount = String(qty).trim() !== '' &&
+      Number.isFinite(change);
+    const canShowTotal = comparable &&
+      Number.isFinite(baseQty) &&
+      validAmount;
 
     return (
-      <div key={key} className="pu-swap-row">
-        <span className="pu-rq">
-          <small className={less ? 'pu-off' : 'pu-on'}>{less ? 'TAKES SOME OFF' : 'PUTS ON'}</small>
-          <strong>{ingredientName(op.ingredient_id)}</strong>
-        </span>
-        <span className="pu-amt-edit">
-          {amountBox(`${ingredientName(op.ingredient_id)} amount`)}
-          <span className="pu-unit">{op.unit}</span>
-        </span>
+      <div key={key} className="pu-swap">
+        <div className="pu-swap-row">
+          <span className="pu-rq">
+            <small className={less ? 'pu-off' : 'pu-on'}>
+              {less ? 'AMOUNT TO SUBTRACT' : 'ADDITIONAL AMOUNT'}
+            </small>
+            <strong>{ingredientName(op.ingredient_id)}</strong>
+          </span>
+          <span className="pu-amt-edit">
+            {amountBox(
+              `${ingredientName(op.ingredient_id)} additional amount; negative subtracts`
+            )}
+            <span className="pu-unit">{op.unit}</span>
+          </span>
+        </div>
+
+        {canShowTotal ? (
+          <span className="pu-same">
+            Recipe {formatQty(baseQty)} {op.unit}
+            {' '}{less ? '−' : '+'}{' '}
+            {formatQty(Math.abs(change))} {op.unit}
+            {' = '}
+            {formatQty(Math.max(0, baseQty + change))} {op.unit}
+            {' with this change'}
+          </span>
+        ) : (
+          <span className="pu-diff">
+            {base
+              ? `Recipe contains ${formatQty(base.qty)} ${base.unit}. `
+              : ''}
+            Enter the amount to add or subtract, not the final total.
+          </span>
+        )}
       </div>
     );
   }
