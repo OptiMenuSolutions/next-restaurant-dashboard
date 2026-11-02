@@ -84,18 +84,34 @@ export async function getServerSideProps({ params, res }) {
     return { props: { ...dead.props, testTap: { label: tag.label, restaurantName: tag.restaurants.name } } };
   }
 
-  // Log the tap. A failed log never blocks the page.
+  // Record the NFC tap before serving recommendations.
+  // Never silently ignore a failed authoritative tap record.
   const now = new Date().toISOString();
-  try {
-    await Promise.all([
-      supabase.from('nfc_tag_taps').insert({ tag_id: tag.id, restaurant_id: tag.restaurant_id }),
-      supabase
-        .from('nfc_tags')
-        .update({ tap_count: (tag.tap_count || 0) + 1, last_tap_at: now, first_tap_at: tag.first_tap_at || now })
-        .eq('id', tag.id),
-    ]);
-  } catch (e) {
-    console.error('[t] tap log failed:', e.message);
+
+  const { error: tapError } = await supabase.rpc(
+    'record_nfc_tag_tap',
+    {
+      p_tag_id: tag.id,
+      p_restaurant_id: tag.restaurant_id,
+    }
+  );
+
+  if (tapError) {
+    console.error('[t] NFC tap recording failed:', tapError);
+    throw new Error('Could not record NFC tap safely');
+  }
+
+  const { error: countError } = await supabase
+    .from('nfc_tags')
+    .update({
+      tap_count: (tag.tap_count || 0) + 1,
+      last_tap_at: now,
+      first_tap_at: tag.first_tap_at || now,
+    })
+    .eq('id', tag.id);
+
+  if (countError) {
+    console.error('[t] NFC tap counter update failed:', countError);
   }
 
   // Same date logic as /api/ai-recommendations.

@@ -104,7 +104,7 @@ async function handler(req, res) {
   if (results.failed.length) {
     await sendCronAlert(
       "Tonight's Dish cron",
-      `${results.failed.length} of ${restaurants.length} restaurants got no tickets for ${currentDate} after 3 attempts each.`,
+      `${results.failed.length} of ${restaurants.length} restaurants could not complete Tonight's Dish generation for ${currentDate} after up to 3 attempts each. Restaurants with successfully saved fallback tickets are not included.`,
       results.failed.map(f => `${f.name}: ${f.error}`)
     );
   }

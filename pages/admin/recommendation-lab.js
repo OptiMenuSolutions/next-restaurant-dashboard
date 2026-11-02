@@ -138,7 +138,7 @@ function evidenceChips(item) {
     chips.push(`EXPIRES IN ${soonest} DAY${soonest === 1 ? '' : 'S'}`);
   }
   if (Number.isFinite(item.margin)) {
-    chips.push(`${Math.round(item.margin <= 1 ? item.margin * 100 : item.margin)}% MARGIN`);
+    chips.push(`${Math.round(item.margin)}% MARGIN`);
   }
   if (Number.isFinite(item.qty7d)) {
     chips.push(`${item.qty7d} SOLD / 7D`);

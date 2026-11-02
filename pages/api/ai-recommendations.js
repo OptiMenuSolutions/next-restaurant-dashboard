@@ -29,6 +29,7 @@ import {
   validateRecommendationConfig,
 } from '../../lib/ai/recommendationScoring';
 import { buildMenuOnlyPrompt } from '../../lib/ai/prompts/menuOnlyTonightsDish';
+import { sendCronAlert } from '../../lib/cronAlert';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -307,6 +308,54 @@ export async function generateForRestaurant(
     diagnostics.selectionAuditSummary = null;
   }
 
+
+  // Avoid unnecessary Claude calls when today's saved tickets
+  // are already locked. The save RPC enforces the final check.
+  // Recommendation Lab dry runs are exempt.
+  if (!dryRun) {
+    const { data, error } = await supabase.rpc(
+      'check_daily_recommendation_lock',
+      {
+        p_restaurant_id: restaurantId,
+        p_generated_date: currentDate,
+      }
+    );
+
+    if (error) {
+      throw new Error(`Could not check recommendation lock: ${error.message}`);
+    }
+
+    const result = data?.[0];
+
+    if (!result) {
+      throw new Error('Recommendation lock check returned no result');
+    }
+
+    if (result.locked) {
+      const tapCount = Number(result.tap_count || 0);
+      const firstTapAt = result.first_tap_at;
+
+      const firstTap = firstTapAt
+        ? new Date(firstTapAt).toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            dateStyle: 'short',
+            timeStyle: 'short',
+          })
+        : 'unknown';
+
+      const lockError = new Error(
+        `Recommendations are locked for today. ` +
+        `${tapCount} NFC tap(s) recorded. First tap: ${firstTap} ET.`
+      );
+
+      lockError.code = 'RECOMMENDATIONS_LOCKED';
+      lockError.tapCount = tapCount;
+      lockError.firstTapAt = firstTapAt;
+
+      throw lockError;
+    }
+  }
+
   let enriched = [];
   let expiringIngredients = [];
   let history = [];
@@ -370,6 +419,13 @@ export async function generateForRestaurant(
         mode: item.recommendationScoring.mode,
         expiringIngredientIds:
           item.recommendationScoring.expiringIngredientIds,
+        margin: item.margin,
+        marginDollars: item.marginDollars,
+        qty7d: item.qty7d,
+        expiringIngredients: (item.expiringIngredients || []).map(ingredient => ({
+          name: ingredient.name,
+          daysLeft: ingredient.daysLeft,
+        })),
       })),
     };
   }
@@ -430,25 +486,53 @@ export async function generateForRestaurant(
     totalOutputTokens += usage?.output_tokens || 0;
   };
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 6000, // 1000 truncated larger menus mid-JSON (Echo Tap failed the cron on several days)
-    messages: [{ role: 'user', content: prompt }],
-  });
 
-  trackGenerationUsage(message.usage);
+  let message = null;
+  let claudeFailure = null;
 
-  await logAiUsage({
-    feature: 'dish_recs',
-    model: 'claude-sonnet-4-6',
-    usage: message.usage,
-    restaurantId,
-  });
+  try {
+    message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: prompt }],
+    });
 
-  if (message.stop_reason === 'max_tokens') {
-    console.warn(`[ai-recommendations] Response hit max_tokens for ${restaurantId}, output truncated`);
+    trackGenerationUsage(message.usage);
+  } catch (error) {
+    claudeFailure = error;
+    console.error(
+      `[ai-recommendations] Claude unavailable for ${restaurantId}:`,
+      error
+    );
   }
-  const raw = message.content[0]?.text || '{}';
+
+  if (message) {
+    try {
+      await logAiUsage({
+        feature: 'dish_recs',
+        model: 'claude-sonnet-4-6',
+        usage: message.usage,
+        restaurantId,
+      });
+    } catch (usageError) {
+      console.error(
+        '[ai-recommendations] Could not log Claude usage:',
+        usageError
+      );
+    }
+
+    if (message.stop_reason === 'max_tokens') {
+      console.warn(
+        `[ai-recommendations] Response hit max_tokens for ${restaurantId}, output truncated`
+      );
+    }
+  }
+
+  const raw = message?.content
+    ?.filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('') || '{}';
+
 
   if (diagnostics) {
     try {
@@ -1788,24 +1872,65 @@ Return ONLY valid JSON in this format:
     }
   }
 
-  // Save only during normal generation, never during a dry run.
-  if (!dryRun) {
-    try {
-      const { error } = await supabase
-        .from('ai_recommendations')
-        .upsert({
-          restaurant_id: restaurantId,
-          generated_date: currentDate,
-          recommendations: validRecommendations,
-          type: 'general',
-        });
+  
+  // Never save an incomplete nightly briefing.
+  if (validRecommendations.length !== 3) {
+    throw new Error(
+      `Only ${validRecommendations.length} of 3 valid recommendations ` +
+      `could be generated for ${restaurantId}`
+    );
+  }
 
-      if (error) throw error;
-    } catch (cacheWriteErr) {
+  // Save only during normal generation, never during a dry run.
+  // Once an NFC tag has been tapped, today's recommendations are locked.
+  if (!dryRun) {
+    const { data, error } = await supabase.rpc(
+      'save_daily_recommendations',
+      {
+        p_restaurant_id: restaurantId,
+        p_generated_date: currentDate,
+        p_recommendations: validRecommendations,
+      }
+    );
+
+    if (error) {
       console.error(
         `[ai-recommendations] Cache write error for ${restaurantId}:`,
-        cacheWriteErr.message
+        error.message
       );
+      throw new Error(`Could not save recommendations: ${error.message}`);
+    }
+
+    const result = data?.[0];
+
+    if (!result) {
+      throw new Error('Recommendation save returned no result');
+    }
+
+    if (result.locked) {
+      const tapCount = Number(result.tap_count || 0);
+      const firstTap = result.first_tap_at
+        ? new Date(result.first_tap_at).toLocaleString('en-US', {
+            timeZone: 'America/New_York',
+            dateStyle: 'short',
+            timeStyle: 'short',
+          })
+        : 'unknown';
+
+      const lockError = new Error(
+        `Recommendations are locked for today. ` +
+        `${tapCount} NFC tap(s) recorded. First tap: ${firstTap} ET.`
+      );
+
+      lockError.code = 'RECOMMENDATIONS_LOCKED';
+      lockError.tapCount = tapCount;
+      lockError.firstTapAt = result.first_tap_at;
+
+      throw lockError;
+    }
+
+    if (!result.saved) {
+      throw new Error('Recommendation save was not confirmed');
     }
   }
 
@@ -1855,9 +1980,33 @@ Return ONLY valid JSON in this format:
     };
   }
 
+
   console.info('[ai-recommendations] Generation summary:', generationSummary);
 
+  if (claudeFailure && !dryRun) {
+    try {
+      await sendCronAlert(
+        "Tonight's Dish — Claude fallback",
+        `Claude failed for restaurant ${restaurantId} on ${currentDate}. ` +
+        'Three validated fallback recommendations were saved. ' +
+        'No automatic regeneration will occur.',
+        [
+          `Restaurant ID: ${restaurantId}`,
+          `Service date: ${currentDate}`,
+          `Claude error: ${claudeFailure.message || 'Unknown error'}`,
+          `Fallback dishes: ${validRecommendations.map(rec => rec.title).join(', ')}`,
+        ]
+      );
+    } catch (alertError) {
+      console.error(
+        '[ai-recommendations] Could not send Claude fallback alert:',
+        alertError
+      );
+    }
+  }
+
   return validRecommendations;
+
 }
 
 // What a staff page is allowed to see from a ticket.
@@ -1948,8 +2097,27 @@ export default async function handler(req, res) {
     const recommendations = await generateForRestaurant(restaurantId, currentDate, dayOfWeek);
     return res.status(200).json({ recommendations: staffView ? recommendations.map(forStaff) : recommendations, cached: false, date: currentDate });
 
+
   } catch (err) {
     console.error('[ai-recommendations] Error:', err);
-    return res.status(200).json({ recommendations: [], cached: false, error: err.message });
+
+    if (err.code === 'RECOMMENDATIONS_LOCKED') {
+      return res.status(409).json({
+        recommendations: [],
+        cached: false,
+        error: err.message,
+        code: 'RECOMMENDATIONS_LOCKED',
+        locked: true,
+        tapCount: err.tapCount,
+        firstTapAt: err.firstTapAt,
+      });
+    }
+
+    return res.status(503).json({
+      recommendations: [],
+      cached: false,
+      error: err.message || 'Recommendation generation unavailable',
+    });
   }
 }
+

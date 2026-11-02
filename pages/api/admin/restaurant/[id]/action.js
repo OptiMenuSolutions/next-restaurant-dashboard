@@ -12,6 +12,7 @@
 import { adminDb as db, requireAdmin } from '../../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../../lib/admin/withAdminAuth';
 import { generateForRestaurant } from '../../../ai-recommendations';
+import { sendCronAlert } from '../../../../../lib/cronAlert';
 import stripe from '../../../../../lib/stripeServer';
 import shift4 from '../../../../../lib/pos/providers/shift4';
 
@@ -58,8 +59,54 @@ export default async function handler(req, res) {
       await log('Ran Tonight’s Dish by hand', { picks: recs.map((x) => x.title) });
       return res.status(200).json({ ok: true, picks: recs.map((x) => x.title) });
     } catch (e) {
+      if (e.code === 'RECOMMENDATIONS_LOCKED') {
+        console.warn(
+          `[admin/run-dish] Regeneration blocked for ${r.name}:`,
+          e.message
+        );
+
+
+        try {
+          await log('Tonight’s Dish regeneration blocked', {
+            reason: 'NFC taps already recorded',
+            tap_count: e.tapCount,
+            first_tap_at: e.firstTapAt,
+          });
+        } catch (auditError) {
+          console.error('[admin/run-dish] Audit log failed:', auditError);
+        }
+
+        try {
+          await sendCronAlert(
+            "Tonight's Dish — regeneration blocked",
+            `An administrator attempted to regenerate today's recommendations ` +
+            `for ${r.name}, but the existing tickets are locked.`,
+            [
+              `Restaurant: ${r.name}`,
+              `Restaurant ID: ${r.id}`,
+              `NFC taps: ${e.tapCount}`,
+              `First tap: ${e.firstTapAt || 'Unknown'}`,
+              `Requested by: ${admin.name}`,
+            ]
+          );
+        } catch (alertError) {
+          console.error('[admin/run-dish] Alert failed:', alertError);
+        }
+
+        return res.status(409).json({
+
+          error: e.message,
+          code: 'RECOMMENDATIONS_LOCKED',
+          locked: true,
+          tapCount: e.tapCount,
+          firstTapAt: e.firstTapAt,
+        });
+      }
+
       console.error('[admin/run-dish]', e);
-      return res.status(500).json({ error: e.message || 'Tonight’s Dish failed' });
+      return res.status(500).json({
+        error: e.message || 'Tonight’s Dish failed',
+      });
     }
   }
 
