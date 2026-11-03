@@ -108,12 +108,10 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
     if (error) throw error;
   }
 
-  // ── Detect newly-aged-out deliveries and queue confirmations ────────────
-  // Compare yesterday's stored snapshot against today's just-computed rows.
-  // Anything present yesterday but absent today, where yesterday's own
-  // snapshot already showed it at/past its use-by point (days_left <= 0) —
-  // not merely fallen outside the LOOKBACK_DAYS query window while still
-  // fresh — just aged out unsold as far as we can tell.
+  // ── Queue confirmations when deliveries reach estimated shelf life ──────
+  // Estimated expiration is a risk signal, not proof of disposal.
+  // Keep the delivery in inventory while asking the restaurant what happened.
+
   const prevDate = new Date(asOfDate);
   prevDate.setDate(prevDate.getDate() - 1);
   const prevDateStr = prevDate.toISOString().split('T')[0];
@@ -121,49 +119,82 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   const prevRows = await readAllInventoryRows(
     () => supabase
       .from('waste_risk_snapshots')
-      .select('invoice_item_id,ingredient_name,remaining_qty,unit_cost,days_left,delivery_date,inventory_count_line_id,invoice_items(ingredient_id)')
+      .select(
+        'invoice_item_id,days_left,inventory_count_line_id'
+      )
       .eq('restaurant_id', restaurantId)
       .eq('snapshot_date', prevDateStr)
       .order('id', { ascending: true }),
     'previous waste snapshots'
   );
 
-  if (prevRows?.length) {
-    const todaySet = new Set(rows.map((r) => r.invoice_item_id));
+  const previousById = new Map(
+    prevRows.map((row) => [row.invoice_item_id, row])
+  );
 
-    const newlyWasted = prevRows.filter((p) => {
-      const countId =
-        latestCounts.get(p.invoice_items?.ingredient_id) || null;
+  const newlyAtRisk = rows.filter((row) => {
+    const previous = previousById.get(row.invoice_item_id);
 
-      if (countId !== (p.inventory_count_line_id || null)) {
-        return false;
-      }
+    // Require consecutive observations so missing snapshot history
+    // cannot accidentally create a large backlog of confirmations.
+    if (!previous) return false;
 
-      if (todaySet.has(p.invoice_item_id)) return false; // still on the list
-      if (p.days_left > 0) return false;                 // wasn't expired yet as of last sighting
-      const value = Number(p.remaining_qty) * Number(p.unit_cost);
-      return value >= CONFIRMATION_THRESHOLD;
-    });
-
-    if (newlyWasted.length > 0) {
-      const confirmationRows = newlyWasted.map((p) => ({
-        restaurant_id:   restaurantId,
-        invoice_item_id: p.invoice_item_id,
-        ingredient_name: p.ingredient_name,
-        last_seen_date:  prevDateStr,
-        presumed_qty:    p.remaining_qty,
-        presumed_value:  Number(p.remaining_qty) * Number(p.unit_cost),
-        status:          'pending',
-        delivery_date:   p.delivery_date || null,
-        last_asked_date: new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }),
-      }));
-      // onConflict + ignoreDuplicates: if a confirmation for this delivery
-      // already exists (e.g. cron reran), don't reset/recreate it.
-      const { error: confirmError } = await supabase
-        .from('waste_confirmations')
-        .upsert(confirmationRows, { onConflict: 'restaurant_id,invoice_item_id', ignoreDuplicates: true });
-      if (confirmError) throw confirmError;
+    // A physical count can change inventory independently of sales.
+    if (
+      (previous.inventory_count_line_id || null) !==
+      (row.inventory_count_line_id || null)
+    ) {
+      return false;
     }
+
+    // Only trigger when crossing the estimated expiration boundary.
+    if (
+      previous.days_left == null ||
+      row.days_left == null ||
+      Number(previous.days_left) <= 0 ||
+      Number(row.days_left) > 0
+    ) {
+      return false;
+    }
+
+    const quantity = Number(row.remaining_qty);
+    const unitCost = Number(row.unit_cost);
+    const value = quantity * unitCost;
+
+    return (
+      Number.isFinite(quantity) &&
+      Number.isFinite(unitCost) &&
+      quantity > 0 &&
+      unitCost >= 0 &&
+      value >= CONFIRMATION_THRESHOLD
+    );
+  });
+
+  if (newlyAtRisk.length > 0) {
+    const confirmationRows = newlyAtRisk.map((row) => ({
+      restaurant_id: restaurantId,
+      invoice_item_id: row.invoice_item_id,
+      ingredient_name: row.ingredient_name,
+      last_seen_date: snapshotDate,
+      presumed_qty: row.remaining_qty,
+      presumed_value:
+        Number(row.remaining_qty) * Number(row.unit_cost),
+      status: 'pending',
+      delivery_date: row.delivery_date || null,
+      last_asked_date: new Date().toLocaleDateString('en-CA', {
+        timeZone: 'America/New_York',
+      }),
+    }));
+
+    // Never overwrite an existing answer or recreate a resolved prompt.
+    const { error: confirmError } = await supabase
+      .from('waste_confirmations')
+      .upsert(confirmationRows, {
+        onConflict: 'restaurant_id,invoice_item_id',
+        ignoreDuplicates: true,
+      });
+
+    if (confirmError) throw confirmError;
   }
 
   return rows.length;
