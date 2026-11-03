@@ -7,7 +7,15 @@ import {
   retrieveProductSource,
 } from '../lib/productSourceRetrieval.js';
 
-test('blocks localhost URLs', () => {
+test('accepts HTTPS manufacturer URL', () => {
+  const result = validateProductSourceUrl(
+    'https://www.knousefoodservice.com/products/strawberry-glaze-120-oz/'
+  );
+
+  assert.equal(result.valid, true);
+});
+
+test('blocks localhost', () => {
   const result = validateProductSourceUrl(
     'https://localhost/admin'
   );
@@ -15,15 +23,23 @@ test('blocks localhost URLs', () => {
   assert.equal(result.valid, false);
 });
 
-test('blocks private network addresses', () => {
+test('blocks private IPv4 addresses', () => {
   const result = validateProductSourceUrl(
-    'https://192.168.1.10/secret'
+    'https://192.168.1.10/private'
   );
 
   assert.equal(result.valid, false);
 });
 
-test('blocks non-HTTPS URLs', () => {
+test('blocks IPv6 addresses', () => {
+  const result = validateProductSourceUrl(
+    'https://[::1]/private'
+  );
+
+  assert.equal(result.valid, false);
+});
+
+test('blocks HTTP URLs', () => {
   const result = validateProductSourceUrl(
     'http://example.com/product'
   );
@@ -39,15 +55,15 @@ test('blocks embedded credentials', () => {
   assert.equal(result.valid, false);
 });
 
-test('blocks unapproved external hosts', () => {
+test('blocks internal hostnames', () => {
   const result = validateProductSourceUrl(
-    'https://manufacturer.example/product'
+    'https://service.internal/data'
   );
 
   assert.equal(result.valid, false);
 });
 
-test('blocked source cannot be retrieved', async () => {
+test('blocked URLs never trigger a fetch', async () => {
   const result = await retrieveProductSource(
     'https://127.0.0.1/private'
   );
