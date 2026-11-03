@@ -24,6 +24,7 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
   const [submitting, setSubmitting] = useState(null); // id currently in flight
   const [failedId, setFailedId] = useState(null);
   const [snoozeStatus, setSnoozeStatus] = useState("");
+  const [noWasteSelection, setNoWasteSelection] = useState({});
 
   if (!items || items.length === 0) return null;
 
@@ -83,12 +84,12 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
             Quick check
           </div>
           <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text,#111819)" }}>
-            Did these actually get thrown away?
+            Quick inventory check
           </div>
           <div style={{ fontSize: 12.5, color: "var(--faint,#78868a)", marginTop: 4, lineHeight: 1.5 }}>
-            These items passed our estimated shelf life without a matching sale. If you're still
-            using something, tell us and we'll check again tomorrow. It teaches OptiMenu how long
-            your kitchen really keeps things.
+            These ingredients have reached their estimated shelf life, but we
+            don't know what happened to the remaining stock. A quick answer
+            helps keep your inventory estimates accurate.
           </div>
         </div>
 
