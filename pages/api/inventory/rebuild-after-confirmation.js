@@ -4,7 +4,7 @@ import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 export const config = { maxDuration: 300 };
 
 const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'private, no-store');
@@ -31,31 +31,6 @@ export default async function handler(req, res) {
       : req.body || {};
 
   const confirmationId = body.confirmation_id;
-
-  console.warn('[inventory-rebuild-debug]', {
-    contentType: req.headers['content-type'] || null,
-    bodyType: typeof req.body,
-    bodyKeys:
-      body && typeof body === 'object' && !Array.isArray(body)
-        ? Object.keys(body)
-        : [],
-    confirmationIdType: typeof confirmationId,
-    confirmationIdLength:
-      typeof confirmationId === 'string'
-        ? confirmationId.length
-        : null,
-    confirmationIdValid:
-      typeof confirmationId === 'string'
-        ? UUID.test(confirmationId)
-        : false,
-    confirmationIdSegments:
-      typeof confirmationId === 'string'
-        ? confirmationId.split('-').map((segment) => ({
-            length: segment.length,
-            hexadecimal: /^[0-9a-f]+$/i.test(segment),
-          }))
-        : [],
-  });
 
     if (
       !confirmationId ||
