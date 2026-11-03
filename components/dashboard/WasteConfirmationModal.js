@@ -1,27 +1,26 @@
 import { useState } from "react";
 
 /**
- * WasteConfirmationModal — batched daily pop-up asking the restaurant to
- * confirm what actually happened to ingredients the system presumed were
- * thrown away (aged out of the waste-risk list unsold, above the dollar
- * threshold set in the snapshot cron job's CONFIRMATION_THRESHOLD).
+ * WasteConfirmationModal
  *
- * Answers feed waste_confirmations.status, which lib/computeWasteResolution.js
- * uses to score OptiScore's waste-mitigation bucket — see chat for why an
- * unconfirmed system guess shouldn't be scored the same as a confirmed fact.
+ * Asks whether ingredients reaching estimated shelf life
+ * were actually discarded.
  *
- * Props:
- *   items      [{ id, ingredientName, presumedQty, presumedValue, lastSeenDate }]
- *   onRespond  (id, status) => Promise|void
- *              status: 'confirmed_wasted' | 'confirmed_used' | 'dismissed'
- *   onClose    () => void — called once every item has been responded to, or
- *              the restaurant closes early ("ask me later" — items stay
- *              'pending' server-side and will show again next visit, or
- *              auto-expire after the cron job's EXPIRY_WINDOW_DAYS)
+ * Yes -> confirmed_wasted
+ * No -> follow-up:
+ *   Used it all -> confirmed_used
+ *   Still using -> kept
+ * Not sure -> not_sure
+ *
+ * The intermediate No selection is not saved.
+ * Only final responses are submitted to Supabase.
+ *
+ * Estimated quantities are not measured waste.
  */
 export default function WasteConfirmationModal({ items, onRespond, onClose, onAskLater = onClose }) {
-  const [resolved, setResolved] = useState({}); // id -> status, optimistic local state
-  const [submitting, setSubmitting] = useState(null); // id currently in flight
+  const [resolved, setResolved] = useState({});
+  const [noFollowUp, setNoFollowUp] = useState({});
+  const [submitting, setSubmitting] = useState(null);
   const [failedId, setFailedId] = useState(null);
   const [snoozeStatus, setSnoozeStatus] = useState("");
   const [noWasteSelection, setNoWasteSelection] = useState({});
@@ -111,7 +110,7 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
                     {item.ingredientName}
                   </div>
                   <div style={{ fontSize: 12.5, color: "var(--faint,#78868a)", whiteSpace: "nowrap" }}>
-                    {qtyWithUnit(item.presumedQty, item.unit)} left · {money(item.presumedValue)}
+                    Est. {qtyWithUnit(item.presumedQty, item.unit)} · {money(item.presumedValue)}
                   </div>
                 </div>
 
@@ -122,48 +121,178 @@ export default function WasteConfirmationModal({ items, onRespond, onClose, onAs
                 )}
 
                 {done ? (
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--accent-deep,#03808f)" }}>
-                    {done === "confirmed_wasted" ? "Marked as thrown away"
-                      : done === "kept" ? "Got it. We'll check again tomorrow."
-                      : "Marked as used up"}
+                  <div
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "var(--accent-deep,#03808f)",
+                    }}
+                  >
+                    {done === "confirmed_wasted"
+                      ? "Recorded as discarded"
+                      : done === "confirmed_used"
+                        ? "Recorded as fully used"
+                        : done === "kept"
+                          ? "Still in use. We'll check again tomorrow."
+                          : "Recorded as not sure"}
+                  </div>
+                ) : noFollowUp[item.id] ? (
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        marginBottom: 10,
+                        color: "var(--text,#111819)",
+                      }}
+                    >
+                      What happened to the ingredient?
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        disabled={!!submitting}
+                        onClick={() =>
+                          handleRespond(item.id, "confirmed_used")
+                        }
+                        style={{
+                          flex: "1 1 140px",
+                          padding: "10px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--line,#d8dfe0)",
+                          background: "var(--shell,#fff)",
+                          color: "var(--text,#111819)",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: submitting ? "wait" : "pointer",
+                        }}
+                      >
+                        We used it all
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!!submitting}
+                        onClick={() =>
+                          handleRespond(item.id, "kept")
+                        }
+                        style={{
+                          flex: "1 1 140px",
+                          padding: "10px 12px",
+                          borderRadius: 8,
+                          border: "1px solid var(--green,#3f9c56)",
+                          background: "rgba(63,156,86,0.08)",
+                          color: "var(--green,#3f9c56)",
+                          fontSize: 12.5,
+                          fontWeight: 700,
+                          cursor: submitting ? "wait" : "pointer",
+                        }}
+                      >
+                        We're still using it
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!!submitting}
+                        onClick={() =>
+                          setNoFollowUp((prev) => ({
+                            ...prev,
+                            [item.id]: false,
+                          }))
+                        }
+                        style={{
+                          width: "100%",
+                          padding: "8px 0",
+                          border: "none",
+                          background: "none",
+                          color: "var(--faint,#78868a)",
+                          fontSize: 12,
+                          cursor: submitting ? "wait" : "pointer",
+                        }}
+                      >
+                        Back
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
                     <button
                       type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handleRespond(item.id, "confirmed_wasted")}
+                      disabled={!!submitting}
+                      onClick={() =>
+                        handleRespond(item.id, "confirmed_wasted")
+                      }
                       style={{
-                        flex: "1 1 auto", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--red,#c4473e)",
-                        background: "var(--red-tint,#faeae8)", color: "var(--red,#c4473e)", fontSize: 12.5, fontWeight: 700,
-                        cursor: isSubmitting ? "default" : "pointer", opacity: isSubmitting ? 0.6 : 1,
+                        flex: "1 1 90px",
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--red,#c4473e)",
+                        background: "var(--red-tint,#faeae8)",
+                        color: "var(--red,#c4473e)",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: submitting ? "wait" : "pointer",
                       }}
                     >
-                      Yes, thrown away
+                      Yes
                     </button>
+
                     <button
                       type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handleRespond(item.id, "kept")}
+                      disabled={!!submitting}
+                      onClick={() =>
+                        setNoFollowUp((prev) => ({
+                          ...prev,
+                          [item.id]: true,
+                        }))
+                      }
                       style={{
-                        flex: "1 1 auto", padding: "8px 12px", borderRadius: 8, border: "1px solid var(--green,#3f9c56)",
-                        background: "rgba(63,156,86,0.08)", color: "var(--green,#3f9c56)", fontSize: 12.5, fontWeight: 700,
-                        cursor: isSubmitting ? "default" : "pointer", opacity: isSubmitting ? 0.6 : 1,
+                        flex: "1 1 90px",
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--green,#3f9c56)",
+                        background: "rgba(63,156,86,0.08)",
+                        color: "var(--green,#3f9c56)",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: submitting ? "wait" : "pointer",
                       }}
                     >
-                      No, still using it
+                      No
                     </button>
+
                     <button
                       type="button"
-                      disabled={isSubmitting}
-                      onClick={() => handleRespond(item.id, "confirmed_used")}
+                      disabled={!!submitting}
+                      onClick={() =>
+                        handleRespond(item.id, "not_sure")
+                      }
                       style={{
-                        flexBasis: "100%", padding: "2px 0 0", border: "none", background: "none",
-                        color: "var(--faint,#78868a)", fontSize: 12, fontWeight: 600, textDecoration: "underline",
-                        cursor: isSubmitting ? "default" : "pointer",
+                        flex: "1 1 90px",
+                        padding: "10px 12px",
+                        borderRadius: 8,
+                        border: "1px solid var(--line,#d8dfe0)",
+                        background: "var(--shell,#fff)",
+                        color: "var(--faint,#78868a)",
+                        fontSize: 12.5,
+                        fontWeight: 700,
+                        cursor: submitting ? "wait" : "pointer",
                       }}
                     >
-                      It's all used up
+                      Not sure
                     </button>
                   </div>
                 )}
