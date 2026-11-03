@@ -32,6 +32,24 @@ export default async function handler(req, res) {
 
   const confirmationId = body.confirmation_id;
 
+  console.warn('[inventory-rebuild-debug]', {
+    contentType: req.headers['content-type'] || null,
+    bodyType: typeof req.body,
+    bodyKeys:
+      body && typeof body === 'object' && !Array.isArray(body)
+        ? Object.keys(body)
+        : [],
+    confirmationIdType: typeof confirmationId,
+    confirmationIdLength:
+      typeof confirmationId === 'string'
+        ? confirmationId.length
+        : null,
+    confirmationIdValid:
+      typeof confirmationId === 'string'
+        ? UUID.test(confirmationId)
+        : false,
+  });
+
     if (
       !confirmationId ||
       typeof confirmationId !== 'string' ||
