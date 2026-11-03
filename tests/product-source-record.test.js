@@ -133,3 +133,18 @@ Case Pack: 3/96 oz
 
   assert.equal(result.status, 'needs_review');
 });
+
+test('rejects multiple products within one heading', () => {
+  const result = extractProductSourceRecord(`
+# Strawberry Glaze
+Manufacturer SKU: MFG123
+Pack Size: 6/120 oz.
+
+Related Products:
+Manufacturer SKU: MFG456
+Pack Size: 3/120 oz.
+`, 'MFG123');
+
+  assert.equal(result.status, 'needs_review');
+  assert.equal(result.record, null);
+});

@@ -138,3 +138,107 @@ test('SKU cross-reference is not assumed from research', () => {
   assert.equal(evidence.verificationStatus, 'unverified');
   assert.equal(evidence.conversionApproved, false);
 });
+
+
+test('detected SKU relationship remains unverified', () => {
+  const evidence = extractProductEvidence(
+    {
+      sku: 'SUP456',
+      brand: 'Example Brand',
+      packageCount: 6,
+    },
+    {
+      findings: {
+        product_name: 'Example Product',
+        brand: 'Example Brand',
+        manufacturer_sku: 'MFG123',
+        supplier_sku: 'SUP456',
+        package_count: 6,
+        net_quantity: 120,
+        net_unit: 'oz',
+        measurement_scope: 'per_container',
+      },
+    },
+    {
+      origin: 'anthropic_web_fetch',
+      text: 'Supplier SKU: SUP456 | Manufacturer SKU: MFG123',
+    }
+  );
+
+  assert.equal(
+    evidence.identityDetection.status,
+    'candidate_relationship_found'
+  );
+
+  assert.equal(
+    evidence.identityDetection.relationshipDetected,
+    true
+  );
+
+  assert.match(
+    evidence.identityDetection.evidenceText,
+    /SUP456/
+  );
+
+  assert.equal(
+    evidence.identityVerification.crossReferenceStatus,
+    'needs_review'
+  );
+
+  assert.equal(evidence.verificationStatus, 'unverified');
+  assert.equal(evidence.conversionApproved, false);
+});
+
+
+test('retrieved package evidence reaches the extraction pipeline', () => {
+  const evidence = extractProductEvidence(
+    {
+      sku: 'SUP456',
+      brand: 'Example Brand',
+      packageCount: 6,
+    },
+    {
+      findings: {
+        product_name: 'Example Product',
+        brand: 'Example Brand',
+        manufacturer_sku: 'MFG123',
+        supplier_sku: 'SUP456',
+        package_count: 6,
+        net_quantity: 120,
+        net_unit: 'oz',
+        measurement_scope: 'per_container',
+      },
+      source: {
+        url: 'https://example.com/product',
+      },
+    },
+    {
+      origin: 'anthropic_web_fetch',
+      url: 'https://example.com/product',
+      text: [
+        '# Example Product',
+        'Manufacturer SKU: MFG123',
+        'Supplier SKU: SUP456',
+        'Pack Size: 6/120 oz.',
+      ].join('\n'),
+    }
+  );
+
+  assert.equal(
+    evidence.packageEvidence.status,
+    'package_evidence_found'
+  );
+
+  assert.equal(
+    evidence.packageEvidence.packageEvidenceMatches,
+    true
+  );
+
+  assert.equal(
+    evidence.packageEvidence.sourceSpecification,
+    '6/120 oz.'
+  );
+
+  assert.equal(evidence.verificationStatus, 'unverified');
+  assert.equal(evidence.conversionApproved, false);
+});

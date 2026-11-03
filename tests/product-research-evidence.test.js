@@ -19,18 +19,47 @@ const finding = {
   packageCount: 3,
   netQuantity: 104,
   netUnit: 'oz',
+  measurementScope: 'per_container',
   sourceType: 'manufacturer',
   sourceUrl: 'https://example.com/product/abc123',
   evidenceText: 'Net weight 6 lb 8 oz per can',
 };
 
-test('matching product evidence is eligible for verification', () => {
+test('matching product evidence is eligible but not approved', () => {
   const result = evaluateProductResearch(product, finding);
 
   assert.equal(result.status, 'eligible_for_verification');
-  assert.equal(result.conversion.fromUnit, 'can');
-  assert.equal(result.conversion.toUnit, 'oz');
-  assert.equal(result.conversion.factor, 104);
+  assert.equal(result.conversion, null);
+  assert.equal(result.proposedMeasurement.quantity, 104);
+  assert.equal(result.proposedMeasurement.unit, 'oz');
+  assert.equal(result.proposedMeasurement.scope, 'per_container');
+  assert.equal(result.source.verificationStatus, 'unverified');
+  assert.equal(result.conversionApproved, false);
+});
+
+test('case-level measurement cannot become a conversion', () => {
+  const result = evaluateProductResearch(product, {
+    ...finding,
+    measurementScope: 'per_case',
+  });
+
+  assert.equal(result.status, 'needs_review');
+  assert.equal(result.conversion, null);
+  assert.equal(
+    result.reason,
+    'Net measurement is not confirmed per container'
+  );
+});
+
+test('unknown measurement scope cannot become a conversion', () => {
+  const result = evaluateProductResearch(product, {
+    ...finding,
+    measurementScope: 'unknown',
+  });
+
+  assert.equal(result.status, 'needs_review');
+  assert.equal(result.conversion, null);
+  assert.equal(result.conversionApproved ?? false, false);
 });
 
 test('different product SKU requires review', () => {
