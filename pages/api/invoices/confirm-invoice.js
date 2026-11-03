@@ -17,6 +17,9 @@ import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
 import {
   calculateInvoiceLineValues,
 } from '../../../lib/invoiceLineCalculations';
+import {
+  calculateVerifiedInvoiceCost,
+} from '../../../lib/verifiedInvoiceCosting';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,53 +31,12 @@ function normalizeName(name) {
 }
 
 function resolveUnitCost(item) {
-  if (item.invoice_price !== undefined) {
-    let unitCost, unit;
+  const calculated = calculateVerifiedInvoiceCost(item);
 
-    if (item.catch_weight && item.actual_weight) {
-      // Catch-weight lines are priced per pound of the weight actually
-      // shipped (the printed Weight column), whatever the Size column says
-      // about portions ("22 x 7 oz" steaks billed at $14.50/lb). The old
-      // code took the unit from size_unit and labeled a per-lb price as
-      // per-oz, 16x too high. actual_weight is the line's total weight, so
-      // total / weight is the true per-lb price.
-      const lineTotal = Number(item.line_total);
-      unitCost = lineTotal > 0 ? Math.round((lineTotal / item.actual_weight) * 1e6) / 1e6 : item.invoice_price;
-      unit     = 'lb';
-    } else if (item.pack && item.size && item.size_unit) {
-      // Suppliers print either a per-case or a per-lb/per-unit price on
-      // case-packed lines, and invoice_price can't tell us which. The line
-      // total can: total ÷ (cases × pack × size) is the true per-unit cost
-      // either way. (Butter: $94.68 ÷ 36 lb = $2.63/lb — the old math
-      // divided a per-lb price by 36 again and got $0.073/lb.)
-      const totalUnits = item.pack * item.size;
-      const shipped    = item.quantity_shipped ?? item.quantity_ordered ?? 1;
-      const lineTotal  = Number(item.line_total);
-      if (lineTotal > 0 && totalUnits > 0 && shipped > 0) {
-        unitCost = lineTotal / (shipped * totalUnits);
-      } else {
-        unitCost = totalUnits > 0 ? item.invoice_price / totalUnits : null;
-      }
-      unit = item.size_unit;
-    } else if (item.size_unit === 'each' || item.standard_unit === 'each') {
-      unitCost = item.invoice_price || null;
-      unit     = 'each';
-    } else {
-      unitCost = null;
-      unit     = item.size_unit || 'each';
-    }
-
-    return { unit_cost: unitCost, unit };
-  }
-
-  // Legacy shape fallback
-  const cost = item.standard_unit === 'lb'   ? item.cost_per_lb
-             : item.standard_unit === 'each' ? item.cost_per_each
-             : item.standard_unit === 'oz'   ? item.cost_per_lb
-             : item.standard_unit === 'gal'  ? item.cost_per_each
-             : item.standard_unit === 'case' ? item.cost_per_each
-             : (item.cost_per_lb ?? item.cost_per_each ?? null);
-  return { unit_cost: cost ?? null, unit: item.standard_unit || item.quantity_unit || 'each' };
+  return {
+    unit_cost: calculated.unit_cost,
+    unit: calculated.unit,
+  };
 }
 
 export default async function handler(req, res) {
@@ -363,7 +325,7 @@ export default async function handler(req, res) {
         quantity: totalQty,
         unit,
         unit_cost,
-      } = calculateInvoiceLineValues(item);
+      } = calculateVerifiedInvoiceCost(item);
 
       return {
         invoice_id:                 invoiceRecord.id,
