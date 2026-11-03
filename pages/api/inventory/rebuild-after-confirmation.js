@@ -48,6 +48,13 @@ export default async function handler(req, res) {
       typeof confirmationId === 'string'
         ? UUID.test(confirmationId)
         : false,
+    confirmationIdSegments:
+      typeof confirmationId === 'string'
+        ? confirmationId.split('-').map((segment) => ({
+            length: segment.length,
+            hexadecimal: /^[0-9a-f]+$/i.test(segment),
+          }))
+        : [],
   });
 
     if (
