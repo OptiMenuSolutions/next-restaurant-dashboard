@@ -664,8 +664,12 @@ export default function DashboardPage() {
         );
       }
 
-      // Refresh inventory-backed dashboard data after the rebuild.
-      // Existing SWR data will also refresh through its normal cycle.
+      // Inventory has been committed. Refresh the dashboard's
+      // cached inventory data and waste-resolution calculation.
+      await Promise.all([
+        reloadDash(),
+        reloadResolution(),
+      ]);
     } catch (refreshError) {
       // Do not tell the manager their answer failed:
       // the confirmation itself has already been saved.
@@ -753,6 +757,9 @@ export default function DashboardPage() {
   // Margin and adoption compress smoothly to fill the remaining weight,
   // keeping their 3:2 ratio the whole time — no sudden jump when the ramp
   // finishes.
+  // Waste scoring requires measured evidence. When unavailable,
+  // the overall score is normalized across Margin and Adoption.
+  // An unavailable waste category is not awarded automatic points.
   const optiScoreDetail = useMemo(() => {
     if (!s) return { value: 0, label: "Needs work" };
     // No fully priced dishes yet — a margin score would be meaningless.
@@ -789,25 +796,60 @@ export default function DashboardPage() {
     const volumeFactor = Math.min(1, Math.max(0, (weekExtraSold || 0) / 10));
     const adoptionScore = adoptWeight * (0.75 * ((hitRate || 0) / 100) + 0.25 * volumeFactor);
 
-    // Waste-mitigation bucket. null resolutionRate (no at-risk activity to
-    // measure yet) scores as full marks for this bucket — no waste problem
-    // is a good outcome, not a scoring gap.
+    // Missing waste evidence is not evidence of perfect performance.
+    // Until measured waste data exists, score only the categories
+    // for which we have usable evidence.
     const wasteRate = wasteResolution?.resolutionRate;
-    const wasteScore = wasteWeight * (wasteRate != null ? wasteRate : 1);
 
-    const value = Math.max(0, Math.min(100, Math.round(
-      marginLevelScore + marginDistScore + adoptionScore + wasteScore
-    )));
+    const hasWasteEvidence =
+      typeof wasteRate === "number" &&
+      Number.isFinite(wasteRate) &&
+      wasteRate >= 0 &&
+      wasteRate <= 1;
+
+    const wasteScore = hasWasteEvidence
+      ? wasteWeight * wasteRate
+      : 0;
+
+    const availableWeight = hasWasteEvidence
+      ? 100
+      : marginWeight + adoptWeight;
+
+    const earnedPoints =
+      marginLevelScore +
+      marginDistScore +
+      adoptionScore +
+      wasteScore;
+
+    const value = Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          (earnedPoints / availableWeight) * 100
+        )
+      )
+    );
 
     return {
       value,
       label: value >= 85 ? "Strong" : value >= 65 ? "Good" : "Needs work",
-      // Points earned / points available per bucket, for the breakdown bars.
-      // Waste has 0 available until day 31 while its weight ramps in.
       buckets: [
-        { name: "Margin", score: marginLevelScore + marginDistScore, max: marginWeight },
-        { name: "Adoption", score: adoptionScore, max: adoptWeight },
-        { name: "Waste", score: wasteScore, max: wasteWeight },
+        {
+          name: "Margin",
+          score: marginLevelScore + marginDistScore,
+          max: marginWeight,
+        },
+        {
+          name: "Adoption",
+          score: adoptionScore,
+          max: adoptWeight,
+        },
+        {
+          name: "Waste",
+          score: wasteScore,
+          max: hasWasteEvidence ? wasteWeight : 0,
+        },
       ],
     };
   }, [s, hitRate, weekExtraSold, wasteResolution, restaurantCreatedAt, targetFoodCost, now]);
