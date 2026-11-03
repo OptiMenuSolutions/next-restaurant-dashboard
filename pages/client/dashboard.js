@@ -615,12 +615,65 @@ export default function DashboardPage() {
       : confirmationRows || [];
 
   async function handleWasteConfirmationRespond(id, status) {
-    // The waste_confirmations table only grants authenticated users UPDATE
-    // on the `status` column — confirmed_by/confirmed_at are force-set
-    // server-side by a trigger regardless of what's sent here.
-    const { error } = await supabase.from("waste_confirmations").update({ status }).eq("id", id);
+    // Save the answer first. The database trigger records the
+    // confirmation timestamp and estimated adjustment.
+    const { error } = await supabase
+      .from("waste_confirmations")
+      .update({ status })
+      .eq("id", id)
+      .eq("restaurant_id", restaurantId);
+
     if (error) throw error;
-    reloadConfirmations();
+
+    // The response is committed even if the subsequent rebuild fails.
+    // Refresh the confirmation list immediately so it is not shown again.
+    await reloadConfirmations();
+
+    const { data: sessionData, error: sessionError } =
+      await supabase.auth.getSession();
+
+    const token = sessionData?.session?.access_token;
+
+    if (sessionError || !token) {
+      console.error(
+        "[waste-confirmation] Response saved; inventory refresh requires a valid session."
+      );
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        "/api/inventory/rebuild-after-confirmation",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            confirmation_id: id,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+
+        throw new Error(
+          result.error || "Inventory refresh failed."
+        );
+      }
+
+      // Refresh inventory-backed dashboard data after the rebuild.
+      // Existing SWR data will also refresh through its normal cycle.
+    } catch (refreshError) {
+      // Do not tell the manager their answer failed:
+      // the confirmation itself has already been saved.
+      console.error(
+        "[waste-confirmation] Inventory refresh failed:",
+        refreshError
+      );
+    }
   }
 
   const now = new Date();
