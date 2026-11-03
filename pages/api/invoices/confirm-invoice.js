@@ -15,12 +15,6 @@ import {
 import { isInternalCall } from '../../../lib/scannerAuth';
 import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
 import {
-  calculateInvoiceLineValues,
-} from '../../../lib/invoiceLineCalculations';
-import {
-  calculateVerifiedInvoiceCost,
-} from '../../../lib/verifiedInvoiceCosting';
-import {
   resolveInvoiceResearchCost,
 } from '../../../lib/invoiceResearchCosting';
 
@@ -31,15 +25,6 @@ const supabase = createClient(
 
 function normalizeName(name) {
   return (name || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function resolveUnitCost(item) {
-  const calculated = calculateVerifiedInvoiceCost(item);
-
-  return {
-    unit_cost: calculated.unit_cost,
-    unit: calculated.unit,
-  };
 }
 
 export function createConfirmInvoiceHandler({
