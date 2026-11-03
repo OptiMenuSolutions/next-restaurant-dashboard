@@ -25,7 +25,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const { confirmation_id: confirmationId } = req.body || {};
+  const body =
+    typeof req.body === 'string'
+      ? JSON.parse(req.body)
+      : req.body || {};
+
+  const confirmationId = body.confirmation_id;
 
     if (
       !confirmationId ||
