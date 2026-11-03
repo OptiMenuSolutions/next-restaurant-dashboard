@@ -20,6 +20,9 @@ import {
 import {
   calculateVerifiedInvoiceCost,
 } from '../../../lib/verifiedInvoiceCosting';
+import {
+  resolveInvoiceResearchCost,
+} from '../../../lib/invoiceResearchCosting';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -86,6 +89,35 @@ export default async function handler(req, res) {
         size_unit: parsedPack.size_unit,
       };
     });
+    
+  // Explicit server-side feature flag.
+  // Disabled by default: no research calls or automatic approvals.
+  const researchEnabled =
+    process.env.INVOICE_VERIFIED_RESEARCH_ENABLED === 'true';
+
+  // Resolve costs once per invoice line so ingredient pricing
+  // and invoice history use exactly the same calculation.
+  // These results are never taken from client approval fields.
+  const resolvedCosts = await Promise.all(
+    activeItems.map(item =>
+      resolveInvoiceResearchCost(
+        item,
+        invoice.supplier,
+        { enabled: researchEnabled }
+      )
+    )
+  );
+
+  const costByItem = new Map(
+    activeItems.map((item, index) => [
+      item,
+      resolvedCosts[index],
+    ])
+  );
+
+  const resolvedCost = (item) =>
+    costByItem.get(item);
+
   console.log('[confirm-invoice] raw items', JSON.stringify(activeItems.map(i => ({
     name: i.item_name, shipped: i.quantity_shipped, ordered: i.quantity_ordered,
     pack: i.pack, size: i.size, size_unit: i.size_unit,
@@ -224,12 +256,26 @@ export default async function handler(req, res) {
 
     if (uniqueNewItems.length > 0) {
       const toInsert = uniqueNewItems.map(item => {
-        const { unit_cost, unit } = resolveUnitCost(item);
+        const { unit_cost, unit } = resolvedCost(item);
         const ingName  = item.confirmed_name || item.item_name_normalized || item.item_name;
-        const stdUnit  = getStandardUnitForIngredient(unit, ingName);
-        const stdPrice = unit_cost
-          ? convertInvoiceCostToStandardUnit(unit_cost, unit, ingName)
-          : null;
+        const unresolved =
+          resolvedCost(item).pricingStatus ===
+          'needs_package_verification';
+
+        const stdUnit = unresolved
+          ? 'can'
+          : getStandardUnitForIngredient(unit, ingName);
+
+        const stdPrice =
+          !unresolved &&
+          Number.isFinite(Number(unit_cost)) &&
+          Number(unit_cost) > 0
+            ? convertInvoiceCostToStandardUnit(
+                unit_cost,
+                unit,
+                ingName
+              )
+            : null;
 
         return {
           restaurant_id,
@@ -239,9 +285,11 @@ export default async function handler(req, res) {
           original_unit:       unit || 'each',
           last_price:          stdPrice,
           last_ordered_at:     invoiceDate,
-          ingredient_category: 'weight',
+          ingredient_category: unresolved
+            ? 'count'
+            : 'weight',
           is_sample:           false,
-          is_estimated:        false,
+          is_estimated:        unresolved,
         };
       });
 
@@ -266,7 +314,7 @@ export default async function handler(req, res) {
     for (const item of activeItems) {
       const ingId = item.selected_ingredient_id || newIngredientIdMap[item._id] || null;
       if (ingId) {
-        const { unit_cost, unit } = resolveUnitCost(item);
+        const { unit_cost, unit } = resolvedCost(item);
         if (unit_cost) {
           const ingName  = item.selected_ingredient_name || item.item_name_normalized || item.item_name;
           const stdPrice = convertInvoiceCostToStandardUnit(unit_cost, unit, ingName);
@@ -325,7 +373,7 @@ export default async function handler(req, res) {
         quantity: totalQty,
         unit,
         unit_cost,
-      } = calculateVerifiedInvoiceCost(item);
+      } = resolvedCost(item);
 
       return {
         invoice_id:                 invoiceRecord.id,
