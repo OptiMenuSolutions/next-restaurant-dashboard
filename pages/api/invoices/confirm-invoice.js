@@ -42,7 +42,17 @@ function resolveUnitCost(item) {
   };
 }
 
-export default async function handler(req, res) {
+export function createConfirmInvoiceHandler({
+  db = supabase,
+  resolveCost = resolveInvoiceResearchCost,
+  recompute = recomputeMenuCosts,
+  rebuild = rebuildCurrentInventory,
+  verifyAccess = async (req, restaurantId) =>
+    import('../../../lib/withRestaurantAuth')
+      .then(m => m.verifyRestaurantAccess(req, restaurantId)),
+} = {}) {
+  return async function handler(req, res) {
+    const supabase = db;
   if (req.method !== 'POST') return res.status(405).end();
 
   let body;
@@ -62,8 +72,8 @@ export default async function handler(req, res) {
   // Verify the calling user owns this restaurant. Scanner photos come from
   // /api/scanner/process, which has already checked the scanner.
   if (!isInternalCall(req)) {
-    const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
-      .then(m => m.verifyRestaurantAccess(req, restaurant_id));
+    const { error: authError, status: authStatus } =
+      await verifyAccess(req, restaurant_id);
     if (authError) return res.status(authStatus).json({ error: authError });
   }
 
@@ -100,7 +110,7 @@ export default async function handler(req, res) {
   // These results are never taken from client approval fields.
   const resolvedCosts = await Promise.all(
     activeItems.map(item =>
-      resolveInvoiceResearchCost(
+      resolveCost(
         item,
         invoice.supplier,
         { enabled: researchEnabled }
@@ -409,7 +419,7 @@ export default async function handler(req, res) {
     // ── Step 5: Recompute dish costs (shared with link-item) ─────────────────
     // History rows are dated to this invoice, not the upload time.
     try {
-      await recomputeMenuCosts(
+      await recompute(
         supabase,
         restaurant_id,
         [...Object.keys(ingredientUpdates), ...Object.values(newIngredientIdMap)],
@@ -421,7 +431,7 @@ export default async function handler(req, res) {
 
     // A new delivery changes on-hand inventory now, not tonight.
     try {
-      await rebuildCurrentInventory(supabase, restaurant_id);
+      await rebuild(supabase, restaurant_id);
     } catch (err) {
       console.error('[confirm-invoice] current_inventory rebuild failed:', err.message);
     }
@@ -440,3 +450,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || 'Failed to save invoice' });
   }
 }
+}
+
+export default createConfirmInvoiceHandler();
