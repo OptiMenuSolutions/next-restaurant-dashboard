@@ -13,6 +13,10 @@ import {
   calculateStandardizedCost,
 } from '../../../lib/standardizedUnits';
 import { isInternalCall } from '../../../lib/scannerAuth';
+import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
+import {
+  calculateInvoiceLineValues,
+} from '../../../lib/invoiceLineCalculations';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -98,7 +102,28 @@ export default async function handler(req, res) {
     if (authError) return res.status(authStatus).json({ error: authError });
   }
 
-  const activeItems = (line_items || []).filter(i => !i.dismissed);
+  // Normalize recognized numbered-can packages before any ingredient
+  // pricing, inventory quantity, or invoice line calculations.
+  // This applies to every restaurant and supplier.
+  const activeItems = (line_items || [])
+    .filter(i => !i.dismissed)
+    .map(item => {
+      const parsedPack = parseNumberedCanPack(item.pack_size_raw);
+
+      if (!parsedPack) return item;
+
+      // Catch-weight products follow their own weight-based accounting.
+      if (item.catch_weight) return item;
+
+      // A numbered-can designation describes the container, not
+      // its fluid volume. Preserve the original raw package text.
+      return {
+        ...item,
+        pack: parsedPack.pack,
+        size: parsedPack.size,
+        size_unit: parsedPack.size_unit,
+      };
+    });
   console.log('[confirm-invoice] raw items', JSON.stringify(activeItems.map(i => ({
     name: i.item_name, shipped: i.quantity_shipped, ordered: i.quantity_ordered,
     pack: i.pack, size: i.size, size_unit: i.size_unit,
@@ -334,17 +359,11 @@ export default async function handler(req, res) {
         newIngredientIdMap[item._id] ||
         null;
 
-      const { unit_cost, unit } = resolveUnitCost(item);
-
-      let totalQty;
-      if (item.catch_weight && item.actual_weight) {
-        totalQty = item.actual_weight; // already the line's total shipped weight, in lb
-      } else if (item.pack && item.size) {
-        const shippedCases = item.quantity_shipped ?? item.quantity_ordered ?? 1;
-        totalQty = shippedCases * item.pack * item.size;
-      } else {
-        totalQty = item.quantity_shipped ?? item.quantity_ordered ?? null;
-      }
+      const {
+        quantity: totalQty,
+        unit,
+        unit_cost,
+      } = calculateInvoiceLineValues(item);
 
       return {
         invoice_id:                 invoiceRecord.id,

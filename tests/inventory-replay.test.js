@@ -259,3 +259,229 @@ test('estimated expiration alone does not remove inventory', () => {
 
   assert.equal(remaining(rows, 'a'), 100);
 });
+
+
+function conversionScenario({
+  ingredientId,
+  ingredientName,
+  trackedUnit,
+  recipeUnit,
+  recipeQuantity,
+  conversionFrom,
+  conversionTo,
+  factor,
+  deliveries,
+  sales,
+  confirmations = [],
+}) {
+  const ingredient = {
+    id: ingredientId,
+    name: ingredientName,
+    unit: trackedUnit,
+    ingredient_unit_conversions: [{
+      id: `conversion-${ingredientId}`,
+      ingredient_id: ingredientId,
+      from_unit: conversionFrom,
+      to_unit: conversionTo,
+      factor,
+      basis: 'package_label',
+      evidence: 'Regression test conversion',
+    }],
+    ingredient_conversion_default_links: [],
+  };
+
+  const invoiceItems = deliveries.map((item) => ({
+    id: item.id,
+    invoice_id: `invoice-${item.id}`,
+    ingredient_id: ingredientId,
+    item_name: ingredientName,
+    quantity: item.quantity,
+    unit: item.unit || trackedUnit,
+    unit_cost: 1,
+    invoices: {
+      id: `invoice-${item.id}`,
+      date: item.date,
+    },
+    ingredients: ingredient,
+  }));
+
+  const invoices = invoiceItems.map((item) => ({
+    id: item.invoice_id,
+    date: item.invoices.date,
+  }));
+
+  const menuItems = [{
+    id: 'conversion-dish',
+    name: 'Conversion Test Dish',
+    menu_item_components: [{
+      component_ingredients: [{
+        quantity: recipeQuantity,
+        unit: recipeUnit,
+        ingredients: ingredient,
+      }],
+    }],
+  }];
+
+  const posSales = sales.map((item) => ({
+    id: item.id,
+    item_name: 'Conversion Test Dish',
+    quantity_sold: item.quantity,
+    refunds: 0,
+    sale_date: item.date,
+  }));
+
+  const throughDate = '2026-11-05';
+
+  const base = computeWasteRisk(
+    invoiceItems,
+    invoices,
+    posSales,
+    menuItems,
+    new Date(`${throughDate}T12:00:00`),
+    {},
+    new Set(),
+    {}
+  );
+
+  const inputs = {
+    invoiceItems,
+    invoices,
+    posSales,
+    menuItems,
+    freezeSettings: {},
+    keptItemIds: new Set(),
+    learnedShelfLives: {},
+    confirmationEvents: confirmations,
+  };
+
+  return {
+    base,
+    replay: applyInventoryCounts(
+      base,
+      inputs,
+      [],
+      throughDate
+    ),
+  };
+}
+
+test('saved slice-to-oz conversion deducts American Cheese', () => {
+  const { base } = conversionScenario({
+    ingredientId: 'american-cheese',
+    ingredientName: 'American Cheese',
+    trackedUnit: 'oz',
+    recipeUnit: 'slice',
+    recipeQuantity: 1,
+    conversionFrom: 'slice',
+    conversionTo: 'oz',
+    factor: 0.5,
+    deliveries: [{
+      id: 'cheese-delivery',
+      date: '2026-11-01',
+      quantity: 20,
+    }],
+    sales: [{
+      id: 'cheese-sale',
+      date: '2026-11-02',
+      quantity: 4,
+    }],
+  });
+
+  // Four slices at 0.5 oz each = 2 oz consumed.
+  assert.equal(remaining(base, 'cheese-delivery'), 18);
+});
+
+test('saved reverse conversion deducts Green Leaf Lettuce', () => {
+  const { base } = conversionScenario({
+    ingredientId: 'green-leaf-lettuce',
+    ingredientName: 'Green Leaf Lettuce',
+    trackedUnit: 'oz',
+    recipeUnit: 'each',
+    recipeQuantity: 0.0625,
+    conversionFrom: 'oz',
+    conversionTo: 'each',
+    factor: 0.0625,
+    deliveries: [{
+      id: 'lettuce-delivery',
+      date: '2026-11-01',
+      quantity: 32,
+    }],
+    sales: [{
+      id: 'lettuce-sale',
+      date: '2026-11-02',
+      quantity: 2,
+    }],
+  });
+
+  // 0.0625 each per dish = 1 oz per dish.
+  assert.equal(remaining(base, 'lettuce-delivery'), 30);
+});
+
+test('converted POS usage drains the correct FIFO delivery', () => {
+  const { base } = conversionScenario({
+    ingredientId: 'fifo-cheese',
+    ingredientName: 'American Cheese',
+    trackedUnit: 'oz',
+    recipeUnit: 'slice',
+    recipeQuantity: 1,
+    conversionFrom: 'slice',
+    conversionTo: 'oz',
+    factor: 0.5,
+    deliveries: [
+      {
+        id: 'older-cheese',
+        date: '2026-11-01',
+        quantity: 2,
+      },
+      {
+        id: 'newer-cheese',
+        date: '2026-11-02',
+        quantity: 10,
+      },
+    ],
+    sales: [{
+      id: 'fifo-sale',
+      date: '2026-11-03',
+      quantity: 6,
+    }],
+  });
+
+  // Three ounces consumed: first 2 from older, then 1 from newer.
+  assert.equal(remaining(base, 'older-cheese'), 0);
+  assert.equal(remaining(base, 'newer-cheese'), 9);
+});
+
+test('inventory replay uses the same approved conversion as FIFO', () => {
+  const { base, replay } = conversionScenario({
+    ingredientId: 'replay-cheese',
+    ingredientName: 'American Cheese',
+    trackedUnit: 'oz',
+    recipeUnit: 'slice',
+    recipeQuantity: 1,
+    conversionFrom: 'slice',
+    conversionTo: 'oz',
+    factor: 0.5,
+    deliveries: [{
+      id: 'replay-delivery',
+      date: '2026-11-01',
+      quantity: 20,
+    }],
+    sales: [{
+      id: 'replay-sale',
+      date: '2026-11-02',
+      quantity: 4,
+    }],
+    confirmations: [{
+      id: 'replay-confirmation',
+      invoice_item_id: 'replay-delivery',
+      status: 'confirmed_wasted',
+      confirmed_at: '2026-11-04T16:00:00Z',
+      presumed_qty: 0,
+      confirmed_waste_qty: null,
+      adjustment_qty: 0,
+    }],
+  });
+
+  assert.equal(remaining(base, 'replay-delivery'), 18);
+  assert.equal(remaining(replay, 'replay-delivery'), 18);
+});
