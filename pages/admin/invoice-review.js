@@ -7,6 +7,8 @@
 import { useState, useEffect, useRef } from 'react';
 import AdminLayout from '../../components/admin/AdminLayout';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
+import InvoiceMatchConflicts from '../../components/admin/InvoiceMatchConflicts';
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -473,6 +475,9 @@ export default function InvoiceReviewPage() {
   const { adminFetch } = useAdminFetch();
   const [groups, setGroups]   = useState([]);
   const [loading, setLoading] = useState(true);
+  const [conflicts, setConflicts] = useState([]);
+  const [conflictsLoading, setConflictsLoading] = useState(true);
+  const [conflictsError, setConflictsError] = useState(null);
   const [step, setStep]       = useState('numbers'); // 'numbers' | 'matches'
   const [savingId,  setSavingId]  = useState(null);
   const [markingId, setMarkingId] = useState(null);
@@ -498,6 +503,48 @@ export default function InvoiceReviewPage() {
   }
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadConflicts() {
+      setConflictsLoading(true);
+      setConflictsError(null);
+
+      try {
+        const restaurantId =
+          '1a44f2b8-11ef-4dc2-a279-a75aefb4b331';
+
+        const response = await adminFetch(
+          `/api/admin/invoice-review/match-conflicts?restaurant_id=${restaurantId}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to load conflicts');
+        }
+
+        if (!cancelled) {
+          setConflicts(data.conflicts || []);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setConflictsError(error.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setConflictsLoading(false);
+        }
+      }
+    }
+
+    loadConflicts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [adminFetch]);
 
   // Total counts for the header bar
   const totalInvoices = groups.reduce((s, g) => s + g.invoices.length, 0);
@@ -587,6 +634,13 @@ export default function InvoiceReviewPage() {
             ? 'Review and correct quantities, units, and costs. Changes are highlighted against what Claude originally parsed.'
             : 'Review ingredient links for every line item. Auto-matched items are shown — you can reassign or unlink any of them.'}
         </div>
+
+        {/* ── Historical ingredient match conflicts ── */}
+        <InvoiceMatchConflicts
+          conflicts={conflicts}
+          loading={conflictsLoading}
+          error={conflictsError}
+        />
 
         {/* ── Content ── */}
         {loading ? (
