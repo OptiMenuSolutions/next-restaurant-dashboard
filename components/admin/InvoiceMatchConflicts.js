@@ -5,6 +5,7 @@ export default function InvoiceMatchConflicts({
   conflicts,
   ingredientsByRestaurant = {},
   onPreview,
+  onSave,
   loading,
   error,
 }) {
@@ -17,8 +18,10 @@ export default function InvoiceMatchConflicts({
 
     const [previews, setPreviews] = useState({});
   const [previewLoading, setPreviewLoading] = useState({});
-  const [previewErrors, setPreviewErrors] = useState({});  
+  const [previewErrors, setPreviewErrors] = useState({});
   const [confirmedPreviews, setConfirmedPreviews] = useState({});
+  const [saveLoading, setSaveLoading] = useState({});
+  const [saveErrors, setSaveErrors] = useState({});
   
   const [futureMappings, setFutureMappings] = useState({});
 
@@ -151,6 +154,56 @@ export default function InvoiceMatchConflicts({
       }));
     } finally {
       setPreviewLoading(previous => ({
+        ...previous,
+        [group.key]: false,
+      }));
+    }
+  }
+
+  async function saveGroup(group) {
+    const preview = previews[group.key];
+
+    if (
+      !confirmedPreviews[group.key] ||
+      !preview?.confirmation_token ||
+      !preview?.confirmedRequest ||
+      !onSave
+    ) {
+      return;
+    }
+
+    setSaveLoading(previous => ({
+      ...previous,
+      [group.key]: true,
+    }));
+
+    setSaveErrors(previous => ({
+      ...previous,
+      [group.key]: null,
+    }));
+
+    try {
+      await onSave({
+        ...preview.confirmedRequest,
+        confirmation_token: preview.confirmation_token,
+      });
+
+      setPreviews(previous => ({
+        ...previous,
+        [group.key]: null,
+      }));
+
+      setConfirmedPreviews(previous => ({
+        ...previous,
+        [group.key]: false,
+      }));
+    } catch (error) {
+      setSaveErrors(previous => ({
+        ...previous,
+        [group.key]: error.message || 'Unable to save changes.',
+      }));
+    } finally {
+      setSaveLoading(previous => ({
         ...previous,
         [group.key]: false,
       }));
@@ -871,6 +924,7 @@ export default function InvoiceMatchConflicts({
                       <button
                         type="button"
                         disabled
+                        onClick={() => saveGroup(group)}
                         style={{
                           marginTop: 14,
                           padding: '10px 18px',
@@ -887,6 +941,16 @@ export default function InvoiceMatchConflicts({
                       >
                         Confirm and save changes
                       </button>
+                      
+                      {saveErrors[group.key] && (
+                        <div style={{
+                          marginTop: 8,
+                          color: '#e85454',
+                          fontSize: 12,
+                        }}>
+                          {saveErrors[group.key]}
+                        </div>
+                      )}
 
                       <div style={{
                         marginTop: 8,

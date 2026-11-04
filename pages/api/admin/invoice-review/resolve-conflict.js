@@ -1,6 +1,14 @@
 
 import { adminDb as db, requireAdmin } from '../../../../lib/admin/requireAdmin';
 import { normalizeSupplierProduct } from '../../../../lib/invoiceMatchConflicts';
+import { waitUntil } from '@vercel/functions';
+import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
+import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
+import {
+  createConflictConfirmation,
+  verifyConflictConfirmation,
+} from '../../../../lib/admin/invoiceConflictConfirmation';
+
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -27,10 +35,36 @@ export default async function handler(req, res) {
     future_ingredient_id = null,
   } = req.body || {};
 
-  if (action !== 'preview') {
+  if (!['preview', 'save'].includes(action)) {
     return res.status(400).json({
-      error: 'Only preview is currently enabled.',
+      error: 'Invalid conflict resolution action.',
     });
+  }
+
+  const confirmationRequest = {
+    restaurant_id,
+    product_description,
+    changes,
+    approve_future,
+    future_ingredient_id,
+  };
+
+  if (action === 'save') {
+    if (process.env.INVOICE_CONFLICT_SAVE_ENABLED !== 'true') {
+      return res.status(403).json({
+        error: 'Conflict saving is not enabled yet.',
+      });
+    }
+
+    if (!verifyConflictConfirmation(
+      req.body?.confirmation_token,
+      admin.user.id,
+      confirmationRequest
+    )) {
+      return res.status(409).json({
+        error: 'Preview confirmation expired or changed. Preview again.',
+      });
+    }
   }
 
   if (!isUuid(restaurant_id)) {
@@ -240,6 +274,74 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (mappingError) throw mappingError;
+    
+    if (action === 'save') {
+      if (!changes.length && !approve_future) {
+        return res.status(400).json({
+          error: 'There are no changes to save.',
+        });
+      }
+
+      const { data: result, error: saveError } = await db.rpc(
+        'resolve_invoice_ingredient_conflict',
+        {
+          p_restaurant_id: restaurant_id,
+          p_supplier: null,
+          p_product_description: product_description,
+          p_changes: changes,
+          p_future_ingredient_id: approve_future
+            ? future_ingredient_id
+            : null,
+          p_approve_future: approve_future,
+          p_admin_id: admin.user.id,
+        }
+      );
+
+      if (saveError) {
+        const message = saveError.message || 'Save failed.';
+        const stale = /changed since preview|reload before saving/i.test(message);
+
+        return res.status(stale ? 409 : 400).json({
+          error: message,
+        });
+      }
+
+      await writeAuditLog({
+        admin_id: admin.user.id,
+        admin_name: admin.name,
+        action: 'Resolved invoice ingredient conflict',
+        target_restaurant_id: restaurant_id,
+        metadata: {
+          product_description,
+          changes,
+          approve_future,
+          future_ingredient_id: approve_future
+            ? future_ingredient_id
+            : null,
+          result,
+        },
+      });
+
+      if (result?.calculationsPending) {
+        try {
+          waitUntil(
+            Promise.resolve()
+              .then(() => processInvoiceCalculations(db, restaurant_id))
+              .catch(error => {
+                console.error('[conflict calculations]', error);
+              })
+          );
+        } catch (error) {
+          console.error('[conflict calculations schedule]', error);
+        }
+      }
+
+      return res.status(200).json({
+        ok: true,
+        saved: true,
+        ...result,
+      });
+    }
 
     const changed = previewChanges.filter(change => change.changed);
     const unchanged = previewChanges.length - changed.length;
@@ -280,6 +382,10 @@ export default async function handler(req, res) {
       },
       changes: previewChanges,
       saved: false,
+      confirmation_token: createConflictConfirmation(
+        admin.user.id,
+        confirmationRequest
+      ),
     });
   } catch (error) {
     console.error('[admin conflict preview]', error);

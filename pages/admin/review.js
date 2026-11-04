@@ -84,9 +84,16 @@ function MatchConflictsReview() {
     };
   }, [api]);
 
- async function previewConflict(payload) {
+  async function previewConflict(payload) {
     return api('/api/admin/invoice-review/resolve-conflict', {
       action: 'preview',
+      ...payload,
+    });
+  }
+
+  async function saveConflict(payload) {
+    return api('/api/admin/invoice-review/resolve-conflict', {
+      action: 'save',
       ...payload,
     });
   }
@@ -97,6 +104,7 @@ function MatchConflictsReview() {
         conflicts={conflicts}
         ingredientsByRestaurant={ingredientsByRestaurant}
         onPreview={previewConflict}
+        onSave={saveConflict}
         loading={loading}
         error={error}
       />
