@@ -17,13 +17,18 @@ export default function InvoiceMatchConflicts({
 
     const [previews, setPreviews] = useState({});
   const [previewLoading, setPreviewLoading] = useState({});
-  const [previewErrors, setPreviewErrors] = useState({});
-
+  const [previewErrors, setPreviewErrors] = useState({});  
+  const [confirmedPreviews, setConfirmedPreviews] = useState({});
   
   const [futureMappings, setFutureMappings] = useState({});
 
   function updateFutureMapping(group, updates) {
     const groupKey = group.key;
+
+    setConfirmedPreviews(previous => ({
+      ...previous,
+      [groupKey]: false,
+    }));
     const current = futureMappings[groupKey] || {
       ingredientId: '',
       approved: false,
@@ -78,6 +83,11 @@ export default function InvoiceMatchConflicts({
   }
 
   async function previewGroup(group) {
+    setConfirmedPreviews(previous => ({
+      ...previous,
+      [group.key]: false,
+    }));
+
     const changes = group.purchases
       .filter(purchase =>
         Object.prototype.hasOwnProperty.call(
@@ -114,7 +124,7 @@ export default function InvoiceMatchConflicts({
     }));
 
     try {
-      const result = await onPreview({
+      const request = {
         restaurant_id: group.restaurant_id,
         product_description: group.product_description,
         changes,
@@ -122,12 +132,18 @@ export default function InvoiceMatchConflicts({
         future_ingredient_id: approveFuture
           ? futureMapping.ingredientId
           : null,
-      });
+      };
+
+      const result = await onPreview(request);
 
       setPreviews(previous => ({
         ...previous,
-        [group.key]: result,
+        [group.key]: {
+          ...result,
+          confirmedRequest: request,
+        },
       }));
+
     } catch (err) {
       setPreviewErrors(previous => ({
         ...previous,
@@ -168,6 +184,11 @@ export default function InvoiceMatchConflicts({
 
   function applyBulkIngredient(group) {
     const ingredientId = bulkIngredients[group.key];
+
+    setConfirmedPreviews(previous => ({
+      ...previous,
+      [group.key]: false,
+    }));
 
     if (ingredientId === undefined) return;
 
@@ -222,6 +243,21 @@ export default function InvoiceMatchConflicts({
   }
 
   function setProposedIngredient(groupKey, purchase, ingredientId) {
+    setConfirmedPreviews(previous => ({
+      ...previous,
+      [groupKey]: false,
+    }));
+    setManualOverrides(previous => ({
+      ...previous,
+      [purchase.invoice_item_id]: true,
+    }));
+
+    setAutomaticProposals(previous => {
+      const next = { ...previous };
+      delete next[purchase.invoice_item_id];
+      return next;
+    });
+
     setPreviews(previous => ({
       ...previous,
       [groupKey]: null,
@@ -800,6 +836,67 @@ export default function InvoiceMatchConflicts({
                       color: colors.secondary,
                     }}>
                       Preview only. No invoice records have been changed.
+                    </div>
+
+                    <div style={{
+                      marginTop: 16,
+                      paddingTop: 14,
+                      borderTop: `1px solid ${colors.border}`,
+                    }}>
+                      <label style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        color: colors.text,
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(confirmedPreviews[group.key])}
+                          onChange={event =>
+                            setConfirmedPreviews(previous => ({
+                              ...previous,
+                              [group.key]: event.target.checked,
+                            }))
+                          }
+                        />
+                        <span>
+                          I have reviewed the historical corrections and
+                          future ingredient mapping shown above, and confirm
+                          that these are the changes I want to save.
+                        </span>
+                      </label>
+
+                      <button
+                        type="button"
+                        disabled
+                        style={{
+                          marginTop: 14,
+                          padding: '10px 18px',
+                          borderRadius: 6,
+                          border: '1px solid #02a4ba',
+                          background: confirmedPreviews[group.key]
+                            ? '#02a4ba'
+                            : '#272b36',
+                          color: '#ffffff',
+                          fontWeight: 700,
+                          opacity: 0.55,
+                          cursor: 'not-allowed',
+                        }}
+                      >
+                        Confirm and save changes
+                      </button>
+
+                      <div style={{
+                        marginTop: 8,
+                        color: colors.secondary,
+                        fontSize: 11,
+                      }}>
+                        Saving is not enabled yet.
+                        This button will become available after
+                        server-side validation is implemented.
+                      </div>
                     </div>
                   </div>
                 )}

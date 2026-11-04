@@ -232,9 +232,14 @@ export default async function handler(req, res) {
       });
     }
 
-    // Vendor-independent mapping storage is not implemented yet.
-    // Do not read supplier-specific mappings as group-wide approvals.
-    const existingMapping = null;
+    const { data: existingMapping, error: mappingError } = await db
+      .from('invoice_ingredient_mappings')
+      .select('ingredient_id, approved_at')
+      .eq('restaurant_id', restaurant_id)
+      .eq('product_key', productKey)
+      .maybeSingle();
+
+    if (mappingError) throw mappingError;
 
     const changed = previewChanges.filter(change => change.changed);
     const unchanged = previewChanges.length - changed.length;
