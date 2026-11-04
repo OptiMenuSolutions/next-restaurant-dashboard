@@ -18,6 +18,7 @@ import { isInternalCall } from '../../../lib/scannerAuth';
 import {
   ingredientIdentityConflicts,
   safeguardIngredientMatch,
+  resolveInvoiceIngredientMatches,
 } from '../../../lib/invoiceIngredientIdentity';
 
 
@@ -901,21 +902,13 @@ export default async function handler(req, res) {
     const toMatch = foodItems.filter((_, i) => !memoryHits[i]);
     const globalIngredients = toMatch.length ? await loadGlobalIngredients() : [];
     const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId, globalIngredients) : [];
-    let aiIdx = 0;
-
-    const matchResults = foodItems.map((item, i) => {
-      const result = memoryHits[i]
-        ? {
-            status: 'auto',
-            matches: [{ ...memoryHits[i], score: 1 }],
-          }
-        : (aiResults[aiIdx++] || { status: 'new', matches: [] });
-
-      return safeguardIngredientMatch(
-        item.item_name_normalized || item.item_name_raw,
-        result
-      );
-    });
+    
+    const matchResults = resolveInvoiceIngredientMatches(
+      foodItems,
+      restaurantIngredients,
+      remembered,
+      aiResults
+    );
 
     const memoryCount = memoryHits.filter(Boolean).length;
     if (memoryCount) console.log(`[parse-invoice] ${memoryCount} line(s) matched from earlier links`);

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   ingredientIdentityConflicts,
   safeguardIngredientMatch,
+  resolveInvoiceIngredientMatches,
 } from '../lib/invoiceIngredientIdentity.js';
 
 const ingredient = (id, name) => ({ id, name, score: 0.99 });
@@ -85,4 +86,83 @@ test('compatible automatic matches remain automatic', () => {
 
   assert.equal(result.status, 'auto');
   assert.equal(result.matches[0].id, 'chicken-1');
+});
+
+
+test('incorrect historical ingredient association requires review', () => {
+  const items = [{
+    item_name_normalized: 'Broccoli Crowns Fresh',
+  }];
+
+  const ingredients = [{
+    id: 'broccoli-1',
+    name: 'Broccoli Florets Frozen',
+  }];
+
+  const remembered = new Map([
+    ['broccoli crowns fresh', 'broccoli-1'],
+  ]);
+
+  const aiResults = [{
+    status: 'auto',
+    matches: [ingredients[0]],
+  }];
+
+  const results = resolveInvoiceIngredientMatches(
+    items,
+    ingredients,
+    remembered,
+    aiResults
+  );
+
+  assert.equal(results[0].status, 'ambiguous');
+  assert.equal(results[0].matches[0].id, 'broccoli-1');
+});
+
+test('incorrect Claude match requires review', () => {
+  const items = [{
+    item_name_normalized: 'Spring Mix',
+  }];
+
+  const ingredients = [{
+    id: 'salad-1',
+    name: 'Salad Blend Iceberg Romaine Chopped',
+  }];
+
+  const results = resolveInvoiceIngredientMatches(
+    items,
+    ingredients,
+    new Map(),
+    [{
+      status: 'auto',
+      matches: [ingredients[0]],
+    }]
+  );
+
+  assert.equal(results[0].status, 'ambiguous');
+});
+
+test('legitimate remembered supplier abbreviation remains automatic', () => {
+  const items = [{
+    item_name_normalized: 'Chicken Breast BNLS SKNLS',
+  }];
+
+  const ingredients = [{
+    id: 'chicken-1',
+    name: 'Chicken Breast Boneless Skinless',
+  }];
+
+  const remembered = new Map([
+    ['chicken breast bnls sknls', 'chicken-1'],
+  ]);
+
+  const results = resolveInvoiceIngredientMatches(
+    items,
+    ingredients,
+    remembered,
+    []
+  );
+
+  assert.equal(results[0].status, 'auto');
+  assert.equal(results[0].matches[0].id, 'chicken-1');
 });
