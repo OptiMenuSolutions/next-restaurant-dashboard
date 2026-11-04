@@ -166,3 +166,61 @@ test('legitimate remembered supplier abbreviation remains automatic', () => {
   assert.equal(results[0].status, 'auto');
   assert.equal(results[0].matches[0].id, 'chicken-1');
 });
+
+
+test('legitimate produce descriptions remain compatible', () => {
+  const equivalentPairs = [
+    ['Chives', 'Fresh Chives'],
+    ['Mushrooms Button Whole', 'Button Mushrooms'],
+    ['Coleslaw Fresh Prepared', 'Coleslaw'],
+    ['Pico de Gallo Fresh-Cut', 'Pico de Gallo'],
+  ];
+
+  for (const [invoiceName, ingredientName] of equivalentPairs) {
+    assert.equal(
+      ingredientIdentityConflicts(invoiceName, ingredientName),
+      false,
+      `${invoiceName} should match ${ingredientName}`
+    );
+  }
+});
+
+test('legitimate historical produce matches remain automatic', () => {
+  const pairs = [
+    ['Chives', 'Fresh Chives'],
+    ['Mushrooms Button Whole', 'Button Mushrooms'],
+    ['Coleslaw Fresh Prepared', 'Coleslaw'],
+    ['Pico de Gallo Fresh-Cut', 'Pico de Gallo'],
+  ];
+
+  for (const [index, [invoiceName, ingredientName]] of pairs.entries()) {
+    const result = safeguardIngredientMatch(invoiceName, {
+      status: 'auto',
+      matches: [{
+        id: `ingredient-${index}`,
+        name: ingredientName,
+        score: 1,
+      }],
+    });
+
+    assert.equal(result.status, 'auto', invoiceName);
+  }
+});
+
+test('produce equivalences do not permit unrelated product merges', () => {
+  const conflictingPairs = [
+    ['Broccoli Crowns', 'Broccoli Florets'],
+    ['Broccoli Crowns', 'Broccoli'],
+    ['Spring Mix', 'Mixed Greens'],
+    ['Salad Blend Iceberg Romaine Chopped', 'Mixed Greens'],
+    ['Spring Mix', 'Salad Blend Iceberg Romaine Chopped'],
+  ];
+
+  for (const [invoiceName, ingredientName] of conflictingPairs) {
+    assert.equal(
+      ingredientIdentityConflicts(invoiceName, ingredientName),
+      true,
+      `${invoiceName} must not automatically match ${ingredientName}`
+    );
+  }
+});
