@@ -35,6 +35,7 @@ function useApi() {
 function MatchConflictsReview() {
   const api = useApi();
   const [conflicts, setConflicts] = useState([]);
+  const [ingredientsByRestaurant, setIngredientsByRestaurant] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -44,9 +45,25 @@ function MatchConflictsReview() {
     async function load() {
       try {
         const result = await api('/api/admin/invoice-review/match-conflicts');
+        const nextConflicts = result.conflicts || [];
+
+        const restaurantIds = [
+          ...new Set(nextConflicts.map(group => group.restaurant_id)),
+        ];
+
+        const ingredientResults = await Promise.all(
+          restaurantIds.map(async restaurantId => {
+            const data = await api(
+              `/api/admin/invoice-review/conflict-ingredients?restaurant_id=${encodeURIComponent(restaurantId)}`
+            );
+
+            return [restaurantId, data.ingredients || []];
+          })
+        );
 
         if (!cancelled) {
-          setConflicts(result.conflicts || []);
+          setConflicts(nextConflicts);
+          setIngredientsByRestaurant(Object.fromEntries(ingredientResults));
           setError(null);
         }
       } catch (err) {
@@ -67,12 +84,23 @@ function MatchConflictsReview() {
     };
   }, [api]);
 
+ async function previewConflict(payload) {
+    return api('/api/admin/invoice-review/resolve-conflict', {
+      action: 'preview',
+      ...payload,
+    });
+  }
+
   return (
-    <InvoiceMatchConflicts
-      conflicts={conflicts}
-      loading={loading}
-      error={error}
-    />
+    <>
+      <InvoiceMatchConflicts
+        conflicts={conflicts}
+        ingredientsByRestaurant={ingredientsByRestaurant}
+        onPreview={previewConflict}
+        loading={loading}
+        error={error}
+      />
+    </>
   );
 }
 

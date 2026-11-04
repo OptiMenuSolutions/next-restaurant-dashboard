@@ -3,10 +3,197 @@ import { useState } from 'react';
 
 export default function InvoiceMatchConflicts({
   conflicts,
+  ingredientsByRestaurant = {},
+  onPreview,
   loading,
   error,
 }) {
   const [expanded, setExpanded] = useState({});
+  const [proposedLinks, setProposedLinks] = useState({});
+  const [selectedPurchases, setSelectedPurchases] = useState({});
+  const [bulkIngredients, setBulkIngredients] = useState({});
+
+    const [previews, setPreviews] = useState({});
+  const [previewLoading, setPreviewLoading] = useState({});
+  const [previewErrors, setPreviewErrors] = useState({});
+
+  
+  const [futureMappings, setFutureMappings] = useState({});
+
+  function updateFutureMapping(groupKey, updates) {
+    setFutureMappings(previous => ({
+      ...previous,
+      [groupKey]: {
+        ingredientId: '',
+        approved: false,
+        ...previous[groupKey],
+        ...updates,
+      },
+    }));
+
+    setPreviews(previous => ({
+      ...previous,
+      [groupKey]: null,
+    }));
+
+    setPreviewErrors(previous => ({
+      ...previous,
+      [groupKey]: null,
+    }));
+  }
+
+  async function previewGroup(group) {
+    const changes = group.purchases
+      .filter(purchase =>
+        Object.prototype.hasOwnProperty.call(
+          proposedLinks,
+          purchase.invoice_item_id
+        )
+      )
+      .map(purchase => ({
+        invoice_item_id: purchase.invoice_item_id,
+        expected_ingredient_id: purchase.ingredient_id || null,
+        ingredient_id: proposedLinks[purchase.invoice_item_id] || null,
+      }));
+
+    const futureMapping = futureMappings[group.key];
+    const approveFuture = Boolean(
+      futureMapping?.approved && futureMapping?.ingredientId
+    );
+
+    if (!changes.length && !approveFuture) return;
+
+    setPreviewLoading(previous => ({
+      ...previous,
+      [group.key]: true,
+    }));
+
+    setPreviewErrors(previous => ({
+      ...previous,
+      [group.key]: null,
+    }));
+
+    setPreviews(previous => ({
+      ...previous,
+      [group.key]: null,
+    }));
+
+    try {
+      const result = await onPreview({
+        restaurant_id: group.restaurant_id,
+        supplier: group.supplier,
+        product_description: group.product_description,
+        changes,
+        approve_future: approveFuture,
+        future_ingredient_id: approveFuture
+          ? futureMapping.ingredientId
+          : null,
+      });
+
+      setPreviews(previous => ({
+        ...previous,
+        [group.key]: result,
+      }));
+    } catch (err) {
+      setPreviewErrors(previous => ({
+        ...previous,
+        [group.key]: err.message,
+      }));
+    } finally {
+      setPreviewLoading(previous => ({
+        ...previous,
+        [group.key]: false,
+      }));
+    }
+  }
+
+  function togglePurchase(groupKey, purchaseId, checked) {
+    setSelectedPurchases(previous => {
+      const next = { ...previous };
+      const selected = new Set(previous[groupKey] || []);
+
+      if (checked) {
+        selected.add(purchaseId);
+      } else {
+        selected.delete(purchaseId);
+      }
+
+      next[groupKey] = [...selected];
+      return next;
+    });
+  }
+
+  function toggleAllPurchases(group, checked) {
+    setSelectedPurchases(previous => ({
+      ...previous,
+      [group.key]: checked
+        ? group.purchases.map(purchase => purchase.invoice_item_id)
+        : [],
+    }));
+  }
+
+  function applyBulkIngredient(group) {
+    const ingredientId = bulkIngredients[group.key];
+
+    if (ingredientId === undefined) return;
+
+    setPreviews(previous => ({
+      ...previous,
+      [group.key]: null,
+    }));
+
+    setPreviewErrors(previous => ({
+      ...previous,
+      [group.key]: null,
+    }));
+
+    const selected = new Set(selectedPurchases[group.key] || []);
+
+    setProposedLinks(previous => {
+      const next = { ...previous };
+
+      for (const purchase of group.purchases) {
+        if (!selected.has(purchase.invoice_item_id)) continue;
+
+        if (ingredientId === (purchase.ingredient_id || '')) {
+          delete next[purchase.invoice_item_id];
+        } else {
+          next[purchase.invoice_item_id] = ingredientId;
+        }
+      }
+
+      return next;
+    });
+
+    setSelectedPurchases(previous => ({
+      ...previous,
+      [group.key]: [],
+    }));
+  }
+
+  function setProposedIngredient(groupKey, purchase, ingredientId) {
+    setPreviews(previous => ({
+      ...previous,
+      [groupKey]: null,
+    }));
+
+    setPreviewErrors(previous => ({
+      ...previous,
+      [groupKey]: null,
+    }));
+
+    setProposedLinks(previous => {
+      const next = { ...previous };
+
+      if (ingredientId === (purchase.ingredient_id || '')) {
+        delete next[purchase.invoice_item_id];
+      } else {
+        next[purchase.invoice_item_id] = ingredientId;
+      }
+
+      return next;
+    });
+  }
 
   const colors = {
     border: '#272b36',
@@ -150,6 +337,67 @@ export default function InvoiceMatchConflicts({
                 ))}
               </div>
 
+                            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+                marginBottom: 12,
+              }}>
+                <span style={{
+                  color: colors.secondary,
+                  fontSize: 12,
+                }}>
+                  {(selectedPurchases[group.key] || []).length} selected
+                </span>
+
+                <select
+                  aria-label={`Bulk ingredient for ${group.product_description}`}
+                  value={bulkIngredients[group.key] ?? ''}
+                  onChange={event =>
+                    setBulkIngredients(previous => ({
+                      ...previous,
+                      [group.key]: event.target.value,
+                    }))
+                  }
+                  style={{
+                    minHeight: 34,
+                    minWidth: 200,
+                    padding: '6px 8px',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 6,
+                    background: colors.background,
+                    color: colors.text,
+                  }}
+                >
+                  <option value="" disabled>
+                    Choose ingredient for selected purchases
+                  </option>
+                  {(ingredientsByRestaurant[group.restaurant_id] || [])
+                    .map(ingredient => (
+                      <option key={ingredient.id} value={ingredient.id}>
+                        {ingredient.name}
+                      </option>
+                    ))}
+                </select>
+
+                <button
+                  type="button"
+                  disabled={
+                    !(selectedPurchases[group.key] || []).length ||
+                    !bulkIngredients[group.key]
+                  }
+                  onClick={() => applyBulkIngredient(group)}
+                  style={{
+                    minHeight: 34,
+                    padding: '6px 12px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Apply to selected
+                </button>
+              </div>
+
               <div style={{ overflowX: 'auto' }}>
                 <table style={{
                   width: '100%',
@@ -159,7 +407,23 @@ export default function InvoiceMatchConflicts({
                 }}>
                   <thead>
                     <tr>
-                      {['Date', 'Invoice', 'Supplier description', 'Linked ingredient'].map(label => (
+                      <th style={{
+                        padding: '8px 10px',
+                        borderBottom: `1px solid ${colors.border}`,
+                      }}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select all purchases for ${group.product_description}`}
+                          checked={
+                            group.purchases.length > 0 &&
+                            (selectedPurchases[group.key] || []).length === group.purchases.length
+                          }
+                          onChange={event =>
+                            toggleAllPurchases(group, event.target.checked)
+                          }
+                        />
+                      </th>
+                      {['Date', 'Invoice', 'Supplier description', 'Current ingredient', 'Proposed ingredient'].map(label => (
                         <th key={label} style={{
                           textAlign: 'left',
                           padding: '8px 10px',
@@ -175,6 +439,21 @@ export default function InvoiceMatchConflicts({
                   <tbody>
                     {group.purchases.map(purchase => (
                       <tr key={purchase.invoice_item_id}>
+                        <td style={{ padding: '8px 10px' }}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select purchase ${purchase.invoice_number || purchase.invoice_item_id}`}
+                            checked={(selectedPurchases[group.key] || [])
+                              .includes(purchase.invoice_item_id)}
+                            onChange={event =>
+                              togglePurchase(
+                                group.key,
+                                purchase.invoice_item_id,
+                                event.target.checked
+                              )
+                            }
+                          />
+                        </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                           {purchase.invoice_date || '—'}
                         </td>
@@ -192,19 +471,283 @@ export default function InvoiceMatchConflicts({
                         }}>
                           {purchase.matched_ingredient || 'Unlinked'}
                         </td>
+                        <td style={{ padding: '8px 10px', minWidth: 220 }}>
+                          <select
+                            aria-label={`Proposed ingredient for invoice ${purchase.invoice_number || purchase.invoice_item_id}`}
+                            value={
+                              Object.prototype.hasOwnProperty.call(
+                                proposedLinks,
+                                purchase.invoice_item_id
+                              )
+                                ? proposedLinks[purchase.invoice_item_id]
+                                : purchase.ingredient_id || ''
+                            }
+                            onChange={event =>
+                              setProposedIngredient(
+                                group.key,
+                                purchase,
+                                event.target.value
+                              )
+                            }
+                            style={{
+                              width: '100%',
+                              minHeight: 34,
+                              padding: '6px 8px',
+                              border: `1px solid ${
+                                Object.prototype.hasOwnProperty.call(
+                                  proposedLinks,
+                                  purchase.invoice_item_id
+                                )
+                                  ? colors.warning
+                                  : colors.border
+                              }`,
+                              borderRadius: 6,
+                              background: colors.background,
+                              color: colors.text,
+                              fontSize: 12,
+                            }}
+                          >
+                            <option value="">Unlinked</option>
+                            {(ingredientsByRestaurant[group.restaurant_id] || [])
+                              .map(ingredient => (
+                                <option key={ingredient.id} value={ingredient.id}>
+                                  {ingredient.name}
+                                </option>
+                              ))}
+                          </select>
+                          {Object.prototype.hasOwnProperty.call(
+                            proposedLinks,
+                            purchase.invoice_item_id
+                          ) && (
+                            <div style={{
+                              marginTop: 5,
+                              color: colors.warning,
+                              fontSize: 11,
+                            }}>
+                              Unsaved proposed change
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-
+              
               <div style={{
-                marginTop: 12,
-                fontSize: 11,
-                color: colors.secondary,
+                marginTop: 18,
+                padding: 14,
+                border: `1px solid ${colors.border}`,
+                borderRadius: 8,
               }}>
-                Read-only review. Mapping approvals and historical corrections
-                will be enabled in a later step.
+                <div style={{
+                  color: colors.text,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  marginBottom: 6,
+                }}>
+                  Remember this supplier product for future invoices
+                </div>
+
+                <div style={{
+                  color: colors.secondary,
+                  fontSize: 12,
+                  marginBottom: 12,
+                }}>
+                  {group.supplier} → {group.product_description}
+                </div>
+
+                <select
+                  aria-label={`Future ingredient for ${group.product_description}`}
+                  value={futureMappings[group.key]?.ingredientId || ''}
+                  onChange={event =>
+                    updateFutureMapping(group.key, {
+                      ingredientId: event.target.value,
+                      approved: false,
+                    })
+                  }
+                  style={{
+                    width: '100%',
+                    maxWidth: 420,
+                    minHeight: 36,
+                    padding: '7px 10px',
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 6,
+                    background: colors.background,
+                    color: colors.text,
+                  }}
+                >
+                  <option value="">Choose future ingredient</option>
+                  {(ingredientsByRestaurant[group.restaurant_id] || [])
+                    .map(ingredient => (
+                      <option key={ingredient.id} value={ingredient.id}>
+                        {ingredient.name}
+                      </option>
+                    ))}
+                </select>
+
+                <label style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  marginTop: 12,
+                  color: colors.text,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}>
+                  <input
+                    type="checkbox"
+                    disabled={!futureMappings[group.key]?.ingredientId}
+                    checked={Boolean(futureMappings[group.key]?.approved)}
+                    onChange={event =>
+                      updateFutureMapping(group.key, {
+                        approved: event.target.checked,
+                      })
+                    }
+                  />
+                  Approve this ingredient for future invoices
+                </label>
+
+                <div style={{
+                  marginTop: 10,
+                  color: colors.secondary,
+                  fontSize: 11,
+                }}>
+                  This selection does not change historical invoice links.
+                  Approval is not saved until you explicitly confirm it.
+                </div>
+              </div>
+
+              <div style={{ marginTop: 16 }}>
+                <button
+                  type="button"
+                  disabled={
+                    !onPreview ||
+                    previewLoading[group.key] ||
+                    (
+                      !group.purchases.some(purchase =>
+                        Object.prototype.hasOwnProperty.call(
+                          proposedLinks,
+                          purchase.invoice_item_id
+                        )
+                      ) &&
+                      !(
+                        futureMappings[group.key]?.approved &&
+                        futureMappings[group.key]?.ingredientId
+                      )
+                    )
+                  }
+                  onClick={() => previewGroup(group)}
+                  style={{
+                    padding: '9px 16px',
+                    borderRadius: 6,
+                    border: '1px solid #02a4ba',
+                    background: '#02a4ba',
+                    color: '#ffffff',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {previewLoading[group.key]
+                    ? 'Previewing...'
+                    : 'Preview changes'}
+                </button>
+
+                {previewErrors[group.key] && (
+                  <p style={{ color: '#e85454', fontSize: 12 }}>
+                    {previewErrors[group.key]}
+                  </p>
+                )}
+
+                {previews[group.key] && (
+                  <div style={{
+                    marginTop: 14,
+                    padding: 14,
+                    border: `1px solid ${colors.border}`,
+                    borderRadius: 8,
+                    color: colors.text,
+                  }}>
+                    <div style={{ fontWeight: 700, marginBottom: 8 }}>
+                      Resolution preview — not saved
+                    </div>
+
+                    <div style={{ fontSize: 12, marginBottom: 12 }}>
+                      {previews[group.key].summary.changed} changes
+                      {' · '}
+                      {previews[group.key].summary.newly_linked} newly linked
+                      {' · '}
+                      {previews[group.key].summary.unchanged} unchanged
+                    </div>
+
+                                        {previews[group.key].future_mapping?.approve && (
+                      <div style={{
+                        padding: '10px 0',
+                        marginBottom: 10,
+                        borderTop: `1px solid ${colors.border}`,
+                        fontSize: 12,
+                      }}>
+                        <div style={{ fontWeight: 700, marginBottom: 5 }}>
+                          Future supplier-product mapping
+                        </div>
+                        <div>
+                          {group.supplier}
+                          {' → '}
+                          {group.product_description}
+                          {' → '}
+                          {previews[group.key].future_mapping.ingredient_name}
+                        </div>
+                        <div style={{
+                          marginTop: 5,
+                          color: colors.secondary,
+                          fontSize: 11,
+                        }}>
+                          {previews[group.key].summary.future_mapping_would_change
+                            ? 'New or updated mapping will be approved.'
+                            : 'This mapping is already approved.'}
+                        </div>
+                        <div style={{
+                          marginTop: 5,
+                          color: colors.secondary,
+                          fontSize: 11,
+                        }}>
+                          Historical invoice links will not be changed by this approval.
+                        </div>
+                      </div>
+                    )}
+
+                    {previews[group.key].changes.map(change => (
+                      <div
+                        key={change.invoice_item_id}
+                        style={{
+                          padding: '8px 0',
+                          borderTop: `1px solid ${colors.border}`,
+                          fontSize: 12,
+                        }}
+                      >
+                        <strong>
+                          {change.invoice_number || 'Invoice without number'}
+                        </strong>
+                        {' · '}
+                        {change.invoice_date || 'No date'}
+                        <div style={{ marginTop: 4 }}>
+                          {group.purchases.find(purchase =>
+                            purchase.invoice_item_id === change.invoice_item_id
+                          )?.matched_ingredient || 'Unlinked'}
+                          {' → '}
+                          {change.new_ingredient_name || 'Unlinked'}
+                        </div>
+                      </div>
+                    ))}
+
+                    <div style={{
+                      marginTop: 12,
+                      fontSize: 11,
+                      color: colors.secondary,
+                    }}>
+                      Preview only. No invoice records have been changed.
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
