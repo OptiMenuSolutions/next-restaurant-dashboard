@@ -40,15 +40,12 @@ export default withAdminAuth(async function handler(req, res) {
     req.query.restaurant_id || ''
   ).trim();
 
-  if (!restaurantId) {
-    return res.status(400).json({
-      error: 'restaurant_id is required',
-    });
-  }
+  // No restaurant_id means all restaurants.
+  // Supplying one limits the results to that restaurant.
 
   try {
-    const invoiceItems = await fetchAll(() =>
-      supabase
+    const invoiceItems = await fetchAll(() => {
+      let query = supabase
         .from('invoice_items')
         .select(`
           id,
@@ -65,10 +62,15 @@ export default withAdminAuth(async function handler(req, res) {
             is_sample
           )
         `)
-        .eq('invoices.restaurant_id', restaurantId)
         .eq('invoices.is_sample', false)
-        .order('id')
-    );
+        .order('id');
+
+      if (restaurantId) {
+        query = query.eq('invoices.restaurant_id', restaurantId);
+      }
+
+      return query;
+    });
 
     const ingredientIds = [
       ...new Set(
@@ -86,7 +88,6 @@ export default withAdminAuth(async function handler(req, res) {
       const { data, error } = await supabase
         .from('ingredients')
         .select('id, name')
-        .eq('restaurant_id', restaurantId)
         .in('id', batch);
 
       if (error) throw error;
@@ -114,11 +115,38 @@ export default withAdminAuth(async function handler(req, res) {
 
     const conflicts = groupInvoiceMatchConflicts(purchases);
 
+    const restaurantIds = [
+      ...new Set(conflicts.map(group => group.restaurant_id)),
+    ];
+
+    const restaurantNames = new Map();
+
+    for (let start = 0; start < restaurantIds.length; start += PAGE_SIZE) {
+      const batch = restaurantIds.slice(start, start + PAGE_SIZE);
+
+      const { data, error } = await supabase
+        .from('restaurants')
+        .select('id, name')
+        .in('id', batch);
+
+      if (error) throw error;
+
+      for (const restaurant of data || []) {
+        restaurantNames.set(restaurant.id, restaurant.name);
+      }
+    }
+
+    const namedConflicts = conflicts.map(group => ({
+      ...group,
+      restaurant_name:
+        restaurantNames.get(group.restaurant_id) || 'Unknown restaurant',
+    }));
+
     return res.status(200).json({
-      restaurant_id: restaurantId,
+      restaurant_id: restaurantId || null,
       total_purchases_scanned: purchases.length,
-      conflict_count: conflicts.length,
-      conflicts,
+      conflict_count: namedConflicts.length,
+      conflicts: namedConflicts,
     });
   } catch (error) {
     console.error(

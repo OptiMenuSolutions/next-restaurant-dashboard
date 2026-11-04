@@ -16,6 +16,7 @@ import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import { MONO, ErrorState, LoadingState } from '../../components/client/ClientChrome';
 import { Chip, money, shortDate } from '../../components/admin/ui';
 import useIsPhone from '../../lib/admin/useIsPhone';
+import InvoiceMatchConflicts from '../../components/admin/InvoiceMatchConflicts';
 
 // Each panel is at most one screen tall and scrolls on its own, so a long
 // queue or a long invoice never stretches the page.
@@ -31,11 +32,60 @@ function useApi() {
   }, [adminFetch]);
 }
 
+function MatchConflictsReview() {
+  const api = useApi();
+  const [conflicts, setConflicts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const result = await api('/api/admin/invoice-review/match-conflicts');
+
+        if (!cancelled) {
+          setConflicts(result.conflicts || []);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  return (
+    <InvoiceMatchConflicts
+      conflicts={conflicts}
+      loading={loading}
+      error={error}
+    />
+  );
+}
+
 function ReviewPage() {
   const router = useRouter();
   const isPhone = useIsPhone();
   const [tab, setTab] = useState('invoices');
-  useEffect(() => { if (router.query.tab === 'menus') setTab('menus'); }, [router.query.tab]);
+  useEffect(() => {
+    const requestedTab = router.query.tab;
+    if (['invoices', 'menus', 'conflicts'].includes(requestedTab)) {
+      setTab(requestedTab);
+    }
+  }, [router.query.tab]);
 
   return (
     <>
@@ -44,7 +94,7 @@ function ReviewPage() {
         style={isPhone
           ? { display: 'flex', gap: 4, padding: 4, borderRadius: 12, background: 'var(--panel)', marginBottom: 12 }
           : { display: 'flex', gap: 22, borderBottom: '1px solid var(--line)' }}>
-        {[['invoices', 'Invoices'], ['menus', 'Menus']].map(([k, l]) => (
+        {[['invoices', 'Invoices'], ['menus', 'Menus'], ['conflicts', 'Match conflicts']].map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
             style={isPhone
               ? { flex: 1, minHeight: 40, border: 0, borderRadius: 9, background: tab === k ? 'var(--shell)' : 'transparent', color: tab === k ? 'var(--text)' : 'var(--muted)', cursor: 'pointer', font: `${tab === k ? 800 : 600} 14px 'Manrope', sans-serif` }
@@ -56,7 +106,11 @@ function ReviewPage() {
           initialRestaurant={typeof router.query.restaurant === 'string' ? router.query.restaurant : null}
           initialInvoice={typeof router.query.invoice === 'string' ? router.query.invoice : null}
         />
-      ) : <Menus />}
+      ) : tab === 'menus' ? (
+        <Menus />
+      ) : (
+        <MatchConflictsReview />
+      )}
     </>
   );
 }
