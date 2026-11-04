@@ -39,12 +39,11 @@ export default async function handler(req, res) {
     });
   }
 
-  const supplierKey = normalizeSupplierProduct(supplier);
   const productKey = normalizeSupplierProduct(product_description);
 
-  if (!supplierKey || !productKey) {
+  if (!productKey) {
     return res.status(400).json({
-      error: 'Supplier and product description are required.',
+      error: 'Product description is required.',
     });
   }
 
@@ -199,15 +198,9 @@ export default async function handler(req, res) {
         });
       }
 
-      const actualSupplierKey = normalizeSupplierProduct(invoice.supplier);
-      const actualProductKey = normalizeSupplierProduct(
-        item.item_name || item.ingredient_name_normalized
-      );
+      const actualProductKey = normalizeSupplierProduct(item.item_name);
 
-      if (
-        actualSupplierKey !== supplierKey ||
-        actualProductKey !== productKey
-      ) {
+      if (actualProductKey !== productKey) {
         return res.status(400).json({
           error: 'An invoice line does not belong to this conflict group.',
         });
@@ -228,8 +221,7 @@ export default async function handler(req, res) {
         invoice_id: item.invoice_id,
         invoice_number: invoice.number,
         invoice_date: invoice.date,
-        product_description:
-          item.item_name || item.ingredient_name_normalized,
+        product_description: item.item_name,
         previous_ingredient_id: currentId,
         new_ingredient_id: nextId,
         new_ingredient_name: nextId
@@ -240,15 +232,9 @@ export default async function handler(req, res) {
       });
     }
 
-    const { data: existingMapping, error: mappingError } = await db
-      .from('invoice_ingredient_mappings')
-      .select('ingredient_id, approved_at')
-      .eq('restaurant_id', restaurant_id)
-      .eq('supplier_key', supplierKey)
-      .eq('product_key', productKey)
-      .maybeSingle();
-
-    if (mappingError) throw mappingError;
+    // Vendor-independent mapping storage is not implemented yet.
+    // Do not read supplier-specific mappings as group-wide approvals.
+    const existingMapping = null;
 
     const changed = previewChanges.filter(change => change.changed);
     const unchanged = previewChanges.length - changed.length;
@@ -265,7 +251,7 @@ export default async function handler(req, res) {
       restaurant_id,
       restaurant_name: restaurant.name,
       supplier,
-      supplier_key: supplierKey,
+      supplier_key: null,
       product_description,
       product_key: productKey,
       summary: {

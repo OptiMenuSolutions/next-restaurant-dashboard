@@ -10,6 +10,8 @@ export default function InvoiceMatchConflicts({
 }) {
   const [expanded, setExpanded] = useState({});
   const [proposedLinks, setProposedLinks] = useState({});
+  const [manualOverrides, setManualOverrides] = useState({});
+  const [automaticProposals, setAutomaticProposals] = useState({});
   const [selectedPurchases, setSelectedPurchases] = useState({});
   const [bulkIngredients, setBulkIngredients] = useState({});
 
@@ -20,16 +22,49 @@ export default function InvoiceMatchConflicts({
   
   const [futureMappings, setFutureMappings] = useState({});
 
-  function updateFutureMapping(groupKey, updates) {
+  function updateFutureMapping(group, updates) {
+    const groupKey = group.key;
+    const current = futureMappings[groupKey] || {
+      ingredientId: '',
+      approved: false,
+    };
+    const next = { ...current, ...updates };
+
     setFutureMappings(previous => ({
       ...previous,
-      [groupKey]: {
-        ingredientId: '',
-        approved: false,
-        ...previous[groupKey],
-        ...updates,
-      },
+      [groupKey]: next,
     }));
+
+    setProposedLinks(previous => {
+      const updated = { ...previous };
+      const nextAutomatic = { ...automaticProposals };
+
+      for (const purchase of group.purchases) {
+        const id = purchase.invoice_item_id;
+        const currentId = purchase.ingredient_id || '';
+
+        if (manualOverrides[id]) {
+          delete nextAutomatic[id];
+          continue;
+        }
+
+        if (next.approved && next.ingredientId) {
+          if (currentId === next.ingredientId) {
+            delete updated[id];
+            delete nextAutomatic[id];
+          } else {
+            updated[id] = next.ingredientId;
+            nextAutomatic[id] = true;
+          }
+        } else if (nextAutomatic[id]) {
+          delete updated[id];
+          delete nextAutomatic[id];
+        }
+      }
+
+      setAutomaticProposals(nextAutomatic);
+      return updated;
+    });
 
     setPreviews(previous => ({
       ...previous,
@@ -81,7 +116,6 @@ export default function InvoiceMatchConflicts({
     try {
       const result = await onPreview({
         restaurant_id: group.restaurant_id,
-        supplier: group.supplier,
         product_description: group.product_description,
         changes,
         approve_future: approveFuture,
@@ -148,6 +182,22 @@ export default function InvoiceMatchConflicts({
     }));
 
     const selected = new Set(selectedPurchases[group.key] || []);
+
+    setManualOverrides(previous => {
+      const next = { ...previous };
+      for (const id of selected) {
+        next[id] = true;
+      }
+      return next;
+    });
+
+    setAutomaticProposals(previous => {
+      const next = { ...previous };
+      for (const id of selected) {
+        delete next[id];
+      }
+      return next;
+    });
 
     setProposedLinks(previous => {
       const next = { ...previous };
@@ -296,7 +346,9 @@ export default function InvoiceMatchConflicts({
                 }}>
                   {group.restaurant_name || group.restaurant_id}
                   {' · '}
-                  {group.supplier}
+                  {(group.suppliers || []).length} supplier(s)
+                  {' · '}
+                  {(group.suppliers || []).join(', ')}
                 </div>
               </div>
               <div style={{
@@ -423,7 +475,7 @@ export default function InvoiceMatchConflicts({
                           }
                         />
                       </th>
-                      {['Date', 'Invoice', 'Supplier description', 'Current ingredient', 'Proposed ingredient'].map(label => (
+                      {['Date', 'Invoice', 'Supplier', 'Supplier description', 'Current ingredient', 'Proposed ingredient'].map(label => (
                         <th key={label} style={{
                           textAlign: 'left',
                           padding: '8px 10px',
@@ -459,6 +511,9 @@ export default function InvoiceMatchConflicts({
                         </td>
                         <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                           {purchase.invoice_number || '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          {purchase.supplier || 'Unknown supplier'}
                         </td>
                         <td style={{ padding: '8px 10px' }}>
                           {purchase.product_description}
@@ -561,7 +616,7 @@ export default function InvoiceMatchConflicts({
                   aria-label={`Future ingredient for ${group.product_description}`}
                   value={futureMappings[group.key]?.ingredientId || ''}
                   onChange={event =>
-                    updateFutureMapping(group.key, {
+                    updateFutureMapping(group, {
                       ingredientId: event.target.value,
                       approved: false,
                     })
@@ -600,7 +655,7 @@ export default function InvoiceMatchConflicts({
                     disabled={!futureMappings[group.key]?.ingredientId}
                     checked={Boolean(futureMappings[group.key]?.approved)}
                     onChange={event =>
-                      updateFutureMapping(group.key, {
+                      updateFutureMapping(group, {
                         approved: event.target.checked,
                       })
                     }
