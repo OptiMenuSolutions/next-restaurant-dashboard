@@ -32,39 +32,49 @@ function useApi() {
   }, [adminFetch]);
 }
 
+
 function MatchConflictsReview() {
   const api = useApi();
-  const [refreshVersion, setRefreshVersion] = useState(0);
   const [conflicts, setConflicts] = useState([]);
   const [ingredientsByRestaurant, setIngredientsByRestaurant] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+
+  const loadConflicts = useCallback(async () => {
+    const result = await api('/api/admin/invoice-review/match-conflicts');
+    const nextConflicts = result.conflicts || [];
+
+    const restaurantIds = [
+      ...new Set(nextConflicts.map(group => group.restaurant_id)),
+    ];
+
+    const ingredientResults = await Promise.all(
+      restaurantIds.map(async restaurantId => {
+        const data = await api(
+          `/api/admin/invoice-review/conflict-ingredients?restaurant_id=${encodeURIComponent(restaurantId)}`
+        );
+
+        return [restaurantId, data.ingredients || []];
+      })
+    );
+
+    return {
+      conflicts: nextConflicts,
+      ingredients: Object.fromEntries(ingredientResults),
+    };
+  }, [api]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const result = await api('/api/admin/invoice-review/match-conflicts');
-        const nextConflicts = result.conflicts || [];
-
-        const restaurantIds = [
-          ...new Set(nextConflicts.map(group => group.restaurant_id)),
-        ];
-
-        const ingredientResults = await Promise.all(
-          restaurantIds.map(async restaurantId => {
-            const data = await api(
-              `/api/admin/invoice-review/conflict-ingredients?restaurant_id=${encodeURIComponent(restaurantId)}`
-            );
-
-            return [restaurantId, data.ingredients || []];
-          })
-        );
+        const result = await loadConflicts();
 
         if (!cancelled) {
-          setConflicts(nextConflicts);
-          setIngredientsByRestaurant(Object.fromEntries(ingredientResults));
+          setConflicts(result.conflicts);
+          setIngredientsByRestaurant(result.ingredients);
           setError(null);
         }
       } catch (err) {
@@ -83,7 +93,7 @@ function MatchConflictsReview() {
     return () => {
       cancelled = true;
     };
-  }, [api, refreshVersion]);
+  }, [loadConflicts]);
 
   async function previewConflict(payload) {
     return api('/api/admin/invoice-review/resolve-conflict', {
@@ -93,33 +103,35 @@ function MatchConflictsReview() {
   }
 
   async function saveConflict(payload) {
-    const result = await api('/api/admin/invoice-review/resolve-conflict', {
+    return api('/api/admin/invoice-review/resolve-conflict', {
       action: 'save',
       ...payload,
     });
+  }
 
-    if (!result?.saved) {
-      throw new Error('The server did not confirm that changes were saved.');
-    }
+  async function refreshConflicts() {
+    const result = await loadConflicts();
 
+    setConflicts(result.conflicts);
+    setIngredientsByRestaurant(result.ingredients);
     setRefreshVersion(previous => previous + 1);
-    return result;
+    setError(null);
   }
 
   return (
-    <>
-      <InvoiceMatchConflicts
-        key={refreshVersion}
-        conflicts={conflicts}
-        ingredientsByRestaurant={ingredientsByRestaurant}
-        onPreview={previewConflict}
-        onSave={saveConflict}
-        loading={loading}
-        error={error}
-      />
-    </>
+    <InvoiceMatchConflicts
+      key={refreshVersion}
+      conflicts={conflicts}
+      ingredientsByRestaurant={ingredientsByRestaurant}
+      onPreview={previewConflict}
+      onSave={saveConflict}
+      onSaved={refreshConflicts}
+      loading={loading}
+      error={error}
+    />
   );
 }
+
 
 function ReviewPage() {
   const router = useRouter();

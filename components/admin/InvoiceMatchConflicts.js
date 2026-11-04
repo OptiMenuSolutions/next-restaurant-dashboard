@@ -6,6 +6,7 @@ export default function InvoiceMatchConflicts({
   ingredientsByRestaurant = {},
   onPreview,
   onSave,
+  onSaved,
   loading,
   error,
 }) {
@@ -201,6 +202,10 @@ export default function InvoiceMatchConflicts({
         ...previous,
         [group.key]: false,
       }));
+
+      if (onSaved) {
+        await onSaved();
+      }
     } catch (error) {
       setSaveErrors(previous => ({
         ...previous,
@@ -927,7 +932,12 @@ export default function InvoiceMatchConflicts({
 
                       <button
                         type="button"
-                        disabled
+                        disabled={
+                          !confirmedPreviews[group.key] ||
+                          !previews[group.key]?.confirmation_token ||
+                          saveLoading[group.key] ||
+                          previewLoading[group.key]
+                        }
                         onClick={() => saveGroup(group)}
                         style={{
                           marginTop: 14,
@@ -943,7 +953,9 @@ export default function InvoiceMatchConflicts({
                           cursor: 'not-allowed',
                         }}
                       >
-                        Confirm and save changes
+                        {saveLoading[group.key]
+                          ? 'Saving changes...'
+                          : 'Confirm and save changes'}
                       </button>
                       
                       {saveErrors[group.key] && (
@@ -955,16 +967,6 @@ export default function InvoiceMatchConflicts({
                           {saveErrors[group.key]}
                         </div>
                       )}
-
-                      <div style={{
-                        marginTop: 8,
-                        color: colors.secondary,
-                        fontSize: 11,
-                      }}>
-                        Saving is not enabled yet.
-                        This button will become available after
-                        server-side validation is implemented.
-                      </div>
                     </div>
                   </div>
                 )}
