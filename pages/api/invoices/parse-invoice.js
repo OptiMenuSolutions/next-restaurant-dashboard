@@ -15,6 +15,11 @@ import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import { logAiUsage } from '../../../lib/logAiUsage';
 import { isInternalCall } from '../../../lib/scannerAuth';
+import {
+  ingredientIdentityConflicts,
+  safeguardIngredientMatch,
+} from '../../../lib/invoiceIngredientIdentity';
+
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
 // enforced at the platform level — not configurable via formidable's own
@@ -511,14 +516,22 @@ For each invoice item, decide:
 - "ambiguous": plausibly matches 2–5 library ingredients but you're not certain. List up to 5 candidates by confidence order.
 - "new": no reasonable match exists in the library.
 
+
 RULES:
-- Be liberal with "auto" — "Chicken Breast BNLS SKNLS" → "Chicken Breast" is auto.
-- Synonyms count: "Canola Oil" → "Frying Oil" is ambiguous, not new.
-- Size/pack noise is irrelevant: "Mozzarella 5lb" → "Mozzarella" is auto.
-- A specific cut, grade, or style of a product matches the general ingredient when the library has no more specific entry: "Baby Back Ribs" → "Pork Ribs" and "Ribeye Choice 12oz" → "Ribeye Steak" are auto.
+- Be conservative with "auto". A wrong automatic match can corrupt recipe costs, inventory, and margins.
+- Use "auto" only when the products are clearly the same culinary ingredient, allowing harmless spelling differences, abbreviations, brand noise, and purchase packaging differences.
+- Different products are not interchangeable merely because they share a category or could substitute for one another.
+- Preserve meaningful differences in fresh/frozen/canned/dried state, cut, preparation, variety, grade, fat percentage, bone/skin characteristics, and intended culinary use.
+- Fresh Broccoli Crowns and Frozen Broccoli Florets must not automatically share an ingredient.
+- Spring Mix and Chopped Iceberg Romaine Salad Blend must not automatically share an ingredient.
+- A specific product must not automatically match a generic library ingredient when meaningful characteristics are missing from the library name. Use "ambiguous" and offer the closest candidate for review.
+- "Chicken Breast BNLS SKNLS" may match "Chicken Breast Boneless Skinless" automatically.
+- Supplier abbreviations and equivalent product descriptions may match automatically when identity is otherwise clear.
+- Package counts and case sizes alone do not establish different ingredient identities.
+- "Canola Oil" and "Frying Oil" are ambiguous unless identity is established.
 - Only use ingredient IDs from the library above.
-- Use the known product names to recognize items: "Sugar Granulated Fine" is Sugar. If the library has an ingredient with that standard name or one of its other names, that is an "auto" match.
-- For every "new" item that is one of the known products, set "canonical" to its standard name exactly as written in the list. Otherwise set "canonical" to null.
+- Known product names and aliases are recognition aids, not proof that materially different products are identical.
+- For every "new" item that is one of the known products, set "canonical" to its standard name exactly as written in the list, provided it does not erase a meaningful product distinction. Otherwise set "canonical" to null.
 - Return ONLY raw JSON. No markdown, no explanation.
 
 OUTPUT FORMAT:
@@ -867,19 +880,43 @@ export default async function handler(req, res) {
     // the rest go to the AI matcher.
     const remembered = await loadRememberedLinks(restaurantId);
     const ingById = new Map(restaurantIngredients.map(i => [i.id, i]));
+
     const memoryHits = foodItems.map(item => {
-      const id = remembered.get(normalizeName(item.item_name_normalized || item.item_name_raw));
-      return id && ingById.has(id) ? ingById.get(id) : null;
+      const name = item.item_name_normalized || item.item_name_raw;
+      const id = remembered.get(normalizeName(name));
+      const ingredient = id ? ingById.get(id) : null;
+
+      if (!ingredient) return null;
+
+      // Historical links may have originated from AI matches rather
+      // than explicit owner approval. Do not blindly reuse a link
+      // when the product characteristics disagree.
+      if (ingredientIdentityConflicts(name, ingredient.name)) {
+        return null;
+      }
+
+      return ingredient;
     });
+
     const toMatch = foodItems.filter((_, i) => !memoryHits[i]);
     const globalIngredients = toMatch.length ? await loadGlobalIngredients() : [];
     const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId, globalIngredients) : [];
     let aiIdx = 0;
-    const matchResults = foodItems.map((_, i) =>
-      memoryHits[i]
-        ? { status: 'auto', matches: [{ ...memoryHits[i], score: 1 }] }
-        : (aiResults[aiIdx++] || { status: 'new', matches: [] })
-    );
+
+    const matchResults = foodItems.map((item, i) => {
+      const result = memoryHits[i]
+        ? {
+            status: 'auto',
+            matches: [{ ...memoryHits[i], score: 1 }],
+          }
+        : (aiResults[aiIdx++] || { status: 'new', matches: [] });
+
+      return safeguardIngredientMatch(
+        item.item_name_normalized || item.item_name_raw,
+        result
+      );
+    });
+
     const memoryCount = memoryHits.filter(Boolean).length;
     if (memoryCount) console.log(`[parse-invoice] ${memoryCount} line(s) matched from earlier links`);
 
