@@ -143,7 +143,11 @@ export default function InvoiceMatchConflicts({
         ...previous,
         [group.key]: {
           ...result,
-          confirmedRequest: request,
+          confirmedRequest: {
+            ...request,
+            expected_mapping_updated_at:
+              result.expected_mapping_updated_at ?? null,
+          },
         },
       }));
 

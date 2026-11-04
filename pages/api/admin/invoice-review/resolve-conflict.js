@@ -33,6 +33,7 @@ export default async function handler(req, res) {
     changes,
     approve_future = false,
     future_ingredient_id = null,
+    expected_mapping_updated_at = null,
   } = req.body || {};
 
   if (!['preview', 'save'].includes(action)) {
@@ -47,6 +48,7 @@ export default async function handler(req, res) {
     changes,
     approve_future,
     future_ingredient_id,
+    expected_mapping_updated_at,
   };
 
   if (action === 'save') {
@@ -268,7 +270,7 @@ export default async function handler(req, res) {
 
     const { data: existingMapping, error: mappingError } = await db
       .from('invoice_ingredient_mappings')
-      .select('ingredient_id, approved_at')
+      .select('ingredient_id, approved_at, updated_at')
       .eq('restaurant_id', restaurant_id)
       .eq('product_key', productKey)
       .maybeSingle();
@@ -294,6 +296,7 @@ export default async function handler(req, res) {
             : null,
           p_approve_future: approve_future,
           p_admin_id: admin.user.id,
+          p_expected_mapping_updated_at: expected_mapping_updated_at,
         }
       );
 
@@ -382,9 +385,13 @@ export default async function handler(req, res) {
       },
       changes: previewChanges,
       saved: false,
+      expected_mapping_updated_at: existingMapping?.updated_at ?? null,
       confirmation_token: createConflictConfirmation(
         admin.user.id,
-        confirmationRequest
+        {
+          ...confirmationRequest,
+          expected_mapping_updated_at: existingMapping?.updated_at ?? null,
+        }
       ),
     });
   } catch (error) {

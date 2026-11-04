@@ -34,6 +34,7 @@ function useApi() {
 
 function MatchConflictsReview() {
   const api = useApi();
+  const [refreshVersion, setRefreshVersion] = useState(0);
   const [conflicts, setConflicts] = useState([]);
   const [ingredientsByRestaurant, setIngredientsByRestaurant] = useState({});
   const [loading, setLoading] = useState(true);
@@ -82,7 +83,7 @@ function MatchConflictsReview() {
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, refreshVersion]);
 
   async function previewConflict(payload) {
     return api('/api/admin/invoice-review/resolve-conflict', {
@@ -92,15 +93,23 @@ function MatchConflictsReview() {
   }
 
   async function saveConflict(payload) {
-    return api('/api/admin/invoice-review/resolve-conflict', {
+    const result = await api('/api/admin/invoice-review/resolve-conflict', {
       action: 'save',
       ...payload,
     });
+
+    if (!result?.saved) {
+      throw new Error('The server did not confirm that changes were saved.');
+    }
+
+    setRefreshVersion(previous => previous + 1);
+    return result;
   }
 
   return (
     <>
       <InvoiceMatchConflicts
+        key={refreshVersion}
         conflicts={conflicts}
         ingredientsByRestaurant={ingredientsByRestaurant}
         onPreview={previewConflict}
