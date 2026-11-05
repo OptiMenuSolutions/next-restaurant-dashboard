@@ -386,13 +386,13 @@ export default function RecipeWorkspace({
   async function upload(file) {
     if (!file) return;
 
-    const mime = file.type || (
-      /\.csv$/i.test(file.name)
-        ? 'text/csv'
-        : /\.txt$/i.test(file.name)
-          ? 'text/plain'
-          : ''
-    );
+const mime = /\.xlsx$/i.test(file.name)
+  ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  : /\.csv$/i.test(file.name)
+    ? 'text/csv'
+    : file.type || (
+        /\.txt$/i.test(file.name) ? 'text/plain' : ''
+      );
 
     const signed = await post({
       action: 'sign',
@@ -1159,7 +1159,7 @@ export default function RecipeWorkspace({
                       Upload more recipes
                       <input
                         type="file"
-                        accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv,.xlsx"
                         disabled={busy || dirty}
                         style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
                         onChange={event => {
@@ -1193,7 +1193,7 @@ export default function RecipeWorkspace({
                   <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>
                     {data.state.imports.length ? 'Upload another document' : 'Upload a recipe document'}
                   </span>
-                  <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: 'var(--muted)' }}>PDF, photo, CSV or text, up to 20 MB</span>
+                  <span style={{ display: 'block', marginTop: 2, fontSize: 12.5, color: 'var(--muted)' }}>PDF, photo, Excel, CSV or text, up to 20 MB</span>
                 </span>
                 <span style={button}>Choose file</span>
                 <input
