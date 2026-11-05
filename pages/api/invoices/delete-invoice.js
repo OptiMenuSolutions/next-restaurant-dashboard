@@ -80,7 +80,7 @@ export function createDeleteInvoiceHandler({
     if (!ids.length) return res.status(404).json({ error: 'Invoice not found' });
 
     // Ingredients these invoices priced, so they can be re-priced afterwards.
-    const { data: lines, error: linesErr } = await supabase
+    const { data: lines, error: linesErr } = await db
       .from('invoice_items')
       .select('id, ingredient_id')
       .in('invoice_id', ids);
@@ -88,7 +88,7 @@ export function createDeleteInvoiceHandler({
     const ingredientIds = [...new Set((lines || []).map(l => l.ingredient_id).filter(Boolean))];
 
     // Stored files, removed from Storage after the rows are gone (best effort).
-    const { data: fileRows } = await supabase
+    const { data: fileRows } = await db
       .from('invoice_files')
       .select('file_url')
       .in('invoice_id', ids);
@@ -98,14 +98,14 @@ export function createDeleteInvoiceHandler({
     ].filter(p => p && !/^https?:\/\//.test(p)))];
 
     // Delete children first, then the invoices.
-    const { error: delItemsErr } = await supabase.from('invoice_items').delete().in('invoice_id', ids);
+    const { error: delItemsErr } = await db.from('invoice_items').delete().in('invoice_id', ids);
     if (delItemsErr) {
       // Most likely another table (e.g. waste_confirmations) still points at
       // one of these lines.
       return res.status(409).json({ error: 'Could not remove this invoice’s lines: ' + delItemsErr.message });
     }
-    await supabase.from('invoice_files').delete().in('invoice_id', ids);
-    const { error: delInvErr } = await supabase
+    await db.from('invoice_files').delete().in('invoice_id', ids);
+    const { error: delInvErr } = await db
       .from('invoices')
       .delete()
       .in('id', ids)
@@ -113,7 +113,7 @@ export function createDeleteInvoiceHandler({
     if (delInvErr) throw delInvErr;
 
     if (paths.length) {
-      const { error: storageErr } = await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+      const { error: storageErr } = await db.storage.from(STORAGE_BUCKET).remove(paths);
       if (storageErr) console.error('[delete-invoice] storage cleanup failed:', storageErr.message);
     }
 
@@ -121,8 +121,8 @@ export function createDeleteInvoiceHandler({
     let repriced = 0, cleared = 0;
     if (matchingEnabled && ingredientIds.length) {
       const [{ data: ings }, { data: remaining }] = await Promise.all([
-        supabase.from('ingredients').select('id, name').in('id', ingredientIds).eq('restaurant_id', restaurant_id),
-        supabase
+        db.from('ingredients').select('id, name').in('id', ingredientIds).eq('restaurant_id', restaurant_id),
+        db
           .from('invoice_items')
           .select('ingredient_id, unit, unit_cost, invoices!invoice_items_invoice_id_fkey!inner(date, restaurant_id)')
           .in('ingredient_id', ingredientIds)
@@ -150,7 +150,7 @@ export function createDeleteInvoiceHandler({
           // keep one that came from the deleted invoice.
           : { last_price: null, last_ordered_at: null };
         if (n) repriced++; else cleared++;
-        return supabase.from('ingredients').update(update).eq('id', g.id).eq('restaurant_id', restaurant_id);
+        return db.from('ingredients').update(update).eq('id', g.id).eq('restaurant_id', restaurant_id);
       }));
 
       try {
