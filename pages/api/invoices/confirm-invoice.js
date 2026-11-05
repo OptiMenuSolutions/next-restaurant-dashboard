@@ -18,8 +18,9 @@ import {
   resolveInvoiceResearchCost,
 } from '../../../lib/invoiceResearchCosting';
 import {
-  getRestaurantInvoiceMatchingControl,
-} from '../../../lib/invoiceMatchingControls';
+  getProgressiveInvoiceMatchingPolicy,
+  findStrictDirectMatch,
+} from '../../../lib/progressiveInvoiceMatching';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -65,22 +66,22 @@ export function createConfirmInvoiceHandler({
     if (authError) return res.status(authStatus).json({ error: authError });
   }
 
-  let matchingControl;
+  let matchingPolicy;
 
   try {
-    matchingControl = await getRestaurantInvoiceMatchingControl(
+    matchingPolicy = await getProgressiveInvoiceMatchingPolicy(
       supabase,
       restaurant_id
     );
   } catch (error) {
-    console.error('[confirm-invoice] Matching control:', error);
+    console.error('[confirm-invoice] Matching policy:', error);
 
     return res.status(503).json({
       error: 'Invoice matching controls are unavailable. Please retry.',
     });
   }
 
-  const matchingEnabled = matchingControl.matching_enabled;
+  const matchingEnabled = matchingPolicy.matching_enabled;
 
   // Normalize recognized numbered-can packages before any ingredient
   // pricing, inventory quantity, or invoice line calculations.
@@ -136,8 +137,9 @@ export function createConfirmInvoiceHandler({
   const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
   const appendMode  = !!append_to_invoice_id;
 
-  // Validate ingredient ownership before creating or modifying an invoice.
-  // Locked restaurants save their invoice lines without ingredient links.
+  // Verify ownership independently of the invoice parser.
+  // Client-submitted ingredient IDs cannot expand matching eligibility.
+
   const requestedIngredientIds = matchingEnabled
     ? [...new Set(
         activeItems
@@ -146,12 +148,12 @@ export function createConfirmInvoiceHandler({
       )]
     : [];
 
-  const ownedIngredientIds = new Set();
+  const ownedIngredients = new Map();
 
   if (requestedIngredientIds.length) {
     const { data, error } = await supabase
       .from('ingredients')
-      .select('id')
+      .select('id, name, unit')
       .eq('restaurant_id', restaurant_id)
       .in('id', requestedIngredientIds);
 
@@ -162,22 +164,82 @@ export function createConfirmInvoiceHandler({
     }
 
     for (const ingredient of data || []) {
-      ownedIngredientIds.add(ingredient.id);
+      ownedIngredients.set(ingredient.id, ingredient);
     }
 
-    if (ownedIngredientIds.size !== requestedIngredientIds.length) {
+    if (ownedIngredients.size !== requestedIngredientIds.length) {
       return res.status(400).json({
         error: 'An invoice ingredient does not belong to this restaurant.',
       });
     }
   }
 
+  let strictEligibleIngredients = [];
+
+  if (matchingPolicy.mode === 'strict') {
+    const eligibleIds = [
+      ...matchingPolicy.eligibleIngredientIds,
+    ];
+
+    if (eligibleIds.length) {
+      const { data, error } = await supabase
+        .from('ingredients')
+        .select('id, name, unit')
+        .eq('restaurant_id', restaurant_id)
+        .in('id', eligibleIds);
+
+      if (error) {
+        return res.status(503).json({
+          error: 'Could not verify confirmed recipe ingredients.',
+        });
+      }
+
+      strictEligibleIngredients = data || [];
+
+      if (
+        strictEligibleIngredients.length !== eligibleIds.length
+      ) {
+        return res.status(503).json({
+          error: 'Confirmed recipe ingredient references are incomplete.',
+        });
+      }
+    }
+  }
+
   const permittedIngredientId = item => {
     if (!matchingEnabled) return null;
 
-    const id = item.selected_ingredient_id;
+    const requestedId = item.selected_ingredient_id;
 
-    return id && ownedIngredientIds.has(id) ? id : null;
+    if (
+      !requestedId ||
+      !ownedIngredients.has(requestedId)
+    ) {
+      return null;
+    }
+
+    if (matchingPolicy.mode !== 'strict') {
+      return requestedId;
+    }
+
+    // Recompute the direct match on the server.
+    // Never accept a submitted ID merely because it belongs
+    // to a restaurant or appeared in the browser's candidates.
+    const result = findStrictDirectMatch(
+      item.item_name_normalized ||
+        item.item_name_raw ||
+        item.item_name,
+      strictEligibleIngredients
+    );
+
+    if (
+      result.status !== 'auto' ||
+      result.matches[0]?.id !== requestedId
+    ) {
+      return null;
+    }
+
+    return requestedId;
   };
 
   const results = {

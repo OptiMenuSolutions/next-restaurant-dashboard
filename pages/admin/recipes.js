@@ -88,7 +88,6 @@ function RestaurantPicker() {
 function InvoiceMatchingActivation({ restaurantId }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -99,7 +98,10 @@ function InvoiceMatchingActivation({ restaurantId }) {
     async function load() {
       try {
         const { data: auth } = await supabase.auth.getSession();
-        if (!auth.session) throw new Error('Please sign in again.');
+
+        if (!auth.session) {
+          throw new Error('Please sign in again.');
+        }
 
         const response = await fetch(
           `/api/admin/invoice-matching-activation?restaurant_id=${restaurantId}`,
@@ -112,7 +114,12 @@ function InvoiceMatchingActivation({ restaurantId }) {
         );
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
+
+        if (!response.ok) {
+          throw new Error(
+            result.error || 'Could not load matching status.'
+          );
+        }
 
         if (active) setData(result);
       } catch (e) {
@@ -122,108 +129,101 @@ function InvoiceMatchingActivation({ restaurantId }) {
 
     load();
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [restaurantId]);
 
-  async function activate() {
-    if (!window.confirm(
-      'Enable restaurant-wide invoice ingredient matching? ' +
-      'This authorizes matching before all recipes are complete.'
-    )) return;
+  const completion = data?.completion;
 
-    setBusy(true);
-    setError('');
+  const mode = data?.mode || 'locked';
 
-    try {
-      const { data: auth } = await supabase.auth.getSession();
-      if (!auth.session) throw new Error('Please sign in again.');
+  const modeLabels = {
+    locked: 'Waiting for confirmed recipes',
+    strict: 'Strict matching active',
+    normal: 'Normal matching active',
+  };
 
-      const response = await fetch(
-        '/api/admin/invoice-matching-activation',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${auth.session.access_token}`,
-          },
-          body: JSON.stringify({
-            restaurant_id: restaurantId,
-            confirm: true,
-          }),
-        }
-      );
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
-
-      setData(previous => ({
-        ...previous,
-        control: result.control,
-      }));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const enabled = data?.control?.matching_enabled;
+  const modeDescriptions = {
+    locked:
+      'Invoices can be uploaded and stored. Ingredient matching begins when a recipe is confirmed.',
+    strict:
+      'Only direct matches to ingredients from confirmed recipes are eligible. Other invoice products remain unmatched.',
+    normal:
+      'The complete ingredient library is available for conservative invoice matching.',
+  };
 
   return (
-    <section style={{
-      border: '1px solid var(--line)',
-      borderRadius: 12,
-      padding: 18,
-      background: 'var(--shell)',
-    }}>
-      <div style={{
-        fontSize: 15,
-        fontWeight: 700,
-        marginBottom: 8,
-      }}>
+    <section
+      style={{
+        border: '1px solid var(--line)',
+        borderRadius: 12,
+        padding: 18,
+        background: 'var(--shell)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          marginBottom: 8,
+        }}
+      >
         Invoice ingredient matching
       </div>
 
       {data && (
         <>
-          <p style={{ fontSize: 13, color: 'var(--muted)' }}>
-            Recipes completed: {data.completion.completed}
-            /{data.completion.required}
+          <p
+            style={{
+              fontSize: 13,
+              color: 'var(--muted)',
+            }}
+          >
+            Recipes completed: {completion.completed}
+            /{completion.required}
           </p>
 
-          <p style={{ fontSize: 13, fontWeight: 600 }}>
-            Status: {data.control.status.replaceAll('_', ' ')}
+          <p
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Status: {modeLabels[mode]}
           </p>
 
-          {!enabled && (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={activate}
-              style={{
-                padding: '10px 16px',
-                borderRadius: 8,
-                border: 0,
-                background: 'var(--accent-deep)',
-                color: 'white',
-                fontWeight: 700,
-                cursor: busy ? 'wait' : 'pointer',
-              }}
-            >
-              {busy ? 'Activating…' : 'Activate matching early'}
-            </button>
-          )}
+          <p
+            style={{
+              fontSize: 12.5,
+              color: 'var(--muted)',
+              marginBottom: 0,
+            }}
+          >
+            {modeDescriptions[mode]}
+          </p>
         </>
       )}
 
       {!data && !error && (
-        <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+        <p
+          style={{
+            fontSize: 13,
+            color: 'var(--muted)',
+          }}
+        >
           Loading matching status…
         </p>
       )}
 
       {error && (
-        <p role="alert" style={{ color: 'var(--red)', fontSize: 13 }}>
+        <p
+          role="alert"
+          style={{
+            color: 'var(--red)',
+            fontSize: 13,
+          }}
+        >
           {error}
         </p>
       )}

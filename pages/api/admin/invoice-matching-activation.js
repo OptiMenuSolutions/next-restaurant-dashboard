@@ -6,11 +6,8 @@ import {
 } from '../../../lib/admin/requireAdmin';
 
 import {
-  getRestaurantInvoiceMatchingControl,
-  getInvoiceMatchingRecipeCompletion,
-  activateRestaurantInvoiceMatching,
-  INVOICE_MATCHING_STATUS,
-} from '../../../lib/invoiceMatchingControls';
+  getProgressiveInvoiceMatchingPolicy,
+} from '../../../lib/progressiveInvoiceMatching';
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,7 +15,7 @@ const UUID =
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  if (!['GET', 'POST'].includes(req.method)) {
+  if (req.method !== 'GET') {
     return res.status(405).json({
       error: 'Method not allowed',
     });
@@ -58,61 +55,27 @@ export default async function handler(req, res) {
       });
     }
 
-    if (req.method === 'GET') {
-      const [control, completion] = await Promise.all([
-        getRestaurantInvoiceMatchingControl(db, restaurantId),
-        getInvoiceMatchingRecipeCompletion(db, restaurantId),
-      ]);
-
-      return res.status(200).json({
-        control,
-        completion,
-      });
-    }
-
-    const current =
-      await getRestaurantInvoiceMatchingControl(
-        db,
-        restaurantId
-      );
-
-    if (current.matching_enabled) {
-      return res.status(200).json({
-        success: true,
-        already_enabled: true,
-        control: current,
-      });
-    }
-
-    if (req.body?.confirm !== true) {
-      return res.status(400).json({
-        error: 'Explicit admin confirmation required.',
-      });
-    }
-
-    const control =
-      await activateRestaurantInvoiceMatching(
-        db,
-        restaurantId,
-        {
-          status: INVOICE_MATCHING_STATUS.ADMIN_ENABLED,
-          actorId: admin.user.id,
-          reason: 'Explicit administrator authorization',
-        }
-      );
+    const policy = await getProgressiveInvoiceMatchingPolicy(
+      db,
+      restaurantId
+    );
 
     return res.status(200).json({
-      success: true,
-      control,
+      mode: policy.mode,
+      completion: policy.completion,
+      control: policy.control,
+      matching_enabled: policy.matching_enabled,
+      eligible_ingredient_count:
+        policy.eligibleIngredientIds?.size ?? null,
     });
   } catch (error) {
     console.error(
-      '[admin invoice-matching activation]',
+      '[admin invoice matching status]',
       error
     );
 
     return res.status(500).json({
-      error: 'Could not process matching activation.',
+      error: 'Could not load matching status.',
     });
   }
 }

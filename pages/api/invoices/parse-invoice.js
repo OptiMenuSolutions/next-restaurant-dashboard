@@ -21,8 +21,9 @@ import {
   resolveInvoiceIngredientMatches,
 } from '../../../lib/invoiceIngredientIdentity';
 import {
-  getRestaurantInvoiceMatchingControl,
-} from '../../../lib/invoiceMatchingControls';
+  getProgressiveInvoiceMatchingPolicy,
+  findStrictDirectMatch,
+} from '../../../lib/progressiveInvoiceMatching';
 
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
@@ -771,15 +772,15 @@ export default async function handler(req, res) {
 
   // Load matching permissions before processing the invoice.
   // Locked restaurants can still parse invoices, but cannot match ingredients.
-  let matchingControl;
+  let matchingPolicy;
 
   try {
-    matchingControl = await getRestaurantInvoiceMatchingControl(
+    matchingPolicy = await getProgressiveInvoiceMatchingPolicy(
       supabase,
       restaurantId
     );
   } catch (error) {
-    console.error('[parse-invoice] Matching control:', error);
+    console.error('[parse-invoice] Matching policy:', error);
 
     streamEvent(res, {
       type: 'error',
@@ -789,7 +790,7 @@ export default async function handler(req, res) {
     return res.end();
   }
 
-  const matchingEnabled = matchingControl.matching_enabled;
+  const matchingEnabled = matchingPolicy.matching_enabled;
 
   // Paid feature (Mistral OCR plus three Claude calls): the restaurant must be paid up.
   const sub = await import('../../../lib/requireActiveSubscription')
@@ -875,7 +876,15 @@ export default async function handler(req, res) {
       );
     }
 
-    const restaurantIngredients = await loadRestaurantIngredients(restaurantId);
+    const allRestaurantIngredients =
+      await loadRestaurantIngredients(restaurantId);
+
+    const restaurantIngredients =
+      matchingPolicy.mode === 'strict'
+        ? allRestaurantIngredients.filter(ingredient =>
+            matchingPolicy.eligibleIngredientIds.has(ingredient.id)
+          )
+        : allRestaurantIngredients;
 
     const readableItems = allRaw.filter(item => {
       const hasPrice = item.invoice_price != null;
@@ -909,13 +918,26 @@ export default async function handler(req, res) {
       streamStatus(
         res,
         'Invoice items extracted',
-        'Ingredient matching is not yet enabled for this restaurant'
+        'Waiting for confirmed recipes before ingredient matching'
       );
 
       matchResults = foodItems.map(() => ({
         status: 'new',
         matches: [],
       }));
+    } else if (matchingPolicy.mode === 'strict') {
+      streamStatus(
+        res,
+        'Checking confirmed recipe ingredients...',
+        `Strict matching against ${restaurantIngredients.length} verified ingredients`
+      );
+
+      matchResults = foodItems.map(item =>
+        findStrictDirectMatch(
+          item.item_name_normalized || item.item_name_raw,
+          restaurantIngredients
+        )
+      );
     } else {
       streamStatus(
         res,
@@ -923,8 +945,7 @@ export default async function handler(req, res) {
         `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`
       );
 
-      // Do not automatically trust historical invoice links.
-      // Each item is evaluated independently against the current library.
+      // Historical invoice links are not automatically trusted.
       const remembered = new Map();
 
       const globalIngredients = foodItems.length
