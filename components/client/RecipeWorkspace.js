@@ -133,11 +133,26 @@ const TONES = {
   muted: ['var(--panel)', 'var(--muted)'],
 };
 
+// Suggest sales-only tracking only when a name or description clearly
+// indicates frequent rotation. Never classify a dish automatically.
+function suggestsFrequentChange(node) {
+  const name = String(node.name || '').trim().toLowerCase();
+  const description = String(node.description || '').trim().toLowerCase();
+
+  const nameSuggestsRotation =
+    /\bof the day\b|\bdaily\b|\btoday['’]?s\b/.test(name);
+
+  const descriptionSuggestsRotation =
+    /\bchanges? daily\b|\bchanges? every day\b|\brotat(?:es|ing) daily\b|\bdifferent each day\b/.test(description);
+
+  return nameSuggestsRotation || descriptionSuggestsRotation;
+}
+
 // Plain words for each saved status, shared by the list and the editor.
 function statusOf(node) {
   if (node.kind === 'dish' && node.no_recipe_required) {
     return {
-      text: 'No recipe required',
+      text: 'Sales Only',
       tone: 'muted',
       key: 'sales_only',
     };
@@ -788,8 +803,8 @@ const mime = /\.xlsx$/i.test(file.name)
               </div>
               <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)', marginTop: 3 }}>
                 {editor.no_recipe_required
-                  ? 'This dish remains available for menu pricing and POS sales. No recipe is required.'
-                  : 'Does this dish change frequently enough that maintaining a recipe is impractical?'}
+                  ? 'This dish is tracked for sales only, without recipe input.'
+                  : 'Does this dish change frequently?'}
               </div>
             </div>
 
@@ -828,8 +843,8 @@ const mime = /\.xlsx$/i.test(file.name)
               })}
             >
               {editor.no_recipe_required
-                ? 'Require recipe'
-                : 'No recipe required'}
+                ? 'Track a recipe'
+                : 'Track sales only'}
             </button>
           </div>
         )}
@@ -1281,7 +1296,7 @@ const mime = /\.xlsx$/i.test(file.name)
                   <div style={{ fontSize: 14.5, fontWeight: 700 }}>
                     {missing.length
                       ? `Upload worked, but ${missing.length} ${missing.length === 1 ? 'dish is' : 'dishes are'} still missing a recipe`
-                      : 'Upload worked. Every dish has a recipe.'}
+                      : 'Recipe setup complete. Every required dish has a published recipe.'}
                   </div>
                   <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
                     Valid structured recipes can publish automatically. Recipes extracted from PDFs, photos, or other unstructured documents require owner or admin confirmation before they affect costing. Check Needs review for anything awaiting approval.
@@ -1291,12 +1306,123 @@ const mime = /\.xlsx$/i.test(file.name)
 
               {missing.length > 0 && (
                 <>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {missing.map(n => (
-                      <span key={n.id} style={{ display: 'inline-flex', alignItems: 'center', minHeight: 28, padding: '0 10px', borderRadius: 14, background: 'var(--panel)', fontSize: 12.5, fontWeight: 600 }}>
-                        {n.name}
-                      </span>
-                    ))}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {missing.map(n => {
+                      const suggested = suggestsFrequentChange(n);
+
+                      return (
+                        <div
+                          key={n.id}
+                          style={{
+                            border: `1px solid ${suggested ? 'var(--accent)' : 'var(--line)'}`,
+                            borderRadius: 12,
+                            padding: phone ? 12 : 16,
+                            background: suggested ? 'var(--accent-tint)' : 'var(--shell)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 10,
+                          }}
+                        >
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            flexWrap: 'wrap',
+                            gap: 8,
+                          }}>
+                            <span style={{ fontSize: 14, fontWeight: 700 }}>
+                              {n.name}
+                            </span>
+
+                            {suggested && (
+                              <span style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: 'var(--accent-deep)',
+                                letterSpacing: '0.05em',
+                              }}>
+                                POSSIBLY CHANGES FREQUENTLY
+                              </span>
+                            )}
+                          </div>
+
+                          <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+                            Does this dish change frequently?
+                          </div>
+
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: phone ? '1fr' : '1fr 1fr',
+                            gap: 8,
+                          }}>
+                            <button
+                              type="button"
+                              disabled={busy || dirty}
+                              onClick={() => run(async () => {
+                                await post({
+                                  action: 'recipe_requirement',
+                                  id: n.id,
+                                  required: false,
+                                });
+
+                                setMessage(
+                                  `${n.name} will be tracked for sales only. ` +
+                                  'No recipe input is needed.'
+                                );
+                              })}
+                              style={{
+                                ...button,
+                                minHeight: 48,
+                                height: 'auto',
+                                whiteSpace: 'normal',
+                                textAlign: 'center',
+                                background: 'var(--shell)',
+                                color: 'var(--accent-deep)',
+                                borderColor: 'var(--accent)',
+                              }}
+                            >
+                              Yes, this dish changes constantly
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={busy || dirty}
+                              onClick={() => run(async () => {
+                                await post({
+                                  action: 'recipe_requirement',
+                                  id: n.id,
+                                  required: true,
+                                });
+
+                                setMessage(
+                                  `${n.name} will remain in recipe setup.`
+                                );
+                              })}
+                              style={{
+                                ...button,
+                                minHeight: 48,
+                                height: 'auto',
+                                whiteSpace: 'normal',
+                                textAlign: 'center',
+                              }}
+                            >
+                              No, this dish has a consistent recipe
+                            </button>
+                          </div>
+
+                          <div style={{
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            color: 'var(--muted)',
+                          }}>
+                            Select Yes to track menu price, quantity sold,
+                            and POS sales revenue without recipe input.
+                            Ingredient costs and margins will not be
+                            calculated for this dish.
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                   <div style={{ fontSize: 13.5, fontWeight: 700 }}>How do you want to add the rest?</div>
                   <div style={{ display: 'grid', gridTemplateColumns: phone ? '1fr' : 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
