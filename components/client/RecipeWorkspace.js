@@ -514,16 +514,37 @@ const mime = /\.xlsx$/i.test(file.name)
     const result = await post({ action: 'match', node });
     const rows = result.matches || [];
 
-    if (!rows.length) {
+    const needsDecision = rows.some(
+      r => r.status === 'check'
+    );
+
+    // No ambiguity: reuse reliable matches and let publication
+    // create any missing ingredients without assigning prices.
+    if (!needsDecision) {
       await save(true, node);
       return;
     }
 
+    // Only ambiguous matches require a manual decision.
+    // Known matches and genuinely new ingredients are preselected.
     setMatching({
       node,
       rows,
       library: result.library || [],
-      picks: rows.map(r => ((r.status === 'linked' || r.status === 'auto') && r.ingredient ? r.ingredient.id : '')),
+      picks: rows.map(r => {
+        if (
+          (r.status === 'linked' || r.status === 'auto') &&
+          r.ingredient
+        ) {
+          return r.ingredient.id;
+        }
+
+        if (r.status === 'new') {
+          return '__new';
+        }
+
+        return '';
+      }),
     });
   }
 
@@ -614,6 +635,21 @@ const mime = /\.xlsx$/i.test(file.name)
   const withRecipe = requiredDishes.filter(
     n => !!n.published?.lines?.length
   ).length;
+
+  const uploadedCoverage = requiredDishes.filter(
+    n => !!n.published?.lines?.length ||
+      (n.source === 'upload' && !!n.draft?.lines?.length)
+  ).length;
+
+  const needsReviewCount = requiredDishes.filter(
+    n => !n.published &&
+      n.source === 'upload' &&
+      !!n.draft?.lines?.length
+  ).length;
+
+  const trulyMissing = requiredDishes.filter(
+    n => !n.published && !n.draft?.lines?.length
+  );
 
   const parts = [
     ['Confirmed', counts.confirmed, 'var(--green)'],
@@ -1164,24 +1200,27 @@ const mime = /\.xlsx$/i.test(file.name)
           <section style={{ ...card, padding: phone ? 14 : '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
               <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>
-                {withRecipe} of {requiredDishes.length} {requiredDishes.length === 1 ? 'required dish has' : 'required dishes have'} a published recipe
+                {uploadedCoverage} of {requiredDishes.length} {requiredDishes.length === 1 ? 'required dish has' : 'required dishes have'} a recipe uploaded
               </h3>
               <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                 {counts.sales_only} SALES-ONLY · {preps.length} BATCH {preps.length === 1 ? 'PREP' : 'PREPS'}
               </span>
             </div>
             <div style={{ height: 6, borderRadius: 3, background: 'var(--line-soft)', overflow: 'hidden', display: 'flex' }}>
-              {parts.map(([name, n, color]) => (
-                <span key={name} style={{ width: `${(n / Math.max(requiredDishes.length, 1)) * 100}%`, background: color }} />
-              ))}
+              <span
+                style={{
+                  width: `${(uploadedCoverage / Math.max(requiredDishes.length, 1)) * 100}%`,
+                  background: 'var(--accent-deep)',
+                }}
+              />
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>
-              {parts.map(([name, n, color]) => (
-                <span key={name} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
-                  {name} {n}
-                </span>
-              ))}
+              <span>Uploaded {uploadedCoverage}</span>
+              <span>Needs review {needsReviewCount}</span>
+              <span>Published {withRecipe}</span>
+              {trulyMissing.length > 0 && (
+                <span>Missing {trulyMissing.length}</span>
+              )}
             </div>
           </section>
 
@@ -1294,9 +1333,13 @@ const mime = /\.xlsx$/i.test(file.name)
                 </span>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14.5, fontWeight: 700 }}>
-                    {missing.length
-                      ? `Upload worked, but ${missing.length} ${missing.length === 1 ? 'dish is' : 'dishes are'} still missing a recipe`
-                      : 'Recipe setup complete. Every required dish has a published recipe.'}
+                    {trulyMissing.length
+                      ? `Upload worked. ${trulyMissing.length} ${trulyMissing.length === 1 ? 'dish still needs' : 'dishes still need'} a recipe.`
+                      : needsReviewCount
+                        ? `All required dishes have recipes uploaded. ${needsReviewCount} ${needsReviewCount === 1 ? 'recipe needs' : 'recipes need'} review.`
+                        : uploadedCoverage === requiredDishes.length
+                          ? 'Recipe setup complete. All required dishes have recipes.'
+                          : 'Recipe upload processed.'}
                   </div>
                   <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
                     Valid structured recipes can publish automatically. Recipes extracted from PDFs, photos, or other unstructured documents require owner or admin confirmation before they affect costing. Check Needs review for anything awaiting approval.
@@ -1304,10 +1347,12 @@ const mime = /\.xlsx$/i.test(file.name)
                 </div>
               </div>
 
-              {missing.length > 0 && (
+              {missing.some(n => suggestsFrequentChange(n) && !n.draft?.lines?.length) && (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {missing.map(n => {
+                    {missing.filter(n =>
+                      suggestsFrequentChange(n) && !n.draft?.lines?.length
+                    ).map(n => {
                       const suggested = suggestsFrequentChange(n);
 
                       return (
@@ -1617,7 +1662,7 @@ const mime = /\.xlsx$/i.test(file.name)
                 Match ingredients · {matching.node.name}
               </h2>
               <p style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.5, color: 'var(--muted)' }}>
-                Link each line to what the restaurant buys. Prices come from those invoices. Choose “New ingredient” only when they don’t buy it yet.
+                Some ingredients may match more than one existing product. Review those matches before publishing. Ingredients without an existing match will be created automatically without a price; invoice data will establish their costs later.
               </p>
             </div>
 
