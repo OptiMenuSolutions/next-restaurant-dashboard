@@ -5,6 +5,7 @@ import AdminShell, { PageHead } from '../../components/admin/AdminShell';
 import { useAdminFetch } from '../../lib/admin/useAdminFetch';
 import RecipeWorkspace from '../../components/client/RecipeWorkspace';
 import useIsPhone from '../../lib/admin/useIsPhone';
+import supabase from '../../lib/supabaseClient';
 
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
@@ -83,6 +84,153 @@ function RestaurantPicker() {
   );
 }
 
+
+function InvoiceMatchingActivation({ restaurantId }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    setData(null);
+    setError('');
+
+    async function load() {
+      try {
+        const { data: auth } = await supabase.auth.getSession();
+        if (!auth.session) throw new Error('Please sign in again.');
+
+        const response = await fetch(
+          `/api/admin/invoice-matching-activation?restaurant_id=${restaurantId}`,
+          {
+            cache: 'no-store',
+            headers: {
+              Authorization: `Bearer ${auth.session.access_token}`,
+            },
+          }
+        );
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+
+        if (active) setData(result);
+      } catch (e) {
+        if (active) setError(e.message);
+      }
+    }
+
+    load();
+
+    return () => { active = false; };
+  }, [restaurantId]);
+
+  async function activate() {
+    if (!window.confirm(
+      'Enable restaurant-wide invoice ingredient matching? ' +
+      'This authorizes matching before all recipes are complete.'
+    )) return;
+
+    setBusy(true);
+    setError('');
+
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      if (!auth.session) throw new Error('Please sign in again.');
+
+      const response = await fetch(
+        '/api/admin/invoice-matching-activation',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${auth.session.access_token}`,
+          },
+          body: JSON.stringify({
+            restaurant_id: restaurantId,
+            confirm: true,
+          }),
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error);
+
+      setData(previous => ({
+        ...previous,
+        control: result.control,
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const enabled = data?.control?.matching_enabled;
+
+  return (
+    <section style={{
+      border: '1px solid var(--line)',
+      borderRadius: 12,
+      padding: 18,
+      background: 'var(--shell)',
+    }}>
+      <div style={{
+        fontSize: 15,
+        fontWeight: 700,
+        marginBottom: 8,
+      }}>
+        Invoice ingredient matching
+      </div>
+
+      {data && (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+            Recipes completed: {data.completion.completed}
+            /{data.completion.required}
+          </p>
+
+          <p style={{ fontSize: 13, fontWeight: 600 }}>
+            Status: {data.control.status.replaceAll('_', ' ')}
+          </p>
+
+          {!enabled && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={activate}
+              style={{
+                padding: '10px 16px',
+                borderRadius: 8,
+                border: 0,
+                background: 'var(--accent-deep)',
+                color: 'white',
+                fontWeight: 700,
+                cursor: busy ? 'wait' : 'pointer',
+              }}
+            >
+              {busy ? 'Activating…' : 'Activate matching early'}
+            </button>
+          )}
+        </>
+      )}
+
+      {!data && !error && (
+        <p style={{ fontSize: 13, color: 'var(--muted)' }}>
+          Loading matching status…
+        </p>
+      )}
+
+      {error && (
+        <p role="alert" style={{ color: 'var(--red)', fontSize: 13 }}>
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function RecipesPage() {
   const router = useRouter();
   const isPhone = useIsPhone();
@@ -115,7 +263,14 @@ export default function RecipesPage() {
           sub="The same recipe workspace the owner sees. Changes stay drafts until confirmed, and confirmed recipes are never overwritten."
         />
         {restaurantId ? (
-          <RecipeWorkspace restaurantId={restaurantId} admin showHeading={false} />
+          <>
+            <InvoiceMatchingActivation restaurantId={restaurantId} />
+            <RecipeWorkspace
+              restaurantId={restaurantId}
+              admin
+              showHeading={false}
+            />
+          </>
         ) : (
           <RestaurantPicker />
         )}
