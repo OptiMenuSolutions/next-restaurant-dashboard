@@ -5,6 +5,9 @@ import { waitUntil } from '@vercel/functions';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
 import {
+  getRestaurantInvoiceMatchingControl,
+} from '../../../../lib/invoiceMatchingControls';
+import {
   createConflictConfirmation,
   verifyConflictConfirmation,
 } from '../../../../lib/admin/invoiceConflictConfirmation';
@@ -150,6 +153,21 @@ export default async function handler(req, res) {
       return res.status(404).json({
         error: 'Restaurant not found.',
       });
+    }
+
+    // Allow administrators to preview existing conflicts, but prevent
+    // saving corrections or future mappings while matching is locked.
+    if (action === 'save') {
+      const control = await getRestaurantInvoiceMatchingControl(
+        db,
+        restaurant_id
+      );
+
+      if (!control.matching_enabled) {
+        return res.status(403).json({
+          error: 'Invoice ingredient matching is not enabled for this restaurant.',
+        });
+      }
     }
 
     const requestedIngredientIds = [

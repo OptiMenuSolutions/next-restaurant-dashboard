@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from '../../../lib/standardizedUnits';
+import { getRestaurantInvoiceMatchingControl } from '../../../lib/invoiceMatchingControls';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -20,7 +21,14 @@ const supabase = createClient(
 
 const STORAGE_BUCKET = 'invoices';
 
-export default async function handler(req, res) {
+export function createDeleteInvoiceHandler({
+  db = supabase,
+  verifyAccess,
+  getMatchingControl = getRestaurantInvoiceMatchingControl,
+  recompute = recomputeMenuCosts,
+  rebuild = rebuildCurrentInventory,
+} = {}) {
+  return async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   let body;
@@ -32,13 +40,37 @@ export default async function handler(req, res) {
   if (!Array.isArray(invoice_ids) || !invoice_ids.length) return res.status(400).json({ error: 'invoice_ids is required' });
 
   // Same owner check as confirm-invoice.
-  const { error: authError, status: authStatus } = await import('../../../lib/withRestaurantAuth')
-    .then(m => m.verifyRestaurantAccess(req, restaurant_id));
+  const { error: authError, status: authStatus } = await (
+    verifyAccess
+      ? verifyAccess(req, restaurant_id)
+      : import('../../../lib/withRestaurantAuth')
+          .then(m => m.verifyRestaurantAccess(req, restaurant_id))
+  );
   if (authError) return res.status(authStatus).json({ error: authError });
+
+  // Invoice deletion is permitted for locked restaurants, but
+  // ingredient repricing and inventory recalculation are not.
+  // Fail closed if the matching-control record is unavailable.
+  let matchingControl;
+
+  try {
+    matchingControl = await getMatchingControl(
+      db,
+      restaurant_id
+    );
+  } catch (error) {
+    console.error('[delete-invoice] Matching control:', error);
+
+    return res.status(503).json({
+      error: 'Invoice matching controls are unavailable. Please retry.',
+    });
+  }
+
+  const matchingEnabled = matchingControl.matching_enabled;
 
   try {
     // Only invoices that belong to this restaurant.
-    const { data: invoices, error: invErr } = await supabase
+    const { data: invoices, error: invErr } = await db
       .from('invoices')
       .select('id, file_url')
       .eq('restaurant_id', restaurant_id)
@@ -87,7 +119,7 @@ export default async function handler(req, res) {
 
     // ── Re-price each affected ingredient from its newest remaining line ──
     let repriced = 0, cleared = 0;
-    if (ingredientIds.length) {
+    if (matchingEnabled && ingredientIds.length) {
       const [{ data: ings }, { data: remaining }] = await Promise.all([
         supabase.from('ingredients').select('id, name').in('id', ingredientIds).eq('restaurant_id', restaurant_id),
         supabase
@@ -122,16 +154,23 @@ export default async function handler(req, res) {
       }));
 
       try {
-        await recomputeMenuCosts(supabase, restaurant_id, ingredientIds, { effectiveDate: new Date().toISOString().split('T')[0] });
+        await recompute(db, restaurant_id, ingredientIds, {
+          effectiveDate: new Date().toISOString().split('T')[0],
+        });
       } catch (err) {
         console.error('[delete-invoice] recomputeMenuCosts failed:', err.message);
       }
     }
 
-    try {
-      await rebuildCurrentInventory(supabase, restaurant_id);
-    } catch (err) {
-      console.error('[delete-invoice] current_inventory rebuild failed:', err.message);
+    if (matchingEnabled) {
+      try {
+        await rebuild(db, restaurant_id);
+      } catch (err) {
+        console.error(
+          '[delete-invoice] current_inventory rebuild failed:',
+          err.message
+        );
+      }
     }
 
     return res.status(200).json({
@@ -145,4 +184,7 @@ export default async function handler(req, res) {
     console.error('[delete-invoice] Error:', err);
     return res.status(500).json({ error: err.message || 'Failed to delete invoice' });
   }
+  };
 }
+
+export default createDeleteInvoiceHandler();

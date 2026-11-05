@@ -17,6 +17,9 @@ import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
 import {
   resolveInvoiceResearchCost,
 } from '../../../lib/invoiceResearchCosting';
+import {
+  getRestaurantInvoiceMatchingControl,
+} from '../../../lib/invoiceMatchingControls';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -61,6 +64,23 @@ export function createConfirmInvoiceHandler({
       await verifyAccess(req, restaurant_id);
     if (authError) return res.status(authStatus).json({ error: authError });
   }
+
+  let matchingControl;
+
+  try {
+    matchingControl = await getRestaurantInvoiceMatchingControl(
+      supabase,
+      restaurant_id
+    );
+  } catch (error) {
+    console.error('[confirm-invoice] Matching control:', error);
+
+    return res.status(503).json({
+      error: 'Invoice matching controls are unavailable. Please retry.',
+    });
+  }
+
+  const matchingEnabled = matchingControl.matching_enabled;
 
   // Normalize recognized numbered-can packages before any ingredient
   // pricing, inventory quantity, or invoice line calculations.
@@ -116,6 +136,50 @@ export function createConfirmInvoiceHandler({
   const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
   const appendMode  = !!append_to_invoice_id;
 
+  // Validate ingredient ownership before creating or modifying an invoice.
+  // Locked restaurants save their invoice lines without ingredient links.
+  const requestedIngredientIds = matchingEnabled
+    ? [...new Set(
+        activeItems
+          .map(item => item.selected_ingredient_id)
+          .filter(Boolean)
+      )]
+    : [];
+
+  const ownedIngredientIds = new Set();
+
+  if (requestedIngredientIds.length) {
+    const { data, error } = await supabase
+      .from('ingredients')
+      .select('id')
+      .eq('restaurant_id', restaurant_id)
+      .in('id', requestedIngredientIds);
+
+    if (error) {
+      return res.status(503).json({
+        error: 'Could not verify ingredient ownership.',
+      });
+    }
+
+    for (const ingredient of data || []) {
+      ownedIngredientIds.add(ingredient.id);
+    }
+
+    if (ownedIngredientIds.size !== requestedIngredientIds.length) {
+      return res.status(400).json({
+        error: 'An invoice ingredient does not belong to this restaurant.',
+      });
+    }
+  }
+
+  const permittedIngredientId = item => {
+    if (!matchingEnabled) return null;
+
+    const id = item.selected_ingredient_id;
+
+    return id && ownedIngredientIds.has(id) ? id : null;
+  };
+
   const results = {
     invoice_id:           null,
     items_saved:          0,
@@ -128,10 +192,32 @@ export function createConfirmInvoiceHandler({
     // ── Step 1: Create or reuse invoice record ────────────────────────────────
     let invoiceRecord;
     if (appendMode) {
-      invoiceRecord      = { id: append_to_invoice_id };
-      results.invoice_id = append_to_invoice_id;
-      console.log(`[confirm-invoice] Append mode — adding to invoice ${append_to_invoice_id}`);
+      const { data: existingInvoice, error: existingInvoiceError } =
+        await supabase
+          .from('invoices')
+          .select('id, restaurant_id')
+          .eq('id', append_to_invoice_id)
+          .eq('restaurant_id', restaurant_id)
+          .maybeSingle();
 
+      if (existingInvoiceError) {
+        throw new Error(
+          'Could not verify the invoice being appended.'
+        );
+      }
+
+      if (!existingInvoice) {
+        return res.status(404).json({
+          error: 'Invoice not found for this restaurant.',
+        });
+      }
+
+      invoiceRecord = { id: existingInvoice.id };
+      results.invoice_id = existingInvoice.id;
+
+      console.log(
+        `[confirm-invoice] Append mode — adding to invoice ${existingInvoice.id}`
+      );
       // Bug fix: this branch never saved the new page's file reference at
       // all — only the non-append branch below did. A merged multi-page
       // invoice would silently lose every page's photo after the first,
@@ -202,112 +288,36 @@ export function createConfirmInvoiceHandler({
       }
     }
 
-    // ── Step 2: Batch-create new ingredients ──────────────────────────────────
-    // Auto-save: create all new ingredients without requiring confirm_new flag.
-    const candidateNewItems = activeItems.filter(
-      i => !i.selected_ingredient_id && i.match_status === 'new'
-    );
-
-    const newIngredientIdMap = {};
-    const ingNameOf = (item) => item.confirmed_name || item.item_name_normalized || item.item_name;
-    const nameKey = (n) => (n || '').toLowerCase().trim();
-
-    // An ingredient with this exact name (any case) may already exist: link
-    // to it instead of creating a lookalike. Step 3 then prices it, with the
-    // same older-invoice guard as any matched line.
-    let newIngredientItems = candidateNewItems;
-    if (candidateNewItems.length > 0) {
-      const { data: existingIngs } = await supabase
-        .from('ingredients')
-        .select('id, name')
-        .eq('restaurant_id', restaurant_id)
-        .limit(5000);
-      const existingByName = new Map((existingIngs || []).map(g => [nameKey(g.name), g]));
-      newIngredientItems = [];
-      for (const item of candidateNewItems) {
-        const hit = existingByName.get(nameKey(ingNameOf(item)));
-        if (hit) {
-          item.selected_ingredient_id = hit.id;
-          item.selected_ingredient_name = hit.name;
-        } else {
-          newIngredientItems.push(item);
-        }
-      }
-    }
-
-    // Two lines on one invoice naming the same new ingredient create it once.
-    const firstByName = new Map();
-    for (const item of newIngredientItems) {
-      const k = nameKey(ingNameOf(item));
-      if (!firstByName.has(k)) firstByName.set(k, item);
-    }
-    const uniqueNewItems = [...firstByName.values()];
-
-    if (uniqueNewItems.length > 0) {
-      const toInsert = uniqueNewItems.map(item => {
-        const { unit_cost, unit } = resolvedCost(item);
-        const ingName  = item.confirmed_name || item.item_name_normalized || item.item_name;
-        const unresolved =
-          resolvedCost(item).pricingStatus ===
-          'needs_package_verification';
-
-        const stdUnit = unresolved
-          ? 'can'
-          : getStandardUnitForIngredient(unit, ingName);
-
-        const stdPrice =
-          !unresolved &&
-          Number.isFinite(Number(unit_cost)) &&
-          Number(unit_cost) > 0
-            ? convertInvoiceCostToStandardUnit(
-                unit_cost,
-                unit,
-                ingName
-              )
-            : null;
-
-        return {
-          restaurant_id,
-          name:                ingName,
-          unit:                stdUnit,
-          standard_unit:       stdUnit,
-          original_unit:       unit || 'each',
-          last_price:          stdPrice,
-          last_ordered_at:     invoiceDate,
-          ingredient_category: unresolved
-            ? 'count'
-            : 'weight',
-          is_sample:           false,
-          is_estimated:        unresolved,
-        };
-      });
-
-      const { data: createdIngredients, error: createError } = await supabase
-        .from('ingredients')
-        .insert(toInsert)
-        .select('id, name');
-
-      if (createError) {
-        results.errors.push('Failed to batch-create ingredients: ' + createError.message);
-      } else {
-        for (const item of newIngredientItems) {
-          const match = createdIngredients.find(c => nameKey(c.name) === nameKey(ingNameOf(item)));
-          if (match) newIngredientIdMap[item._id] = match.id;
-        }
-        results.ingredients_created += createdIngredients.length;
-      }
-    }
+    // ── Step 2: Ingredient creation is recipe-owned ───────────────────────────
+    // Invoice lines can only reference previously validated ingredients.
 
     // ── Step 3: Batch-update existing ingredient prices ───────────────────────
     const ingredientUpdates = {};
     for (const item of activeItems) {
-      const ingId = item.selected_ingredient_id || newIngredientIdMap[item._id] || null;
+      const ingId = permittedIngredientId(item);
       if (ingId) {
         const { unit_cost, unit } = resolvedCost(item);
         if (unit_cost) {
-          const ingName  = item.selected_ingredient_name || item.item_name_normalized || item.item_name;
-          const stdPrice = convertInvoiceCostToStandardUnit(unit_cost, unit, ingName);
-          const stdUnit  = getStandardUnitForIngredient(unit, ingName);
+          const { data: ingredientRecord, error: ingredientError } = await supabase
+            .from('ingredients')
+            .select('name')
+            .eq('id', ingId)
+            .eq('restaurant_id', restaurant_id)
+            .single();
+
+          if (ingredientError || !ingredientRecord) {
+            throw new Error(
+              `Could not load ingredient ${ingId} for price conversion.`
+            );
+          }
+
+          const ingName = ingredientRecord.name;
+          const stdPrice = convertInvoiceCostToStandardUnit(
+            unit_cost,
+            unit,
+            ingName
+          );
+          const stdUnit = getStandardUnitForIngredient(unit, ingName);
 
           ingredientUpdates[ingId] = {
             last_price:      stdPrice,
@@ -336,27 +346,13 @@ export function createConfirmInvoiceHandler({
       }
     }
 
-    const updatePromises = Object.entries(ingredientUpdates).map(([ingId, updates]) =>
-      supabase
-        .from('ingredients')
-        .update(updates)
-        .eq('id', ingId)
-        .eq('restaurant_id', restaurant_id)
-        .then(({ error }) => {
-          if (error) results.errors.push(`Failed to update ingredient ${ingId}: ${error.message}`);
-          else       results.ingredients_updated++;
-        })
-    );
-    await Promise.all(updatePromises);
+    // Ingredient prices are updated only after invoice lines are saved.
 
     // ── Step 4: Batch-insert all invoice_items ────────────────────────────────
     // Store original_quantity / original_price so the admin review screen can
     // highlight values that were changed vs what Claude originally parsed.
     const invoiceItemsToInsert = activeItems.map(item => {
-      const ingredientId =
-        item.selected_ingredient_id ||
-        newIngredientIdMap[item._id] ||
-        null;
+      const ingredientId = permittedIngredientId(item);
 
       const {
         quantity: totalQty,
@@ -379,9 +375,23 @@ export function createConfirmInvoiceHandler({
         original_price:             unit_cost,
         // The matcher's best guesses for a line it was unsure about, shown as
         // one-tap choices when linking. Only kept on lines left unlinked.
-        match_candidates: !ingredientId && Array.isArray(item.match_candidates) && item.match_candidates.length
-          ? item.match_candidates.slice(0, 3).map((c) => ({ id: c.id, name: c.name }))
-          : null,
+        match_candidates:
+          matchingEnabled &&
+          !ingredientId &&
+          Array.isArray(item.match_candidates) &&
+          item.match_candidates.length
+            ? item.match_candidates
+                .slice(0, 3)
+                .filter(candidate =>
+                  candidate &&
+                  candidate.id &&
+                  candidate.name
+                )
+                .map(candidate => ({
+                  id: candidate.id,
+                  name: candidate.name,
+                }))
+            : null,
       };
     });
 
@@ -390,29 +400,97 @@ export function createConfirmInvoiceHandler({
       .insert(invoiceItemsToInsert);
 
     if (itemsError) {
-      results.errors.push('Failed to batch-insert invoice items: ' + itemsError.message);
-    } else {
-      results.items_saved = invoiceItemsToInsert.length;
-    }
-
-    // ── Step 5: Recompute dish costs (shared with link-item) ─────────────────
-    // History rows are dated to this invoice, not the upload time.
-    try {
-      await recompute(
-        supabase,
-        restaurant_id,
-        [...Object.keys(ingredientUpdates), ...Object.values(newIngredientIdMap)],
-        { effectiveDate: invoiceDate }
+      results.errors.push(
+        'Failed to batch-insert invoice items: ' + itemsError.message
       );
-    } catch (err) {
-      results.errors.push('Could not recompute dish costs: ' + err.message);
+
+      return res.status(500).json({
+        success: false,
+        invoice_id: results.invoice_id,
+        items_saved: 0,
+        ingredients_created: 0,
+        ingredients_updated: 0,
+        errors: results.errors,
+      });
     }
 
-    // A new delivery changes on-hand inventory now, not tonight.
-    try {
-      await rebuild(supabase, restaurant_id);
-    } catch (err) {
-      console.error('[confirm-invoice] current_inventory rebuild failed:', err.message);
+    results.items_saved = invoiceItemsToInsert.length;
+
+    // Only update ingredient prices after the invoice lines are saved.
+    if (matchingEnabled && results.items_saved > 0) {
+      const updatePromises = Object.entries(ingredientUpdates).map(
+        ([ingId, updates]) =>
+          supabase
+            .from('ingredients')
+            .update(updates)
+            .eq('id', ingId)
+            .eq('restaurant_id', restaurant_id)
+            .then(({ error }) => {
+              if (error) {
+                results.errors.push(
+                  `Failed to update ingredient ${ingId}: ${error.message}`
+                );
+              } else {
+                results.ingredients_updated++;
+              }
+            })
+      );
+
+      await Promise.all(updatePromises);
+    }
+
+    // Do not recalculate costs or inventory when ingredient pricing failed.
+    // The invoice lines remain saved for later review or recovery.
+    if (results.errors.length > 0) {
+      return res.status(500).json({
+        success: false,
+        invoice_id: results.invoice_id,
+        items_saved: results.items_saved,
+        ingredients_created: 0,
+        ingredients_updated: results.ingredients_updated,
+        errors: results.errors,
+      });
+    }
+
+    // ── Step 5: Recompute only when matching is enabled ───────────────────────
+    // Locked restaurants retain invoice data without modifying ingredient
+    // prices, recipe costs, or ingredient-linked inventory.
+
+    if (
+      matchingEnabled &&
+      results.items_saved > 0 &&
+      Object.keys(ingredientUpdates).length > 0
+    ) {
+      try {
+        await recompute(
+          supabase,
+          restaurant_id,
+          Object.keys(ingredientUpdates),
+          { effectiveDate: invoiceDate }
+        );
+      } catch (err) {
+        results.errors.push(
+          'Could not recompute dish costs: ' + err.message
+        );
+      }
+    }
+
+    // An invoice with permitted ingredient links may change inventory.
+    // Never rebuild inventory for a locked restaurant.
+
+    if (
+      matchingEnabled &&
+      results.items_saved > 0 &&
+      invoiceItemsToInsert.some(item => item.ingredient_id)
+    ) {
+      try {
+        await rebuild(supabase, restaurant_id);
+      } catch (err) {
+        console.error(
+          '[confirm-invoice] current_inventory rebuild failed:',
+          err.message
+        );
+      }
     }
 
     return res.status(200).json({

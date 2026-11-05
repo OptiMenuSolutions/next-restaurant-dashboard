@@ -20,6 +20,9 @@ import {
   safeguardIngredientMatch,
   resolveInvoiceIngredientMatches,
 } from '../../../lib/invoiceIngredientIdentity';
+import {
+  getRestaurantInvoiceMatchingControl,
+} from '../../../lib/invoiceMatchingControls';
 
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
@@ -766,6 +769,28 @@ export default async function handler(req, res) {
     }
   }
 
+  // Load matching permissions before processing the invoice.
+  // Locked restaurants can still parse invoices, but cannot match ingredients.
+  let matchingControl;
+
+  try {
+    matchingControl = await getRestaurantInvoiceMatchingControl(
+      supabase,
+      restaurantId
+    );
+  } catch (error) {
+    console.error('[parse-invoice] Matching control:', error);
+
+    streamEvent(res, {
+      type: 'error',
+      error: 'Invoice matching controls are unavailable. Please retry.',
+    });
+
+    return res.end();
+  }
+
+  const matchingEnabled = matchingControl.matching_enabled;
+
   // Paid feature (Mistral OCR plus three Claude calls): the restaurant must be paid up.
   const sub = await import('../../../lib/requireActiveSubscription')
     .then(m => m.requireActiveSubscription(supabase, restaurantId));
@@ -874,44 +899,54 @@ export default async function handler(req, res) {
       return res.end();
     }
 
-    // ── Pass 3: Claude ingredient matching (batched) ──────────────────────────
-    streamStatus(res, 'Matching to your ingredient library...', `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`);
+    // ── Pass 3: Controlled ingredient matching ───────────────────────────────
+    // Historical invoice links are not treated as approved future mappings.
+    // Locked restaurants receive no ingredient matches or candidates.
 
-    // Lines this restaurant has linked before match the same way again; only
-    // the rest go to the AI matcher.
-    const remembered = await loadRememberedLinks(restaurantId);
-    const ingById = new Map(restaurantIngredients.map(i => [i.id, i]));
+    let matchResults;
 
-    const memoryHits = foodItems.map(item => {
-      const name = item.item_name_normalized || item.item_name_raw;
-      const id = remembered.get(normalizeName(name));
-      const ingredient = id ? ingById.get(id) : null;
+    if (!matchingEnabled) {
+      streamStatus(
+        res,
+        'Invoice items extracted',
+        'Ingredient matching is not yet enabled for this restaurant'
+      );
 
-      if (!ingredient) return null;
+      matchResults = foodItems.map(() => ({
+        status: 'new',
+        matches: [],
+      }));
+    } else {
+      streamStatus(
+        res,
+        'Matching to your ingredient library...',
+        `Checking ${foodItems.length} items against ${restaurantIngredients.length} ingredients`
+      );
 
-      // Historical links may have originated from AI matches rather
-      // than explicit owner approval. Do not blindly reuse a link
-      // when the product characteristics disagree.
-      if (ingredientIdentityConflicts(name, ingredient.name)) {
-        return null;
-      }
+      // Do not automatically trust historical invoice links.
+      // Each item is evaluated independently against the current library.
+      const remembered = new Map();
 
-      return ingredient;
-    });
+      const globalIngredients = foodItems.length
+        ? await loadGlobalIngredients()
+        : [];
 
-    const toMatch = foodItems.filter((_, i) => !memoryHits[i]);
-    const globalIngredients = toMatch.length ? await loadGlobalIngredients() : [];
-    const aiResults = toMatch.length ? await matchWithClaude(toMatch, restaurantIngredients, restaurantId, globalIngredients) : [];
-    
-    const matchResults = resolveInvoiceIngredientMatches(
-      foodItems,
-      restaurantIngredients,
-      remembered,
-      aiResults
-    );
+      const aiResults = foodItems.length
+        ? await matchWithClaude(
+            foodItems,
+            restaurantIngredients,
+            restaurantId,
+            globalIngredients
+          )
+        : [];
 
-    const memoryCount = memoryHits.filter(Boolean).length;
-    if (memoryCount) console.log(`[parse-invoice] ${memoryCount} line(s) matched from earlier links`);
+      matchResults = resolveInvoiceIngredientMatches(
+        foodItems,
+        restaurantIngredients,
+        remembered,
+        aiResults
+      );
+    }
 
     const sanityFlags    = await sanityCheckCosts(foodItems, restaurantId);
     const flaggedIndexes = new Set(sanityFlags.map(f => f.index));
@@ -961,9 +996,10 @@ export default async function handler(req, res) {
       } else if (matchResult.status === 'new') {
         newCount++;
         if (newCount <= 2) {
-          streamStatus(res,
-            `New ingredient: ${item.item_name_normalized || item.item_name_raw}`,
-            'Will add to your library when confirmed'
+          streamStatus(
+            res,
+            `Unmatched invoice item: ${item.item_name_normalized || item.item_name_raw}`,
+            'Will remain unlinked until matched to an existing recipe ingredient'
           );
         }
       } else {
