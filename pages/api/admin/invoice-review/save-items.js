@@ -261,8 +261,8 @@ export function createSaveInvoiceItemsHandler({
     // - correcting quantity or unit cost
     for (const ingredientId of touchedIds) {
       try {
-        await repriceFromInvoices(
-          supabase,
+        await reprice(
+          db,
           restaurant_id,
           ingredientId
         );
@@ -285,8 +285,8 @@ export function createSaveInvoiceItemsHandler({
     // all ingredient pricing operations succeed.
     if (touchedIds.length) {
       try {
-        await recomputeMenuCosts(
-          supabase,
+        await recompute(
+          db,
           restaurant_id,
           touchedIds,
           {
@@ -314,8 +314,8 @@ export function createSaveInvoiceItemsHandler({
     // Invoice-line changes can affect inventory quantities
     // and ingredient allocations.
     try {
-      await rebuildCurrentInventory(
-        supabase,
+      await rebuild(
+        db,
         restaurant_id
       );
     } catch (error) {
