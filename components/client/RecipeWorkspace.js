@@ -135,6 +135,26 @@ const TONES = {
 
 // Plain words for each saved status, shared by the list and the editor.
 function statusOf(node) {
+  if (node.kind === 'dish' && node.no_recipe_required) {
+    return {
+      text: 'No recipe required',
+      tone: 'muted',
+      key: 'sales_only',
+    };
+  }
+
+  if (
+    node.source === 'upload' &&
+    !node.published &&
+    node.draft?.lines?.length
+  ) {
+    return {
+      text: 'Needs review',
+      tone: 'amber',
+      key: 'review',
+    };
+  }
+
   if (node.status === 'confirmed') return { text: 'Confirmed', tone: 'green', key: 'confirmed' };
   if (node.status === 'estimated') return { text: 'Estimate · not in use yet', tone: 'amber', key: 'estimated' };
   if (node.status === 'skeleton') return { text: 'Needs amounts', tone: 'amber', key: 'skeleton' };
@@ -429,10 +449,19 @@ const mime = /\.xlsx$/i.test(file.name)
     const entry = latest.current.state.imports.find(f => f.path === signed.path);
     const left = (entry?.items || []).filter(item => !item.adopted).length;
 
+    const published = latest.current.released?.length || 0;
+
     setMessage(
-      left
-        ? `Read. Recipes that matched a dish or batch by name were saved as drafts. Choose where the other ${left === 1 ? 'one goes' : `${left} go`}.`
-        : 'Read. Every recipe was matched by name and saved as a draft. Check the amounts, then confirm each one.'
+      [
+        'Upload processed.',
+        published
+          ? `${published} validated recipes published.`
+          : 'No recipes were automatically published.',
+        left
+          ? `${left} unmatched ${left === 1 ? 'recipe needs' : 'recipes need'} assignment.`
+          : '',
+        'Check Needs review for recipes awaiting approval.',
+      ].filter(Boolean).join(' ')
     );
   }
 
@@ -511,18 +540,36 @@ const mime = /\.xlsx$/i.test(file.name)
 
   // Admin works in two queues: the owner's own uploads to check and approve,
   // and everything OptiMenu has to build with the kitchen.
-  const queueOf = node => (
-    node.status === 'confirmed' || statusOf(node).key === 'current'
-      ? 'done'
-      : node.source === 'upload' ? 'approve' : 'build'
-  );
-  const groups = admin
-    ? [
-        ['Check and approve now', 'The owner’s own recipes. Uploads go into use as soon as nothing is holding them.', shown.filter(n => queueOf(n) === 'approve')],
-        ['To build with the kitchen', 'OptiMenu’s estimates and dishes with no recipe. They stay off the owner’s costs until you confirm them.', shown.filter(n => queueOf(n) === 'build')],
-        ['Done', 'Confirmed and in use.', shown.filter(n => queueOf(n) === 'done')],
-      ].filter(([, , items]) => items.length)
-    : [[null, null, shown]];
+  const queueOf = node => {
+    if (node.no_recipe_required) return 'done';
+    if (node.published) return 'done';
+    if (node.source === 'upload' && node.draft?.lines?.length) {
+      return 'approve';
+    }
+    return 'build';
+  };
+
+  const reviewQueue = shown.filter(n => queueOf(n) === 'approve');
+  const buildQueue = shown.filter(n => queueOf(n) === 'build');
+  const doneQueue = shown.filter(n => queueOf(n) === 'done');
+
+  const groups = [
+    [
+      'Needs review',
+      'Uploaded recipes awaiting confirmation. Open a recipe to review its amounts, units, and ingredient links.',
+      reviewQueue,
+    ],
+    [
+      admin ? 'To build with the kitchen' : 'Recipes to complete',
+      'Drafts and estimates remain outside active costing until confirmed.',
+      buildQueue,
+    ],
+    [
+      'Done',
+      'Published recipes and sales-only menu items.',
+      doneQueue,
+    ],
+  ].filter(([, , items]) => items.length);
 
   const unitOptions = value => [
     ...(UNITS.includes(value) ? [] : [{ value, label: value || 'Choose unit' }]),
@@ -531,14 +578,34 @@ const mime = /\.xlsx$/i.test(file.name)
 
   // Progress across dishes, by plain status. Skeletons have no amounts yet,
   // so they don't count as having a recipe.
-  const counts = { confirmed: 0, current: 0, estimated: 0, imported: 0, draft: 0, skeleton: 0, none: 0 };
-  dishes.forEach(n => { counts[statusOf(n).key] += 1; });
-  const withRecipe = dishes.length - counts.none - counts.skeleton;
+  const counts = {
+    confirmed: 0,
+    current: 0,
+    estimated: 0,
+    imported: 0,
+    draft: 0,
+    skeleton: 0,
+    none: 0,
+    review: 0,
+    sales_only: 0,
+  };
+
+  dishes.forEach(n => {
+    const key = statusOf(n).key;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  const requiredDishes = dishes.filter(n => !n.no_recipe_required);
+  const withRecipe = requiredDishes.filter(
+    n => !!n.published?.lines?.length
+  ).length;
+
   const parts = [
     ['Confirmed', counts.confirmed, 'var(--green)'],
     ['Current', counts.current, 'var(--faint)'],
     ['Estimated', counts.estimated, 'var(--amber)'],
     ['From upload', counts.imported, 'var(--accent-deep)'],
+    ['Needs review', counts.review, 'var(--amber)'],
     ['Draft', counts.draft, 'var(--accent)'],
     ['Needs amounts', counts.skeleton, 'var(--amber)'],
     ['No recipe', counts.none, 'var(--red)'],
@@ -557,7 +624,7 @@ const mime = /\.xlsx$/i.test(file.name)
   const uploadDone = data.state.imports.some(f => f.parsed);
   // During onboarding, once an upload is read, the result card replaces the method cards.
   const hideMethods = progressive && method === 'upload' && uploadDone;
-  const missing = dishes.filter(n => statusOf(n).key === 'none');
+  const missing = requiredDishes.filter(n => !n.published?.lines?.length);
   // During onboarding an upload goes to OptiMenu to check, so the owner
   // doesn't review it here. Only building recipes yourself opens the list.
   const showWork = !progressive || (method === 'manual' && !!data.state.build);
@@ -642,7 +709,7 @@ const mime = /\.xlsx$/i.test(file.name)
                 <span style={{ fontFamily: MONO, fontSize: 10.5, letterSpacing: '0.08em', color: 'var(--muted)' }}>{meta}</span>
                 <Tag status={status} />
               </span>
-              {admin && data.holds?.[node.id] && (
+              {data.holds?.[node.id] && (
                 <span style={{ fontSize: 12, lineHeight: 1.4, color: 'var(--amber)' }}>{data.holds[node.id]}</span>
               )}
             </span>
@@ -699,9 +766,88 @@ const mime = /\.xlsx$/i.test(file.name)
       </div>
 
       <fieldset disabled={busy} style={{ border: 0, padding: phone ? 16 : '18px 20px', margin: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {editor.kind === 'dish' && editor.id && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: phone ? 'column' : 'row',
+              alignItems: phone ? 'stretch' : 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: '12px 14px',
+              border: '1px solid var(--line)',
+              borderRadius: 10,
+              background: 'var(--panel)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: 13.5, fontWeight: 700 }}>
+                {editor.no_recipe_required
+                  ? 'Sales-only menu item'
+                  : 'Recipe tracking'}
+              </div>
+              <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--muted)', marginTop: 3 }}>
+                {editor.no_recipe_required
+                  ? 'This dish remains available for menu pricing and POS sales. No recipe is required.'
+                  : 'Does this dish change frequently enough that maintaining a recipe is impractical?'}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              style={button}
+              disabled={busy || dirty}
+              onClick={() => run(async () => {
+                const required = !!editor.no_recipe_required;
+
+                if (
+                  !window.confirm(
+                    required
+                      ? 'Enable recipe tracking for this dish?'
+                      : 'Mark this dish No Recipe Required? It will remain available for POS sales.'
+                  )
+                ) return;
+
+                const result = await post({
+                  action: 'recipe_requirement',
+                  id: editor.id,
+                  required,
+                });
+
+                const updated = result.state.nodes.find(
+                  n => n.id === editor.id
+                );
+
+                if (updated) setEditor(clone(updated));
+
+                setMessage(
+                  required
+                    ? 'Recipe tracking enabled.'
+                    : 'Dish marked No Recipe Required.'
+                );
+              })}
+            >
+              {editor.no_recipe_required
+                ? 'Require recipe'
+                : 'No recipe required'}
+            </button>
+          </div>
+        )}
         {editor.status === 'estimated' && (
           <div style={{ background: 'var(--amber-tint, #fbf3e2)', borderRadius: 12, padding: '12px 14px', fontSize: 13, lineHeight: 1.5 }}>
             OptiMenu estimated this recipe from the menu. It isn’t used for costs yet. Check the amounts with the kitchen, then confirm to put it in use.
+          </div>
+        )}
+        {editor.no_recipe_required && (
+          <div style={{
+            padding: '10px 12px',
+            borderRadius: 10,
+            background: 'var(--panel)',
+            fontSize: 12.5,
+            color: 'var(--muted)',
+          }}>
+            Recipe editing is disabled for this sales-only dish.
+            Select Require recipe above to resume recipe setup.
           </div>
         )}
 
@@ -711,7 +857,7 @@ const mime = /\.xlsx$/i.test(file.name)
           </div>
         )}
 
-        {admin && data.holds?.[editor.id] && (
+        {data.holds?.[editor.id] && (
           <div style={{ background: 'var(--amber-tint, #fbf3e2)', borderRadius: 12, padding: '12px 14px', fontSize: 13, lineHeight: 1.5 }}>
             From the owner’s upload. Not in use yet: {data.holds[editor.id]}
           </div>
@@ -938,10 +1084,10 @@ const mime = /\.xlsx$/i.test(file.name)
             </button>
           ) : <span />}
           <div style={{ display: 'flex', gap: 8, flex: phone ? '1 1 100%' : '0 0 auto' }}>
-            <button type="button" style={{ ...button, flex: phone ? 1 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => save(false))}>
+            <button type="button" disabled={!!editor.no_recipe_required} style={{ ...button, flex: phone ? 1 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => save(false))}>
               Save draft
             </button>
-            <button type="button" style={{ ...primary, flex: phone ? 1.4 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => confirmNode())}>
+            <button type="button" disabled={!!editor.no_recipe_required} style={{ ...primary, flex: phone ? 1.4 : '0 0 auto', minHeight: 44 }} onClick={() => run(() => confirmNode())}>
               {editor.kind === 'prep' ? 'Confirm batch' : 'Confirm recipe'}
             </button>
           </div>
@@ -1003,15 +1149,15 @@ const mime = /\.xlsx$/i.test(file.name)
           <section style={{ ...card, padding: phone ? 14 : '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
               <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>
-                {withRecipe} of {dishes.length} {dishes.length === 1 ? 'dish has' : 'dishes have'} a recipe
+                {withRecipe} of {requiredDishes.length} {requiredDishes.length === 1 ? 'required dish has' : 'required dishes have'} a published recipe
               </h3>
               <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                {preps.length} BATCH {preps.length === 1 ? 'PREP' : 'PREPS'}
+                {counts.sales_only} SALES-ONLY · {preps.length} BATCH {preps.length === 1 ? 'PREP' : 'PREPS'}
               </span>
             </div>
             <div style={{ height: 6, borderRadius: 3, background: 'var(--line-soft)', overflow: 'hidden', display: 'flex' }}>
               {parts.map(([name, n, color]) => (
-                <span key={name} style={{ width: `${(n / Math.max(dishes.length, 1)) * 100}%`, background: color }} />
+                <span key={name} style={{ width: `${(n / Math.max(requiredDishes.length, 1)) * 100}%`, background: color }} />
               ))}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px', fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>
@@ -1138,7 +1284,7 @@ const mime = /\.xlsx$/i.test(file.name)
                       : 'Upload worked. Every dish has a recipe.'}
                   </div>
                   <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, color: 'var(--muted)' }}>
-                    Your recipes are in use now. OptiMenu will check what we read and go over it with your kitchen on a short setup call. You don’t need to review anything now.
+                    Valid structured recipes can publish automatically. Recipes extracted from PDFs, photos, or other unstructured documents require owner or admin confirmation before they affect costing. Check Needs review for anything awaiting approval.
                   </p>
                 </div>
               </div>
@@ -1198,7 +1344,7 @@ const mime = /\.xlsx$/i.test(file.name)
                 <span style={button}>Choose file</span>
                 <input
                   type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv,.xlsx"
                   disabled={busy || dirty}
                   style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
                   onChange={event => {
