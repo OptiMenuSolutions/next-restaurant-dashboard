@@ -11,7 +11,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
-import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from '../../../lib/standardizedUnits';
+import {
+  selectInvoiceRepricingSource,
+} from '../../../lib/invoiceRepricing';
 import { getRestaurantInvoiceMatchingControl } from '../../../lib/invoiceMatchingControls';
 
 const supabase = createClient(
@@ -117,48 +119,102 @@ export function createDeleteInvoiceHandler({
       if (storageErr) console.error('[delete-invoice] storage cleanup failed:', storageErr.message);
     }
 
-    // ── Re-price each affected ingredient from its newest remaining line ──
-    let repriced = 0, cleared = 0;
+    // ── Reprice affected ingredients using shared safety rules ──
+    let repriced = 0;
+    let cleared = 0;
+
     if (matchingEnabled && ingredientIds.length) {
-      const [{ data: ings }, { data: remaining }] = await Promise.all([
-        db.from('ingredients').select('id, name').in('id', ingredientIds).eq('restaurant_id', restaurant_id),
+      const [
+        { data: ingredients, error: ingredientError },
+        { data: remaining, error: remainingError },
+      ] = await Promise.all([
+        db
+          .from('ingredients')
+          .select('id, name, last_ordered_at, price_status')
+          .in('id', ingredientIds)
+          .eq('restaurant_id', restaurant_id),
+
         db
           .from('invoice_items')
-          .select('ingredient_id, unit, unit_cost, invoices!invoice_items_invoice_id_fkey!inner(date, restaurant_id)')
+          .select(
+            'ingredient_id, unit, unit_cost, ' +
+            'invoices!invoice_items_invoice_id_fkey!inner' +
+            '(date, created_at, restaurant_id)'
+          )
           .in('ingredient_id', ingredientIds)
           .eq('invoices.restaurant_id', restaurant_id)
           .limit(5000),
       ]);
-      const newest = new Map();
-      for (const r of remaining || []) {
-        if (!(Number(r.unit_cost) > 0)) continue;
-        const d = String(r.invoices?.date || '');
-        const cur = newest.get(r.ingredient_id);
-        if (!cur || d > cur.date) newest.set(r.ingredient_id, { date: d, unit: r.unit, unitCost: Number(r.unit_cost) });
+
+      if (ingredientError) throw ingredientError;
+      if (remainingError) throw remainingError;
+
+      const linesByIngredient = new Map();
+
+      for (const line of remaining || []) {
+        if (!linesByIngredient.has(line.ingredient_id)) {
+          linesByIngredient.set(line.ingredient_id, []);
+        }
+
+        linesByIngredient.get(line.ingredient_id).push(line);
       }
-      await Promise.all((ings || []).map(g => {
-        const n = newest.get(g.id);
-        const update = n
-          ? {
-              last_price: convertInvoiceCostToStandardUnit(n.unitCost, n.unit, g.name),
-              unit: getStandardUnitForIngredient(n.unit, g.name),
-              standard_unit: getStandardUnitForIngredient(n.unit, g.name),
-              last_ordered_at: n.date.slice(0, 10) || null,
-              is_estimated: false,
-            }
-          // No invoice left to price it from: clear the price rather than
-          // keep one that came from the deleted invoice.
-          : { last_price: null, last_ordered_at: null };
-        if (n) repriced++; else cleared++;
-        return db.from('ingredients').update(update).eq('id', g.id).eq('restaurant_id', restaurant_id);
-      }));
+
+      for (const ingredient of ingredients || []) {
+        const lines =
+          linesByIngredient.get(ingredient.id) || [];
+
+        const decision = selectInvoiceRepricingSource(lines);
+
+        let updates = null;
+
+        if (decision.status === 'priced') {
+          updates = decision.updates;
+          repriced++;
+        } else if (
+          decision.status === 'no_linked_invoices' &&
+          ingredient.price_status === 'invoice'
+        ) {
+          // The ingredient no longer has an invoice-based
+          // price source. Clear only invoice-derived pricing.
+          updates = {
+            last_price: null,
+            last_ordered_at: null,
+            is_estimated: true,
+            price_status: 'needs_review',
+            price_approved_at: null,
+          };
+
+          cleared++;
+        }
+
+        // Unverified remaining lines must not overwrite an
+        // existing price or establish a new one.
+        if (!updates) continue;
+
+        const { error: updateError } = await db
+          .from('ingredients')
+          .update(updates)
+          .eq('id', ingredient.id)
+          .eq('restaurant_id', restaurant_id);
+
+        if (updateError) throw updateError;
+      }
 
       try {
-        await recompute(db, restaurant_id, ingredientIds, {
-          effectiveDate: new Date().toISOString().split('T')[0],
-        });
-      } catch (err) {
-        console.error('[delete-invoice] recomputeMenuCosts failed:', err.message);
+        await recompute(
+          db,
+          restaurant_id,
+          ingredientIds,
+          {
+            effectiveDate:
+              new Date().toISOString().split('T')[0],
+          }
+        );
+      } catch (error) {
+        console.error(
+          '[delete-invoice] recomputeMenuCosts failed:',
+          error.message
+        );
       }
     }
 
