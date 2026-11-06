@@ -281,3 +281,96 @@ test('15. Count-to-count matching remains eligible', () => {
 
   assert.equal(result.status, 'auto');
 });
+
+test('16. Ordinary automatic matches cannot bypass unit compatibility', () => {
+  const result = runMatch({
+    invoiceUnit: 'ct',
+    match: {
+      status: 'auto',
+      matches: [
+        { id: FLOUR_ID, name: 'All-purpose flour', unit: 'oz' },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'new');
+  assert.equal(result.matches.length, 0);
+  assert.equal(result.decision_source, 'incompatible_units');
+});
+
+test('17. Ordinary compatible automatic matches remain valid', () => {
+  const result = runMatch({
+    invoiceUnit: 'lb',
+    match: {
+      status: 'auto',
+      matches: [
+        { id: FLOUR_ID, name: 'All-purpose flour', unit: 'oz' },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+});
+
+test('18. Unverified cans cannot automatically match volume ingredients', () => {
+  const result = runMatch({
+    invoiceUnit: 'can',
+    eligibleIngredients: [
+      {
+        id: FLOUR_ID,
+        name: 'Test canned ingredient',
+        unit: 'fl oz',
+      },
+    ],
+    decisions: createDecisions({
+      approvals: [[productKey, FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('19. Numbered cans require package verification', () => {
+  const result = runMatch({
+    invoiceUnit: '#10 can',
+    eligibleIngredients: [
+      {
+        id: FLOUR_ID,
+        name: 'Test canned ingredient',
+        unit: 'fl oz',
+      },
+    ],
+    decisions: createDecisions({
+      approvals: [[productKey, FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('20. Case units cannot automatically authorize physical conversions', () => {
+  const result = runMatch({
+    invoiceUnit: 'case',
+    decisions: createDecisions({
+      approvals: [[productKey, FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('21. Ordinary automatic matches with unknown units require review', () => {
+  const result = runMatch({
+    invoiceUnit: null,
+    match: {
+      status: 'auto',
+      matches: [
+        { id: FLOUR_ID, name: 'All-purpose flour', unit: 'oz' },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'new');
+  assert.equal(result.decision_source, 'incompatible_units');
+});

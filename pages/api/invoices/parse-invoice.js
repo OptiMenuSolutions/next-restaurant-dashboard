@@ -988,11 +988,15 @@ export default async function handler(req, res) {
 
         return applyInvoiceMatchDecisions({
           description: item.item_name_raw || item.item_name_normalized,
-          invoiceUnit: item.unit || item.unit_of_measure || null,
+          invoiceUnit:
+            item.size_unit ||
+            item.standard_unit ||
+            item.quantity_unit ||
+            null,
           ingredients: restaurantIngredients,
           match,
           decisions,
-        })
+        });
       });
     }
 

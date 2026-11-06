@@ -15,6 +15,24 @@ function createDb({
   const writes = [];
 
   const db = {
+    rpc(functionName, args) {
+      if (functionName === 'recipe_setup_catalog') {
+        assert.equal(args.p_restaurant, RESTAURANT_ID);
+
+        return Promise.resolve({
+          data: [],
+          error: null,
+        });
+      }
+
+      return Promise.resolve({
+        data: null,
+        error: {
+          message: `Unexpected RPC in test: ${functionName}`,
+        },
+      });
+    },
+
     from(table) {
       const state = {
         operation: null,

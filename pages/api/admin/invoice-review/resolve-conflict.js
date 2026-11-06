@@ -1,5 +1,7 @@
-
-import { adminDb as db, requireAdmin } from '../../../../lib/admin/requireAdmin';
+import {
+  adminDb as productionDb,
+  requireAdmin as productionRequireAdmin,
+} from '../../../../lib/admin/requireAdmin';
 import { normalizeSupplierProduct } from '../../../../lib/invoiceMatchConflicts';
 import { waitUntil } from '@vercel/functions';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
@@ -20,7 +22,15 @@ const isUuid = value =>
 
 const normalizeId = value => value == null || value === '' ? null : value;
 
-export default async function handler(req, res) {
+export function createResolveConflictHandler({
+  db = productionDb,
+  requireAdmin = productionRequireAdmin,
+  getMatchingPolicy = getProgressiveInvoiceMatchingPolicy,
+  saveAuditLog = writeAuditLog,
+  scheduleWork = waitUntil,
+  processCalculations = processInvoiceCalculations,
+} = {}) {
+  return async function handler(req, res) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
 
@@ -160,7 +170,7 @@ export default async function handler(req, res) {
     // Allow administrators to preview existing conflicts, but prevent
     // saving corrections or future mappings while matching is locked.
     if (action === 'save') {
-      const control = await getProgressiveInvoiceMatchingPolicy(
+      const control = await getMatchingPolicy(
         db,
         restaurant_id
       );
@@ -255,6 +265,13 @@ export default async function handler(req, res) {
       }
 
       const actualProductKey = normalizeSupplierProduct(item.item_name);
+      const actualSupplierKey = normalizeSupplierProduct(invoice.supplier);
+
+      if (actualSupplierKey !== supplierKey) {
+        return res.status(400).json({
+          error: 'An invoice line belongs to a different supplier.',
+        });
+      }
 
       if (actualProductKey !== productKey) {
         return res.status(400).json({
@@ -330,7 +347,7 @@ export default async function handler(req, res) {
         });
       }
 
-      await writeAuditLog({
+      await saveAuditLog({
         admin_id: admin.user.id,
         admin_name: admin.name,
         action: 'Resolved invoice ingredient conflict',
@@ -348,9 +365,9 @@ export default async function handler(req, res) {
 
       if (result?.calculationsPending) {
         try {
-          waitUntil(
+          scheduleWork(
             Promise.resolve()
-              .then(() => processInvoiceCalculations(db, restaurant_id))
+              .then(() => processCalculations(db, restaurant_id))
               .catch(error => {
                 console.error('[conflict calculations]', error);
               })
@@ -422,4 +439,7 @@ export default async function handler(req, res) {
       error: 'Failed to preview ingredient corrections.',
     });
   }
+  };
 }
+
+export default createResolveConflictHandler();
