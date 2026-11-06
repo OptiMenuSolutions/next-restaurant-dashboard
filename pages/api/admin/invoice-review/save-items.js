@@ -1,343 +1,190 @@
-
-import { withAdminAuth } from '../../../../lib/admin/withAdminAuth';
 import { createClient } from '@supabase/supabase-js';
+import { waitUntil } from '@vercel/functions';
+
+import {
+  withAdminAuth,
+} from '../../../../lib/admin/withAdminAuth';
+
 import {
   getProgressiveInvoiceMatchingPolicy,
 } from '../../../../lib/progressiveInvoiceMatching';
+
 import {
-  repriceFromInvoices,
-} from '../../../../lib/admin/invoiceLines';
-import { recomputeMenuCosts } from '../../../../lib/recomputeMenuCosts';
-import { rebuildCurrentInventory } from '../../../../lib/currentInventory';
+  processInvoiceCalculations,
+} from '../../../../lib/admin/processInvoiceCalculations';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const numericValue = (value) => {
-  if (value === '' || value === null || value === undefined) {
-    return null;
-  }
-
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+export const config = {
+  maxDuration: 300,
 };
 
 export function createSaveInvoiceItemsHandler({
   db = supabase,
   getMatchingControl = getProgressiveInvoiceMatchingPolicy,
-  reprice = repriceFromInvoices,
-  recompute = recomputeMenuCosts,
-  rebuild = rebuildCurrentInventory,
+  processCalculations = processInvoiceCalculations,
 } = {}) {
-  return async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).end();
-  }
-
-  const { invoice_id, restaurant_id, items } = req.body || {};
-
-  if (!invoice_id || !restaurant_id || !Array.isArray(items)) {
-    return res.status(400).json({
-      error: 'invoice_id, restaurant_id, and items[] required',
-    });
-  }
-
-  try {
-    // Matching must be enabled before any invoice-line
-    // or ingredient-related changes are permitted.
-    const control = await getMatchingControl(
-      db,
-      restaurant_id
-    );
-
-    if (!control.matching_enabled) {
-      return res.status(403).json({
-        error:
-          'Invoice ingredient matching is not enabled for this restaurant.',
+  return async function handler(req, res, session) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({
+        error: 'Method not allowed.',
       });
     }
 
-    // Verify invoice ownership and obtain its actual date.
-    const { data: invoice, error: invoiceError } = await db
-      .from('invoices')
-      .select('id, date')
-      .eq('id', invoice_id)
-      .eq('restaurant_id', restaurant_id)
-      .maybeSingle();
-
-    if (invoiceError) throw invoiceError;
-
-    if (!invoice) {
-      return res.status(404).json({
-        error: 'Invoice not found for this restaurant.',
-      });
-    }
-
-    const submittedIds = items.map(item => item?.id);
+    const {
+      invoice_id,
+      restaurant_id,
+      items,
+    } = req.body || {};
 
     if (
-      submittedIds.some(id => !id) ||
-      new Set(submittedIds).size !== submittedIds.length
+      !invoice_id ||
+      !restaurant_id ||
+      !Array.isArray(items)
     ) {
       return res.status(400).json({
-        error: 'Invoice item IDs must be present and unique.',
-      });
-    }
-
-    if (submittedIds.length === 0) {
-      return res.status(200).json({
-        success: true,
-        changed: 0,
-        errors: [],
-      });
-    }
-
-    // Load existing values so we can identify actual changes
-    // and reprice both sides of any ingredient relink.
-    const { data: existingLines, error: linesError } = await db
-      .from('invoice_items')
-      .select(
-        'id, quantity, unit, unit_cost, amount, ingredient_id'
-      )
-      .eq('invoice_id', invoice_id)
-      .in('id', submittedIds);
-
-    if (linesError) throw linesError;
-
-    if ((existingLines || []).length !== submittedIds.length) {
-      return res.status(400).json({
         error:
-          'One or more invoice lines do not belong to this invoice.',
+          'invoice_id, restaurant_id, and items[] required.',
       });
     }
 
-    const existingMap = new Map(
-      existingLines.map(line => [line.id, line])
-    );
-
-    // Validate all requested ingredient IDs before writing.
-    const ingredientIds = [
-      ...new Set(
-        items
-          .map(item => item.ingredient_id)
-          .filter(Boolean)
-      ),
-    ];
-
-    if (ingredientIds.length) {
-      const { data: ingredients, error: ingredientError } =
-        await db
-          .from('ingredients')
-          .select('id')
-          .eq('restaurant_id', restaurant_id)
-          .in('id', ingredientIds);
-
-      if (ingredientError) throw ingredientError;
-
-      const ownedIds = new Set(
-        (ingredients || []).map(ingredient => ingredient.id)
-      );
-
-      if (
-        ingredientIds.some(id => !ownedIds.has(id))
-      ) {
-        return res.status(400).json({
-          error:
-            'One or more ingredients do not belong to this restaurant.',
-        });
-      }
-    }
-
-    // Prepare all edits before changing the database.
-    const changes = [];
-
-    for (const item of items) {
-      const old = existingMap.get(item.id);
-
-      const next = {
-        quantity: numericValue(item.quantity),
-        unit: String(item.unit || '').trim() || null,
-        unit_cost: numericValue(item.unit_cost),
-        amount: numericValue(item.amount),
-        ingredient_id: item.ingredient_id || null,
-      };
-
-      const changed =
-        next.quantity !== numericValue(old.quantity) ||
-        next.unit !== (old.unit || null) ||
-        next.unit_cost !== numericValue(old.unit_cost) ||
-        next.amount !== numericValue(old.amount) ||
-        next.ingredient_id !== (old.ingredient_id || null);
-
-      if (changed) {
-        changes.push({
-          id: item.id,
-          oldIngredientId: old.ingredient_id || null,
-          newIngredientId: next.ingredient_id,
-          next,
-        });
-      }
-    }
-
-    // No database writes or recalculations are necessary
-    // when the submitted values are unchanged.
-    if (changes.length === 0) {
-      return res.status(200).json({
-        success: true,
-        changed: 0,
-        errors: [],
+    if (!session?.user?.id) {
+      return res.status(403).json({
+        error: 'Administrator authorization required.',
       });
     }
 
-    const touchedIngredients = new Set();
-    const errors = [];
-    let changedCount = 0;
-
-    // Change only explicitly submitted invoice lines.
-    // Never propagate these changes to historical lines.
-    for (const change of changes) {
-      let updateQuery = db
-        .from('invoice_items')
-        .update(change.next)
-        .eq('id', change.id)
-        .eq('invoice_id', invoice_id);
-
-      if (change.oldIngredientId === null) {
-        updateQuery = updateQuery.is('ingredient_id', null);
-      } else {
-        updateQuery = updateQuery.eq(
-          'ingredient_id',
-          change.oldIngredientId
-        );
-      }
-
-      const { data: updatedRows, error } =
-        await updateQuery.select('id');
-
-      if (error) {
-        errors.push(`Item ${change.id}: ${error.message}`);
-        continue;
-      }
-
-      if (!updatedRows?.length) {
-        errors.push(
-          `Item ${change.id}: Invoice line changed during review. Refresh and retry.`
-        );
-        continue;
-      }
-
-      changedCount++;
-
-      if (change.oldIngredientId) {
-        touchedIngredients.add(change.oldIngredientId);
-      }
-
-      if (change.newIngredientId) {
-        touchedIngredients.add(change.newIngredientId);
-      }
-    }
-
-    // Never start ingredient repricing after a failed
-    // invoice-line update.
-    if (errors.length) {
-      return res.status(500).json({
-        success: false,
-        changed: changedCount,
-        errors,
-      });
-    }
-
-    const touchedIds = [...touchedIngredients];
-
-    // Reprice from the newest remaining linked invoice,
-    // rather than directly using the invoice being edited.
-    //
-    // This also handles:
-    // - correcting historical prices
-    // - moving a line between ingredients
-    // - unlinking a line
-    // - correcting quantity or unit cost
-    for (const ingredientId of touchedIds) {
-      try {
-        await reprice(
-          db,
-          restaurant_id,
-          ingredientId
-        );
-      } catch (error) {
-        errors.push(
-          `Ingredient ${ingredientId}: ${error.message}`
-        );
-      }
-    }
-
-    if (errors.length) {
-      return res.status(500).json({
-        success: false,
-        changed: changedCount,
-        errors,
-      });
-    }
-
-    // Recalculate affected recipe costs only after
-    // all ingredient pricing operations succeed.
-    if (touchedIds.length) {
-      try {
-        await recompute(
-          db,
-          restaurant_id,
-          touchedIds,
-          {
-            effectiveDate:
-              invoice.date ||
-              new Date().toISOString().slice(0, 10),
-            reason: 'admin_invoice_review',
-          }
-        );
-      } catch (error) {
-        errors.push(
-          `Dish cost recalculation: ${error.message}`
-        );
-      }
-    }
-
-    if (errors.length) {
-      return res.status(500).json({
-        success: false,
-        changed: changedCount,
-        errors,
-      });
-    }
-
-    // Invoice-line changes can affect inventory quantities
-    // and ingredient allocations.
     try {
-      await rebuild(
+      const control = await getMatchingControl(
         db,
         restaurant_id
       );
-    } catch (error) {
-      errors.push(
-        `Inventory rebuild: ${error.message}`
+
+      if (!control.matching_enabled) {
+        return res.status(403).json({
+          error:
+            'Invoice ingredient matching is not enabled for this restaurant.',
+        });
+      }
+
+      const {
+        data: invoice,
+        error: invoiceError,
+      } = await db
+        .from('invoices')
+        .select('id')
+        .eq('id', invoice_id)
+        .eq('restaurant_id', restaurant_id)
+        .maybeSingle();
+
+      if (invoiceError) throw invoiceError;
+
+      if (!invoice) {
+        return res.status(404).json({
+          error: 'Invoice not found for this restaurant.',
+        });
+      }
+
+      if (items.length === 0) {
+        return res.status(200).json({
+          success: true,
+          changed: 0,
+          errors: [],
+        });
+      }
+
+      const submittedIds = items.map(item => item?.id);
+
+      if (
+        submittedIds.some(id => !id) ||
+        new Set(submittedIds).size !== submittedIds.length
+      ) {
+        return res.status(400).json({
+          error:
+            'Invoice item IDs must be present and unique.',
+        });
+      }
+
+      const lines = items.map(item => ({
+        id: item.id,
+        quantity: item.quantity ?? null,
+        unit: item.unit ?? null,
+        unit_cost: item.unit_cost ?? null,
+        amount: item.amount ?? null,
+        ingredient_id: item.ingredient_id ?? null,
+      }));
+
+      // The database RPC saves every correction,
+      // records relationship decisions, and queues
+      // recalculation in one transaction.
+      //
+      // If the RPC fails, its database changes roll back.
+      const {
+        data: result,
+        error: saveError,
+      } = await db.rpc(
+        'save_admin_invoice_review',
+        {
+          p_invoice_id: invoice_id,
+          p_lines: lines,
+          p_reviewed: false,
+          p_admin_id: session.user.id,
+        }
       );
+
+      if (saveError) {
+        throw new Error(saveError.message);
+      }
+
+      // The durable calculation job is already committed.
+      // This schedules an immediate attempt, while the
+      // database queue remains available for retries.
+      try {
+        waitUntil(
+          Promise.resolve()
+            .then(() =>
+              processCalculations(db, restaurant_id)
+            )
+            .catch(error => {
+              console.error(
+                '[invoice-review calculations]',
+                restaurant_id,
+                error
+              );
+            })
+        );
+      } catch (error) {
+        console.error(
+          '[invoice-review scheduling]',
+          error
+        );
+      }
+
+      return res.status(200).json({
+        success: true,
+        changed: result.changed,
+        relinked: result.relinked,
+        calculationsPending: true,
+        restaurantId: result.restaurantId,
+        errors: [],
+      });
+    } catch (error) {
+      console.error(
+        '[invoice-review save-items]',
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        error: 'Could not save invoice corrections.',
+      });
     }
-
-    return res.status(errors.length ? 500 : 200).json({
-      success: errors.length === 0,
-      changed: changedCount,
-      ingredients_repriced: touchedIds.length,
-      errors,
-    });
-  } catch (error) {
-    console.error('[invoice-review save-items]', error);
-
-    return res.status(500).json({
-      error: 'Could not save invoice review changes.',
-    });
-  }
   };
 }
 
-export default withAdminAuth(createSaveInvoiceItemsHandler());
+export default withAdminAuth(
+  createSaveInvoiceItemsHandler()
+);

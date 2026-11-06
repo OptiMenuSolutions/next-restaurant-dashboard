@@ -354,63 +354,77 @@ export function createConfirmInvoiceHandler({
     // ── Step 2: Ingredient creation is recipe-owned ───────────────────────────
     // Invoice lines can only reference previously validated ingredients.
 
-    // ── Step 3: Batch-update existing ingredient prices ───────────────────────
+    // ── Step 3: Preserve existing ingredient pricing ─────────────────────────
+    //
+    // New invoice lines are initially unverified.
+    // Mathematical unit compatibility alone is not sufficient
+    // evidence to update an ingredient's financial cost.
+    //
+    // The verified-price workflow will populate provenance
+    // and subsequently reprice eligible ingredients.
+    //
+    // Until then, existing ingredient prices are preserved.
+
     const ingredientUpdates = {};
+
     for (const item of activeItems) {
-      const ingId = permittedIngredientId(item);
-      if (ingId) {
-        const { unit_cost, unit } = resolvedCost(item);
-        if (unit_cost) {
-          const { data: ingredientRecord, error: ingredientError } = await supabase
-            .from('ingredients')
-            .select('name')
-            .eq('id', ingId)
-            .eq('restaurant_id', restaurant_id)
-            .single();
+      const ingredientId = permittedIngredientId(item);
+      if (!ingredientId) continue;
 
-          if (ingredientError || !ingredientRecord) {
-            throw new Error(
-              `Could not load ingredient ${ingId} for price conversion.`
-            );
-          }
+      const cost = resolvedCost(item);
+      const verification = cost?.priceVerification;
 
-          const verifiedPrice = safeInvoiceStandardPrice(
-            unit_cost,
-            unit
-          );
-
-          // Preserve the invoice history, but never overwrite
-          // ingredient pricing with an unsupported conversion.
-          if (!verifiedPrice) continue;
-
-          ingredientUpdates[ingId] = {
-            last_price:      verifiedPrice.price,
-            unit:            verifiedPrice.unit,
-            standard_unit:   verifiedPrice.unit,
-            last_ordered_at: invoiceDate,
-            is_estimated:    false,
-          };
-        }
+      // Only trusted server-side verification results
+      // can authorize automatic ingredient repricing.
+      if (
+        cost?.pricingStatus !== 'verified' ||
+        verification?.status !== 'verified' ||
+        verification?.source !== 'authenticated_supplier_record' ||
+        !verification?.evidence
+      ) {
+        continue;
       }
+
+      const standardized = safeInvoiceStandardPrice(
+        cost.unit_cost,
+        cost.unit
+      );
+
+      if (!standardized) continue;
+
+      ingredientUpdates[ingredientId] = {
+        last_price: standardized.price,
+        unit: standardized.unit,
+        standard_unit: standardized.unit,
+        last_ordered_at: invoiceDate,
+        is_estimated: false,
+        price_status: 'invoice',
+      };
     }
 
-    // Never replace a newer price with this invoice's: an older invoice
-    // uploaded late adds its lines and history, but does not roll prices back.
+    // Never roll ingredient prices back to an older date.
     const updateIds = Object.keys(ingredientUpdates);
+
     if (updateIds.length) {
-      const { data: current } = await supabase
-        .from('ingredients')
-        .select('id, last_ordered_at')
-        .in('id', updateIds)
-        .eq('restaurant_id', restaurant_id);
-      for (const g of current || []) {
-        if (g.last_ordered_at && String(g.last_ordered_at).slice(0, 10) > String(invoiceDate).slice(0, 10)) {
-          delete ingredientUpdates[g.id];
+      const { data: current, error: currentError } =
+        await supabase
+          .from('ingredients')
+          .select('id, last_ordered_at')
+          .in('id', updateIds)
+          .eq('restaurant_id', restaurant_id);
+
+      if (currentError) throw currentError;
+
+      for (const ingredient of current || []) {
+        if (
+          ingredient.last_ordered_at &&
+          String(ingredient.last_ordered_at).slice(0, 10) >
+            String(invoiceDate).slice(0, 10)
+        ) {
+          delete ingredientUpdates[ingredient.id];
         }
       }
     }
-
-    // Ingredient prices are updated only after invoice lines are saved.
 
     // ── Step 4: Batch-insert all invoice_items ────────────────────────────────
     // Store original_quantity / original_price so the admin review screen can
@@ -437,6 +451,24 @@ export function createConfirmInvoiceHandler({
         reviewed:                   false,
         original_quantity:          totalQty,
         original_price:             unit_cost,
+
+        // Invoice parsing is not supplier authentication.
+        // Never trust client-submitted verification fields.
+        price_verification_status:
+          resolvedCost(item)?.priceVerification?.status === 'verified'
+            ? 'verified'
+            : 'unknown',
+
+        price_verification_source:
+          resolvedCost(item)?.priceVerification?.source || null,
+
+        price_verified_at:
+          resolvedCost(item)?.priceVerification?.verifiedAt || null,
+
+        price_verified_by: null,
+
+        price_verification_evidence:
+          resolvedCost(item)?.priceVerification?.evidence || null,
         // The matcher's best guesses for a line it was unsure about, shown as
         // one-tap choices when linking. Only kept on lines left unlinked.
         match_candidates:

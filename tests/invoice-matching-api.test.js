@@ -158,7 +158,9 @@ test('locked restaurant cannot save admin invoice edits', async () => {
         ingredient_id: 'ingredient-1',
       }],
     },
-  }, res);
+  }, res, {
+    user: { id: 'admin-test-1' },
+  });
 
   assert.equal(res.statusCode, 403);
   assert.equal(deps.db.calls.length, 0);
@@ -181,7 +183,9 @@ test('admin invoice editing fails closed when controls are unavailable', async (
         ingredient_id: 'ingredient-1',
       }],
     },
-  }, res);
+  }, res, {
+    user: { id: 'admin-test-1' },
+  });
 
   assert.equal(res.statusCode, 500);
   assert.equal(deps.db.calls.length, 0);
@@ -197,8 +201,8 @@ test('invoice deletion fails closed when controls are unavailable', async () => 
   await handler({
     method: 'POST',
     body: {
-      restaurant_id: restaurantId,
-      invoice_ids: ['invoice-1'],
+      restaurant_id: DELETE_RESTAURANT_ID,
+      invoice_ids: [DELETE_INVOICE_ID],
     },
   }, res);
 
@@ -229,8 +233,8 @@ test('unauthorized deletion never reaches matching controls', async () => {
   await handler({
     method: 'POST',
     body: {
-      restaurant_id: restaurantId,
-      invoice_ids: ['invoice-1'],
+      restaurant_id: DELETE_RESTAURANT_ID,
+      invoice_ids: [DELETE_INVOICE_ID],
     },
   }, res);
 
@@ -280,6 +284,12 @@ function mockDatabase(responses) {
       },
       limit() {
         return builder;
+      },
+      order() {
+        return builder;
+      },
+      range() {
+        return Promise.resolve(nextResponse());
       },
       single() {
         return Promise.resolve(nextResponse());
@@ -357,60 +367,352 @@ function enabledDependencies(db) {
   };
 }
 
-test('locked invoice deletion skips pricing and inventory', async () => {
-  const db = mockDatabase([
-    {
-      table: 'invoices',
-      data: [{ id: 'invoice-1', file_url: null }],
-    },
-    {
-      table: 'invoice_items',
-      data: [{ id: 'line-1', ingredient_id: 'ingredient-1' }],
-    },
-    {
-      table: 'invoice_files',
-      data: [],
-    },
-    {
-      table: 'invoice_items',
-      action: 'delete',
-    },
-    {
-      table: 'invoice_files',
-      action: 'delete',
-    },
-    {
-      table: 'invoices',
-      action: 'delete',
-    },
-  ]);
+const DELETE_RESTAURANT_ID =
+  '11111111-1111-4111-8111-111111111111';
 
-  const deps = enabledDependencies(db);
-  deps.getMatchingControl = async () => ({
-    status: 'locked',
-    matching_enabled: false,
-    is_locked: true,
-  });
+const DELETE_INVOICE_ID =
+  '22222222-2222-4222-8222-222222222222';
 
-  const res = response();
+function transactionalDeletionMock({
+  rpcError = null,
+  queued = true,
+  workerError = false,
+} = {}) {
+  const operations = [];
 
-  await createDeleteInvoiceHandler(deps)({
+  const db = {
+    operations,
+
+    from(table) {
+      return {
+        select() {
+          return this;
+        },
+
+        eq() {
+          return this;
+        },
+
+        in() {
+          return this;
+        },
+
+        order() {
+          return this;
+        },
+
+        async range() {
+          operations.push({
+            type: 'read',
+            table,
+          });
+
+          if (table === 'invoices') {
+            return {
+              data: [{
+                id: DELETE_INVOICE_ID,
+                file_url: null,
+              }],
+              error: null,
+            };
+          }
+
+          if (table === 'invoice_files') {
+            return {
+              data: [],
+              error: null,
+            };
+          }
+
+          throw new Error(`Unexpected table: ${table}`);
+        },
+
+        async single() {
+          if (table !== 'invoice_calculation_jobs') {
+            throw new Error(`Unexpected single(): ${table}`);
+          }
+
+          return {
+            data: {
+              generation: 2,
+              completed_generation: 2,
+              last_error: null,
+            },
+            error: null,
+          };
+        },
+      };
+    },
+
+    async rpc(name, args) {
+      operations.push({
+        type: 'rpc',
+        name,
+        args,
+      });
+
+      assert.equal(
+        name,
+        'delete_invoices_transactional'
+      );
+
+      if (rpcError) {
+        return {
+          data: null,
+          error: {
+            message: rpcError,
+          },
+        };
+      }
+
+      return {
+        data: {
+          success: true,
+          deleted: 1,
+          lines_deleted: 1,
+          ingredient_ids: [],
+          calculations_queued: queued,
+        },
+        error: null,
+      };
+    },
+
+    storage: {
+      from() {
+        return {
+          async remove() {
+            operations.push({
+              type: 'storage_cleanup',
+            });
+
+            return {
+              error: null,
+            };
+          },
+        };
+      },
+    },
+  };
+
+  const effects = [];
+
+  const deps = {
+    db,
+
+    effects,
+
+    verifyAccess: async () => ({
+      error: null,
+      status: 200,
+    }),
+
+    getMatchingControl: async () => ({
+      status: 'legacy_enabled',
+      matching_enabled: true,
+      is_locked: false,
+    }),
+
+    processCalculations: async () => {
+      effects.push('calculations');
+
+      if (workerError) {
+        throw new Error(
+          'Simulated calculation worker failure'
+        );
+      }
+
+      return {
+        skipped: false,
+        errors: [],
+      };
+    },
+  };
+
+  return {
+    db,
+    deps,
+    operations,
+    effects,
+  };
+}
+
+function deletionRequest() {
+  return {
     method: 'POST',
     body: {
-      restaurant_id: restaurantId,
-      invoice_ids: ['invoice-1'],
+      restaurant_id: DELETE_RESTAURANT_ID,
+      invoice_ids: [DELETE_INVOICE_ID],
     },
-  }, res);
+  };
+}
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.body.deleted, 1);
-  assert.equal(res.body.ingredients_repriced, 0);
-  assert.deepEqual(deps.effects, []);
-  assert.equal(
-    db.operations.some(op => op.table === 'ingredients'),
-    false
-  );
-});
+test(
+  'locked invoice deletion uses transaction without calculations',
+  async () => {
+    const setup = transactionalDeletionMock({
+      queued: false,
+    });
+
+    setup.deps.getMatchingControl = async () => ({
+      status: 'locked',
+      matching_enabled: false,
+      is_locked: true,
+    });
+
+    const res = response();
+
+    await createDeleteInvoiceHandler(
+      setup.deps
+    )(deletionRequest(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.deleted, 1);
+
+    assert.equal(
+      res.body.calculations_queued,
+      false
+    );
+
+    assert.deepEqual(
+      setup.effects,
+      []
+    );
+
+    const rpc = setup.operations.find(
+      operation => operation.type === 'rpc'
+    );
+
+    assert.ok(rpc);
+
+    assert.equal(
+      rpc.args.p_queue_calculations,
+      false
+    );
+
+    assert.equal(
+      setup.operations.some(
+        operation => operation.type === 'delete'
+      ),
+      false
+    );
+  }
+);
+
+test(
+  'enabled invoice deletion uses transactional RPC and processes calculations',
+  async () => {
+    const setup = transactionalDeletionMock();
+
+    const res = response();
+
+    await createDeleteInvoiceHandler(
+      setup.deps
+    )(deletionRequest(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+
+    assert.equal(
+      res.body.calculations_queued,
+      true
+    );
+
+    assert.equal(
+      res.body.calculations_pending,
+      false
+    );
+
+    assert.deepEqual(
+      setup.effects,
+      ['calculations']
+    );
+
+    const rpc = setup.operations.find(
+      operation => operation.type === 'rpc'
+    );
+
+    assert.ok(rpc);
+
+    assert.deepEqual(
+      rpc.args,
+      {
+        p_restaurant_id: DELETE_RESTAURANT_ID,
+        p_invoice_ids: [DELETE_INVOICE_ID],
+        p_queue_calculations: true,
+      }
+    );
+  }
+);
+
+test(
+  'failed deletion transaction never schedules calculations',
+  async () => {
+    const setup = transactionalDeletionMock({
+      rpcError: 'Simulated transaction rollback',
+    });
+
+    const res = response();
+
+    await createDeleteInvoiceHandler(
+      setup.deps
+    )(deletionRequest(), res);
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.success, false);
+
+    assert.deepEqual(
+      setup.effects,
+      []
+    );
+
+    assert.equal(
+      setup.operations.some(
+        operation =>
+          operation.type === 'storage_cleanup'
+      ),
+      false
+    );
+  }
+);
+
+test(
+  'failed calculation worker preserves deletion and pending recovery',
+  async () => {
+    const setup = transactionalDeletionMock({
+      workerError: true,
+    });
+
+    const res = response();
+
+    await createDeleteInvoiceHandler(
+      setup.deps
+    )(deletionRequest(), res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+
+    assert.equal(
+      res.body.calculations_queued,
+      true
+    );
+
+    assert.equal(
+      res.body.calculations_pending,
+      true
+    );
+
+    assert.equal(
+      setup.effects.length,
+      1
+    );
+
+    assert.match(
+      res.body.calculation_errors[0],
+      /Simulated calculation worker failure/
+    );
+  }
+);
 
 test('manual linking updates exactly one invoice line', async () => {
   const db = mockDatabase([
@@ -572,41 +874,74 @@ test('older invoice link does not overwrite newer ingredient price', async () =>
   );
 });
 
-test('admin review reprices both ingredients after relinking', async () => {
-  const db = mockDatabase([
-    {
-      table: 'invoices',
-      data: {
-        id: 'invoice-1',
-        date: '2026-10-01',
-      },
-    },
-    {
-      table: 'invoice_items',
-      data: [{
-        id: 'line-1',
-        quantity: 1,
-        unit: 'each',
-        unit_cost: 5,
-        amount: 5,
-        ingredient_id: 'ingredient-old',
-      }],
-    },
-    {
-      table: 'ingredients',
-      data: [{ id: 'ingredient-new' }],
-    },
-    {
-      table: 'invoice_items',
-      action: 'update',
-      data: [{ id: 'line-1' }],
-    },
-  ]);
+test('admin review saves corrections through the transactional RPC', async () => {
+  const calls = [];
 
-  const deps = enabledDependencies(db);
+  const db = {
+    from(table) {
+      assert.equal(table, 'invoices');
+
+      const query = {
+        select() {
+          return query;
+        },
+        eq(column, value) {
+          calls.push({
+            type: 'filter',
+            column,
+            value,
+          });
+          return query;
+        },
+        async maybeSingle() {
+          return {
+            data: { id: 'invoice-1' },
+            error: null,
+          };
+        },
+      };
+
+      return query;
+    },
+
+    async rpc(name, args) {
+      calls.push({
+        type: 'rpc',
+        name,
+        args,
+      });
+
+      assert.equal(
+        name,
+        'save_admin_invoice_review'
+      );
+
+      return {
+        data: {
+          changed: 0,
+          relinked: 1,
+          restaurantId,
+          calculationsPending: true,
+        },
+        error: null,
+      };
+    },
+  };
+
+  const handler = createSaveInvoiceItemsHandler({
+    db,
+    getMatchingControl: async () => ({
+      matching_enabled: true,
+    }),
+    processCalculations: async () => ({
+      skipped: false,
+      errors: [],
+    }),
+  });
+
   const res = response();
 
-  await createSaveInvoiceItemsHandler(deps)({
+  await handler({
     method: 'POST',
     body: {
       restaurant_id: restaurantId,
@@ -620,23 +955,264 @@ test('admin review reprices both ingredients after relinking', async () => {
         ingredient_id: 'ingredient-new',
       }],
     },
-  }, res);
+  }, res, {
+    user: { id: 'admin-test-1' },
+  });
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body.changed, 1);
-  assert.equal(res.body.ingredients_repriced, 2);
+  assert.equal(res.body.success, true);
+  assert.equal(res.body.relinked, 1);
+  assert.equal(res.body.calculationsPending, true);
 
-  const repricedIds = deps.effects
-    .filter(effect => effect.type === 'reprice')
-    .map(effect => effect.args[2]);
-
-  assert.deepEqual(
-    new Set(repricedIds),
-    new Set(['ingredient-old', 'ingredient-new'])
+  const save = calls.find(
+    call => call.type === 'rpc'
   );
 
-  assert.deepEqual(
-    deps.effects.map(effect => effect.type),
-    ['reprice', 'reprice', 'recompute', 'rebuild']
+  assert.ok(save);
+
+  assert.equal(
+    save.name,
+    'save_admin_invoice_review'
+  );
+
+  assert.equal(
+    save.args.p_invoice_id,
+    'invoice-1'
+  );
+
+  assert.equal(
+    save.args.p_admin_id,
+    'admin-test-1'
+  );
+
+  assert.equal(
+    save.args.p_reviewed,
+    false
+  );
+
+  assert.equal(
+    save.args.p_lines.length,
+    1
+  );
+
+  assert.equal(
+    save.args.p_lines[0].ingredient_id,
+    'ingredient-new'
   );
 });
+
+function createTransactionalReviewDb({
+  invoiceExists = true,
+  saveError = null,
+  onRpc = () => {},
+} = {}) {
+  const calls = [];
+
+  const db = {
+    from(table) {
+      calls.push({ type: 'from', table });
+
+      const query = {
+        select() {
+          return query;
+        },
+        eq(column, value) {
+          calls.push({
+            type: 'filter',
+            column,
+            value,
+          });
+          return query;
+        },
+        async maybeSingle() {
+          return {
+            data: invoiceExists
+              ? { id: 'invoice-1' }
+              : null,
+            error: null,
+          };
+        },
+      };
+
+      return query;
+    },
+
+    async rpc(name, args) {
+      calls.push({
+        type: 'rpc',
+        name,
+        args,
+      });
+
+      onRpc(name, args);
+
+      return {
+        data: saveError
+          ? null
+          : {
+              changed: 1,
+              relinked: 0,
+              restaurantId,
+              calculationsPending: true,
+            },
+        error: saveError
+          ? { message: saveError }
+          : null,
+      };
+    },
+  };
+
+  return { db, calls };
+}
+
+function transactionalReviewRequest() {
+  return {
+    method: 'POST',
+    body: {
+      restaurant_id: restaurantId,
+      invoice_id: 'invoice-1',
+      items: [{
+        id: 'line-1',
+        quantity: 2,
+        unit: 'lb',
+        unit_cost: 4,
+        amount: 8,
+        ingredient_id: 'ingredient-1',
+      }],
+    },
+  };
+}
+
+const adminSession = {
+  user: { id: 'admin-test-1' },
+};
+
+test(
+  'failed database transaction does not schedule recalculation',
+  async () => {
+    const { db, calls } = createTransactionalReviewDb({
+      saveError: 'Simulated transaction failure',
+    });
+
+    let recalculationCalls = 0;
+
+    const handler = createSaveInvoiceItemsHandler({
+      db,
+      getMatchingControl: async () => ({
+        matching_enabled: true,
+      }),
+      processCalculations: async () => {
+        recalculationCalls++;
+      },
+    });
+
+    const res = response();
+
+    await handler(
+      transactionalReviewRequest(),
+      res,
+      adminSession
+    );
+
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.body.success, false);
+    assert.equal(recalculationCalls, 0);
+
+    assert.equal(
+      calls.filter(call => call.type === 'rpc').length,
+      1
+    );
+
+    assert.equal(
+      calls.some(call =>
+        call.type === 'from' &&
+        call.table === 'invoice_items'
+      ),
+      false
+    );
+  }
+);
+
+test(
+  'successful transaction remains successful if scheduling fails',
+  async () => {
+    const { db, calls } = createTransactionalReviewDb();
+
+    const handler = createSaveInvoiceItemsHandler({
+      db,
+      getMatchingControl: async () => ({
+        matching_enabled: true,
+      }),
+      processCalculations: async () => {
+        throw new Error(
+          'Simulated calculation worker failure'
+        );
+      },
+    });
+
+    const res = response();
+
+    await handler(
+      transactionalReviewRequest(),
+      res,
+      adminSession
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.equal(res.body.calculationsPending, true);
+
+    assert.equal(
+      calls.filter(call =>
+        call.type === 'rpc' &&
+        call.name === 'save_admin_invoice_review'
+      ).length,
+      1
+    );
+  }
+);
+
+test(
+  'foreign restaurant invoice cannot reach correction RPC',
+  async () => {
+    const { db, calls } = createTransactionalReviewDb({
+      invoiceExists: false,
+    });
+
+    let recalculationCalls = 0;
+
+    const handler = createSaveInvoiceItemsHandler({
+      db,
+      getMatchingControl: async () => ({
+        matching_enabled: true,
+      }),
+      processCalculations: async () => {
+        recalculationCalls++;
+      },
+    });
+
+    const res = response();
+
+    await handler(
+      transactionalReviewRequest(),
+      res,
+      adminSession
+    );
+
+    assert.equal(res.statusCode, 404);
+    assert.equal(recalculationCalls, 0);
+
+    assert.equal(
+      calls.some(call => call.type === 'rpc'),
+      false
+    );
+
+    assert.ok(
+      calls.some(call =>
+        call.type === 'filter' &&
+        call.column === 'restaurant_id' &&
+        call.value === restaurantId
+      )
+    );
+  }
+);

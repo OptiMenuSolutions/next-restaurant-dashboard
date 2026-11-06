@@ -17,6 +17,14 @@ import {
   selectInvoiceRepricingSource,
 } from '../../../lib/invoiceRepricing';
 
+import {
+  hasVerifiedInvoicePrice,
+} from '../../../lib/invoicePriceProvenance';
+
+import {
+  fetchAll,
+} from '../../../lib/admin/fetchAll';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -92,7 +100,12 @@ export function createLinkInvoiceItemHandler({
   const { data: line, error: lineErr } = await db
     .from('invoice_items')
     .select(
-      'id, unit, unit_cost, ingredient_id, invoices!inner(restaurant_id, date)'
+      'id, unit, unit_cost, ingredient_id, ' +
+      'price_verification_status, ' +
+      'price_verification_source, ' +
+      'price_verified_at, ' +
+      'price_verification_evidence, ' +
+      'invoices!inner(restaurant_id, date)'
     )
     .eq('id', invoice_item_id)
     .single();
@@ -187,7 +200,11 @@ export function createLinkInvoiceItemHandler({
       line.unit
     );
 
-    if (verifiedPrice && isNewest) {
+    if (
+      verifiedPrice &&
+      hasVerifiedInvoicePrice(line) &&
+      isNewest
+    ) {
       const { error: priceErr } = await db
         .from('ingredients')
         .update({
@@ -262,17 +279,27 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
     throw new Error('Could not load ingredient for repricing.');
   }
 
-  const { data: lines, error: linesErr } = await db
-    .from('invoice_items')
-    .select('unit, unit_cost, invoices!inner(restaurant_id, date, created_at)')
-    .eq('ingredient_id', ingredientId)
-    .eq('invoices.restaurant_id', restaurantId);
+  const lines = await fetchAll(
+    () => db
+      .from('invoice_items')
+      .select(
+        'id, unit, unit_cost, ' +
+        'price_verification_status, ' +
+        'price_verification_source, ' +
+        'price_verified_at, ' +
+        'price_verification_evidence, ' +
+        'invoices!inner(restaurant_id, date, created_at)'
+      )
+      .eq('ingredient_id', ingredientId)
+      .eq('invoices.restaurant_id', restaurantId)
+      .order('id'),
+    { page: 500 }
+  );
 
-  if (linesErr) {
-    throw new Error(linesErr.message);
-  }
-
-  const decision = selectInvoiceRepricingSource(lines || []);
+  const decision = selectInvoiceRepricingSource(
+    lines,
+    { requireVerified: true }
+  );
 
   let updates;
 

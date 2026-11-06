@@ -160,6 +160,7 @@ test('missing supplier SKU prevents research', async () => {
 test('ordinary invoice products retain calculation', async () => {
   const result = await resolveInvoiceResearchCost(
     {
+      pack_size_raw: '2/5 LB',
       pack: 2,
       size: 5,
       size_unit: 'lb',

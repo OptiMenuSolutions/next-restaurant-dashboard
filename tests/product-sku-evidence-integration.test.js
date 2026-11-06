@@ -44,11 +44,21 @@ test('retrieved distributor relationship is recorded but unverified', () => {
 
   assert.equal(
     evidence.identityVerification.crossReferenceStatus,
-    'source_relationship_found'
+    'needs_review'
+  );
+
+  assert.equal(
+    evidence.identityVerification.crossReferenceEvidence,
+    null
+  );
+
+  assert.equal(
+    evidence.identityDetection.relationshipDetected,
+    true
   );
 
   assert.match(
-    evidence.identityVerification.crossReferenceEvidence,
+    evidence.identityDetection.evidenceText,
     /SUP456/
   );
 

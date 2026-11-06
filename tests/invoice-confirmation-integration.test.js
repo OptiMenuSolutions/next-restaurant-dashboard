@@ -532,10 +532,10 @@ test(
         w.operation === 'update'
     );
 
-    assert.ok(ingredientUpdate);
-    assert.equal(ingredientUpdate.rows.last_price, 0.25);
-    assert.equal(ingredientUpdate.rows.unit, 'oz');
-    assert.equal(ingredientUpdate.rows.standard_unit, 'oz');
+    // The invoice retains its accurate calculated cost,
+    // but document consistency alone does not authorize
+    // a verified ingredient-price update.
+    assert.equal(ingredientUpdate, undefined);
 
     const line = writes.find(
       w => w.table === 'invoice_items'
@@ -546,6 +546,10 @@ test(
     assert.equal(line.unit, 'lb');
     assert.equal(line.unit_cost, 4);
     assert.equal(line.amount, 40);
+    assert.equal(
+      line.price_verification_status,
+      'unknown'
+    );
   }
 );
 

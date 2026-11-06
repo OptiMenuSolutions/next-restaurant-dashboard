@@ -11,8 +11,18 @@ const deletionSource = readFileSync(
   'utf8'
 );
 
-test('invoice deletion uses shared repricing protection', () => {
+test('invoice deletion delegates repricing to the calculation worker', () => {
   assert.match(
+    deletionSource,
+    /delete_invoices_transactional/
+  );
+
+  assert.match(
+    deletionSource,
+    /processInvoiceCalculations/
+  );
+
+  assert.doesNotMatch(
     deletionSource,
     /selectInvoiceRepricingSource\s*\(/
   );
