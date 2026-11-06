@@ -130,6 +130,7 @@ export default function InvoiceMatchConflicts({
     try {
       const request = {
         restaurant_id: group.restaurant_id,
+        supplier: group.supplier,
         product_description: group.product_description,
         changes,
         approve_future: approveFuture,

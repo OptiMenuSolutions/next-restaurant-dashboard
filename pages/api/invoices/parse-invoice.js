@@ -25,6 +25,11 @@ import {
   findStrictDirectMatch,
 } from '../../../lib/progressiveInvoiceMatching';
 
+import {
+  loadInvoiceMatchDecisions,
+  applyInvoiceMatchDecisions,
+} from '../../../lib/invoiceMatchDecisions';
+
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
 // enforced at the platform level — not configurable via formidable's own
@@ -967,6 +972,28 @@ export default async function handler(req, res) {
         remembered,
         aiResults
       );
+    }
+
+        // Apply verified administrator decisions after ordinary
+    // matching, without bypassing recipe eligibility.
+    if (matchingEnabled) {
+      const decisions = await loadInvoiceMatchDecisions(
+        supabase,
+        restaurantId,
+        supplier
+      );
+
+      matchResults = matchResults.map((match, index) => {
+        const item = foodItems[index];
+
+        return applyInvoiceMatchDecisions({
+          description: item.item_name_raw || item.item_name_normalized,
+          invoiceUnit: item.unit || item.unit_of_measure || null,
+          ingredients: restaurantIngredients,
+          match,
+          decisions,
+        })
+      });
     }
 
     const sanityFlags    = await sanityCheckCosts(foodItems, restaurantId);

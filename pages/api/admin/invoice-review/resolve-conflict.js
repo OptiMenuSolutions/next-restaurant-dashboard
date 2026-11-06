@@ -5,8 +5,8 @@ import { waitUntil } from '@vercel/functions';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
 import {
-  getRestaurantInvoiceMatchingControl,
-} from '../../../../lib/invoiceMatchingControls';
+  getProgressiveInvoiceMatchingPolicy,
+} from '../../../../lib/progressiveInvoiceMatching';
 import {
   createConflictConfirmation,
   verifyConflictConfirmation,
@@ -47,6 +47,7 @@ export default async function handler(req, res) {
 
   const confirmationRequest = {
     restaurant_id,
+    supplier,
     product_description,
     changes,
     approve_future,
@@ -79,10 +80,11 @@ export default async function handler(req, res) {
   }
 
   const productKey = normalizeSupplierProduct(product_description);
+  const supplierKey = normalizeSupplierProduct(supplier);
 
-  if (!productKey) {
+  if (!productKey || !supplierKey) {
     return res.status(400).json({
-      error: 'Product description is required.',
+      error: 'Supplier and product description are required.',
     });
   }
 
@@ -158,7 +160,7 @@ export default async function handler(req, res) {
     // Allow administrators to preview existing conflicts, but prevent
     // saving corrections or future mappings while matching is locked.
     if (action === 'save') {
-      const control = await getRestaurantInvoiceMatchingControl(
+      const control = await getProgressiveInvoiceMatchingPolicy(
         db,
         restaurant_id
       );
@@ -290,6 +292,7 @@ export default async function handler(req, res) {
       .from('invoice_ingredient_mappings')
       .select('ingredient_id, approved_at, updated_at')
       .eq('restaurant_id', restaurant_id)
+      .eq('supplier_key', supplierKey)
       .eq('product_key', productKey)
       .maybeSingle();
 
@@ -306,7 +309,7 @@ export default async function handler(req, res) {
         'resolve_invoice_ingredient_conflict',
         {
           p_restaurant_id: restaurant_id,
-          p_supplier: null,
+          p_supplier: supplier,
           p_product_description: product_description,
           p_changes: changes,
           p_future_ingredient_id: approve_future
@@ -379,7 +382,7 @@ export default async function handler(req, res) {
       restaurant_id,
       restaurant_name: restaurant.name,
       supplier,
-      supplier_key: null,
+      supplier_key: supplierKey,
       product_description,
       product_key: productKey,
       summary: {

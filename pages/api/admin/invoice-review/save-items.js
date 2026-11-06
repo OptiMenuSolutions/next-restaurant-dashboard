@@ -2,8 +2,8 @@
 import { withAdminAuth } from '../../../../lib/admin/withAdminAuth';
 import { createClient } from '@supabase/supabase-js';
 import {
-  getRestaurantInvoiceMatchingControl,
-} from '../../../../lib/invoiceMatchingControls';
+  getProgressiveInvoiceMatchingPolicy,
+} from '../../../../lib/progressiveInvoiceMatching';
 import {
   repriceFromInvoices,
 } from '../../../../lib/admin/invoiceLines';
@@ -26,7 +26,7 @@ const numericValue = (value) => {
 
 export function createSaveInvoiceItemsHandler({
   db = supabase,
-  getMatchingControl = getRestaurantInvoiceMatchingControl,
+  getMatchingControl = getProgressiveInvoiceMatchingPolicy,
   reprice = repriceFromInvoices,
   recompute = recomputeMenuCosts,
   rebuild = rebuildCurrentInventory,

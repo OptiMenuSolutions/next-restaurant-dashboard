@@ -17,6 +17,7 @@ import { MONO, ErrorState, LoadingState } from '../../components/client/ClientCh
 import { Chip, money, shortDate } from '../../components/admin/ui';
 import useIsPhone from '../../lib/admin/useIsPhone';
 import InvoiceMatchConflicts from '../../components/admin/InvoiceMatchConflicts';
+import InvoiceMatchRejections from '../../components/admin/InvoiceMatchRejections';
 
 // Each panel is at most one screen tall and scrolls on its own, so a long
 // queue or a long invoice never stretches the page.
@@ -119,16 +120,24 @@ function MatchConflictsReview() {
   }
 
   return (
-    <InvoiceMatchConflicts
-      key={refreshVersion}
-      conflicts={conflicts}
-      ingredientsByRestaurant={ingredientsByRestaurant}
-      onPreview={previewConflict}
-      onSave={saveConflict}
-      onSaved={refreshConflicts}
-      loading={loading}
-      error={error}
-    />
+    <>
+      <InvoiceMatchConflicts
+        key={refreshVersion}
+        conflicts={conflicts}
+        ingredientsByRestaurant={ingredientsByRestaurant}
+        onPreview={previewConflict}
+        onSave={saveConflict}
+        onSaved={refreshConflicts}
+        loading={loading}
+        error={error}
+      />
+
+      <InvoiceMatchRejections
+        api={api}
+        refreshVersion={refreshVersion}
+        onChanged={refreshConflicts}
+      />
+    </>
   );
 }
 
