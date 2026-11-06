@@ -218,6 +218,7 @@ export default function RecipeWorkspace({
   restaurantId,
   admin = false,
   onBusyChange,
+  onRecipePublished,
   showHeading = true,
 }) {
   const router = useRouter();
@@ -486,6 +487,10 @@ const mime = /\.xlsx$/i.test(file.name)
       node,
       ...(links ? { links } : {}),
     });
+
+    if (confirm) {
+      onRecipePublished?.();
+    }
 
     const saved = result.state.nodes.find(n => n.id === node.id)
       || result.state.nodes[result.state.nodes.length - 1];

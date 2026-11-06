@@ -234,6 +234,7 @@ function InvoiceMatchingActivation({ restaurantId }) {
 export default function RecipesPage() {
   const router = useRouter();
   const isPhone = useIsPhone();
+  const [matchingRefresh, setMatchingRefresh] = useState(0);
 
   const restaurantId = typeof router.query.restaurant === 'string'
     ? router.query.restaurant
@@ -264,11 +265,15 @@ export default function RecipesPage() {
         />
         {restaurantId ? (
           <>
-            <InvoiceMatchingActivation restaurantId={restaurantId} />
+            <InvoiceMatchingActivation
+              key={`${restaurantId}-${matchingRefresh}`}
+              restaurantId={restaurantId}
+            />
             <RecipeWorkspace
               restaurantId={restaurantId}
               admin
               showHeading={false}
+              onRecipePublished={() => setMatchingRefresh(n => n + 1)}
             />
           </>
         ) : (
