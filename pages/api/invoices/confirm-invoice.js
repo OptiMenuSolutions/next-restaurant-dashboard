@@ -8,10 +8,11 @@ import { createClient } from '@supabase/supabase-js';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import {
-  convertInvoiceCostToStandardUnit,
-  getStandardUnitForIngredient,
   calculateStandardizedCost,
 } from '../../../lib/standardizedUnits';
+import {
+  safeInvoiceStandardPrice,
+} from '../../../lib/safeInvoicePricing';
 import { isInternalCall } from '../../../lib/scannerAuth';
 import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
 import {
@@ -373,18 +374,19 @@ export function createConfirmInvoiceHandler({
             );
           }
 
-          const ingName = ingredientRecord.name;
-          const stdPrice = convertInvoiceCostToStandardUnit(
+          const verifiedPrice = safeInvoiceStandardPrice(
             unit_cost,
-            unit,
-            ingName
+            unit
           );
-          const stdUnit = getStandardUnitForIngredient(unit, ingName);
+
+          // Preserve the invoice history, but never overwrite
+          // ingredient pricing with an unsupported conversion.
+          if (!verifiedPrice) continue;
 
           ingredientUpdates[ingId] = {
-            last_price:      stdPrice,
-            unit:            stdUnit,
-            standard_unit:   stdUnit,
+            last_price:      verifiedPrice.price,
+            unit:            verifiedPrice.unit,
+            standard_unit:   verifiedPrice.unit,
             last_ordered_at: invoiceDate,
             is_estimated:    false,
           };

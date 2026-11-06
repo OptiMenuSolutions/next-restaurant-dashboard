@@ -6,14 +6,16 @@
 
 import { createClient } from '@supabase/supabase-js';
 import {
-  convertInvoiceCostToStandardUnit,
-  getStandardUnitForIngredient,
-} from '../../../lib/standardizedUnits';
+  safeInvoiceStandardPrice,
+} from '../../../lib/safeInvoicePricing';
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import {
   getRestaurantInvoiceMatchingControl,
 } from '../../../lib/invoiceMatchingControls';
+import {
+  selectInvoiceRepricingSource,
+} from '../../../lib/invoiceRepricing';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -180,21 +182,18 @@ export function createLinkInvoiceItemHandler({
       !ingredient.last_ordered_at ||
       String(invoiceDate) >= String(ingredient.last_ordered_at);
 
-    if (unitCost > 0 && isNewest) {
-      const unit = line.unit || 'each';
-      const stdUnit = getStandardUnitForIngredient(unit, ingredient.name);
-      const stdPrice = convertInvoiceCostToStandardUnit(
-        unitCost,
-        unit,
-        ingredient.name
-      );
+    const verifiedPrice = safeInvoiceStandardPrice(
+      unitCost,
+      line.unit
+    );
 
+    if (verifiedPrice && isNewest) {
       const { error: priceErr } = await db
         .from('ingredients')
         .update({
-          last_price: stdPrice,
-          unit: stdUnit,
-          standard_unit: stdUnit,
+          last_price: verifiedPrice.price,
+          unit: verifiedPrice.unit,
+          standard_unit: verifiedPrice.unit,
           last_ordered_at: invoiceDate,
           is_estimated: false,
         })
@@ -254,7 +253,7 @@ export function createLinkInvoiceItemHandler({
 async function repriceFromInvoices(db, restaurantId, ingredientId) {
   const { data: ingredient, error: ingredientErr } = await db
     .from('ingredients')
-    .select('id, name, last_ordered_at')
+    .select('id, name, last_ordered_at, price_status')
     .eq('id', ingredientId)
     .eq('restaurant_id', restaurantId)
     .single();
@@ -273,40 +272,26 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
     throw new Error(linesErr.message);
   }
 
-  const latest = (lines || [])
-    .filter(line => Number(line.unit_cost) > 0)
-    .sort((a, b) =>
-      String(b.invoices.date || '').localeCompare(
-        String(a.invoices.date || '')
-      ) ||
-      String(b.invoices.created_at || '').localeCompare(
-        String(a.invoices.created_at || '')
-      )
-    )[0];
+  const decision = selectInvoiceRepricingSource(lines || []);
 
   let updates;
 
-  if (latest) {
-    const unit = latest.unit || 'each';
-    const stdUnit = getStandardUnitForIngredient(unit, ingredient.name);
-
-    updates = {
-      last_price: convertInvoiceCostToStandardUnit(
-        Number(latest.unit_cost),
-        unit,
-        ingredient.name
-      ),
-      unit: stdUnit,
-      standard_unit: stdUnit,
-      last_ordered_at: latest.invoices.date,
-      is_estimated: false,
-    };
-  } else if (ingredient.last_ordered_at) {
+  if (decision.status === 'priced') {
+    updates = decision.updates;
+  } else if (decision.status === 'unverified') {
+    // Existing valid pricing must survive unsupported
+    // invoice units or package quantities.
+    return;
+  } else if (
+    ingredient.last_ordered_at &&
+    ingredient.price_status === 'invoice'
+  ) {
     updates = {
       last_price: null,
       last_ordered_at: null,
       is_estimated: true,
       price_approved_at: null,
+      price_status: 'needs_review',
     };
   } else {
     return;

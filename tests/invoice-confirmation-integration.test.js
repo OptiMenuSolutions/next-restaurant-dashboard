@@ -508,6 +508,7 @@ test(
         selected_ingredient_id: 'ingredient-beef-1',
         selected_ingredient_name: 'Ground Beef',
         match_status: 'matched',
+        pack_size_raw: '2/5 LB',
         pack: 2,
         size: 5,
         size_unit: 'lb',
