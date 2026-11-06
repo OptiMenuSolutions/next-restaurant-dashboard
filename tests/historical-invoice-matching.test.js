@@ -16,3 +16,61 @@ test('count packs cannot fabricate ounce-based costs', () => {
   assert.equal(historicalUnitCompatible('gal','fl oz'),true);
   assert.equal(historicalUnitCompatible('gal','oz'),false);
 });
+
+test('historical matching rejects unverified cans', () => {
+  assert.equal(
+    historicalUnitCompatible('can', 'fl oz'),
+    false
+  );
+
+  assert.equal(
+    historicalUnitCompatible('#10 can', 'oz'),
+    false
+  );
+});
+
+test('historical matching rejects unverified cases', () => {
+  assert.equal(
+    historicalUnitCompatible('case', 'oz'),
+    false
+  );
+
+  assert.equal(
+    historicalUnitCompatible('cs', 'lb'),
+    false
+  );
+});
+
+test('historical matching rejects unknown physical units', () => {
+  assert.equal(
+    historicalUnitCompatible(null, 'oz'),
+    false
+  );
+
+  assert.equal(
+    historicalUnitCompatible('lb', null),
+    false
+  );
+});
+
+test('historical matching preserves valid unit categories', () => {
+  assert.equal(
+    historicalUnitCompatible('lb', 'oz'),
+    true
+  );
+
+  assert.equal(
+    historicalUnitCompatible('gal', 'fl oz'),
+    true
+  );
+
+  assert.equal(
+    historicalUnitCompatible('ct', 'each'),
+    true
+  );
+
+  assert.equal(
+    historicalUnitCompatible('lb', 'fl oz'),
+    false
+  );
+});

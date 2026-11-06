@@ -224,3 +224,83 @@ test('produce equivalences do not permit unrelated product merges', () => {
     );
   }
 });
+
+test('chicken breast cannot auto-match chicken thigh', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Chicken Breast Boneless Skinless',
+      'Chicken Thigh Boneless Skinless'
+    ),
+    true
+  );
+});
+
+test('chicken wings cannot auto-match chicken breast', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Chicken Wings',
+      'Chicken Breast'
+    ),
+    true
+  );
+});
+
+test('raw chicken cannot auto-match cooked chicken', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Raw Chicken Breast',
+      'Cooked Chicken Breast'
+    ),
+    true
+  );
+});
+
+test('breaded and unbreaded products remain separate', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Breaded Chicken Tenders',
+      'Unbreaded Chicken Tenders'
+    ),
+    true
+  );
+});
+
+test('different ground beef fat ratios remain separate', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Ground Beef 80/20',
+      'Ground Beef 90/10'
+    ),
+    true
+  );
+});
+
+test('unspecified ground beef ratio requires review', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Ground Beef 80/20',
+      'Ground Beef'
+    ),
+    true
+  );
+});
+
+test('identical ground beef fat ratios remain compatible', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Ground Beef 80/20',
+      'Ground Beef 80/20'
+    ),
+    false
+  );
+});
+
+test('supplier abbreviations preserve equivalent identities', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'CHKN BRST BNLS SKNLS',
+      'Chicken Breast Boneless Skinless'
+    ),
+    false
+  );
+});

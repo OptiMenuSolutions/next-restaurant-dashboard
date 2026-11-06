@@ -127,3 +127,53 @@ test('does not match an unpublished ingredient', () => {
 
   assert.equal(result.status, 'new');
 });
+
+test('recognizes shredded cheese supplier abbreviations', () => {
+  assert.equal(
+    isStrictDirectMatch(
+      'MOZZARELLA SHRD 4X5 LB CS',
+      'Mozzarella Shredded'
+    ),
+    true
+  );
+});
+
+test('recognizes sliced ingredient abbreviations', () => {
+  assert.equal(
+    isStrictDirectMatch(
+      'CHEDDAR CHEESE SLCD 5 LB',
+      'Cheddar Cheese Sliced'
+    ),
+    true
+  );
+});
+
+test('recognizes romaine abbreviations', () => {
+  assert.equal(
+    isStrictDirectMatch(
+      'RMN HEARTS 24 CT',
+      'Romaine Hearts'
+    ),
+    true
+  );
+});
+
+test('rejects chicken thigh as chicken breast', () => {
+  assert.equal(
+    isStrictDirectMatch(
+      'CHICKEN THIGH BONELESS SKINLESS',
+      'Chicken Breast Boneless Skinless'
+    ),
+    false
+  );
+});
+
+test('rejects raw product for cooked ingredient', () => {
+  assert.equal(
+    isStrictDirectMatch(
+      'CHICKEN BREAST RAW',
+      'Chicken Breast Cooked'
+    ),
+    false
+  );
+});

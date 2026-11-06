@@ -293,8 +293,8 @@ test('16. Ordinary automatic matches cannot bypass unit compatibility', () => {
     },
   });
 
-  assert.equal(result.status, 'new');
-  assert.equal(result.matches.length, 0);
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.matches.length, 1);
   assert.equal(result.decision_source, 'incompatible_units');
 });
 
@@ -371,6 +371,205 @@ test('21. Ordinary automatic matches with unknown units require review', () => {
     },
   });
 
-  assert.equal(result.status, 'new');
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.matches.length, 1);
   assert.equal(result.decision_source, 'incompatible_units');
+});
+
+test('22. Administrator approval cannot override identity conflict', () => {
+  const result = runMatch({
+    description: 'Broccoli Crowns Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Broccoli Florets Frozen',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['broccoli crowns fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+});
+
+test('23. Compatible administrator approvals remain automatic', () => {
+  const result = runMatch({
+    description: 'Chicken Breast BNLS SKNLS',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken Breast Boneless Skinless',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast bnls sknls', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.decision_source, 'admin_approved');
+});
+
+test('24. Ordinary automatic matches cannot bypass identity protection', () => {
+  const result = runMatch({
+    description: 'Broccoli Crowns Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Broccoli Florets Frozen',
+      unit: 'oz',
+    }],
+    match: {
+      status: 'auto',
+      matches: [{
+        id: FLOUR_ID,
+        name: 'Broccoli Florets Frozen',
+        unit: 'oz',
+      }],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('25. Ordinary compatible automatic matches remain valid', () => {
+  const result = runMatch({
+    description: 'Chicken Breast BNLS SKNLS',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken Breast Boneless Skinless',
+      unit: 'oz',
+    }],
+    match: {
+      status: 'auto',
+      matches: [{
+        id: FLOUR_ID,
+        name: 'Chicken Breast Boneless Skinless',
+        unit: 'oz',
+      }],
+    },
+  });
+
+  assert.equal(result.status, 'auto');
+});
+
+test('26. Multiple automatic candidates require review', () => {
+  const result = runMatch({
+    match: {
+      status: 'auto',
+      matches: [
+        { id: FLOUR_ID, score: 0.99 },
+        { id: SUGAR_ID, score: 0.98 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.matches.length, 2);
+  assert.equal(result.decision_source, 'multiple_candidates');
+});
+
+test('27. Duplicate ingredient candidates are removed', () => {
+  const result = runMatch({
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 0.99 },
+        { id: FLOUR_ID, score: 0.95 },
+        { id: SUGAR_ID, score: 0.90 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.deepEqual(
+    result.matches.map(item => item.id),
+    [FLOUR_ID, SUGAR_ID]
+  );
+});
+
+test('28. Ambiguous matches never automatically select an ingredient', () => {
+  const result = runMatch({
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 0.99 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.matches.length, 1);
+});
+
+test('29. Rejected candidates are removed without losing alternatives', () => {
+  const result = runMatch({
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 0.99 },
+        { id: SUGAR_ID, score: 0.90 },
+      ],
+    },
+    decisions: createDecisions({
+      rejections: [[productKey, FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.deepEqual(
+    result.matches.map(item => item.id),
+    [SUGAR_ID]
+  );
+});
+
+test('30. Candidate names must come from restaurant ingredients', () => {
+  const result = runMatch({
+    match: {
+      status: 'ambiguous',
+      matches: [{
+        id: FLOUR_ID,
+        name: 'Incorrect AI-provided ingredient name',
+        score: 0.99,
+      }],
+    },
+  });
+
+  assert.equal(
+    result.matches[0].name,
+    'All-purpose flour'
+  );
+});
+
+test('31. Incompatible automatic units preserve the review candidate', () => {
+  const result = runMatch({
+    invoiceUnit: 'ct',
+    match: {
+      status: 'auto',
+      matches: [{
+        id: FLOUR_ID,
+        score: 0.99,
+      }],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'incompatible_units');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+});
+
+test('32. Unknown products remain new', () => {
+  const result = runMatch({
+    match: {
+      status: 'new',
+      matches: [],
+    },
+  });
+
+  assert.equal(result.status, 'new');
+  assert.equal(result.matches.length, 0);
 });
