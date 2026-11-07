@@ -652,3 +652,19 @@ test('distributor-style packages produce correct invoice costs', () => {
     );
   }
 });
+
+test('rejects incorrect structured unit for Dijon mustard', () => {
+  const result = resolveOrdinaryInvoicePackage(
+    invoiceItem({
+      pack_size_raw: '4 1 QT',
+      pack: 4,
+      size: 1,
+      size_unit: 'each',
+      quantity_shipped: 1,
+      invoice_price: 29,
+      line_total: 29,
+    })
+  );
+
+  assert.equal(result.status, 'package_discrepancy');
+});

@@ -125,6 +125,26 @@ export function createConfirmInvoiceHandler({
     )
   );
 
+    // Diagnose unresolved invoice costs without changing pricing behavior.
+  activeItems.forEach((item, index) => {
+    const result = resolvedCosts[index];
+
+    if (result?.unit_cost != null) return;
+
+    console.warn('[invoice-cost-diagnostic]', {
+      invoice_number: invoice.invoice_number,
+      item_name: item.item_name_normalized || item.item_name_raw,
+      pack_size_raw: item.pack_size_raw ?? null,
+      quantity_shipped: item.quantity_shipped ?? null,
+      pack: item.pack ?? null,
+      size: item.size ?? null,
+      size_unit: item.size_unit ?? null,
+      invoice_price: item.invoice_price ?? null,
+      line_total: item.line_total ?? null,
+      pricing_status: result?.pricingStatus ?? null,
+    });
+  });
+
   const costByItem = new Map(
     activeItems.map((item, index) => [
       item,
