@@ -31,7 +31,10 @@ import {
 import {
   validateInvoiceAgainstSource,
 } from '../../../lib/invoiceSourceValidation.js';
-
+import {
+  createInvoiceSourceProof,
+} from '../../../lib/invoiceSourceProof.js';
+import { createHash } from 'node:crypto';
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
 // enforced at the platform level — not configurable via formidable's own
@@ -837,6 +840,12 @@ export default async function handler(req, res) {
     }
     const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
+    // SHA-256 fingerprint of the actual uploaded document.
+    // Generated from server-downloaded file bytes.
+    const documentFingerprint = createHash('sha256')
+      .update(fileBuffer)
+      .digest('hex');
+
     // ── Pass 1: Mistral OCR ───────────────────────────────────────────────────
     streamStatus(res, `Reading ${fileName}...`, 'Extracting text with Mistral OCR');
 
@@ -1081,6 +1090,76 @@ export default async function handler(req, res) {
 
     const lowConfCount = lineItemsWithMatches.filter(i => i.confidence === 'low').length;
     const noCostCount  = lineItemsWithMatches.filter(i => i.needs_cost_input).length;
+
+    // Finding #020: Authenticate source-validated pricing.
+    //
+    // Only items validated against the server's original
+    // OCR result are eligible for signed evidence.
+    //
+    // Proof generation is disabled until the server-only
+    // signing secret is configured.
+    //
+    // This does not approve prices or change costing.
+
+    const sourceProofSecret =
+      process.env.INVOICE_SOURCE_PROOF_SECRET;
+
+    const invoiceProofNumber =
+      extracted.invoice_number != null
+        ? String(extracted.invoice_number).trim()
+        : '';
+
+    let sourceProofCount = 0;
+
+    if (
+      sourceProofSecret &&
+      sourceProofSecret.length >= 32 &&
+      invoiceProofNumber
+    ) {
+      for (const item of lineItemsWithMatches) {
+        if (
+          item.source_validation_status !==
+          'source_table_consistent'
+        ) {
+          continue;
+        }
+
+        try {
+          item.invoice_source_proof =
+            createInvoiceSourceProof({
+              restaurantId,
+              invoiceNumber: invoiceProofNumber,
+              documentFingerprint,
+              itemKey: item._id,
+              item,
+              secret: sourceProofSecret,
+            });
+
+          sourceProofCount++;
+        } catch (error) {
+          console.error(
+            '[invoice-source-proof] Signing failed:',
+            error.message
+          );
+        }
+      }
+    }
+
+    console.info('[invoice-source-proof]', {
+      restaurantId,
+      invoiceNumber: invoiceProofNumber,
+      eligibleSourceItems: lineItemsWithMatches.filter(
+        item =>
+          item.source_validation_status ===
+          'source_table_consistent'
+      ).length,
+      signedItems: sourceProofCount,
+      signingConfigured:
+        Boolean(
+          sourceProofSecret &&
+          sourceProofSecret.length >= 32
+        ),
+    });
 
     streamEvent(res, {
       type: 'result',

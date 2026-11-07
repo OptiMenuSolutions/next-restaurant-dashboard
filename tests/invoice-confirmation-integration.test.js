@@ -1,6 +1,11 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+
+import {
+  createInvoiceSourceProof,
+} from '../lib/invoiceSourceProof.js';
 
 import { createConfirmInvoiceHandler } from '../pages/api/invoices/confirm-invoice.js';
 import { resolveInvoiceResearchCost } from '../lib/invoiceResearchCosting.js';
@@ -11,11 +16,61 @@ function createDb({
   status = 'legacy_enabled',
   ownedIngredients = {},
   matchingControlError = null,
+  transactionError = null,
 } = {}) {
   const writes = [];
+  const rpcCalls = [];
 
   const db = {
+    storage: {
+      from(bucket) {
+        assert.equal(bucket, 'invoices');
+
+        return {
+          async download(path) {
+            assert.equal(path, `${RESTAURANT_ID}/test-invoice.pdf`);
+
+            const bytes = Buffer.from(
+              'Synthetic authenticated invoice document'
+            );
+
+            return {
+              data: {
+                async arrayBuffer() {
+                  return Uint8Array.from(bytes).buffer;
+                },
+              },
+              error: null,
+            };
+          },
+        };
+      },
+    },
+
     rpc(functionName, args) {
+      rpcCalls.push({ functionName, args });
+
+      if (
+        functionName === 'save_invoice_lines_with_evidence'
+      ) {
+        if (transactionError) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              message: transactionError,
+            },
+          });
+        }
+
+        return Promise.resolve({
+          data: {
+            success: true,
+            lines_saved: args.p_lines.length,
+            evidence_saved: args.p_evidence.length,
+          },
+          error: null,
+        });
+      }
       if (functionName === 'recipe_setup_catalog') {
         assert.equal(args.p_restaurant, RESTAURANT_ID);
 
@@ -171,7 +226,7 @@ function createDb({
     },
   };
 
-  return { db, writes };
+  return { db, writes, rpcCalls };
 }
 
 function createRequest({ number, item }) {
@@ -234,6 +289,83 @@ function unverifiedCost(item, supplier, options) {
     ...options,
     enabled: false,
   });
+}
+
+const SOURCE_TEST_SECRET =
+  'synthetic-invoice-source-proof-secret-for-testing-2026';
+
+const SOURCE_TEST_DOCUMENT = Buffer.from(
+  'Synthetic authenticated invoice document'
+);
+
+const SOURCE_TEST_FINGERPRINT = createHash('sha256')
+  .update(SOURCE_TEST_DOCUMENT)
+  .digest('hex');
+
+function sourceValidatedItem(overrides = {}) {
+  return {
+    _id: 'item_0',
+    item_name_raw: 'MUSTARD DIJON SMOOTH',
+    item_name_normalized: 'Mustard Dijon Smooth',
+    quantity_shipped: 1,
+    pack_size_raw: '4 1 QT',
+    pack: 4,
+    size: 1,
+    size_unit: 'qt',
+    invoice_price: 30,
+    line_total: 30,
+    catch_weight: false,
+    source_validation_status: 'source_table_consistent',
+    ...overrides,
+  };
+}
+
+function signedSourceItem(invoiceNumber = 'CTB-2111') {
+  const item = sourceValidatedItem();
+
+  return {
+    ...item,
+    invoice_source_proof: createInvoiceSourceProof({
+      restaurantId: RESTAURANT_ID,
+      invoiceNumber,
+      documentFingerprint: SOURCE_TEST_FINGERPRINT,
+      itemKey: item._id,
+      item,
+      secret: SOURCE_TEST_SECRET,
+    }),
+  };
+}
+
+async function withEvidencePersistence(callback) {
+  const previousFlag =
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+
+  const previousSecret =
+    process.env.INVOICE_SOURCE_PROOF_SECRET;
+
+  process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+    'true';
+
+  process.env.INVOICE_SOURCE_PROOF_SECRET =
+    SOURCE_TEST_SECRET;
+
+  try {
+    return await callback();
+  } finally {
+    if (previousFlag === undefined) {
+      delete process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+    } else {
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+        previousFlag;
+    }
+
+    if (previousSecret === undefined) {
+      delete process.env.INVOICE_SOURCE_PROOF_SECRET;
+    } else {
+      process.env.INVOICE_SOURCE_PROOF_SECRET =
+        previousSecret;
+    }
+  }
 }
 
 // TEST 1
@@ -675,5 +807,277 @@ test(
     );
 
     assert.equal(writes.length, 0);
+  }
+);
+
+// ============================================================
+// Finding #020 — Transactional evidence integration
+// ============================================================
+
+test(
+  'authenticated invoice evidence reaches the transactional writer',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes, rpcCalls } = createDb();
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'CTB-2111',
+        item: signedSourceItem(),
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_lines_with_evidence'
+      );
+
+      assert.ok(transaction);
+
+      assert.equal(
+        transaction.args.p_lines.length,
+        1
+      );
+
+      assert.equal(
+        transaction.args.p_evidence.length,
+        1
+      );
+
+      const line = transaction.args.p_lines[0];
+      const evidence = transaction.args.p_evidence[0];
+
+      assert.equal(
+        evidence.invoice_item_id,
+        line.id
+      );
+
+      assert.equal(
+        evidence.invoice_id,
+        line.invoice_id
+      );
+
+      assert.equal(line.quantity, 4);
+      assert.equal(line.unit, 'qt');
+      assert.equal(line.unit_cost, 7.5);
+      assert.equal(line.amount, 30);
+
+      assert.equal(
+        evidence.evidence.pricing.quantity,
+        4
+      );
+
+      assert.equal(
+        evidence.evidence.pricing.unit_cost,
+        7.5
+      );
+
+      // The new pathway must not separately insert lines.
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'invoice_items' &&
+            write.operation === 'insert'
+        ).length,
+        0
+      );
+
+      // Document-supported evidence must not
+      // automatically update ingredient prices yet.
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'ingredients' &&
+            write.operation === 'update'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+test(
+  'ordinary invoice without proof remains compatible with transactional persistence',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes, rpcCalls } = createDb();
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'CTB-2112',
+        item: {
+          _id: 'ordinary-item-1',
+          item_name_raw: 'GROUND BEEF',
+          item_name_normalized: 'Ground Beef',
+          pack_size_raw: '2/5 LB',
+          pack: 2,
+          size: 5,
+          size_unit: 'lb',
+          quantity_shipped: 1,
+          invoice_price: 40,
+          line_total: 40,
+        },
+      });
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_lines_with_evidence'
+      );
+
+      assert.ok(transaction);
+
+      assert.equal(
+        transaction.args.p_lines.length,
+        1
+      );
+
+      assert.deepEqual(
+        transaction.args.p_evidence,
+        []
+      );
+
+      assert.equal(
+        transaction.args.p_lines[0].price_verification_status,
+        'unknown'
+      );
+
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'invoice_items' &&
+            write.operation === 'insert'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+test(
+  'transaction failure never falls back to separate invoice-line insertion',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes, rpcCalls } = createDb({
+        transactionError:
+          'Simulated transactional database failure',
+      });
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'CTB-2113',
+        item: signedSourceItem('CTB-2113'),
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 500);
+      assert.equal(res.body.success, false);
+
+      assert.ok(
+        rpcCalls.some(
+          call =>
+            call.functionName ===
+            'save_invoice_lines_with_evidence'
+        )
+      );
+
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'invoice_items' &&
+            write.operation === 'insert'
+        ).length,
+        0
+      );
+
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'ingredients' &&
+            write.operation === 'update'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+test(
+  'modified signed invoice values are rejected before transactional persistence',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, rpcCalls } = createDb();
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const item = signedSourceItem('CTB-2114');
+
+      // Change the source package after signing.
+      item.pack = 8;
+
+      const req = createRequest({
+        number: 'CTB-2114',
+        item,
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 422);
+
+      assert.equal(
+        rpcCalls.filter(
+          call =>
+            call.functionName ===
+            'save_invoice_lines_with_evidence'
+        ).length,
+        0
+      );
+    });
   }
 );
