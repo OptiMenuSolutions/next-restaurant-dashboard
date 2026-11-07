@@ -189,3 +189,167 @@ test('ordinary package parser does not reinterpret numbered cans', () => {
     null
   );
 });
+
+test('parses standalone count packages', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('12 CT'),
+    {
+      pack: 1,
+      size: 12,
+      size_unit: 'each',
+    }
+  );
+});
+
+test('parses standalone weight packages', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('5 LB'),
+    {
+      pack: 1,
+      size: 5,
+      size_unit: 'lb',
+    }
+  );
+});
+
+test('HTK-1001 brioche buns calculate correctly', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Brioche Buns',
+      pack_size_raw: '12 CT',
+      pack: 12,
+      size: 1,
+      size_unit: 'ct',
+      quantity_shipped: 3,
+      line_total: 54,
+      invoice_price: 18,
+    })
+  );
+
+  assert.equal(result.quantity, 36);
+  assert.equal(result.unit, 'each');
+  assert.equal(result.unit_cost, 1.5);
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('HTK-1001 cheddar calculates correctly', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Cheddar Cheese Block',
+      pack_size_raw: '5 LB',
+      pack: 1,
+      size: 5,
+      size_unit: 'lb',
+      quantity_shipped: 2,
+      line_total: 42,
+      invoice_price: 21,
+    })
+  );
+
+  assert.equal(result.quantity, 10);
+  assert.equal(result.unit, 'lb');
+  assert.equal(result.unit_cost, 4.2);
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('HTK-1001 romaine hearts calculate correctly', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Romaine Hearts',
+      pack_size_raw: '6 CT',
+      pack: 1,
+      size: 6,
+      size_unit: 'ct',
+      quantity_shipped: 1,
+      line_total: 15,
+      invoice_price: 15,
+    })
+  );
+
+  assert.equal(result.quantity, 6);
+  assert.equal(result.unit, 'each');
+  assert.equal(result.unit_cost, 2.5);
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('rejects conflicting standalone quantities', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '12 CT',
+      pack: 24,
+      size: 1,
+      size_unit: 'ct',
+      quantity_shipped: 3,
+      line_total: 54,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'package_discrepancy'
+  );
+});
+
+test('rejects conflicting standalone units', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '5 LB',
+      pack: 1,
+      size: 5,
+      size_unit: 'oz',
+      quantity_shipped: 2,
+      line_total: 42,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'package_discrepancy'
+  );
+});
+
+test('rejects unsupported standalone descriptions', () => {
+  assert.equal(
+    parseOrdinaryInvoicePackage('PACK SIZE UNKNOWN'),
+    null
+  );
+
+  assert.equal(
+    parseOrdinaryInvoicePackage('12 CT + BONUS'),
+    null
+  );
+
+  assert.equal(
+    parseOrdinaryInvoicePackage('3/#10 CAN'),
+    null
+  );
+});
+
+test('numbered cans still require verification', () => {
+  const result = calculateVerifiedInvoiceCost({
+    pack_size_raw: '3/#10 CAN',
+    quantity_shipped: 1,
+    line_total: 54,
+    invoice_price: 54,
+    catch_weight: false,
+  });
+
+  assert.equal(result.quantity, 3);
+  assert.equal(result.unit, 'can');
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'needs_package_verification'
+  );
+});
