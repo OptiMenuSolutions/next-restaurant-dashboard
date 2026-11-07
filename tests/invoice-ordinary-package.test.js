@@ -429,3 +429,93 @@ test('ambiguous COUNT packages remain unverified', () => {
     null
   );
 });
+
+test('documented quart packages preserve volume and unit cost', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('4/1 QT'),
+    {
+      pack: 4,
+      size: 1,
+      size_unit: 'qt',
+    }
+  );
+
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Mayonnaise',
+      pack_size_raw: '4/1 QT',
+      pack: 4,
+      size: 1,
+      size_unit: 'qt',
+      quantity_shipped: 1,
+      line_total: 19,
+      invoice_price: 19,
+    })
+  );
+
+  assert.equal(result.quantity, 4);
+  assert.equal(result.unit, 'qt');
+  assert.equal(result.unit_cost, 4.75);
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('recognizes common quart and pint package formats', () => {
+  const cases = [
+    ['4/1 QT', 4, 1, 'qt'],
+    ['4 X 1 QUART', 4, 1, 'qt'],
+    ['2/2 QTS', 2, 2, 'qt'],
+    ['6/1 PT', 6, 1, 'pt'],
+    ['6 X 1 PINT', 6, 1, 'pt'],
+    ['12 PINTS', 1, 12, 'pt'],
+    ['4 QUARTS', 1, 4, 'qt'],
+    ['4/1 GALLONS', 4, 1, 'gal'],
+  ];
+
+  for (const [raw, pack, size, size_unit] of cases) {
+    assert.deepEqual(
+      parseOrdinaryInvoicePackage(raw),
+      { pack, size, size_unit },
+      `Failed to parse ${raw}`
+    );
+  }
+});
+
+test('quart and pint packages reject conflicting extracted units', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '4/1 QT',
+      pack: 4,
+      size: 1,
+      size_unit: 'gal',
+      quantity_shipped: 1,
+      line_total: 19,
+      invoice_price: 19,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(result.pricingStatus, 'package_discrepancy');
+});
+
+test('unsupported volume packages cannot fabricate unit costs', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '4/1 QT + BONUS',
+      pack: 4,
+      size: 1,
+      size_unit: 'qt',
+      quantity_shipped: 1,
+      line_total: 19,
+      invoice_price: 19,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'needs_package_verification'
+  );
+});
