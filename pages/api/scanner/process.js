@@ -16,6 +16,7 @@
 //     button and the owner sees it on the scanner's row in Profile.
 import { admin, requireScanner, internalHeaders, selfBaseUrl } from '../../../lib/scannerAuth';
 import { groupParsedInvoices } from '../../../lib/uploadInvoice';
+import { createHash } from 'node:crypto';
 
 export const config = { maxDuration: 300 };
 
@@ -39,12 +40,33 @@ async function parsePage(base, restaurantId, path, n) {
   return result;
 }
 
-async function savePage(base, restaurantId, parseResult, path, appendTo) {
+async function savePage(
+  base,
+  restaurantId,
+  parseResult,
+  path,
+  appendTo,
+  scanId
+) {
+  // The same scanner scan and uploaded page must produce
+  // the same confirmation request ID on retries.
+
+  const confirmationRequestId = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'optimenu-scanner-confirmation-v1',
+        restaurantId,
+        scanId,
+        path,
+      ])
+    )
+    .digest('hex');
   const res = await fetch(`${base}/api/invoices/confirm-invoice`, {
     method: 'POST',
     headers: internalHeaders(),
     body: JSON.stringify({
       restaurant_id: restaurantId,
+      confirmation_request_id: confirmationRequestId,
       invoice: parseResult.invoice,
       line_items: parseResult.line_items,
       file_urls: [path],
@@ -106,7 +128,14 @@ export default async function handler(req, res) {
       let invoiceId = null;
       for (const item of group.items) {
         if (item.error) continue;
-        const saved = await savePage(base, restaurant.id, item.parseResult, item.publicUrl, invoiceId);
+        const saved = await savePage(
+          base,
+          restaurant.id,
+          item.parseResult,
+          item.publicUrl,
+          invoiceId,
+          scan.id
+        );
         invoiceId = saved.invoice_id || invoiceId;
         pricesUpdated += (saved.ingredients_updated || 0) + (saved.ingredients_created || 0);
       }

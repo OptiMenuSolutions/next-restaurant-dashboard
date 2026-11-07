@@ -60,7 +60,16 @@ export function createConfirmInvoiceHandler({
   try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
   catch { return res.status(400).json({ error: 'Invalid JSON body' }); }
 
-  const { restaurant_id, invoice, line_items, file_urls, file_url, ocr_text, append_to_invoice_id } = body;
+  const {
+    restaurant_id,
+    invoice,
+    line_items,
+    file_urls,
+    file_url,
+    ocr_text,
+    append_to_invoice_id,
+    confirmation_request_id,
+  } = body;
 
   // Support both old single file_url and new file_urls array
   const allFileUrls = file_urls?.length
@@ -69,6 +78,23 @@ export function createConfirmInvoiceHandler({
 
   if (!restaurant_id) return res.status(400).json({ error: 'restaurant_id is required' });
   if (!invoice)       return res.status(400).json({ error: 'invoice data is required' });
+
+  // Request identity is informational until the new
+  // transactional confirmation workflow is activated.
+  // Never use it to authorize an invoice or pricing change.
+
+  if (
+    confirmation_request_id !== undefined &&
+    (
+      typeof confirmation_request_id !== 'string' ||
+      confirmation_request_id.length < 16 ||
+      confirmation_request_id.length > 128
+    )
+  ) {
+    return res.status(400).json({
+      error: 'Invalid confirmation request ID.',
+    });
+  }
 
   // Verify the calling user owns this restaurant. Scanner photos come from
   // /api/scanner/process, which has already checked the scanner.
