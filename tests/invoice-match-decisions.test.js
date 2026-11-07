@@ -716,3 +716,105 @@ test('40. Approval cannot match different ground beef fat ratios', () => {
   assert.equal(result.status, 'ambiguous');
   assert.equal(result.decision_source, 'identity_review_required');
 });
+
+test('41. Approved supplier mapping survives original description formatting', () => {
+  const result = runMatch({
+    description: 'FRESH CHICKEN BREAST 2/5 LB',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+  assert.equal(result.decision_source, 'admin_approved');
+});
+
+test('42. Equivalent approval cannot cross fresh and frozen identities', () => {
+  const result = runMatch({
+    description: 'FROZEN CHICKEN BREAST 2/5 LB',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+  assert.notEqual(result.decision_source, 'admin_approved');
+});
+
+test('43. Equivalent approval cannot cross ground beef fat ratios', () => {
+  const result = runMatch({
+    description: 'GROUND BEEF 90/10 2/5 LB',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Ground beef',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['ground beef 80 20', FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+  assert.notEqual(result.decision_source, 'admin_approved');
+});
+
+test('44. Multiple equivalent approvals cannot be selected automatically', () => {
+  const result = runMatch({
+    description: 'FRESH CHICKEN BREAST 2/5 LB',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      {
+        id: FLOUR_ID,
+        name: 'Chicken breast',
+        unit: 'oz',
+      },
+      {
+        id: SUGAR_ID,
+        name: 'Chicken breast',
+        unit: 'oz',
+      },
+    ],
+    decisions: createDecisions({
+      approvals: [
+        ['chicken breast fresh', FLOUR_ID],
+        ['fresh chicken breast', SUGAR_ID],
+      ],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+  assert.notEqual(result.decision_source, 'admin_approved');
+});
+
+test('45. Rejected relationships cannot be restored through equivalent descriptions', () => {
+  const result = runMatch({
+    description: 'FRESH CHICKEN BREAST 2/5 LB',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+      rejections: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+  assert.notEqual(result.decision_source, 'admin_approved');
+});
