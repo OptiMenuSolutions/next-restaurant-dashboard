@@ -4,12 +4,15 @@ import {
 } from '../../../../lib/admin/requireAdmin';
 import { normalizeSupplierProduct } from '../../../../lib/invoiceMatchConflicts';
 import { invoiceMatchUnitsCompatible } from '../../../../lib/invoiceMatchDecisions';
-import { ingredientIdentityConflicts } from '../../../../lib/invoiceIngredientIdentity';
+import {
+  ingredientIdentityExplicitlyContradicts,
+} from '../../../../lib/invoiceIngredientIdentity';
 import { waitUntil } from '@vercel/functions';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
 import {
   getProgressiveInvoiceMatchingPolicy,
+  isStrictDirectMatch,
 } from '../../../../lib/progressiveInvoiceMatching';
 import {
   createConflictConfirmation,
@@ -354,7 +357,11 @@ export function createResolveConflictHandler({
       }
 
       if (
-        ingredientIdentityConflicts(
+        !isStrictDirectMatch(
+          product_description,
+          ingredient.name
+        ) ||
+        ingredientIdentityExplicitlyContradicts(
           product_description,
           ingredient.name
         )

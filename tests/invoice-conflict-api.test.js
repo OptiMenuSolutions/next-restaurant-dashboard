@@ -823,6 +823,74 @@ test(
   }
 );
 
+test(
+  '15. Future approval rejects unrelated ingredient identity',
+  async () => {
+    const db = createMockDb({
+      ingredientId: INGREDIENT_ID,
+      ingredientName: 'Mozzarella Cheese',
+      ingredientUnit: 'oz',
+      invoiceUnit: 'lb',
+    });
+
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [{
+          invoice_item_id: ITEM_ID,
+          expected_ingredient_id: INGREDIENT_ID,
+          ingredient_id: INGREDIENT_ID,
+        }],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 400);
+    assert.match(res.body.error, /identities require review/i);
+    assert.equal(db.calls.length, 0);
+  }
+);
+
+test(
+  '16. Future approval permits missing descriptive details',
+  async () => {
+    const db = createMockDb({
+      ingredientId: INGREDIENT_ID,
+      ingredientName: 'Cheddar Cheese',
+      ingredientUnit: 'oz',
+      invoiceUnit: 'lb',
+    });
+
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [{
+          invoice_item_id: ITEM_ID,
+          expected_ingredient_id: INGREDIENT_ID,
+          ingredient_id: INGREDIENT_ID,
+        }],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.preview, true);
+    assert.equal(
+      res.body.summary.future_mapping_requested,
+      true
+    );
+    assert.equal(db.calls.length, 0);
+  }
+);
+
 test.after(() => {
   if (originalKey === undefined) {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;

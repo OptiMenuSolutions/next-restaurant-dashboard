@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
   ingredientIdentityConflicts,
+  ingredientIdentityExplicitlyContradicts,
   safeguardIngredientMatch,
   resolveInvoiceIngredientMatches,
 } from '../lib/invoiceIngredientIdentity.js';
@@ -302,5 +303,79 @@ test('supplier abbreviations preserve equivalent identities', () => {
       'Chicken Breast Boneless Skinless'
     ),
     false
+  );
+});
+
+test('explicit approval permits missing descriptive details', () => {
+  const compatiblePairs = [
+    ['Chicken Breast Fresh', 'Chicken breast'],
+    ['Cheddar Cheese Block', 'Cheddar'],
+    ['Fresh Boneless Chicken Breast', 'Chicken breast'],
+    ['Broccoli Crowns Fresh', 'Broccoli crowns'],
+    ['Mozzarella Shredded', 'Mozzarella'],
+  ];
+
+  for (const [supplierProduct, ingredientName] of compatiblePairs) {
+    assert.equal(
+      ingredientIdentityExplicitlyContradicts(
+        supplierProduct,
+        ingredientName
+      ),
+      false,
+      `${supplierProduct} should not explicitly contradict ${ingredientName}`
+    );
+  }
+});
+
+test('explicit approval rejects conflicting product characteristics', () => {
+  const conflictingPairs = [
+    ['Chicken Breast Fresh', 'Chicken Breast Frozen'],
+    ['Chicken Breast Boneless', 'Chicken Breast Bone-in'],
+    ['Broccoli Crowns', 'Broccoli Florets'],
+    ['Mozzarella Shredded', 'Mozzarella Sliced'],
+    ['Ground Beef 80/20', 'Ground Beef 90/10'],
+    ['Raw Chicken Breast', 'Cooked Chicken Breast'],
+    ['Breaded Chicken', 'Unbreaded Chicken'],
+  ];
+
+  for (const [supplierProduct, ingredientName] of conflictingPairs) {
+    assert.equal(
+      ingredientIdentityExplicitlyContradicts(
+        supplierProduct,
+        ingredientName
+      ),
+      true,
+      `${supplierProduct} must contradict ${ingredientName}`
+    );
+  }
+});
+
+test('strict AI matching remains unchanged', () => {
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Chicken Breast Fresh',
+      'Chicken breast'
+    ),
+    true
+  );
+
+  assert.equal(
+    ingredientIdentityConflicts(
+      'Broccoli Crowns Fresh',
+      'Broccoli'
+    ),
+    true
+  );
+});
+
+test('missing ingredient identities cannot receive explicit approval', () => {
+  assert.equal(
+    ingredientIdentityExplicitlyContradicts('', 'Chicken breast'),
+    true
+  );
+
+  assert.equal(
+    ingredientIdentityExplicitlyContradicts('Chicken Breast Fresh', ''),
+    true
   );
 });

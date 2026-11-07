@@ -252,7 +252,7 @@ test('14. Compatible volume units remain eligible', () => {
     eligibleIngredients: [
       {
         id: FLOUR_ID,
-        name: 'Test liquid ingredient',
+        name: 'All Purpose Flour',
         unit: 'fl oz',
       },
     ],
@@ -270,7 +270,7 @@ test('15. Count-to-count matching remains eligible', () => {
     eligibleIngredients: [
       {
         id: FLOUR_ID,
-        name: 'Test count ingredient',
+        name: 'All Purpose Flour',
         unit: 'each',
       },
     ],
@@ -572,4 +572,147 @@ test('32. Unknown products remain new', () => {
 
   assert.equal(result.status, 'new');
   assert.equal(result.matches.length, 0);
+});
+
+test('33. Approved supplier alias bypasses missing descriptive details', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+  assert.equal(result.decision_source, 'admin_approved');
+});
+
+test('34. Approved mapping cannot override explicit contradictions', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Frozen',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken Breast Fresh',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast frozen', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
+});
+
+test('35. An approval for one product does not authorize another', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Frozen',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('36. Approved aliases still require compatible physical units', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'ct',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken breast',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('37. Approval cannot match chicken breast to mozzarella', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Mozzarella Cheese',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
+});
+
+test('38. Approval cannot match salmon to broccoli', () => {
+  const result = runMatch({
+    description: 'Fresh Salmon Fillet',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Fresh Broccoli',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['fresh salmon fillet', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
+});
+
+test('39. Approval cannot match chicken breast to chicken thigh', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Chicken Thigh Fresh',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['chicken breast fresh', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
+});
+
+test('40. Approval cannot match different ground beef fat ratios', () => {
+  const result = runMatch({
+    description: 'Ground Beef 80/20',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [{
+      id: FLOUR_ID,
+      name: 'Ground Beef 90/10',
+      unit: 'oz',
+    }],
+    decisions: createDecisions({
+      approvals: [['ground beef 80 20', FLOUR_ID]],
+    }),
+  });
+
+  assert.equal(result.status, 'ambiguous');
+  assert.equal(result.decision_source, 'identity_review_required');
 });
