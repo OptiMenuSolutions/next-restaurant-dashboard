@@ -24,11 +24,13 @@ import {
   getProgressiveInvoiceMatchingPolicy,
   findStrictDirectMatch,
 } from '../../../lib/progressiveInvoiceMatching';
-
 import {
   loadInvoiceMatchDecisions,
   applyInvoiceMatchDecisions,
 } from '../../../lib/invoiceMatchDecisions';
+import {
+  validateInvoiceAgainstSource,
+} from '../../../lib/invoiceSourceValidation.js';
 
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
@@ -859,8 +861,17 @@ export default async function handler(req, res) {
       return res.end();
     }
 
-    const supplier     = extracted.supplier || 'Unknown Supplier';
-    const allRaw       = extracted.line_items || [];
+    const supplier = extracted.supplier || 'Unknown Supplier';
+
+    // Validate structured AI extraction against the original
+    // invoice document before matching or cost calculations.
+    //
+    // Unsupported and ambiguous source formats retain their
+    // original extraction and existing verification safeguards.
+    const allRaw = validateInvoiceAgainstSource(
+      extracted.line_items || [],
+      ocrText
+    );
     const foodCount    = allRaw.filter(i => i.is_food).length;
     const nonFoodCount = allRaw.filter(i => !i.is_food).length;
 
