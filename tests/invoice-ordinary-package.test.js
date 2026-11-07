@@ -593,3 +593,62 @@ test('container descriptions cannot override conflicting quantities', () => {
   assert.equal(result.unit_cost, null);
   assert.equal(result.pricingStatus, 'package_discrepancy');
 });
+
+test('recognizes separate distributor PACK and SIZE columns', () => {
+  const cases = [
+    ['2 5 LB', 2, 5, 'lb'],
+    ['1 10 LB', 1, 10, 'lb'],
+    ['4 5 LB', 4, 5, 'lb'],
+    ['12 1 QT', 12, 1, 'qt'],
+    ['6 1 CT', 6, 1, 'each'],
+  ];
+
+  for (const [raw, pack, size, size_unit] of cases) {
+    assert.deepEqual(
+      parseOrdinaryInvoicePackage(raw),
+      { pack, size, size_unit },
+      `Failed to parse ${raw}`
+    );
+  }
+});
+
+test('distributor-style packages produce correct invoice costs', () => {
+  const cases = [
+    ['2 5 LB', 2, 92, 20, 'lb', 4.60],
+    ['1 10 LB', 2, 32, 20, 'lb', 1.60],
+    ['4 5 LB', 1, 38, 20, 'lb', 1.90],
+    ['12 1 QT', 1, 57, 12, 'qt', 4.75],
+    ['6 1 CT', 1, 22, 6, 'each', 22 / 6],
+  ];
+
+  for (const [
+    pack_size_raw,
+    quantity_shipped,
+    line_total,
+    expectedQuantity,
+    expectedUnit,
+    expectedCost,
+  ] of cases) {
+    const parsed = parseOrdinaryInvoicePackage(pack_size_raw);
+
+    const result = calculateVerifiedInvoiceCost(
+      invoiceItem({
+        pack_size_raw,
+        pack: parsed.pack,
+        size: parsed.size,
+        size_unit: parsed.size_unit,
+        quantity_shipped,
+        line_total,
+        invoice_price: line_total / quantity_shipped,
+      })
+    );
+
+    assert.equal(result.quantity, expectedQuantity);
+    assert.equal(result.unit, expectedUnit);
+    assert.ok(Math.abs(result.unit_cost - expectedCost) < 1e-9);
+    assert.equal(
+      result.pricingStatus,
+      'invoice_document_consistent'
+    );
+  }
+});
