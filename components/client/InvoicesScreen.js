@@ -3,6 +3,7 @@ import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
 } from "./ClientChrome";
+import { invoicePriceChange } from "../../lib/invoiceDisplayPricing";
 
 /**
  * InvoicesScreen — ported from "OptiMenu Invoices.dc.html".
@@ -57,8 +58,7 @@ const monthHeading = (key) => {
 };
 
 /* Unit-price change vs the ingredient's previous invoice, or null. */
-const priceChange = (i) =>
-  i.prevUnitCost > 0 && Number(i.unitCost) > 0 ? ((Number(i.unitCost) - i.prevUnitCost) / i.prevUnitCost) * 100 : null;
+const priceChange = invoicePriceChange;
 
 export const DEMO_INVOICES = [
   { id: 1, number: "INV-88214", file: "sysco-aug23.pdf", supplier: "Sysco Northeast", date: "AUG 23", status: "processed", items: [
@@ -749,7 +749,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
                   <span style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap" }}>{money(lineTotal(i))}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-                  <span style={{ fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{i.qty} @ {money(i.unitCost)}</span>
+                  <span style={{ fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{i.qty} @ {i.unitCost == null ? "Cost unresolved" : money(i.unitCost)}</span>
                   <span style={{ fontSize: 9, letterSpacing: "0.06em", color: i.link ? "var(--green)" : "var(--amber)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                     {i.link ? "→ " + i.link : "▲ not linked to an ingredient"}
                   </span>

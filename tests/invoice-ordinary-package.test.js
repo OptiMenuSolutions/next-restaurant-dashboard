@@ -519,3 +519,77 @@ test('unsupported volume packages cannot fabricate unit costs', () => {
     'needs_package_verification'
   );
 });
+
+test('documented container descriptions preserve package quantities', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('4/1 GAL JUG'),
+    {
+      pack: 4,
+      size: 1,
+      size_unit: 'gal',
+    }
+  );
+
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('1/10 LB BAG'),
+    {
+      pack: 1,
+      size: 10,
+      size_unit: 'lb',
+    }
+  );
+});
+
+test('recognizes documented container descriptions', () => {
+  const cases = [
+    ['4/1 GAL JUG', 4, 1, 'gal'],
+    ['1/10 LB BAG', 1, 10, 'lb'],
+    ['6/12 OZ BOTTLE', 6, 12, 'oz'],
+    ['1/8 OZ TUB', 1, 8, 'oz'],
+    ['4/1 QT JUG', 4, 1, 'qt'],
+  ];
+
+  for (const [raw, pack, size, size_unit] of cases) {
+    assert.deepEqual(
+      parseOrdinaryInvoicePackage(raw),
+      { pack, size, size_unit },
+      `Failed to parse ${raw}`
+    );
+  }
+});
+
+test('container descriptions cannot hide unsupported package claims', () => {
+  const unsupported = [
+    '4/1 GAL JUG + BONUS',
+    '4/1 GAL JUG 2 PACK',
+    '1/10 LB BAG APPROX',
+    '6/12 OZ BOTTLE OR CAN',
+    '3/#10 CAN',
+  ];
+
+  for (const raw of unsupported) {
+    assert.equal(
+      parseOrdinaryInvoicePackage(raw),
+      null,
+      `Unexpectedly accepted ${raw}`
+    );
+  }
+});
+
+test('container descriptions cannot override conflicting quantities', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Mayonnaise',
+      pack_size_raw: '4/1 GAL JUG',
+      pack: 4,
+      size: 2,
+      size_unit: 'gal',
+      quantity_shipped: 1,
+      line_total: 56,
+      invoice_price: 56,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(result.pricingStatus, 'package_discrepancy');
+});

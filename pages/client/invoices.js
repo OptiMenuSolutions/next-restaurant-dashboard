@@ -10,6 +10,7 @@ import { useTour } from "../../lib/useTour";
 import UniversalSearch from "../../components/UniversalSearch";
 import useSWR from "swr";
 import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
+import { toDisplayUnitCost } from "../../lib/invoiceDisplayPricing";
 
 const EMPTY_LIST = [];
 const AFFECTED_BY_INVOICES = ["ingredients", "dashboard", "menu-items", "analytics"];
@@ -111,7 +112,7 @@ function toLine(row) {
     ingredientId: row.ingredient_id || null,
     name: row.item_name || row.name || "Item",
     qty: [row.quantity, unit].filter(Boolean).join(" ") || "1",
-    unitCost: Number(row.unit_cost != null ? row.unit_cost : row.amount) || 0,
+    unitCost: toDisplayUnitCost(row.unit_cost),
     amount: Number(row.amount) || 0,
     // Only a real ingredient link counts. Falling back to the invoice's own
     // name made unlinked lines look linked (in green) and hid them from the
