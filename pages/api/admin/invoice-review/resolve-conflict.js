@@ -3,6 +3,8 @@ import {
   requireAdmin as productionRequireAdmin,
 } from '../../../../lib/admin/requireAdmin';
 import { normalizeSupplierProduct } from '../../../../lib/invoiceMatchConflicts';
+import { invoiceMatchUnitsCompatible } from '../../../../lib/invoiceMatchDecisions';
+import { ingredientIdentityConflicts } from '../../../../lib/invoiceIngredientIdentity';
 import { waitUntil } from '@vercel/functions';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { processInvoiceCalculations } from '../../../../lib/admin/processInvoiceCalculations';
@@ -119,6 +121,14 @@ export function createResolveConflictHandler({
     });
   }
 
+  // A future approval must be supported by at least one
+  // explicitly selected historical invoice line.
+  if (approve_future && changes.length === 0) {
+    return res.status(400).json({
+      error: 'Select an invoice line before approving future matching.',
+    });
+  }
+
   const seen = new Set();
 
   for (const change of changes) {
@@ -190,11 +200,12 @@ export function createResolveConflictHandler({
     ];
 
     const ingredientNames = new Map();
+    const ingredientsById = new Map();
 
     if (requestedIngredientIds.length) {
       const { data: ingredients, error: ingredientError } = await db
         .from('ingredients')
-        .select('id, name')
+        .select('id, name, unit, standard_unit')
         .eq('restaurant_id', restaurant_id)
         .in('id', requestedIngredientIds);
 
@@ -202,6 +213,7 @@ export function createResolveConflictHandler({
 
       for (const ingredient of ingredients || []) {
         ingredientNames.set(ingredient.id, ingredient.name);
+        ingredientsById.set(ingredient.id, ingredient);
       }
 
       if (ingredientNames.size !== requestedIngredientIds.length) {
@@ -223,6 +235,7 @@ export function createResolveConflictHandler({
           item_name,
           ingredient_name_normalized,
           ingredient_id,
+          unit,
           invoices!inner (
             id,
             restaurant_id,
@@ -303,6 +316,54 @@ export function createResolveConflictHandler({
         changed: currentId !== nextId,
         previously_unlinked: currentId === null,
       });
+    }
+
+    if (approve_future) {
+      const ingredient = ingredientsById.get(future_ingredient_id);
+
+      if (!ingredient) {
+        return res.status(400).json({
+          error: 'The approved ingredient is unavailable.',
+        });
+      }
+
+      // Future approvals must be supported by at least one
+      // selected invoice line with a compatible saved unit.
+      const supportingLine = changes.find(change => {
+        const item = itemsById.get(change.invoice_item_id);
+
+        if (!item) return false;
+
+        return (
+          normalizeId(item.ingredient_id) === future_ingredient_id &&
+          normalizeId(change.expected_ingredient_id) === future_ingredient_id &&
+          normalizeId(change.ingredient_id) === future_ingredient_id &&
+          invoiceMatchUnitsCompatible(
+            item.unit,
+            ingredient.standard_unit || ingredient.unit
+          )
+        );
+      });
+
+      if (!supportingLine) {
+        return res.status(400).json({
+          error:
+            'Future approval requires an existing matching invoice line ' +
+            'with compatible physical units.',
+        });
+      }
+
+      if (
+        ingredientIdentityConflicts(
+          product_description,
+          ingredient.name
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'The supplier product and ingredient identities require review.',
+        });
+      }
     }
 
     const { data: existingMapping, error: mappingError } = await db

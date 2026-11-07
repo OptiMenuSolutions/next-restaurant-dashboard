@@ -353,3 +353,79 @@ test('numbered cans still require verification', () => {
     'needs_package_verification'
   );
 });
+
+test('parses COUNT as an individual item quantity', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('12 COUNT'),
+    {
+      pack: 1,
+      size: 12,
+      size_unit: 'each',
+    }
+  );
+});
+
+test('parses COUNTS as an individual item quantity', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('12 COUNTS'),
+    {
+      pack: 1,
+      size: 12,
+      size_unit: 'each',
+    }
+  );
+});
+
+test('HTK-1002 brioche buns calculate correctly', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Brioche Buns',
+      pack_size_raw: '12 COUNT',
+      pack: 12,
+      size: 1,
+      size_unit: 'ct',
+      quantity_shipped: 1,
+      line_total: 19,
+      invoice_price: 19,
+    })
+  );
+
+  assert.equal(result.quantity, 12);
+  assert.equal(result.unit, 'each');
+
+  assert.ok(
+    Math.abs(result.unit_cost - 19 / 12) < 1e-10
+  );
+
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('COUNT discrepancies cannot create unit costs', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '12 COUNT',
+      pack: 24,
+      size: 1,
+      size_unit: 'ct',
+      quantity_shipped: 1,
+      line_total: 19,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+
+  assert.equal(
+    result.pricingStatus,
+    'package_discrepancy'
+  );
+});
+
+test('ambiguous COUNT packages remain unverified', () => {
+  assert.equal(
+    parseOrdinaryInvoicePackage('12 COUNT + BONUS'),
+    null
+  );
+});

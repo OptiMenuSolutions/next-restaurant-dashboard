@@ -18,6 +18,7 @@ import { Chip, money, shortDate } from '../../components/admin/ui';
 import useIsPhone from '../../lib/admin/useIsPhone';
 import InvoiceMatchConflicts from '../../components/admin/InvoiceMatchConflicts';
 import InvoiceMatchRejections from '../../components/admin/InvoiceMatchRejections';
+import RememberInvoiceMatch from '../../components/admin/RememberInvoiceMatch';
 
 // Each panel is at most one screen tall and scrolls on its own, so a long
 // queue or a long invoice never stretches the page.
@@ -505,7 +506,16 @@ function InvoiceEditor({ id, onDone }) {
                         <optgroup label="All ingredients">{data.ingredients.map((ingredient) => <option key={ingredient.id} value={ingredient.id}>{ingredient.name} ({ingredient.unit})</option>)}</optgroup>
                       </select>
                     </label>
-                    {changed('ingredient_id') && original?.ingredient_id && <div style={{ color: 'var(--muted)', fontSize: 11 }}>Future invoices with this item name will match it too.</div>}
+                    {original?.ingredient_id && (
+                      <RememberInvoiceMatch
+                        invoice={data.invoice}
+                        line={original}
+                        ingredient={data.ingredients.find(
+                          ingredient => ingredient.id === original.ingredient_id
+                        )}
+                        disabled={busy || dirty.length > 0}
+                      />
+                    )}
                   </div>
                 )}
               </article>
@@ -596,7 +606,16 @@ function InvoiceEditor({ id, onDone }) {
                         )}
                         <optgroup label="All ingredients">{data.ingredients.map((g) => <option key={g.id} value={g.id}>{g.name} ({g.unit})</option>)}</optgroup>
                       </select>
-                      {changed('ingredient_id') && o?.ingredient_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>Future invoices with this item name will match it too.</div>}
+                      {o?.ingredient_id && (
+                        <RememberInvoiceMatch
+                          invoice={data.invoice}
+                          line={o}
+                          ingredient={data.ingredients.find(
+                            ingredient => ingredient.id === o.ingredient_id
+                          )}
+                          disabled={busy || dirty.length > 0}
+                        />
+                      )}
                     </td>
                   </tr>
                   {calc === l.id && (

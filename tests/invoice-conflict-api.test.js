@@ -18,6 +18,9 @@ process.env.INVOICE_CONFLICT_SAVE_ENABLED = 'true';
 function createMockDb({
   supplier = 'Harborline Foodservice',
   ingredientId = null,
+  ingredientName = 'All-purpose flour',
+  ingredientUnit = 'lb',
+  invoiceUnit = 'lb',
 } = {}) {
   const calls = [];
 
@@ -69,7 +72,9 @@ function createMockDb({
           if (table === 'ingredients') {
             data = [{
               id: INGREDIENT_ID,
-              name: 'All-purpose flour',
+              name: ingredientName,
+              unit: ingredientUnit,
+              standard_unit: ingredientUnit,
             }];
           } else if (table === 'invoice_items') {
             data = [{
@@ -78,6 +83,7 @@ function createMockDb({
               item_name: 'Cheddar Cheese Block',
               ingredient_name_normalized: 'cheddar cheese block',
               ingredient_id: ingredientId,
+              unit: invoiceUnit,
               invoices: {
                 id: 'invoice-test-1',
                 restaurant_id: RESTAURANT_ID,
@@ -578,6 +584,242 @@ test(
       audit.metadata.result.corrected,
       1
     );
+  }
+);
+
+test(
+  '10. Future approval requires a source invoice line',
+  async () => {
+    const db = createMockDb();
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 400);
+    assert.match(
+      res.body.error,
+      /select an invoice line/i
+    );
+    assert.equal(db.calls.length, 0);
+  }
+);
+
+test(
+  '11. Future approval rejects incompatible physical units',
+  async () => {
+    const db = createMockDb({
+      ingredientId: INGREDIENT_ID,
+      ingredientName: 'Cheddar Cheese Block',
+      ingredientUnit: 'oz',
+      invoiceUnit: 'each',
+    });
+
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [{
+          invoice_item_id: ITEM_ID,
+          expected_ingredient_id: INGREDIENT_ID,
+          ingredient_id: INGREDIENT_ID,
+        }],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 400);
+    assert.match(
+      res.body.error,
+      /compatible physical units/i
+    );
+    assert.equal(db.calls.length, 0);
+  }
+);
+
+test(
+  '12. Future approval requires an existing saved relationship',
+  async () => {
+    const db = createMockDb({
+      ingredientId: null,
+      ingredientName: 'Cheddar Cheese Block',
+    });
+
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [{
+          invoice_item_id: ITEM_ID,
+          expected_ingredient_id: null,
+          ingredient_id: INGREDIENT_ID,
+        }],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 400);
+    assert.match(
+      res.body.error,
+      /existing matching invoice line/i
+    );
+    assert.equal(db.calls.length, 0);
+  }
+);
+
+test(
+  '13. Compatible saved relationship can preview future approval',
+  async () => {
+    const db = createMockDb({
+      ingredientId: INGREDIENT_ID,
+      ingredientName: 'Cheddar Cheese Block',
+      ingredientUnit: 'oz',
+      invoiceUnit: 'lb',
+    });
+
+    const handler = handlerFor(db);
+    const res = response();
+
+    await handler(
+      request('preview', {
+        changes: [{
+          invoice_item_id: ITEM_ID,
+          expected_ingredient_id: INGREDIENT_ID,
+          ingredient_id: INGREDIENT_ID,
+        }],
+        approve_future: true,
+        future_ingredient_id: INGREDIENT_ID,
+      }),
+      res
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.preview, true);
+    assert.equal(
+      res.body.summary.future_mapping_requested,
+      true
+    );
+    assert.equal(
+      res.body.summary.changed,
+      0
+    );
+    assert.equal(db.calls.length, 0);
+  }
+);
+
+test(
+  '14. Confirmed future approval saves only the reusable mapping',
+  async () => {
+    const db = createMockDb({
+      ingredientId: INGREDIENT_ID,
+      ingredientName: 'Cheddar Cheese Block',
+      ingredientUnit: 'oz',
+      invoiceUnit: 'lb',
+    });
+
+    const auditCalls = [];
+    const scheduledWork = [];
+
+    const handler = createResolveConflictHandler({
+      db,
+
+      requireAdmin: async () => ({
+        user: { id: 'admin-test-1' },
+        name: 'Test Administrator',
+      }),
+
+      getMatchingPolicy: async () => ({
+        matching_enabled: true,
+      }),
+
+      saveAuditLog: async entry => {
+        auditCalls.push(entry);
+      },
+
+      scheduleWork: promise => {
+        scheduledWork.push(promise);
+      },
+
+      processCalculations: async () => {},
+    });
+
+    const changes = [{
+      invoice_item_id: ITEM_ID,
+      expected_ingredient_id: INGREDIENT_ID,
+      ingredient_id: INGREDIENT_ID,
+    }];
+
+    const payload = {
+      changes,
+      approve_future: true,
+      future_ingredient_id: INGREDIENT_ID,
+    };
+
+    const preview = response();
+
+    await handler(
+      request('preview', payload),
+      preview
+    );
+
+    assert.equal(preview.statusCode, 200);
+    assert.equal(preview.body.summary.changed, 0);
+    assert.equal(preview.body.summary.future_mapping_requested, true);
+
+    const saved = response();
+
+    await handler(
+      request('save', {
+        ...payload,
+        expected_mapping_updated_at:
+          preview.body.expected_mapping_updated_at,
+        confirmation_token:
+          preview.body.confirmation_token,
+      }),
+      saved
+    );
+
+    assert.equal(saved.statusCode, 200);
+    assert.equal(saved.body.ok, true);
+    assert.equal(saved.body.saved, true);
+
+    assert.equal(db.calls.length, 1);
+
+    const call = db.calls[0];
+
+    assert.equal(
+      call.name,
+      'resolve_invoice_ingredient_conflict'
+    );
+
+    assert.equal(call.args.p_approve_future, true);
+    assert.equal(
+      call.args.p_future_ingredient_id,
+      INGREDIENT_ID
+    );
+
+    assert.deepEqual(call.args.p_changes, changes);
+
+    assert.equal(
+      call.args.p_expected_mapping_updated_at,
+      null
+    );
+
+    assert.equal(auditCalls.length, 1);
+    assert.equal(scheduledWork.length, 0);
   }
 );
 
