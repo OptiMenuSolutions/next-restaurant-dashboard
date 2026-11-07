@@ -5,7 +5,7 @@
 // show what Claude parsed vs what was manually corrected.
 
 import { createClient } from '@supabase/supabase-js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   prepareInvoiceSourceEvidence,
   saveInvoiceSourceEvidence,
@@ -405,10 +405,57 @@ export function createConfirmInvoiceHandler({
     errors:               [],
   };
 
+  const evidencePersistenceEnabled =
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED === 'true';
+
+  // Legacy invoice confirmation remains unchanged.
+  // The transactional pathway requires a stable request identity.
+
+  if (
+    evidencePersistenceEnabled &&
+    (
+      !confirmation_request_id ||
+      typeof confirmation_request_id !== 'string' ||
+      confirmation_request_id.length < 16 ||
+      confirmation_request_id.length > 128
+    )
+  ) {
+    return res.status(400).json({
+      error: 'A valid confirmation request ID is required.',
+    });
+  }
+
+  if (
+    evidencePersistenceEnabled &&
+    (!sourceProofSecret || sourceProofSecret.length < 32)
+  ) {
+    return res.status(503).json({
+      error: 'Invoice evidence authentication is not configured.',
+    });
+  }
+
   try {
-    // ── Step 1: Create or reuse invoice record ────────────────────────────────
+    // ── Step 1: Prepare or create the invoice record ──────────────────────────
+
     let invoiceRecord;
-    if (appendMode) {
+
+    if (evidencePersistenceEnabled) {
+
+      // The new pathway generates the identity without
+      // creating a database record yet.
+      //
+      // The transactional RPC will create or lock
+      // the actual parent invoice.
+
+      invoiceRecord = {
+        id: appendMode
+          ? append_to_invoice_id
+          : randomUUID(),
+      };
+
+      results.invoice_id = invoiceRecord.id;
+
+    } else if (appendMode) {
       const { data: existingInvoice, error: existingInvoiceError } =
         await supabase
           .from('invoices')
@@ -669,10 +716,6 @@ export function createConfirmInvoiceHandler({
     //
     // Invoice-supported ingredient repricing is NOT enabled.
 
-    const evidencePersistenceEnabled =
-      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED ===
-      'true';
-
     if (evidencePersistenceEnabled) {
 
       // ----------------------------------------------------------
@@ -791,61 +834,163 @@ export function createConfirmInvoiceHandler({
       }
 
       // ----------------------------------------------------------
-      // 3. Save invoice items and evidence atomically
+      // 3. Prepare the complete invoice confirmation payload
+      // ----------------------------------------------------------
+
+      const invoicePayload = {
+        id: invoiceRecord.id,
+        supplier: invoice.supplier || null,
+        number: invoice.invoice_number || null,
+        date: invoice.invoice_date || null,
+        amount: invoice.total_amount ?? null,
+        non_food_total: invoice.non_food_total ?? null,
+        tax_amount: invoice.tax_amount ?? null,
+        fees_amount: invoice.fees_amount ?? null,
+        file_url: allFileUrls[0] || null,
+        ocr_text: ocr_text || null,
+      };
+
+      // The confirmation fingerprint must not depend
+      // on freshly generated invoice or line-item UUIDs.
+      //
+      // A retry of the same submitted content must
+      // produce the same fingerprint.
+
+      const confirmationFingerprint = createHash('sha256')
+        .update(
+          JSON.stringify({
+            version: 1,
+            restaurant_id,
+            request_id: confirmation_request_id,
+            append_to_invoice_id:
+              append_to_invoice_id || null,
+            invoice: {
+              ...invoicePayload,
+              id: null,
+            },
+            files: allFileUrls,
+            lines: invoiceItemsToInsert.map(
+              ({ id, invoice_id, ...line }) => line
+            ),
+            source_proofs: activeItems.map(
+              item => item.invoice_source_proof || null
+            ),
+          })
+        )
+        .digest('hex');
+
+      // Supplier-verified ingredient updates currently
+      // occur outside this PostgreSQL transaction.
+      //
+      // Do not silently skip them or permit a partially
+      // transactional save until that path is integrated.
+
+      if (Object.keys(ingredientUpdates).length > 0) {
+        return res.status(503).json({
+          success: false,
+          error:
+            'Supplier-verified ingredient pricing requires the legacy confirmation pathway until transactional repricing is implemented.',
+        });
+      }
+
+      // ----------------------------------------------------------
+      // 4. Save the complete invoice atomically
       // ----------------------------------------------------------
 
       const {
         data: transactionResult,
         error: transactionError,
       } = await supabase.rpc(
-        'save_invoice_lines_with_evidence',
+        'save_invoice_confirmation_transactional',
         {
           p_restaurant_id: restaurant_id,
-          p_invoice_id: invoiceRecord.id,
+          p_request_id: confirmation_request_id,
+          p_request_fingerprint: confirmationFingerprint,
+          p_append_to_invoice_id:
+            appendMode ? append_to_invoice_id : null,
+          p_invoice: invoicePayload,
+          p_files: allFileUrls,
           p_lines: invoiceItemsToInsert,
           p_evidence: authenticatedEvidenceRecords,
         }
       );
 
-      if (
-        transactionError ||
-        transactionResult?.success !== true ||
-        transactionResult?.lines_saved !==
-          invoiceItemsToInsert.length ||
-        transactionResult?.evidence_saved !==
-          authenticatedEvidenceRecords.length
-      ) {
+      if (transactionError) {
         console.error(
-          '[confirm-invoice] Transactional persistence failed:',
-          transactionError ||
-            transactionResult
+          '[confirm-invoice] Atomic confirmation failed:',
+          transactionError
         );
 
-        return res.status(500).json({
+        const fingerprintMismatch =
+          /reused with different contents/i.test(
+            transactionError.message || ''
+          );
+
+        return res.status(
+          fingerprintMismatch ? 409 : 500
+        ).json({
           success: false,
-          invoice_id: results.invoice_id,
-          items_saved: 0,
-          ingredients_created: 0,
-          ingredients_updated: 0,
-          errors: [
-            'Invoice items and authenticated evidence could not be saved together.',
-          ],
+          error: fingerprintMismatch
+            ? 'This confirmation request was already used for different invoice contents.'
+            : 'The invoice could not be saved transactionally.',
         });
       }
 
-      results.items_saved =
-        transactionResult.lines_saved;
+      if (
+        transactionResult?.success !== true ||
+        !transactionResult.invoice_id ||
+        transactionResult.lines_saved !==
+          invoiceItemsToInsert.length ||
+        transactionResult.evidence_saved !==
+          authenticatedEvidenceRecords.length
+      ) {
+        return res.status(500).json({
+          success: false,
+          error:
+            'The invoice transaction returned an unexpected result.',
+        });
+      }
+
+      // The database is authoritative for the invoice ID.
+      // This is particularly important for successful retries.
+
+      results.invoice_id = transactionResult.invoice_id;
+      results.items_saved = transactionResult.lines_saved;
+
+      // ----------------------------------------------------------
+      // 5. Handle successful retries
+      // ----------------------------------------------------------
+
+      if (transactionResult.replayed === true) {
+        console.info(
+          '[invoice-confirmation-idempotent-replay]',
+          {
+            restaurantId: restaurant_id,
+            requestId: confirmation_request_id,
+            invoiceId: transactionResult.invoice_id,
+          }
+        );
+
+        return res.status(200).json({
+          success: true,
+          invoice_id: transactionResult.invoice_id,
+          items_saved: transactionResult.lines_saved,
+          ingredients_created: 0,
+          ingredients_updated: 0,
+          errors: [],
+          replayed: true,
+        });
+      }
 
       console.info(
-        '[invoice-source-evidence-transaction]',
+        '[invoice-confirmation-transactional]',
         {
           restaurantId: restaurant_id,
-          invoiceId: invoiceRecord.id,
-          linesSaved:
-            transactionResult.lines_saved,
-          evidenceSaved:
-            transactionResult.evidence_saved,
-          automaticRepricingEnabled: false,
+          invoiceId: results.invoice_id,
+          linesSaved: results.items_saved,
+          filesSaved: transactionResult.files_saved,
+          evidenceSaved: transactionResult.evidence_saved,
+          replayed: false,
         }
       );
 

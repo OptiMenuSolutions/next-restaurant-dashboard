@@ -51,7 +51,7 @@ function createDb({
       rpcCalls.push({ functionName, args });
 
       if (
-        functionName === 'save_invoice_lines_with_evidence'
+        functionName === 'save_invoice_confirmation_transactional'
       ) {
         if (transactionError) {
           return Promise.resolve({
@@ -65,8 +65,13 @@ function createDb({
         return Promise.resolve({
           data: {
             success: true,
+            invoice_id:
+              args.p_append_to_invoice_id ||
+              args.p_invoice.id,
             lines_saved: args.p_lines.length,
+            files_saved: args.p_files.length,
             evidence_saved: args.p_evidence.length,
+            replayed: false,
           },
           error: null,
         });
@@ -235,6 +240,8 @@ function createRequest({ number, item }) {
     headers: {},
     body: {
       restaurant_id: RESTAURANT_ID,
+      confirmation_request_id:
+        'test-confirmation-request-000001',
       invoice: {
         supplier: 'Example Distributor',
         invoice_number: number,
@@ -844,7 +851,7 @@ test(
       const transaction = rpcCalls.find(
         call =>
           call.functionName ===
-          'save_invoice_lines_with_evidence'
+          'save_invoice_confirmation_transactional'
       );
 
       assert.ok(transaction);
@@ -948,7 +955,7 @@ test(
       const transaction = rpcCalls.find(
         call =>
           call.functionName ===
-          'save_invoice_lines_with_evidence'
+          'save_invoice_confirmation_transactional'
       );
 
       assert.ok(transaction);
@@ -1014,7 +1021,7 @@ test(
         rpcCalls.some(
           call =>
             call.functionName ===
-            'save_invoice_lines_with_evidence'
+            'save_invoice_confirmation_transactional'
         )
       );
 
@@ -1074,10 +1081,374 @@ test(
         rpcCalls.filter(
           call =>
             call.functionName ===
-            'save_invoice_lines_with_evidence'
+            'save_invoice_confirmation_transactional'
         ).length,
         0
       );
+    });
+  }
+);
+
+// ============================================================
+// Finding #020 — Stateful transactional confirmation mock
+// ============================================================
+
+function installIdempotentTransactionMock(db) {
+  const originalRpc = db.rpc.bind(db);
+  const receipts = new Map();
+  const calls = [];
+
+  let failNext = false;
+
+  db.rpc = async (functionName, args) => {
+    if (
+      functionName !==
+      'save_invoice_confirmation_transactional'
+    ) {
+      return originalRpc(functionName, args);
+    }
+
+    calls.push(args);
+
+    if (failNext) {
+      failNext = false;
+
+      return {
+        data: null,
+        error: {
+          message: 'Simulated atomic transaction failure',
+        },
+      };
+    }
+
+    const key = JSON.stringify([
+      args.p_restaurant_id,
+      args.p_request_id,
+    ]);
+
+    const existing = receipts.get(key);
+
+    if (existing) {
+      if (
+        existing.fingerprint !==
+        args.p_request_fingerprint
+      ) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Confirmation request ID was reused with different contents',
+          },
+        };
+      }
+
+      return {
+        data: {
+          ...existing.result,
+          replayed: true,
+        },
+        error: null,
+      };
+    }
+
+    const result = {
+      success: true,
+      invoice_id:
+        args.p_append_to_invoice_id ||
+        args.p_invoice.id,
+      lines_saved: args.p_lines.length,
+      files_saved: args.p_files.length,
+      evidence_saved: args.p_evidence.length,
+      replayed: false,
+    };
+
+    receipts.set(key, {
+      fingerprint: args.p_request_fingerprint,
+      result,
+    });
+
+    return {
+      data: result,
+      error: null,
+    };
+  };
+
+  return {
+    calls,
+    receipts,
+    failNextTransaction() {
+      failNext = true;
+    },
+  };
+}
+
+function ordinaryTransactionalRequest(
+  number,
+  requestId = 'confirmation-request-idempotency-001'
+) {
+  const req = createRequest({
+    number,
+    item: {
+      _id: 'ordinary-transaction-line',
+      item_name_raw: 'GROUND BEEF',
+      item_name_normalized: 'Ground Beef',
+      pack_size_raw: '2/5 LB',
+      pack: 2,
+      size: 5,
+      size_unit: 'lb',
+      quantity_shipped: 1,
+      invoice_price: 40,
+      line_total: 40,
+    },
+  });
+
+  req.body.confirmation_request_id = requestId;
+
+  return req;
+}
+
+// TEST 11
+// An identical retry must return the original invoice
+// rather than creating a second invoice.
+
+test(
+  'identical confirmation retry returns original invoice',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes } = createDb();
+
+      const transactions =
+        installIdempotentTransactionMock(db);
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = ordinaryTransactionalRequest(
+        'CTB-2115'
+      );
+
+      const first = createResponse();
+      await handler(req, first);
+
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.body.success, true);
+
+      const second = createResponse();
+      await handler(req, second);
+
+      assert.equal(second.statusCode, 200);
+      assert.equal(second.body.success, true);
+      assert.equal(second.body.replayed, true);
+
+      assert.equal(
+        second.body.invoice_id,
+        first.body.invoice_id
+      );
+
+      assert.equal(
+        transactions.receipts.size,
+        1
+      );
+
+      assert.equal(
+        transactions.calls[0].p_request_fingerprint,
+        transactions.calls[1].p_request_fingerprint
+      );
+
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'invoices' &&
+            write.operation === 'insert'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+// TEST 12
+// Reusing a request ID after changing invoice contents
+// must be rejected rather than silently treated as a retry.
+
+test(
+  'confirmation request ID cannot be reused with changed contents',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db } = createDb();
+
+      const transactions =
+        installIdempotentTransactionMock(db);
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const firstRequest =
+        ordinaryTransactionalRequest('CTB-2116');
+
+      const first = createResponse();
+      await handler(firstRequest, first);
+
+      assert.equal(first.statusCode, 200);
+
+      const modifiedRequest =
+        ordinaryTransactionalRequest('CTB-2116');
+
+      modifiedRequest.body.invoice.total_amount = 45;
+
+      const second = createResponse();
+      await handler(modifiedRequest, second);
+
+      assert.equal(second.statusCode, 409);
+      assert.equal(second.body.success, false);
+
+      assert.equal(
+        transactions.receipts.size,
+        1
+      );
+
+      assert.notEqual(
+        transactions.calls[0].p_request_fingerprint,
+        transactions.calls[1].p_request_fingerprint
+      );
+    });
+  }
+);
+
+// TEST 13
+// A database failure cannot create a successful receipt.
+// Retrying the same request must remain possible.
+
+test(
+  'failed transaction can be retried without duplicate invoice',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes } = createDb();
+
+      const transactions =
+        installIdempotentTransactionMock(db);
+
+      transactions.failNextTransaction();
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = ordinaryTransactionalRequest(
+        'CTB-2117'
+      );
+
+      const failed = createResponse();
+      await handler(req, failed);
+
+      assert.equal(failed.statusCode, 500);
+
+      assert.equal(
+        transactions.receipts.size,
+        0
+      );
+
+      const retried = createResponse();
+      await handler(req, retried);
+
+      assert.equal(retried.statusCode, 200);
+      assert.equal(retried.body.success, true);
+
+      assert.equal(
+        transactions.receipts.size,
+        1
+      );
+
+      assert.equal(
+        writes.filter(
+          write =>
+            write.table === 'invoice_items' &&
+            write.operation === 'insert'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+// TEST 14
+// Failed transactions and successful replays must not
+// trigger duplicate downstream inventory operations.
+
+test(
+  'failed transactions and replays do not repeat inventory rebuilds',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db } = createDb({
+        ownedIngredients: {
+          'ingredient-beef-1': 'Ground Beef',
+        },
+      });
+
+      const transactions =
+        installIdempotentTransactionMock(db);
+
+      let rebuildCalls = 0;
+      let recomputeCalls = 0;
+
+      const handler = createHandler(
+        db,
+        unverifiedCost,
+        {
+          rebuild: async () => {
+            rebuildCalls++;
+          },
+          recompute: async () => {
+            recomputeCalls++;
+          },
+        }
+      );
+
+      const req = ordinaryTransactionalRequest(
+        'CTB-2118'
+      );
+
+      req.body.line_items[0].selected_ingredient_id =
+        'ingredient-beef-1';
+
+      req.body.line_items[0].selected_ingredient_name =
+        'Ground Beef';
+
+      req.body.line_items[0].match_status = 'matched';
+
+      transactions.failNextTransaction();
+
+      const failed = createResponse();
+      await handler(req, failed);
+
+      assert.equal(failed.statusCode, 500);
+      assert.equal(rebuildCalls, 0);
+      assert.equal(recomputeCalls, 0);
+
+      const saved = createResponse();
+      await handler(req, saved);
+
+      assert.equal(saved.statusCode, 200);
+      assert.equal(rebuildCalls, 1);
+
+      const replayed = createResponse();
+      await handler(req, replayed);
+
+      assert.equal(replayed.statusCode, 200);
+      assert.equal(replayed.body.replayed, true);
+
+      assert.equal(
+        rebuildCalls,
+        1,
+        'A successful replay must not rebuild inventory again'
+      );
+
+      assert.equal(recomputeCalls, 0);
     });
   }
 );

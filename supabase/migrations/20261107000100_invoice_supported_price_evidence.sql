@@ -309,94 +309,264 @@ EXECUTE FUNCTION
 public.invalidate_invoice_supported_price_evidence();
 
 -- ============================================================
--- 7. Atomic invoice-line and evidence insertion
+-- 7. Persistent confirmation request identities
 -- ============================================================
---
--- Only the privileged server role may execute this function.
---
--- All invoice items and evidence records are inserted
--- within the same PostgreSQL transaction.
---
--- If any insertion fails, PostgreSQL rolls back
--- the entire function call.
---
--- The application must authenticate source proofs
--- before supplying evidence records.
+
+CREATE TABLE IF NOT EXISTS
+public.invoice_confirmation_requests (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    restaurant_id uuid NOT NULL
+        REFERENCES public.restaurants(id),
+
+    request_id text NOT NULL,
+
+    request_fingerprint text NOT NULL,
+
+    invoice_id uuid NOT NULL
+        REFERENCES public.invoices(id) ON DELETE CASCADE,
+
+    result jsonb NOT NULL,
+
+    created_at timestamptz NOT NULL DEFAULT now(),
+
+    CONSTRAINT invoice_confirmation_request_unique
+        UNIQUE (restaurant_id, request_id),
+
+    CONSTRAINT invoice_confirmation_request_id_check
+        CHECK (
+            length(request_id) BETWEEN 16 AND 128
+        ),
+
+    CONSTRAINT invoice_confirmation_fingerprint_check
+        CHECK (
+            request_fingerprint ~ '^[0-9a-f]{64}$'
+        )
+);
+
+ALTER TABLE public.invoice_confirmation_requests
+ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL
+ON public.invoice_confirmation_requests
+FROM PUBLIC, anon, authenticated;
+
+-- ============================================================
+-- 8. Atomic invoice confirmation
+-- ============================================================
 
 CREATE OR REPLACE FUNCTION
-public.save_invoice_lines_with_evidence(
+public.save_invoice_confirmation_transactional(
     p_restaurant_id uuid,
-    p_invoice_id uuid,
+    p_request_id text,
+    p_request_fingerprint text,
+    p_append_to_invoice_id uuid,
+    p_invoice jsonb,
+    p_files jsonb,
     p_lines jsonb,
-    p_evidence jsonb DEFAULT '[]'::jsonb
+    p_evidence jsonb
 )
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path TO ''
 AS $function$
+
 DECLARE
-    v_restaurant_id uuid;
+    v_invoice_id uuid;
+    v_existing public.invoice_confirmation_requests%ROWTYPE;
+    v_result jsonb;
     v_line_count integer;
     v_evidence_count integer;
+    v_file_count integer;
+    v_next_page integer;
 BEGIN
 
-    -- Validate required inputs.
+    -- --------------------------------------------------------
+    -- Validate request envelope
+    -- --------------------------------------------------------
 
     IF p_restaurant_id IS NULL
-       OR p_invoice_id IS NULL
+       OR p_request_id IS NULL
+       OR length(p_request_id) NOT BETWEEN 16 AND 128
+       OR p_request_fingerprint IS NULL
+       OR p_request_fingerprint !~ '^[0-9a-f]{64}$'
+       OR p_invoice IS NULL
+       OR pg_catalog.jsonb_typeof(p_invoice) <> 'object'
+       OR p_files IS NULL
+       OR pg_catalog.jsonb_typeof(p_files) <> 'array'
        OR p_lines IS NULL
-       OR jsonb_typeof(p_lines) <> 'array'
-       OR jsonb_array_length(p_lines) = 0
+       OR pg_catalog.jsonb_typeof(p_lines) <> 'array'
+       OR pg_catalog.jsonb_array_length(p_lines) = 0
        OR p_evidence IS NULL
-       OR jsonb_typeof(p_evidence) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_evidence) <> 'array'
     THEN
         RAISE EXCEPTION
-            'Invalid invoice persistence request';
+            'Invalid invoice confirmation request';
     END IF;
 
-    -- Verify invoice ownership.
+    -- Serialize retries of the same confirmation request.
 
-    SELECT restaurant_id
-    INTO v_restaurant_id
-    FROM public.invoices
-    WHERE id = p_invoice_id
-    FOR UPDATE;
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended(
+            'invoice-confirmation:' ||
+            p_restaurant_id::text || ':' ||
+            p_request_id,
+            0
+        )
+    );
 
-    IF NOT FOUND
-       OR v_restaurant_id IS DISTINCT FROM p_restaurant_id
-    THEN
-        RAISE EXCEPTION
-            'Invoice does not belong to restaurant';
+    -- --------------------------------------------------------
+    -- Idempotency: return an existing successful result
+    -- --------------------------------------------------------
+
+    SELECT *
+    INTO v_existing
+    FROM public.invoice_confirmation_requests
+    WHERE restaurant_id = p_restaurant_id
+      AND request_id = p_request_id;
+
+    IF FOUND THEN
+
+        IF v_existing.request_fingerprint
+           IS DISTINCT FROM p_request_fingerprint
+        THEN
+            RAISE EXCEPTION
+                'Confirmation request ID was reused with different contents';
+        END IF;
+
+        RETURN v_existing.result ||
+            pg_catalog.jsonb_build_object(
+                'replayed', true
+            );
+
     END IF;
 
-    -- Reject malformed or duplicate line identities.
+    -- --------------------------------------------------------
+    -- Create or lock the parent invoice
+    -- --------------------------------------------------------
+
+    IF p_append_to_invoice_id IS NOT NULL THEN
+
+        v_invoice_id := p_append_to_invoice_id;
+
+        -- Serialize appends to the same invoice.
+
+        PERFORM pg_catalog.pg_advisory_xact_lock(
+            pg_catalog.hashtextextended(
+                'invoice-append:' ||
+                p_restaurant_id::text || ':' ||
+                v_invoice_id::text,
+                0
+            )
+        );
+
+        PERFORM 1
+        FROM public.invoices
+        WHERE id = v_invoice_id
+          AND restaurant_id = p_restaurant_id
+        FOR UPDATE;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION
+                'Append target does not belong to restaurant';
+        END IF;
+
+    ELSE
+
+        v_invoice_id := (p_invoice->>'id')::uuid;
+
+        IF v_invoice_id IS NULL THEN
+            RAISE EXCEPTION
+                'New invoice ID is required';
+        END IF;
+
+        INSERT INTO public.invoices (
+            id,
+            restaurant_id,
+            supplier,
+            number,
+            date,
+            amount,
+            non_food_total,
+            tax_amount,
+            fees_amount,
+            file_url,
+            ocr_text,
+            reviewed,
+            is_sample
+        )
+        VALUES (
+            v_invoice_id,
+            p_restaurant_id,
+            p_invoice->>'supplier',
+            p_invoice->>'number',
+            (p_invoice->>'date')::date,
+            (p_invoice->>'amount')::numeric,
+            (p_invoice->>'non_food_total')::numeric,
+            (p_invoice->>'tax_amount')::numeric,
+            (p_invoice->>'fees_amount')::numeric,
+            p_invoice->>'file_url',
+            p_invoice->>'ocr_text',
+            false,
+            false
+        );
+
+    END IF;
+
+    -- --------------------------------------------------------
+    -- Validate invoice-line identities
+    -- --------------------------------------------------------
 
     IF EXISTS (
         SELECT 1
-        FROM jsonb_array_elements(p_lines) AS item
+        FROM pg_catalog.jsonb_array_elements(p_lines) AS item
         WHERE item->>'id' IS NULL
-           OR item->>'invoice_id' IS DISTINCT FROM
-              p_invoice_id::text
+           OR item->>'invoice_id'
+              IS DISTINCT FROM v_invoice_id::text
     ) THEN
         RAISE EXCEPTION
-            'Invalid invoice line identity';
+            'Invoice line identity mismatch';
     END IF;
 
     IF (
         SELECT COUNT(*)
-        FROM jsonb_array_elements(p_lines)
+        FROM pg_catalog.jsonb_array_elements(p_lines)
     ) <> (
         SELECT COUNT(DISTINCT item->>'id')
-        FROM jsonb_array_elements(p_lines) AS item
+        FROM pg_catalog.jsonb_array_elements(p_lines) AS item
     ) THEN
         RAISE EXCEPTION
-            'Duplicate invoice line identity';
+            'Duplicate invoice line IDs';
     END IF;
 
-    -- Insert the invoice items.
-    --
-    -- Only explicitly recognized fields are persisted.
+    -- --------------------------------------------------------
+    -- Save file references
+    -- --------------------------------------------------------
+
+    SELECT COALESCE(MAX(page_number), 0) + 1
+    INTO v_next_page
+    FROM public.invoice_files
+    WHERE invoice_id = v_invoice_id;
+
+    INSERT INTO public.invoice_files (
+        invoice_id,
+        file_url,
+        page_number
+    )
+    SELECT
+        v_invoice_id,
+        f.file_url,
+        v_next_page + f.ordinality::integer - 1
+    FROM pg_catalog.jsonb_array_elements_text(
+        p_files
+    ) WITH ORDINALITY AS f(file_url, ordinality);
+
+    GET DIAGNOSTICS v_file_count = ROW_COUNT;
+
+    -- --------------------------------------------------------
+    -- Save invoice items
+    -- --------------------------------------------------------
 
     INSERT INTO public.invoice_items (
         id,
@@ -430,7 +600,7 @@ BEGIN
         l.ingredient_name_normalized,
         l.category,
         l.ingredient_id,
-        COALESCE(l.reviewed, FALSE),
+        COALESCE(l.reviewed, false),
         l.original_quantity,
         l.original_price,
         COALESCE(
@@ -442,7 +612,7 @@ BEGIN
         l.price_verified_by,
         l.price_verification_evidence,
         l.match_candidates
-    FROM jsonb_to_recordset(p_lines) AS l (
+    FROM pg_catalog.jsonb_to_recordset(p_lines) AS l (
         id uuid,
         invoice_id uuid,
         item_name text,
@@ -466,12 +636,33 @@ BEGIN
 
     GET DIAGNOSTICS v_line_count = ROW_COUNT;
 
-    -- Insert authenticated evidence.
-    --
-    -- The evidence ownership trigger independently
-    -- checks each invoice-item relationship.
-    --
-    -- The unique source fingerprint prevents replay.
+    -- --------------------------------------------------------
+    -- Validate evidence references
+    -- --------------------------------------------------------
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_catalog.jsonb_array_elements(p_evidence) AS e
+        WHERE e->>'invoice_id'
+              IS DISTINCT FROM v_invoice_id::text
+           OR e->>'restaurant_id'
+              IS DISTINCT FROM p_restaurant_id::text
+           OR NOT EXISTS (
+                SELECT 1
+                FROM pg_catalog.jsonb_array_elements(
+                    p_lines
+                ) AS l
+                WHERE l->>'id' =
+                    e->>'invoice_item_id'
+           )
+    ) THEN
+        RAISE EXCEPTION
+            'Evidence ownership or line identity mismatch';
+    END IF;
+
+    -- --------------------------------------------------------
+    -- Save authenticated source evidence
+    -- --------------------------------------------------------
 
     INSERT INTO public.invoice_supported_price_evidence (
         invoice_item_id,
@@ -494,7 +685,9 @@ BEGIN
         e.source_fingerprint,
         e.pricing_fingerprint,
         e.evidence
-    FROM jsonb_to_recordset(p_evidence) AS e (
+    FROM pg_catalog.jsonb_to_recordset(
+        p_evidence
+    ) AS e (
         invoice_item_id uuid,
         invoice_id uuid,
         restaurant_id uuid,
@@ -508,32 +701,64 @@ BEGIN
 
     GET DIAGNOSTICS v_evidence_count = ROW_COUNT;
 
-    RETURN jsonb_build_object(
-        'success', TRUE,
-        'invoice_id', p_invoice_id,
+    -- --------------------------------------------------------
+    -- Save the successful confirmation receipt
+    -- --------------------------------------------------------
+
+    v_result := pg_catalog.jsonb_build_object(
+        'success', true,
+        'invoice_id', v_invoice_id,
         'lines_saved', v_line_count,
-        'evidence_saved', v_evidence_count
+        'files_saved', v_file_count,
+        'evidence_saved', v_evidence_count,
+        'replayed', false
     );
+
+    INSERT INTO public.invoice_confirmation_requests (
+        restaurant_id,
+        request_id,
+        request_fingerprint,
+        invoice_id,
+        result
+    )
+    VALUES (
+        p_restaurant_id,
+        p_request_id,
+        p_request_fingerprint,
+        v_invoice_id,
+        v_result
+    );
+
+    RETURN v_result;
 
 END;
 $function$;
 
--- Do not expose the transactional writer
--- to browser-authenticated database roles.
+-- ------------------------------------------------------------
+-- Restrict access to the privileged server role
+-- ------------------------------------------------------------
 
 REVOKE ALL ON FUNCTION
-public.save_invoice_lines_with_evidence(
+public.save_invoice_confirmation_transactional(
     uuid,
+    text,
+    text,
     uuid,
+    jsonb,
+    jsonb,
     jsonb,
     jsonb
 )
 FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION
-public.save_invoice_lines_with_evidence(
+public.save_invoice_confirmation_transactional(
     uuid,
+    text,
+    text,
     uuid,
+    jsonb,
+    jsonb,
     jsonb,
     jsonb
 )
