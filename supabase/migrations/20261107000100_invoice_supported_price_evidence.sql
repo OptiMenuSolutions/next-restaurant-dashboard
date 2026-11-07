@@ -364,7 +364,8 @@ public.save_invoice_confirmation_transactional(
     p_invoice jsonb,
     p_files jsonb,
     p_lines jsonb,
-    p_evidence jsonb
+    p_evidence jsonb,
+    p_queue_calculations boolean DEFAULT false
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -702,6 +703,45 @@ BEGIN
     GET DIAGNOSTICS v_evidence_count = ROW_COUNT;
 
     -- --------------------------------------------------------
+    -- Queue recoverable invoice calculations
+    -- --------------------------------------------------------
+    --
+    -- The job is committed atomically with the invoice.
+    --
+    -- Failed transactions do not create jobs.
+    -- Successful retries return the existing receipt
+    -- without incrementing the job generation again.
+
+    IF p_queue_calculations THEN
+
+        INSERT INTO public.invoice_calculation_jobs (
+            restaurant_id,
+            effective_date
+        )
+        VALUES (
+            p_restaurant_id,
+            COALESCE(
+                (p_invoice->>'date')::date,
+                CURRENT_DATE
+            )
+        )
+        ON CONFLICT (restaurant_id)
+        DO UPDATE SET
+            generation =
+                public.invoice_calculation_jobs.generation + 1,
+            effective_date =
+                LEAST(
+                    COALESCE(
+                        public.invoice_calculation_jobs.effective_date,
+                        EXCLUDED.effective_date
+                    ),
+                    EXCLUDED.effective_date
+                ),
+            updated_at = NOW();
+
+    END IF;
+
+    -- --------------------------------------------------------
     -- Save the successful confirmation receipt
     -- --------------------------------------------------------
 
@@ -747,7 +787,8 @@ public.save_invoice_confirmation_transactional(
     jsonb,
     jsonb,
     jsonb,
-    jsonb
+    jsonb,
+    boolean
 )
 FROM PUBLIC, anon, authenticated;
 
@@ -760,7 +801,8 @@ public.save_invoice_confirmation_transactional(
     jsonb,
     jsonb,
     jsonb,
-    jsonb
+    jsonb,
+    boolean
 )
 TO service_role;
 

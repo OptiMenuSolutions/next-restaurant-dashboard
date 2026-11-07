@@ -912,6 +912,18 @@ export function createConfirmInvoiceHandler({
           p_files: allFileUrls,
           p_lines: invoiceItemsToInsert,
           p_evidence: authenticatedEvidenceRecords,
+
+          // Queue recalculation in the same database
+          // transaction as invoice persistence.
+          //
+          // Locked restaurants cannot trigger linked
+          // ingredient or inventory processing.
+
+          p_queue_calculations:
+            matchingEnabled &&
+            invoiceItemsToInsert.some(
+              item => Boolean(item.ingredient_id)
+            ),
         }
       );
 
@@ -1090,6 +1102,7 @@ export function createConfirmInvoiceHandler({
     // Never rebuild inventory for a locked restaurant.
 
     if (
+      !evidencePersistenceEnabled &&
       matchingEnabled &&
       results.items_saved > 0 &&
       invoiceItemsToInsert.some(item => item.ingredient_id)

@@ -1434,7 +1434,18 @@ test(
       await handler(req, saved);
 
       assert.equal(saved.statusCode, 200);
-      assert.equal(rebuildCalls, 1);
+
+      // Transactional confirmations queue inventory work
+      // for durable processing instead of rebuilding
+      // inventory directly during invoice confirmation.
+      assert.equal(rebuildCalls, 0);
+
+      // Verify that the transaction requested
+      // durable recalculation.
+      assert.equal(
+        transactions.calls.at(-1).p_queue_calculations,
+        true
+      );
 
       const replayed = createResponse();
       await handler(req, replayed);
@@ -1444,8 +1455,8 @@ test(
 
       assert.equal(
         rebuildCalls,
-        1,
-        'A successful replay must not rebuild inventory again'
+        0,
+        'Transactional confirmations must leave inventory rebuilding to the durable job processor'
       );
 
       assert.equal(recomputeCalls, 0);
