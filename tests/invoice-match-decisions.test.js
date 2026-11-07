@@ -818,3 +818,121 @@ test('45. Rejected relationships cannot be restored through equivalent descripti
   assert.notEqual(result.status, 'auto');
   assert.notEqual(result.decision_source, 'admin_approved');
 });
+
+test('46. Cedar approved Parmesan mapping recognizes normalized description', () => {
+  const result = applyInvoiceMatchDecisions({
+    description: 'CHEESE PARM SHRED',
+    identityDescription: 'Cheese Parmesan Shredded',
+    invoiceUnit: 'lb',
+    ingredients: [
+      { id: 'cedar-parmesan', name: 'Parmesan', unit: 'oz' },
+    ],
+    match: { status: 'new', matches: [] },
+    decisions: createDecisions({
+      supplier: 'cedar regional foods distribution',
+      approvals: [
+        ['cheese parmesan shredded', 'cedar-parmesan'],
+      ],
+    }),
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, 'cedar-parmesan');
+  assert.equal(result.decision_source, 'admin_approved');
+});
+
+test('47. Cedar approved chicken breast mapping recognizes normalized description', () => {
+  const result = applyInvoiceMatchDecisions({
+    description: 'CHIX BRST BNLS SKNLS',
+    identityDescription: 'Chicken Breast Boneless Skinless',
+    invoiceUnit: 'lb',
+    ingredients: [
+      { id: 'cedar-chicken', name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: { status: 'new', matches: [] },
+    decisions: createDecisions({
+      supplier: 'cedar regional foods distribution',
+      approvals: [
+        ['chicken breast boneless skinless', 'cedar-chicken'],
+      ],
+    }),
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, 'cedar-chicken');
+  assert.equal(result.decision_source, 'admin_approved');
+});
+
+test('48. Normalized descriptions cannot override unrelated ingredient identities', () => {
+  const cases = [
+    ['CHIX BRST BNLS SKNLS', 'Chicken Breast Boneless Skinless', 'Mozzarella'],
+    ['SALMON FILLET', 'Salmon Fillet', 'Broccoli'],
+  ];
+
+  for (const [description, identityDescription, ingredientName] of cases) {
+    const result = applyInvoiceMatchDecisions({
+      description,
+      identityDescription,
+      invoiceUnit: 'lb',
+      ingredients: [
+        { id: 'unsafe-ingredient', name: ingredientName, unit: 'oz' },
+      ],
+      match: { status: 'new', matches: [] },
+      decisions: createDecisions({
+        supplier: 'cedar regional foods distribution',
+        approvals: [
+          [
+            description.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(),
+            'unsafe-ingredient',
+          ],
+        ],
+      }),
+    });
+
+    assert.notEqual(result.status, 'auto');
+  }
+});
+
+test('49. Normalized descriptions cannot bypass explicit identity contradictions', () => {
+  const result = applyInvoiceMatchDecisions({
+    description: 'CHICKEN THIGH',
+    identityDescription: 'Chicken Thigh',
+    invoiceUnit: 'lb',
+    ingredients: [
+      { id: 'cedar-chicken', name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: { status: 'new', matches: [] },
+    decisions: createDecisions({
+      supplier: 'cedar regional foods distribution',
+      approvals: [
+        ['chicken thigh', 'cedar-chicken'],
+      ],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('50. Incorrect AI normalization cannot authorize an unrelated supplier product', () => {
+  const result = applyInvoiceMatchDecisions({
+    description: 'CHICKEN THIGH',
+    identityDescription: 'Chicken Breast Boneless Skinless',
+    invoiceUnit: 'lb',
+    ingredients: [
+      {
+        id: 'cedar-chicken',
+        name: 'Chicken breast',
+        unit: 'oz',
+      },
+    ],
+    match: { status: 'new', matches: [] },
+    decisions: createDecisions({
+      supplier: 'cedar regional foods distribution',
+      approvals: [
+        ['chicken breast boneless skinless', 'cedar-chicken'],
+      ],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});

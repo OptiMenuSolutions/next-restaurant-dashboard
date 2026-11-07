@@ -988,6 +988,7 @@ export default async function handler(req, res) {
 
         return applyInvoiceMatchDecisions({
           description: item.item_name_raw || item.item_name_normalized,
+          identityDescription: item.item_name_normalized || item.item_name_raw,
           invoiceUnit:
             item.size_unit ||
             item.standard_unit ||
