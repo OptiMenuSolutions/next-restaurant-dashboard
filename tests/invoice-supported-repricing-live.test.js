@@ -67,8 +67,13 @@ test('live development invoice-supported repricing', async () => {
   const invoiceId = randomUUID();
   const lineId = randomUUID();
 
+  const dishId = randomUUID();
+  const componentId = randomUUID();
+
   let ingredientCreated = false;
   let invoiceCreated = false;
+  let dishCreated = false;
+  let componentCreated = false;
 
   const previousFlag =
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
@@ -91,6 +96,59 @@ test('live development invoice-supported repricing', async () => {
 
     assert.ifError(ingredientError);
     ingredientCreated = true;
+
+    // Create a synthetic dish using the test ingredient.
+    const { error: dishError } = await db
+      .from('menu_items')
+      .insert({
+        id: dishId,
+        restaurant_id: RESTAURANT_ID,
+        name: 'Finding 020 Integration Test Dish',
+        price: 10,
+        category: 'Testing',
+      });
+
+    assert.ifError(dishError);
+    dishCreated = true;
+
+    // Create the recipe component.
+    const { error: componentError } = await db
+      .from('menu_item_components')
+      .insert({
+        id: componentId,
+        menu_item_id: dishId,
+        name: 'Test Sauce',
+      });
+
+    assert.ifError(componentError);
+    componentCreated = true;
+
+    // The recipe contains 2 fl oz of Dijon Mustard.
+    const { error: recipeError } = await db
+      .from('component_ingredients')
+      .insert({
+        component_id: componentId,
+        ingredient_id: ingredientId,
+        quantity: 2,
+        unit: 'fl oz',
+      });
+
+    assert.ifError(recipeError);
+
+    // Calculate the initial cost using the real
+    // PostgreSQL recipe-cost function.
+    const { data: initialCost, error: initialCostError } =
+      await db.rpc('recalculate_dish_cost', {
+        p_dish_id: dishId,
+      });
+
+    assert.ifError(initialCostError);
+    assert.equal(initialCost?.ready, true);
+    assert.equal(Number(initialCost.cost), 0.40);
+
+    console.log(
+      'PASS: Initial recipe cost = $0.40'
+    );
 
     // Save the invoice, linked line, and evidence
     // through the real transactional PostgreSQL RPC.
@@ -188,6 +246,47 @@ test('live development invoice-supported repricing', async () => {
       'PASS: Live ingredient price updated to $0.234375/fl oz'
     );
 
+    // Recalculate the dish after the application's
+    // invoice-supported ingredient repricing.
+    const { data: recalculated, error: recalculateError } =
+      await db.rpc('recalculate_dish_cost', {
+        p_dish_id: dishId,
+      });
+
+    assert.ifError(recalculateError);
+    assert.equal(recalculated?.ready, true);
+
+    // 2 fl oz × $0.234375 = $0.46875,
+    // rounded to $0.47 by calculate_dish_cost().
+    assert.equal(Number(recalculated.cost), 0.47);
+
+    console.log(
+      'PASS: Recipe recalculated to $0.47'
+    );
+
+    // Verify the persisted menu item.
+    const { data: updatedDish, error: updatedDishError } =
+      await db
+        .from('menu_items')
+        .select(
+          'cost, cost_status, cost_previous, ' +
+          'cost_revision, cost_uses_estimates'
+        )
+        .eq('id', dishId)
+        .single();
+
+    assert.ifError(updatedDishError);
+
+    assert.equal(Number(updatedDish.cost), 0.47);
+    assert.equal(updatedDish.cost_status, 'ready');
+    assert.equal(Number(updatedDish.cost_previous), 0.40);
+    assert.ok(updatedDish.cost_revision);
+    assert.equal(updatedDish.cost_uses_estimates, false);
+
+    console.log(
+      'PASS: Persisted recipe cost, status, and revision verified'
+    );
+
   } finally {
     // Restore the original process environment.
     if (previousFlag === undefined) {
@@ -211,12 +310,38 @@ test('live development invoice-supported repricing', async () => {
       }
     }
 
+    // Remove recipe dependencies before the ingredient.
+    if (componentCreated) {
+      await remove(
+        'component_ingredients',
+        'component_id',
+        componentId
+      );
+
+      await remove(
+        'menu_item_components',
+        'id',
+        componentId
+      );
+    }
+
+    if (dishCreated) {
+      await remove(
+        'menu_item_cost_history',
+        'menu_item_id',
+        dishId
+      );
+
+      await remove('menu_items', 'id', dishId);
+    }
+
     if (invoiceCreated) {
       await remove(
         'invoice_supported_price_evidence',
         'invoice_item_id',
         lineId
       );
+
       await remove('invoice_items', 'id', lineId);
       await remove('invoices', 'id', invoiceId);
     }
@@ -236,6 +361,8 @@ test('live development invoice-supported repricing', async () => {
       ['ingredients', ingredientId],
       ['invoices', invoiceId],
       ['invoice_items', lineId],
+      ['menu_items', dishId],
+      ['menu_item_components', componentId],
     ]) {
       const { count, error } = await db
         .from(table)
