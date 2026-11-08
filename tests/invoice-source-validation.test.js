@@ -493,3 +493,184 @@ test('18. Numbered-can conversion remains blocked after source validation', () =
     'needs_package_verification'
   );
 });
+
+function labeledSourceTable(rows) {
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>QTY</th>
+          <th>UOM</th>
+          <th>Item description / labeled pack</th>
+          <th>Price / case</th>
+          <th>Extension</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(row => `
+          <tr>
+            <td>${row.shipped}</td>
+            <td>${row.uom ?? 'CASE'}</td>
+            <td>${row.description}</td>
+            <td>${row.price}</td>
+            <td>${row.extended}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+test('recovers count packaging from labeled descriptions', () => {
+  const source = labeledSourceTable([{
+    shipped: 3,
+    description: 'TEST PRODUCT - 12 CT',
+    price: '18.00',
+    extended: '54.00',
+  }]);
+
+  const [validated] = validateInvoiceAgainstSource(
+    [item({
+      item_name_raw: 'TEST PRODUCT',
+      item_name_normalized: 'Test Product',
+      quantity_shipped: 3,
+      invoice_price: 18,
+      line_total: 54,
+      pack_size_raw: null,
+    })],
+    source
+  );
+
+  const cost = calculateVerifiedInvoiceCost(validated);
+
+  assert.equal(
+    validated.source_validation_status,
+    'source_table_consistent'
+  );
+  assert.equal(validated.pack_size_raw, '12 CT');
+  assert.equal(cost.quantity, 36);
+  assert.equal(cost.unit, 'each');
+  assert.equal(cost.unit_cost, 1.5);
+});
+
+test('recovers weight packaging from labeled descriptions', () => {
+  const source = labeledSourceTable([{
+    shipped: 2,
+    description: 'TEST CHEESE - 5 LB',
+    price: '21.00',
+    extended: '42.00',
+  }]);
+
+  const [validated] = validateInvoiceAgainstSource(
+    [item({
+      item_name_raw: 'TEST CHEESE',
+    })],
+    source
+  );
+
+  const cost = calculateVerifiedInvoiceCost(validated);
+
+  assert.equal(cost.quantity, 10);
+  assert.equal(cost.unit, 'lb');
+  assert.equal(cost.unit_cost, 4.2);
+});
+
+test('does not recover packages with incorrect invoice totals', () => {
+  const original = item({
+    item_name_raw: 'TEST PRODUCT',
+  });
+
+  const [validated] = validateInvoiceAgainstSource(
+    [original],
+    labeledSourceTable([{
+      shipped: 3,
+      description: 'TEST PRODUCT - 12 CT',
+      price: '18.00',
+      extended: '999.00',
+    }])
+  );
+
+  assert.deepEqual(validated, original);
+});
+
+test('does not infer numbered-can conversions', () => {
+  const original = item({
+    item_name_raw: 'CANNED PRODUCT',
+    pack_size_raw: '3/#10 CAN',
+  });
+
+  const [validated] = validateInvoiceAgainstSource(
+    [original],
+    labeledSourceTable([{
+      shipped: 1,
+      description: 'CANNED PRODUCT - 3/#10 CAN',
+      price: '50.00',
+      extended: '50.00',
+    }])
+  );
+
+  assert.deepEqual(validated, original);
+});
+
+test('does not recover ambiguous package descriptions', () => {
+  const original = item({
+    item_name_raw: 'TEST PRODUCT',
+  });
+
+  const [validated] = validateInvoiceAgainstSource(
+    [original],
+    labeledSourceTable([{
+      shipped: 2,
+      description: 'TEST PRODUCT - MIXED CASE',
+      price: '20.00',
+      extended: '40.00',
+    }])
+  );
+
+  assert.deepEqual(validated, original);
+});
+
+test('does not recover duplicate product descriptions', () => {
+  const original = item({
+    item_name_raw: 'TEST PRODUCT',
+  });
+
+  const [validated] = validateInvoiceAgainstSource(
+    [original],
+    labeledSourceTable([
+      {
+        shipped: 1,
+        description: 'TEST PRODUCT - 12 CT',
+        price: '18.00',
+        extended: '18.00',
+      },
+      {
+        shipped: 1,
+        description: 'TEST PRODUCT - 24 CT',
+        price: '30.00',
+        extended: '30.00',
+      },
+    ])
+  );
+
+  assert.deepEqual(validated, original);
+});
+
+test('does not reinterpret unsupported purchase units as cases', () => {
+  const original = item({
+    item_name_raw: 'TEST PRODUCT',
+  });
+
+  const [validated] = validateInvoiceAgainstSource(
+    [original],
+    labeledSourceTable([{
+      shipped: 3,
+      uom: 'EA',
+      description: 'TEST PRODUCT - 12 CT',
+      price: '18.00',
+      extended: '54.00',
+    }])
+  );
+
+  assert.deepEqual(validated, original);
+});

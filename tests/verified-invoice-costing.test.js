@@ -67,3 +67,76 @@ test('incorrect conversion basis cannot update cost', () => {
 
   assert.equal(result.unit_cost, null);
 });
+
+test('missing package information cannot create an ingredient unit cost', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name: 'Generic Case Product',
+    pack_size_raw: null,
+    quantity_shipped: 1,
+    invoice_price: 100,
+    line_total: 100,
+    catch_weight: false,
+  });
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'needs_package_verification'
+  );
+});
+
+test('documented count-based cases calculate ingredient costs', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name: 'Generic Count Product',
+    pack_size_raw: '300 CT',
+    quantity_shipped: 1,
+    invoice_price: 100,
+    line_total: 100,
+    catch_weight: false,
+  });
+
+  assert.equal(result.quantity, 300);
+  assert.equal(result.unit, 'each');
+
+  assert.ok(
+    Math.abs(result.unit_cost - 100 / 300) < 1e-10
+  );
+
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('unsupported package information cannot create ingredient costs', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name: 'Generic Case Product',
+    pack_size_raw: 'MIXED CASE',
+    quantity_shipped: 1,
+    invoice_price: 100,
+    line_total: 100,
+    catch_weight: false,
+  });
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'needs_package_verification'
+  );
+});
+
+test('catch-weight products retain their existing calculation', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name: 'Generic Catch Weight Product',
+    pack_size_raw: null,
+    quantity_shipped: 1,
+    actual_weight: 20,
+    invoice_price: 100,
+    line_total: 100,
+    catch_weight: true,
+  });
+
+  assert.equal(result.quantity, 20);
+  assert.equal(result.unit, 'lb');
+  assert.equal(result.unit_cost, 5);
+});
