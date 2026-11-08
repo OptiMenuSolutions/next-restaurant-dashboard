@@ -1477,3 +1477,227 @@ test(
     });
   }
 );
+
+// TEST 15
+// Supplier-verified invoice pricing must remain available
+// in legacy mode, but transactional confirmation must leave
+// all ingredient repricing to the queued calculation worker.
+
+test(
+  'supplier-verified pricing respects transactional confirmation boundary',
+  async () => {
+    const verifiedResult = {
+      status: 'verified',
+      verificationStatus: 'verified',
+      conversionApproved: true,
+      sourceConsensus: {
+        conversionApproved: true,
+      },
+      conversion: {
+        fromUnit: 'can',
+        toUnit: 'oz',
+        factor: 104,
+        scope: 'per_container',
+        basis: 'authenticated_supplier_record',
+      },
+    };
+
+    const resolveVerifiedCost = (item, supplier) =>
+      resolveInvoiceResearchCost(item, supplier, {
+        enabled: true,
+        researchProduct: async () => verifiedResult,
+      });
+
+    const makeRequest = () =>
+      createRequest({
+        number: 'TEST-015',
+        item: {
+          _id: 'verified-line-15',
+          item_name: 'Strawberry Glaze',
+          supplier_sku: 'SUP456',
+          brand: 'Example Foods',
+          selected_ingredient_id: 'ingredient-test-1',
+          selected_ingredient_name: 'Strawberry Glaze',
+          match_status: 'matched',
+          pack_size_raw: '3/#10 CAN',
+          quantity_shipped: 1,
+          invoice_price: 50.78,
+          line_total: 50.78,
+        },
+      });
+
+    const ownedIngredients = {
+      'ingredient-test-1': 'Strawberry Glaze',
+    };
+
+    // --------------------------------------------------
+    // Part A: Legacy confirmation
+    // --------------------------------------------------
+
+    const legacy = createDb({
+      ownedIngredients,
+    });
+
+    const legacyHandler = createHandler(
+      legacy.db,
+      resolveVerifiedCost
+    );
+
+    const legacyResponse = createResponse();
+
+    await legacyHandler(
+      makeRequest(),
+      legacyResponse
+    );
+
+    assert.equal(legacyResponse.statusCode, 200);
+    assert.equal(legacyResponse.body.success, true);
+
+    const legacyIngredientUpdates =
+      legacy.writes.filter(
+        write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+      );
+
+    assert.equal(
+      legacyIngredientUpdates.length,
+      1,
+      'Legacy supplier-verified pricing must remain functional'
+    );
+
+    assert.equal(
+      legacyIngredientUpdates[0].rows.unit,
+      'oz'
+    );
+
+    assert.ok(
+      Math.abs(
+        legacyIngredientUpdates[0].rows.last_price -
+        50.78 / 312
+      ) < 1e-10
+    );
+
+    console.log(
+      'PASS: Legacy supplier-verified pricing preserved'
+    );
+
+    // --------------------------------------------------
+    // Part B: Transactional confirmation
+    // --------------------------------------------------
+
+    await withEvidencePersistence(async () => {
+      const transactional = createDb({
+        ownedIngredients,
+      });
+
+      let recomputeCalls = 0;
+      let rebuildCalls = 0;
+
+      const transactionalHandler = createHandler(
+        transactional.db,
+        resolveVerifiedCost,
+        {
+          recompute: async () => {
+            recomputeCalls++;
+          },
+          rebuild: async () => {
+            rebuildCalls++;
+          },
+        }
+      );
+
+      const response = createResponse();
+
+      await transactionalHandler(
+        makeRequest(),
+        response
+      );
+
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.body.success, true);
+
+      // The invoice must be saved through the
+      // transactional database function.
+
+      const confirmationCall =
+        transactional.rpcCalls.find(
+          call =>
+            call.functionName ===
+            'save_invoice_confirmation_transactional'
+        );
+
+      assert.ok(
+        confirmationCall,
+        'Transactional confirmation RPC was not called'
+      );
+
+      // The saved invoice line must retain its
+      // supplier-verified standardized pricing.
+
+      assert.equal(
+        confirmationCall.args.p_lines.length,
+        1
+      );
+
+      const savedLine =
+        confirmationCall.args.p_lines[0];
+
+      assert.equal(savedLine.quantity, 312);
+      assert.equal(savedLine.unit, 'oz');
+
+      assert.ok(
+        Math.abs(
+          savedLine.unit_cost - 50.78 / 312
+        ) < 1e-10
+      );
+
+      // The transaction must request durable
+      // calculation processing.
+
+      assert.equal(
+        confirmationCall.args.p_queue_calculations,
+        true
+      );
+
+      // No separate ingredient update is permitted
+      // after the transaction commits.
+
+      const directIngredientUpdates =
+        transactional.writes.filter(
+          write =>
+            write.table === 'ingredients' &&
+            write.operation === 'update'
+        );
+
+      assert.equal(
+        directIngredientUpdates.length,
+        0,
+        'Transactional confirmation must not directly update ingredient prices'
+      );
+
+      assert.equal(
+        response.body.ingredients_updated,
+        0
+      );
+
+      // Recipe costing and inventory are handled
+      // by the queued calculation worker.
+
+      assert.equal(recomputeCalls, 0);
+      assert.equal(rebuildCalls, 0);
+
+      console.log(
+        'PASS: Transactional confirmation deferred ingredient repricing'
+      );
+
+      console.log(
+        'PASS: Supplier-verified invoice retained its standardized pricing'
+      );
+
+      console.log(
+        'PASS: Durable calculation job requested'
+      );
+    });
+  }
+);

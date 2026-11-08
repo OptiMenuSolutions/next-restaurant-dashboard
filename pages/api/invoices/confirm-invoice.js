@@ -885,14 +885,6 @@ export function createConfirmInvoiceHandler({
       // Do not silently skip them or permit a partially
       // transactional save until that path is integrated.
 
-      if (Object.keys(ingredientUpdates).length > 0) {
-        return res.status(503).json({
-          success: false,
-          error:
-            'Supplier-verified ingredient pricing requires the legacy confirmation pathway until transactional repricing is implemented.',
-        });
-      }
-
       // ----------------------------------------------------------
       // 4. Save the complete invoice atomically
       // ----------------------------------------------------------
