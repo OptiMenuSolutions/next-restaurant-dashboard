@@ -387,3 +387,104 @@ test('newest eligible invoice determines ingredient price', async () => {
   assert.equal(result.ingredient.last_price, 0.28125);
   assert.equal(result.ingredient.last_ordered_at, '2026-11-08');
 });
+
+test('supplier-verified pricing remains eligible with invoice-supported pricing enabled', async () => {
+  const result = await runFixture({
+    lines: [
+      invoiceLine({
+        price_verification_status: 'verified',
+        price_verification_source: 'trusted_supplier',
+        price_verified_at: '2026-11-07T12:00:00Z',
+        price_verification_evidence: {
+          supplier: 'Synthetic Development Supplier',
+          verification: 'supplier_document',
+        },
+      }),
+    ],
+    evidence: [],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.234375);
+  assert.equal(result.ingredient.unit, 'fl oz');
+  assert.equal(result.ingredient.price_status, 'invoice');
+
+  assert.equal(
+    result.writes.filter((write) =>
+      write.table === 'ingredients'
+    ).length,
+    1
+  );
+});
+
+test('invalidation reason alone prevents invoice-supported repricing', async () => {
+  const result = await runFixture({
+    lines: [invoiceLine()],
+    evidence: [
+      invoiceEvidence({
+        invalidated_at: null,
+        invalidation_reason: 'invoice_line_modified',
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.20);
+  assert.equal(result.ingredient.price_status, 'needs_review');
+});
+
+test('newer invalidated evidence cannot override older supplier-verified pricing', async () => {
+  const result = await runFixture({
+    lines: [
+      invoiceLine({
+        id: 'verified-line',
+        invoice_id: 'verified-invoice',
+        unit_cost: 6.40,
+        amount: 25.60,
+        price_verification_status: 'verified',
+        price_verification_source: 'trusted_supplier',
+        price_verified_at: '2026-11-06T12:00:00Z',
+        price_verification_evidence: {
+          supplier: 'Synthetic Development Supplier',
+          verification: 'supplier_document',
+        },
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-06',
+          created_at: '2026-11-06T12:00:00Z',
+        },
+      }),
+      invoiceLine({
+        id: 'invalidated-line',
+        invoice_id: 'invalidated-invoice',
+        unit_cost: 9.60,
+        amount: 38.40,
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-08',
+          created_at: '2026-11-08T12:00:00Z',
+        },
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        id: 'invalidated-evidence',
+        invoice_item_id: 'invalidated-line',
+        invoice_id: 'invalidated-invoice',
+        invalidated_at: '2026-11-08T15:00:00Z',
+        invalidation_reason: 'invoice_line_modified',
+      }),
+    ],
+  });
+
+  // The older supplier-verified invoice remains eligible.
+  // $6.40 / 32 fl oz = $0.20/fl oz.
+  assert.equal(result.ingredient.last_price, 0.20);
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-06');
+
+  assert.equal(
+    result.writes.filter((write) =>
+      write.table === 'ingredients'
+    ).length,
+    1
+  );
+});
