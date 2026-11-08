@@ -206,3 +206,71 @@ test('compatible weight pricing is eligible', () => {
   assert.equal(result.standardizedPrice.unit, 'oz');
   assert.equal(result.standardizedPrice.price, 0.25);
 });
+
+test('invalidated invoice evidence cannot authorize pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient(),
+    evidence: evidence({
+      invalidated_at: '2026-11-08T12:00:00Z',
+      invalidation_reason: 'invoice_line_modified',
+    }),
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.classification, 'unresolved');
+  assert.equal(
+    result.reason,
+    'insufficient_source_evidence'
+  );
+  assert.equal(result.standardizedPrice, null);
+});
+
+test('evidence with an invalidation reason cannot authorize pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient(),
+    evidence: evidence({
+      invalidated_at: null,
+      invalidation_reason: 'invoice_line_modified',
+    }),
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(
+    result.reason,
+    'insufficient_source_evidence'
+  );
+});
+
+test('active invoice evidence remains eligible', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient(),
+    evidence: evidence({
+      invalidated_at: null,
+      invalidation_reason: null,
+    }),
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(result.classification, 'invoice_supported');
+});
+
+test('supplier-verified pricing remains eligible without document evidence', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      price_verification_status: 'verified',
+      price_verification_source: 'supplier',
+      price_verified_at: '2026-11-08T12:00:00Z',
+      price_verification_evidence: {
+        source: 'supplier',
+      },
+    }),
+    ingredient: ingredient(),
+    evidence: null,
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(result.classification, 'supplier_verified');
+});
