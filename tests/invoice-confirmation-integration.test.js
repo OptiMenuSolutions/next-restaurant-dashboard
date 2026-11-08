@@ -1701,3 +1701,223 @@ test(
     });
   }
 );
+
+// ============================================================
+// Purchase-Level Invoice Pricing Integration
+// ============================================================
+
+// TEST 16
+// Legacy confirmation must preserve the supplier's
+// purchase-level information alongside ingredient costs.
+
+test(
+  'legacy confirmation preserves purchase and ingredient pricing',
+  async () => {
+    const { db, writes } = createDb();
+
+    const handler = createHandler(db, unverifiedCost);
+
+    const req = createRequest({
+      number: 'PURCHASE-TEST-001',
+      item: {
+        _id: 'purchase-line-001',
+        item_name_raw: 'GENERIC TORTILLAS',
+        item_name_normalized: 'Generic Tortillas',
+        quantity_shipped: 1,
+        quantity_unit: 'CS',
+        pack_size_raw: '300 CT',
+        pack: 1,
+        size: 300,
+        size_unit: 'ct',
+        invoice_price: 100,
+        line_total: 100,
+        catch_weight: false,
+      },
+    });
+
+    const res = createResponse();
+
+    await handler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+
+    const line = writes.find(
+      w =>
+        w.table === 'invoice_items' &&
+        w.operation === 'insert'
+    )?.rows[0];
+
+    assert.ok(line);
+
+    // Supplier purchasing information.
+    assert.equal(line.purchase_quantity, 1);
+    assert.equal(line.purchase_unit, 'case');
+    assert.equal(line.purchase_unit_price, 100);
+    assert.equal(line.package_quantity, 300);
+    assert.equal(line.package_unit, 'each');
+    assert.equal(line.package_description, '300 CT');
+
+    assert.equal(
+      line.package_validation_status,
+      'invoice_document_consistent'
+    );
+
+    // Ingredient-level calculation.
+    assert.equal(line.quantity, 300);
+    assert.equal(line.unit, 'each');
+
+    assert.ok(
+      Math.abs(line.unit_cost - 100 / 300) < 1e-10
+    );
+
+    // Original financial amount remains unchanged.
+    assert.equal(line.amount, 100);
+  }
+);
+
+
+// TEST 17
+// Transactional confirmation must receive exactly
+// the same purchase-level and ingredient-level values.
+
+test(
+  'transactional confirmation preserves purchase and ingredient pricing',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, rpcCalls, writes } = createDb();
+
+      const handler = createHandler(db, unverifiedCost);
+
+      const req = createRequest({
+        number: 'PURCHASE-TEST-002',
+        item: {
+          _id: 'purchase-line-002',
+          item_name_raw: 'GENERIC TORTILLAS',
+          item_name_normalized: 'Generic Tortillas',
+          quantity_shipped: 1,
+          quantity_unit: 'CS',
+          pack_size_raw: '300 CT',
+          pack: 1,
+          size: 300,
+          size_unit: 'ct',
+          invoice_price: 100,
+          line_total: 100,
+          catch_weight: false,
+        },
+      });
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+      );
+
+      assert.ok(transaction);
+      assert.equal(transaction.args.p_lines.length, 1);
+
+      const line = transaction.args.p_lines[0];
+
+      // Supplier purchasing information.
+      assert.equal(line.purchase_quantity, 1);
+      assert.equal(line.purchase_unit, 'case');
+      assert.equal(line.purchase_unit_price, 100);
+      assert.equal(line.package_quantity, 300);
+      assert.equal(line.package_unit, 'each');
+      assert.equal(line.package_description, '300 CT');
+
+      assert.equal(
+        line.package_validation_status,
+        'invoice_document_consistent'
+      );
+
+      // Ingredient-level calculation.
+      assert.equal(line.quantity, 300);
+      assert.equal(line.unit, 'each');
+
+      assert.ok(
+        Math.abs(line.unit_cost - 100 / 300) < 1e-10
+      );
+
+      assert.equal(line.amount, 100);
+
+      // Transactional mode must not separately
+      // insert invoice items outside the RPC.
+      assert.equal(
+        writes.some(
+          w =>
+            w.table === 'invoice_items' &&
+            w.operation === 'insert'
+        ),
+        false
+      );
+    });
+  }
+);
+
+
+// TEST 18
+// Unresolved packaging must preserve purchase
+// information without inventing physical quantities.
+
+test(
+  'unresolved packaging preserves purchase price without fabricated unit cost',
+  async () => {
+    const { db, writes } = createDb();
+
+    const handler = createHandler(db, unverifiedCost);
+
+    const req = createRequest({
+      number: 'PURCHASE-TEST-003',
+      item: {
+        _id: 'purchase-line-003',
+        item_name_raw: 'GENERIC MIXED CASE',
+        item_name_normalized: 'Generic Mixed Case',
+        quantity_shipped: 1,
+        quantity_unit: 'CS',
+        pack_size_raw: 'MIXED CASE',
+        invoice_price: 100,
+        line_total: 100,
+        catch_weight: false,
+      },
+    });
+
+    const res = createResponse();
+
+    await handler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+
+    const line = writes.find(
+      w =>
+        w.table === 'invoice_items' &&
+        w.operation === 'insert'
+    )?.rows[0];
+
+    assert.ok(line);
+
+    // Known supplier purchasing information.
+    assert.equal(line.purchase_quantity, 1);
+    assert.equal(line.purchase_unit, 'case');
+    assert.equal(line.purchase_unit_price, 100);
+    assert.equal(line.amount, 100);
+
+    // Unknown physical conversion stays unresolved.
+    assert.equal(line.package_quantity, null);
+    assert.equal(line.package_unit, null);
+    assert.equal(line.unit_cost, null);
+
+    assert.equal(
+      line.package_validation_status,
+      'needs_package_verification'
+    );
+  }
+);

@@ -340,9 +340,56 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
                 return (
                   <tr key={item.id} style={c.row}>
                     <td style={{ ...c.td, maxWidth: 200 }}>
-                      <div style={{ fontSize: 11, color: '#e4e6f0', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#e4e6f0',
+                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {item.item_name || '—'}
                       </div>
+
+                      {item.purchase_quantity != null && item.purchase_unit && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            color: '#7880a0',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <div>
+                            Purchased: {item.purchase_quantity} {item.purchase_unit}
+                            {item.purchase_unit_price != null
+                              ? ` @ ${fmt$(item.purchase_unit_price)}/${item.purchase_unit}`
+                              : ' · Price unresolved'}
+                          </div>
+
+                          {item.package_quantity != null && item.package_unit && (
+                            <div>
+                              Package: {item.package_quantity} {item.package_unit} per purchased unit
+                            </div>
+                          )}
+
+                          {item.package_quantity == null &&
+                            item.package_description && (
+                              <div>
+                                Package: {item.package_description}
+                              </div>
+                            )}
+
+                          {item.package_validation_status &&
+                            item.package_validation_status !== 'invoice_document_consistent' && (
+                              <div style={{ color: '#f5a623' }}>
+                                Verification: {item.package_validation_status.replaceAll('_', ' ')}
+                              </div>
+                            )}
+                        </div>
+                      )}
                     </td>
                     <td style={c.td}>
                       <NumInput
@@ -416,9 +463,56 @@ function InvoiceCard({ invoice, ingredients, step, onSave, onMarkReviewed, savin
                 return (
                   <tr key={item.id} style={c.row}>
                     <td style={{ ...c.td, maxWidth: 200 }}>
-                      <div style={{ fontSize: 11, color: '#e4e6f0', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: '#e4e6f0',
+                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {item.item_name || '—'}
                       </div>
+
+                      {item.purchase_quantity != null && item.purchase_unit && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontSize: 10,
+                            color: '#7880a0',
+                            lineHeight: 1.5,
+                          }}
+                        >
+                          <div>
+                            Purchased: {item.purchase_quantity} {item.purchase_unit}
+                            {item.purchase_unit_price != null
+                              ? ` @ ${fmt$(item.purchase_unit_price)}/${item.purchase_unit}`
+                              : ' · Price unresolved'}
+                          </div>
+
+                          {item.package_quantity != null && item.package_unit && (
+                            <div>
+                              Package: {item.package_quantity} {item.package_unit} per purchased unit
+                            </div>
+                          )}
+
+                          {item.package_quantity == null &&
+                            item.package_description && (
+                              <div>
+                                Package: {item.package_description}
+                              </div>
+                            )}
+
+                          {item.package_validation_status &&
+                            item.package_validation_status !== 'invoice_document_consistent' && (
+                              <div style={{ color: '#f5a623' }}>
+                                Verification: {item.package_validation_status.replaceAll('_', ' ')}
+                              </div>
+                            )}
+                        </div>
+                      )}
                     </td>
                     <td style={{ ...c.td, fontFamily: "'DM Mono', monospace", fontSize: 10, color: '#7880a0' }}>
                       {item.quantity != null ? `${item.quantity} ${item.unit || ''}`.trim() : '—'}

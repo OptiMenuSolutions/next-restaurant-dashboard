@@ -30,6 +30,9 @@ import {
   resolveInvoiceResearchCost,
 } from '../../../lib/invoiceResearchCosting';
 import {
+  buildInvoicePurchasePricing,
+} from '../../../lib/invoicePurchasePricing.js';
+import {
   getProgressiveInvoiceMatchingPolicy,
   findStrictDirectMatch,
 } from '../../../lib/progressiveInvoiceMatching';
@@ -647,7 +650,13 @@ export function createConfirmInvoiceHandler({
         unit_cost,
       } = resolvedCost(item);
 
+      const purchasePricing = buildInvoicePurchasePricing(
+        item,
+        resolvedCost(item)
+      );
+
       return {
+        ...purchasePricing,
         id:                         invoiceItemIds[index],
         invoice_id:                 invoiceRecord.id,
         item_name:                  item.item_name_normalized || item.item_name,

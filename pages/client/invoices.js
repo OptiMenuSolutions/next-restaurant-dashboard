@@ -113,7 +113,23 @@ function toLine(row) {
     name: row.item_name || row.name || "Item",
     qty: [row.quantity, unit].filter(Boolean).join(" ") || "1",
     unitCost: toDisplayUnitCost(row.unit_cost),
-    amount: Number(row.amount) || 0,
+    amount: row.amount == null ? null : Number(row.amount),
+
+    // Preserve the supplier purchasing representation separately
+    // from the normalized ingredient quantity and unit cost.
+    purchaseQuantity: row.purchase_quantity == null
+      ? null
+      : Number(row.purchase_quantity),
+    purchaseUnit: row.purchase_unit || null,
+    purchaseUnitPrice: row.purchase_unit_price == null
+      ? null
+      : Number(row.purchase_unit_price),
+    packageQuantity: row.package_quantity == null
+      ? null
+      : Number(row.package_quantity),
+    packageUnit: row.package_unit || null,
+    packageDescription: row.package_description || null,
+    packageValidationStatus: row.package_validation_status || null,
     // Only a real ingredient link counts. Falling back to the invoice's own
     // name made unlinked lines look linked (in green) and hid them from the
     // unmatched count and the Link items button.

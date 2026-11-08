@@ -31,7 +31,13 @@ export default withAdminAuth(async function handler(req, res) {
     // ── 2. Fetch all line items for those invoices ────────────────────────────
     const { data: lineItems, error: liErr } = await supabase
       .from('invoice_items')
-      .select('id, invoice_id, item_name, quantity, unit, unit_cost, amount, ingredient_id, reviewed, original_quantity, original_price')
+      .select(
+        'id, invoice_id, item_name, quantity, unit, unit_cost, amount, ' +
+        'ingredient_id, reviewed, original_quantity, original_price, ' +
+        'purchase_quantity, purchase_unit, purchase_unit_price, ' +
+        'package_quantity, package_unit, package_description, ' +
+        'package_validation_status'
+      )
       .in('invoice_id', invoiceIds)
       .order('item_name');
 

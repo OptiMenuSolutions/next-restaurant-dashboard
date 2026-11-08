@@ -749,7 +749,32 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
                   <span style={{ fontSize: 10.5, color: "var(--ink)", whiteSpace: "nowrap" }}>{money(lineTotal(i))}</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-                  <span style={{ fontSize: 9, color: "var(--ink-faint)", whiteSpace: "nowrap" }}>{i.qty} @ {i.unitCost == null ? "Cost unresolved" : money(i.unitCost)}</span>
+                  <span
+                    style={{
+                      fontSize: 9,
+                      color: "var(--ink-faint)",
+                      minWidth: 0,
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {i.purchaseQuantity != null && i.purchaseUnit
+                      ? (
+                        <>
+                          {i.purchaseQuantity} {i.purchaseUnit}
+                          {i.purchaseUnitPrice != null
+                            ? ` @ ${money(i.purchaseUnitPrice)}/${i.purchaseUnit}`
+                            : " · Purchase price unresolved"}
+                        </>
+                      )
+                      : (
+                        <>
+                          {i.qty} @ {i.unitCost == null
+                            ? "Cost unresolved"
+                            : money(i.unitCost)}
+                        </>
+                      )
+                    }
+                  </span>
                   <span style={{ fontSize: 9, letterSpacing: "0.06em", color: i.link ? "var(--green)" : "var(--amber)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                     {i.link ? "→ " + i.link : "▲ not linked to an ingredient"}
                   </span>
@@ -766,6 +791,34 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
                     );
                   })()}
                 </div>
+
+                {!linkMode && i.purchaseQuantity != null && i.purchaseUnit && (
+                  <div
+                    style={{
+                      fontSize: 8.5,
+                      color: "var(--ink-faint)",
+                      marginTop: 2,
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                    {i.unitCost != null
+                      ? (
+                        <>
+                          Ingredient conversion: {i.qty} · $
+                          {Number(i.unitCost).toFixed(6)}/{i.unit || "unit"}
+                        </>
+                      )
+                      : (
+                        <>
+                          Ingredient conversion unresolved
+                          {i.packageDescription
+                            ? ` · Package: ${i.packageDescription}`
+                            : ""}
+                        </>
+                      )
+                    }
+                  </div>
+                )}
               </div>
             ))}
             {!linkMode && !items.length && s.status !== "pending" && (
