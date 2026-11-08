@@ -1039,8 +1039,17 @@ export function createConfirmInvoiceHandler({
         invoiceItemsToInsert.length;
     }
 
-    // Only update ingredient prices after the invoice lines are saved.
-    if (matchingEnabled && results.items_saved > 0) {
+    // Legacy confirmation updates supplier-verified ingredient
+    // prices after saving invoice lines.
+    //
+    // Transactional confirmation must not perform separate
+    // ingredient writes after the invoice transaction commits.
+    // Its queued calculation job handles ingredient repricing.
+    if (
+      !evidencePersistenceEnabled &&
+      matchingEnabled &&
+      results.items_saved > 0
+    ) {
       const updatePromises = Object.entries(ingredientUpdates).map(
         ([ingId, updates]) =>
           supabase
@@ -1080,6 +1089,7 @@ export function createConfirmInvoiceHandler({
     // prices, recipe costs, or ingredient-linked inventory.
 
     if (
+      !evidencePersistenceEnabled &&
       matchingEnabled &&
       results.items_saved > 0 &&
       Object.keys(ingredientUpdates).length > 0

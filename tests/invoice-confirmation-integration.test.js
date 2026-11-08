@@ -1384,7 +1384,7 @@ test(
   'failed transactions and replays do not repeat inventory rebuilds',
   async () => {
     await withEvidencePersistence(async () => {
-      const { db } = createDb({
+      const { db, writes } = createDb({
         ownedIngredients: {
           'ingredient-beef-1': 'Ground Beef',
         },
@@ -1460,6 +1460,20 @@ test(
       );
 
       assert.equal(recomputeCalls, 0);
+
+      // Transactional confirmation must not perform
+      // separate ingredient writes after committing.
+      const ingredientUpdates = writes.filter(
+        write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+      );
+
+      assert.equal(
+        ingredientUpdates.length,
+        0,
+        'Transactional confirmation must leave ingredient repricing to the queued calculation worker'
+      );
     });
   }
 );
