@@ -262,9 +262,10 @@ When catch_weight=true:
   - quantity_shipped = the SHP column value (cases shipped, typically 1–5)
   - invoice_price = the UNIT COST column value (price per lb)
   - VALIDATION (mandatory): actual_weight × invoice_price must ≈ line_total (within 5%)
-  - If that fails, try: (actual_weight / quantity_shipped) × invoice_price ≈ line_total
-    → if that works, you were double-counting; set actual_weight = actual_weight / quantity_shipped
-  - If neither validates → confidence="low", explain in confidence_reason
+  - Never divide or multiply the printed actual weight by cases shipped to force the invoice arithmetic to agree.
+  - If the printed weight and unit price do not reconcile with the extended amount, set confidence="low" and explain the discrepancy.
+  - Preserve the original printed weight. Do not invent a corrected weight.
+  - Record source evidence for the actual weight, its unit, and the price basis. If the source does not establish a weight unit and price basis, the line cannot receive authenticated catch-weight pricing.
 
 Correct catch-weight example:
   CHEESE MOZZARELLA WM LOAF — SHP=1, WEIGHT=50.610, UNIT COST=2.177, EXTENDED=110.18
@@ -302,8 +303,14 @@ For every line item return a source_evidence object containing:
 - quantity_text: the exact printed shipped quantity
 - purchase_unit_text: the exact printed purchase unit, if present
 - package_text: the exact printed package description, if present
+- weight_text: the exact printed actual weight for catch-weight products, if present
+- weight_unit_text: the weight unit explicitly established by the invoice, such as LB, LBS, KG, or null when unavailable
 - unit_price_text: the exact printed purchase price, if present
 - extension_text: the exact printed extended amount, if present
+
+For catch-weight products, distinguish the shipped quantity from the actual measured weight. The weight unit may be established by a column heading such as WEIGHT LB or WEIGHT KG. Do not invent a weight unit from the product category or assume that all weight values represent pounds.
+
+The unit price must be interpreted using its actual pricing basis. A price per pound is not a price per case. If the pricing basis cannot be established, preserve the extracted amount but do not claim verified catch-weight pricing.
 
 For HTML table OCR, row_text should contain the complete original <tr>...</tr> fragment for the product, preserving the original cells and their order.
 
@@ -385,6 +392,8 @@ OUTPUT FORMAT
         "quantity_text": "exact printed shipped quantity or null",
         "purchase_unit_text": "exact printed purchase unit or null",
         "package_text": "exact printed package description or null",
+        "weight_text": "exact printed actual weight or null",
+        "weight_unit_text": "LB | LBS | KG | other explicitly documented unit | null",
         "unit_price_text": "exact printed purchase price or null",
         "extension_text": "exact printed extended amount or null"
       }

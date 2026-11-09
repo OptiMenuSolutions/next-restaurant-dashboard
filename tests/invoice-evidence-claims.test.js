@@ -539,3 +539,591 @@ test('rejects incorrect standalone package quantities', () => {
   assert.equal(result.chargeVerified, true);
   assert.equal(result.packageVerified, false);
 });
+
+test('authenticates invoice charges from Markdown tables', () => {
+  const markdown = [
+    '| Product | Extended | Case Pack | Unit Price | UOM | Shipped |',
+    '|---|---:|---|---:|---|---:|',
+    '| Roasted Turkey Breast | $156.00 | 2/5 LB | $78.00 | CS | 2 |',
+  ].join('\n');
+
+  const markdownRow =
+    '| Roasted Turkey Breast | $156.00 | 2/5 LB | $78.00 | CS | 2 |';
+
+  const markdownItem = item({
+    source_evidence: {
+      row_text: markdownRow,
+      description_text: 'Roasted Turkey Breast',
+      quantity_text: '2',
+      purchase_unit_text: 'CS',
+      package_text: '2/5 LB',
+      unit_price_text: '$78.00',
+      extension_text: '$156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [markdownItem],
+    markdown
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, true);
+  assert.equal(result.verifiedValues.pack, 2);
+  assert.equal(result.verifiedValues.size, 5);
+  assert.equal(result.verifiedValues.size_unit, 'lb');
+});
+
+
+test('Markdown rejects reversed financial roles', () => {
+  const sourceRow =
+    '| Roasted Turkey Breast | 2 | CS | 2/5 LB | 78.00 | 156.00 |';
+
+  const markdown = [
+    '| Product | Shipped | UOM | Case Pack | Unit Price | Extended |',
+    '|---|---:|---|---|---:|---:|',
+    sourceRow,
+  ].join('\n');
+
+  const reversed = item({
+    quantity_shipped: 78,
+    invoice_price: 2,
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Roasted Turkey Breast',
+      quantity_text: '78.00',
+      purchase_unit_text: 'CS',
+      package_text: '2/5 LB',
+      unit_price_text: '2',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [reversed],
+    markdown
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+});
+
+test('Markdown rejects ambiguous financial headings', () => {
+  const sourceRow =
+    '| Roasted Turkey Breast | 2 | CS | 2/5 LB | 78.00 | 156.00 |';
+
+  const markdown = [
+    '| Product | Boxes | UOM | Case Pack | Unit Price | Extended |',
+    '|---|---:|---|---|---:|---:|',
+    sourceRow,
+  ].join('\n');
+
+  const extracted = item({
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Roasted Turkey Breast',
+      quantity_text: '2',
+      purchase_unit_text: 'CS',
+      package_text: '2/5 LB',
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    markdown
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.reason, 'unverified_financial_roles');
+});
+
+test('Markdown cannot take packaging from product description', () => {
+  const sourceRow =
+    '| Roasted Turkey Breast 2/5 LB | 2 | CS | 12/5 LB | 78.00 | 156.00 |';
+
+  const markdown = [
+    '| Product | Shipped | UOM | Case Pack | Unit Price | Extended |',
+    '|---|---:|---|---|---:|---:|',
+    sourceRow,
+  ].join('\n');
+
+  const extracted = item({
+    item_name_raw: 'Roasted Turkey Breast 2/5 LB',
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Roasted Turkey Breast 2/5 LB',
+      quantity_text: '2',
+      purchase_unit_text: 'CS',
+      package_text: '2/5 LB',
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    markdown
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+});
+
+test('Markdown rejects duplicate source-row claims', () => {
+  const sourceRow =
+    '| Roasted Turkey Breast | 2 | CS | 2/5 LB | 78.00 | 156.00 |';
+
+  const markdown = [
+    '| Product | Shipped | UOM | Case Pack | Unit Price | Extended |',
+    '|---|---:|---|---|---:|---:|',
+    sourceRow,
+  ].join('\n');
+
+  const extracted = item({
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Roasted Turkey Breast',
+      quantity_text: '2',
+      purchase_unit_text: 'CS',
+      package_text: '2/5 LB',
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const results = validateInvoiceEvidenceClaims(
+    [extracted, extracted],
+    markdown
+  );
+
+  assert.equal(results[0].chargeVerified, false);
+  assert.equal(results[1].chargeVerified, false);
+  assert.equal(results[0].reason, 'duplicate_source_claim');
+});
+
+
+test('authenticates explicitly labeled plain-text invoice lines', () => {
+  const line =
+    'Product: Roasted Turkey Breast; ' +
+    'Shipped: 2; UOM: CS; Case Pack: 2/5 LB; ' +
+    'Unit Price: $78.00; Extended: $156.00';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    line
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, true);
+  assert.equal(result.verifiedValues.pack, 2);
+  assert.equal(result.verifiedValues.size, 5);
+});
+
+test('authenticates reordered labeled plain-text fields', () => {
+  const line =
+    'Extended: $156.00; Product: Roasted Turkey Breast; ' +
+    'Case Pack: 2/5 LB; Unit Price: $78.00; ' +
+    'UOM: CS; Shipped: 2';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    line
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, true);
+});
+
+test('rejects reversed financial roles in labeled plain text', () => {
+  const line =
+    'Product: Roasted Turkey Breast; ' +
+    'Shipped: 2; UOM: CS; Case Pack: 2/5 LB; ' +
+    'Unit Price: 78.00; Extended: 156.00';
+
+  const reversed = item({
+    quantity_shipped: 78,
+    invoice_price: 2,
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+      quantity_text: '78.00',
+      unit_price_text: '2',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [reversed],
+    line
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.reason, 'unverified_financial_roles');
+});
+
+
+test('rejects duplicate quantity labels in plain text', () => {
+  const line =
+    'Product: Roasted Turkey Breast; ' +
+    'Shipped: 2; Shipped: 3; UOM: CS; ' +
+    'Case Pack: 2/5 LB; Unit Price: $78.00; ' +
+    'Extended: $156.00';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    line
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.reason, 'unverified_financial_roles');
+});
+
+test('rejects unlabeled plain-text financial values', () => {
+  const line =
+    'Roasted Turkey Breast 2 CS 2/5 LB 78.00 156.00';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    line
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.reason, 'unverified_financial_roles');
+});
+
+test('rejects altered prices in labeled plain text', () => {
+  const line =
+    'Product: Roasted Turkey Breast; ' +
+    'Shipped: 2; UOM: CS; Case Pack: 2/5 LB; ' +
+    'Unit Price: $78.00; Extended: $156.00';
+
+  const altered = item({
+    invoice_price: 79,
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [altered],
+    line
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.reason, 'extracted_values_disagree');
+});
+
+test('rejects package claims from the wrong labeled field', () => {
+  const line =
+    'Product: Roasted Turkey Breast 2/5 LB; ' +
+    'Shipped: 2; UOM: CS; Case Pack: 12/5 LB; ' +
+    'Unit Price: $78.00; Extended: $156.00';
+
+  const extracted = item({
+    item_name_raw: 'Roasted Turkey Breast 2/5 LB',
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: line,
+      description_text: 'Roasted Turkey Breast 2/5 LB',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    line
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+});
+
+
+test('authenticates catch-weight pricing from documented actual weight', () => {
+  const catchWeightRow =
+    '<tr><td>6</td><td>CS</td>' +
+    '<td>Baby Back Ribs</td>' +
+    '<td>148.00</td><td>$3.10</td>' +
+    '<td>$458.80</td></tr>';
+
+  const catchWeightHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT LB</th>' +
+    '<th>PRICE PER LB</th><th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Baby Back Ribs',
+    quantity_shipped: 6,
+    actual_weight: 148,
+    invoice_price: 3.10,
+    line_total: 458.80,
+    pack_size_raw: null,
+    pack: null,
+    size: null,
+    size_unit: 'lb',
+    catch_weight: true,
+    source_evidence: {
+      row_text: catchWeightRow,
+      description_text: 'Baby Back Ribs',
+      quantity_text: '6',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '148.00',
+      weight_unit_text: 'LB',
+      unit_price_text: '$3.10',
+      extension_text: '$458.80',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${catchWeightHeader}${catchWeightRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.verifiedValues.actual_weight, 148);
+  assert.equal(result.verifiedValues.weight_unit, 'lb');
+  assert.equal(result.verifiedValues.invoice_price, 3.10);
+  assert.equal(result.verifiedValues.line_total, 458.80);
+});
+
+test('rejects catch-weight pricing when weight disagrees with source', () => {
+  const catchWeightRow =
+    '<tr><td>6</td><td>CS</td>' +
+    '<td>Baby Back Ribs</td>' +
+    '<td>148.00</td><td>$3.10</td>' +
+    '<td>$458.80</td></tr>';
+
+  const catchWeightHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT LB</th>' +
+    '<th>PRICE PER LB</th><th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Baby Back Ribs',
+    quantity_shipped: 6,
+    actual_weight: 888,
+    invoice_price: 3.10,
+    line_total: 458.80,
+    catch_weight: true,
+    source_evidence: {
+      row_text: catchWeightRow,
+      description_text: 'Baby Back Ribs',
+      quantity_text: '6',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '148.00',
+      weight_unit_text: 'LB',
+      unit_price_text: '$3.10',
+      extension_text: '$458.80',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${catchWeightHeader}${catchWeightRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+});
+
+test('rejects catch-weight prices without documented weight units', () => {
+  const catchWeightRow =
+    '<tr><td>6</td><td>CS</td>' +
+    '<td>Baby Back Ribs</td>' +
+    '<td>148.00</td><td>$3.10</td>' +
+    '<td>$458.80</td></tr>';
+
+  const catchWeightHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT</th>' +
+    '<th>UNIT PRICE</th><th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Baby Back Ribs',
+    quantity_shipped: 6,
+    actual_weight: 148,
+    invoice_price: 3.10,
+    line_total: 458.80,
+    catch_weight: true,
+    source_evidence: {
+      row_text: catchWeightRow,
+      description_text: 'Baby Back Ribs',
+      quantity_text: '6',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '148.00',
+      weight_unit_text: null,
+      unit_price_text: '$3.10',
+      extension_text: '$458.80',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${catchWeightHeader}${catchWeightRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+});
+
+
+test('rejects catch-weight pricing without a documented per-pound price basis', () => {
+  const sourceRow =
+    '<tr><td>6</td><td>CS</td>' +
+    '<td>Baby Back Ribs</td>' +
+    '<td>148.00</td><td>$3.10</td>' +
+    '<td>$458.80</td></tr>';
+
+  const sourceHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT LB</th>' +
+    '<th>UNIT PRICE</th><th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Baby Back Ribs',
+    quantity_shipped: 6,
+    actual_weight: 148,
+    invoice_price: 3.10,
+    line_total: 458.80,
+    catch_weight: true,
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Baby Back Ribs',
+      quantity_text: '6',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '148.00',
+      weight_unit_text: 'LB',
+      unit_price_text: '$3.10',
+      extension_text: '$458.80',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${sourceHeader}${sourceRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+});
+
+test('rejects kilograms incorrectly interpreted as pounds', () => {
+  const sourceRow =
+    '<tr><td>2</td><td>CS</td>' +
+    '<td>Fresh Salmon</td>' +
+    '<td>50.00</td><td>$8.00</td>' +
+    '<td>$400.00</td></tr>';
+
+  const sourceHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT KG</th>' +
+    '<th>PRICE PER KG</th><th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Fresh Salmon',
+    quantity_shipped: 2,
+    actual_weight: 50,
+    invoice_price: 8,
+    line_total: 400,
+    catch_weight: true,
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Fresh Salmon',
+      quantity_text: '2',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '50.00',
+      weight_unit_text: 'LB',
+      unit_price_text: '$8.00',
+      extension_text: '$400.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${sourceHeader}${sourceRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+});
+
+test('rejects catch-weight claims using weight from another column', () => {
+  const sourceRow =
+    '<tr><td>6</td><td>CS</td>' +
+    '<td>Baby Back Ribs</td>' +
+    '<td>150.00</td><td>148.00</td>' +
+    '<td>$3.10</td><td>$458.80</td></tr>';
+
+  const sourceHeader =
+    '<tr><th>SHIP</th><th>UOM</th>' +
+    '<th>DESCRIPTION</th><th>WEIGHT LB</th>' +
+    '<th>REFERENCE</th><th>PRICE PER LB</th>' +
+    '<th>EXTENDED</th></tr>';
+
+  const extracted = item({
+    item_name_raw: 'Baby Back Ribs',
+    quantity_shipped: 6,
+    actual_weight: 148,
+    invoice_price: 3.10,
+    line_total: 458.80,
+    catch_weight: true,
+    source_evidence: {
+      row_text: sourceRow,
+      description_text: 'Baby Back Ribs',
+      quantity_text: '6',
+      purchase_unit_text: 'CS',
+      package_text: null,
+      weight_text: '148.00',
+      weight_unit_text: 'LB',
+      unit_price_text: '$3.10',
+      extension_text: '$458.80',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${sourceHeader}${sourceRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+});
