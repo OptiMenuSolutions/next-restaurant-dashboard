@@ -466,3 +466,76 @@ test('verifies complete OTC-3103 invoice with independent source evidence', () =
     4
   );
 });
+
+test('accepts equivalent standalone count representations', () => {
+  const countRow =
+    '<tr><td>3</td><td>CS</td>' +
+    '<td>Romaine Hearts</td><td>12 CT</td>' +
+    '<td>$24.00</td><td>$72.00</td></tr>';
+
+  const countItem = item({
+    item_name_raw: 'Romaine Hearts',
+    quantity_shipped: 3,
+    invoice_price: 24,
+    line_total: 72,
+    pack_size_raw: '12 CT',
+    pack: 12,
+    size: 1,
+    size_unit: 'ct',
+    source_evidence: {
+      row_text: countRow,
+      description_text: 'Romaine Hearts',
+      quantity_text: '3',
+      purchase_unit_text: 'CS',
+      package_text: '12 CT',
+      unit_price_text: '$24.00',
+      extension_text: '$72.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [countItem],
+    `<table>${header}${countRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, true);
+  assert.equal(result.verifiedValues.pack, 1);
+  assert.equal(result.verifiedValues.size, 12);
+  assert.equal(result.verifiedValues.size_unit, 'each');
+});
+
+test('rejects incorrect standalone package quantities', () => {
+  const countRow =
+    '<tr><td>3</td><td>CS</td>' +
+    '<td>Romaine Hearts</td><td>12 CT</td>' +
+    '<td>$24.00</td><td>$72.00</td></tr>';
+
+  const countItem = item({
+    item_name_raw: 'Romaine Hearts',
+    quantity_shipped: 3,
+    invoice_price: 24,
+    line_total: 72,
+    pack_size_raw: '12 CT',
+    pack: 13,
+    size: 1,
+    size_unit: 'ct',
+    source_evidence: {
+      row_text: countRow,
+      description_text: 'Romaine Hearts',
+      quantity_text: '3',
+      purchase_unit_text: 'CS',
+      package_text: '12 CT',
+      unit_price_text: '$24.00',
+      extension_text: '$72.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [countItem],
+    `<table>${header}${countRow}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+});
