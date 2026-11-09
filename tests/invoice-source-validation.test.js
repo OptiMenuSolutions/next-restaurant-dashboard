@@ -674,3 +674,98 @@ test('does not reinterpret unsupported purchase units as cases', () => {
 
   assert.deepEqual(validated, original);
 });
+
+test('validates a product retaining its documented package suffix', () => {
+  const ocr = labeledSourceTable([{
+    shipped: 2,
+    description: 'All Purpose Flour - 2/25 LB',
+    price: '47.00',
+    extended: '94.00',
+  }]);
+
+  const [result] = validateInvoiceAgainstSource([item({
+    item_name_raw: 'All Purpose Flour - 2/25 LB',
+    item_name_normalized: 'All Purpose Flour',
+    quantity_shipped: 2,
+    invoice_price: 47,
+    line_total: 94,
+  })], ocr);
+
+  assert.equal(
+    result.source_validation_status,
+    'source_table_consistent'
+  );
+
+  assert.equal(result.pack_size_raw, '2/25 LB');
+  assert.equal(result.pack, 2);
+  assert.equal(result.size, 25);
+  assert.equal(result.size_unit, 'lb');
+});
+
+test('clean and package-retaining names cannot claim the same source row', () => {
+  const ocr = labeledSourceTable([{
+    shipped: 2,
+    description: 'All Purpose Flour - 2/25 LB',
+    price: '47.00',
+    extended: '94.00',
+  }]);
+
+  const first = item({
+    item_name_raw: 'All Purpose Flour',
+    item_name_normalized: 'All Purpose Flour',
+  });
+
+  const second = item({
+    item_name_raw: 'All Purpose Flour - 2/25 LB',
+    item_name_normalized: 'All Purpose Flour',
+  });
+
+  const results = validateInvoiceAgainstSource(
+    [first, second],
+    ocr
+  );
+
+  assert.deepEqual(results, [first, second]);
+});
+
+test('package-retaining names cannot validate inconsistent source arithmetic', () => {
+  const original = item({
+    item_name_raw: 'All Purpose Flour - 2/25 LB',
+    item_name_normalized: 'All Purpose Flour',
+  });
+
+  const ocr = labeledSourceTable([{
+    shipped: 2,
+    description: 'All Purpose Flour - 2/25 LB',
+    price: '47.00',
+    extended: '999.00',
+  }]);
+
+  const [result] = validateInvoiceAgainstSource(
+    [original],
+    ocr
+  );
+
+  assert.deepEqual(result, original);
+});
+
+test('unsupported package suffixes cannot create trusted source evidence', () => {
+  const original = item({
+    item_name_raw: 'Mixed Product - UNKNOWN CASE',
+    item_name_normalized: 'Mixed Product',
+  });
+
+  const ocr = labeledSourceTable([{
+    shipped: 2,
+    description: 'Mixed Product - UNKNOWN CASE',
+    price: '47.00',
+    extended: '94.00',
+  }]);
+
+  const [result] = validateInvoiceAgainstSource(
+    [original],
+    ocr
+  );
+
+  assert.deepEqual(result, original);
+});
