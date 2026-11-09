@@ -1127,3 +1127,340 @@ test('rejects catch-weight claims using weight from another column', () => {
   assert.equal(result.chargeVerified, false);
   assert.equal(result.packageVerified, false);
 });
+
+
+test('authenticates Performance Foodservice OCR with td headings and repeated quantities', () => {
+  const header =
+    '<tr><td>Item Number</td><td>Ordered</td>' +
+    '<td>Shipped</td><td>Pack</td>' +
+    '<td>Size</td><td>Unit</td>' +
+    '<td colspan="4">Description</td>' +
+    '<td>Price</td><td>Extension</td>' +
+    '<td>ST</td><td></td></tr>';
+
+  const row =
+    '<tr><td>556332</td><td>1</td><td>1</td>' +
+    '<td>6</td><td>1 GA</td><td></td>' +
+    '<td colspan="4">FRST MRK+BLEACH GERMICIDAL ULTRA EMERGENCY PHONE: 800-424-9300</td>' +
+    '<td>21.0000</td><td>21.00</td>' +
+    '<td>T</td><td></td></tr>';
+
+  const extracted = {
+    item_name_raw:
+      'FRST MRK+BLEACH GERMICIDAL ULTRA EMERGENCY PHONE: 800-424-9300',
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    pack_size_raw: '6 1 GA',
+    pack: 6,
+    size: 1,
+    size_unit: 'gal',
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text:
+        'FRST MRK+BLEACH GERMICIDAL ULTRA EMERGENCY PHONE: 800-424-9300',
+      quantity_text: '1',
+      purchase_unit_text: null,
+      package_text: '6 1 GA',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.verifiedValues.invoice_price, 21);
+  assert.equal(result.verifiedValues.line_total, 21);
+  assert.equal(result.packageVerified, false);
+});
+
+
+test('td headings reject reversed shipped and price values', () => {
+  const header =
+    '<tr><td>Ordered</td><td>Shipped</td>' +
+    '<td>Description</td><td>Price</td>' +
+    '<td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1</td><td>2</td>' +
+    '<td>Roasted Turkey Breast</td>' +
+    '<td>78.00</td><td>156.00</td></tr>';
+
+  const extracted = item({
+    quantity_shipped: 78,
+    invoice_price: 2,
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: row,
+      quantity_text: '78.00',
+      unit_price_text: '2',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.packageVerified, false);
+});
+
+test('td headings reject conflicting financial column labels', () => {
+  const header =
+    '<tr><td>Shipped</td><td>Shipped</td>' +
+    '<td>Description</td><td>Price</td>' +
+    '<td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>2</td><td>2</td>' +
+    '<td>Roasted Turkey Breast</td>' +
+    '<td>78.00</td><td>156.00</td></tr>';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: row,
+      quantity_text: '2',
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(
+    result.reason,
+    'unverified_financial_roles'
+  );
+});
+
+test('td headings reject multiple competing header rows', () => {
+  const header =
+    '<tr><td>Shipped</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>2</td>' +
+    '<td>Roasted Turkey Breast</td>' +
+    '<td>78.00</td><td>156.00</td></tr>';
+
+  const extracted = item({
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: row,
+      quantity_text: '2',
+      unit_price_text: '78.00',
+      extension_text: '156.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(
+    result.reason,
+    'unverified_financial_roles'
+  );
+});
+
+test('td headings authenticate repeated values using column roles', () => {
+  const header =
+    '<tr><td>Ordered</td><td>Shipped</td>' +
+    '<td>Description</td><td>Price</td>' +
+    '<td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1</td><td>1</td>' +
+    '<td>Roasted Turkey Breast</td>' +
+    '<td>21.0000</td><td>21.00</td></tr>';
+
+  const extracted = item({
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    source_evidence: {
+      ...item().source_evidence,
+      row_text: row,
+      quantity_text: '1',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.verifiedValues.invoice_price, 21);
+  assert.equal(result.verifiedValues.line_total, 21);
+});
+
+
+test('authenticates split Pack and Size columns when case unit is explicit', () => {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>123456</td><td>1</td>' +
+    '<td>1</td><td>6</td>' +
+    '<td>5 LB</td><td>CS</td>' +
+    '<td>Chicken Breast</td>' +
+    '<td>90.0000</td><td>90.00</td></tr>';
+
+  const extracted = {
+    item_name_raw: 'Chicken Breast',
+    quantity_shipped: 1,
+    invoice_price: 90,
+    line_total: 90,
+    pack_size_raw: '6 5 LB',
+    pack: 6,
+    size: 5,
+    size_unit: 'lb',
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text: 'Chicken Breast',
+      quantity_text: '1',
+      purchase_unit_text: 'CS',
+      package_text: '6 5 LB',
+      unit_price_text: '90.0000',
+      extension_text: '90.00',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, true);
+  assert.equal(result.verifiedValues.pack, 6);
+  assert.equal(result.verifiedValues.size, 5);
+  assert.equal(result.verifiedValues.size_unit, 'lb');
+});
+
+
+function splitPackageFixture({
+  printedPack = '6',
+  printedSize = '5 LB',
+  printedUnit = 'CS',
+  quotedPackage = '6 5 LB',
+  extractedPack = 6,
+  extractedSize = 5,
+  extractedUnit = 'lb',
+} = {}) {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>123456</td><td>1</td>' +
+    `<td>1</td><td>${printedPack}</td>` +
+    `<td>${printedSize}</td><td>${printedUnit}</td>` +
+    '<td>Chicken Breast</td>' +
+    '<td>90.0000</td><td>90.00</td></tr>';
+
+  return {
+    ocrText: `<table>${header}${row}</table>`,
+    item: {
+      item_name_raw: 'Chicken Breast',
+      quantity_shipped: 1,
+      invoice_price: 90,
+      line_total: 90,
+      pack_size_raw: quotedPackage,
+      pack: extractedPack,
+      size: extractedSize,
+      size_unit: extractedUnit,
+      catch_weight: false,
+      source_evidence: {
+        row_text: row,
+        description_text: 'Chicken Breast',
+        quantity_text: '1',
+        purchase_unit_text: printedUnit,
+        package_text: quotedPackage,
+        unit_price_text: '90.0000',
+        extension_text: '90.00',
+      },
+    },
+  };
+}
+
+const splitPackageRejections = [
+  {
+    name: 'does not verify a split package without a case purchase unit',
+    changes: {
+      printedUnit: '',
+    },
+  },
+  {
+    name: 'rejects a split package when printed Pack and Size are swapped',
+    changes: {
+      printedPack: '5',
+      printedSize: '6 LB',
+    },
+  },
+  {
+    name: 'rejects a split package when extracted quantities disagree',
+    changes: {
+      extractedPack: 12,
+    },
+  },
+  {
+    name: 'rejects unsupported split package units',
+    changes: {
+      printedSize: '5 UNKNOWN',
+      quotedPackage: '6 5 UNKNOWN',
+      extractedUnit: 'unknown',
+    },
+  },
+];
+
+for (const scenario of splitPackageRejections) {
+  test(scenario.name, () => {
+    const fixture = splitPackageFixture(
+      scenario.changes
+    );
+
+    const [result] = validateInvoiceEvidenceClaims(
+      [fixture.item],
+      fixture.ocrText
+    );
+
+    // Correct financial information must remain
+    // independently authenticated.
+    assert.equal(result.chargeVerified, true);
+
+    // Unsupported packaging must never gain
+    // verified physical quantities.
+    assert.equal(result.packageVerified, false);
+
+    assert.equal(
+      result.verifiedValues?.pack,
+      undefined
+    );
+  });
+}
