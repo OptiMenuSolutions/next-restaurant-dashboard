@@ -957,6 +957,23 @@ export default async function handler(req, res) {
             claim => claim.packageVerified
           ).length,
           rejectionReasons: reasons,
+          packageDiagnostics: claims.map((claim, index) => ({
+            line: index + 1,
+            chargeVerified: claim.chargeVerified,
+            packageVerified: claim.packageVerified,
+            reason: claim.reason,
+            extractedPackage:
+              extracted.line_items?.[index]?.pack_size_raw ?? null,
+            extractedPack:
+              extracted.line_items?.[index]?.pack ?? null,
+            extractedSize:
+              extracted.line_items?.[index]?.size ?? null,
+            extractedUnit:
+              extracted.line_items?.[index]?.size_unit ?? null,
+            sourcePackage:
+              extracted.line_items?.[index]?.source_evidence
+                ?.package_text ?? null,
+          })),
           authoritative: false,
         });
       } catch (error) {
