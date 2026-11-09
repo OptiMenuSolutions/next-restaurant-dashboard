@@ -191,10 +191,21 @@ test('live development invoice-supported repricing', async () => {
             evidence_version: 1,
             source_fingerprint: 'b'.repeat(64),
             pricing_fingerprint: 'c'.repeat(64),
-            evidence: {
-              test: true,
-              source: 'synthetic_development_invoice',
-            },
+              evidence: {
+                test: true,
+                source: 'synthetic_development_invoice',
+                pricing: {
+                  invoice_item_id: lineId,
+                  invoice_id: invoiceId,
+                  restaurant_id: RESTAURANT_ID,
+                  ingredient_id: ingredientId,
+                  item_name: 'Dijon Mustard',
+                  quantity: 4,
+                  unit: 'qt',
+                  unit_cost: 7.50,
+                  amount: 30,
+                },
+              },
           }],
 
           p_queue_calculations: false,
