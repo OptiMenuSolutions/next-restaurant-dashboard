@@ -36,6 +36,8 @@ import {
 } from '../../../lib/invoiceEvidenceClaims.js';
 import {
   createInvoiceSourceProof,
+  createInvoiceEvidenceProofV2,
+  verifyInvoiceSourceProof,
 } from '../../../lib/invoiceSourceProof.js';
 import { createHash } from 'node:crypto';
 
@@ -983,9 +985,108 @@ export default async function handler(req, res) {
               extracted.line_items?.[index]?.source_evidence
                 ?.package_text ?? null,
           })),
+
+          authoritative: false,
+        });
+
+        // Version 2 diagnostic signing.
+        // Use only server-downloaded document bytes,
+        // the original OCR, and independently verified
+        // catch-weight claims.
+        //
+        // Proofs are created and verified in memory.
+        // They are never returned, persisted, or used
+        // to authorize ingredient pricing.
+        const diagnosticSecret =
+          process.env.INVOICE_SOURCE_PROOF_SECRET;
+
+        const diagnosticInvoiceNumber =
+          extracted.invoice_number != null
+            ? String(extracted.invoice_number).trim()
+            : '';
+
+        const diagnostic = {
+          eligible: 0,
+          signed: 0,
+          verified: 0,
+          rejected: 0,
+          signingConfigured: Boolean(
+            diagnosticSecret &&
+            diagnosticSecret.length >= 32
+          ),
+        };
+
+        if (
+          diagnostic.signingConfigured &&
+          diagnosticInvoiceNumber
+        ) {
+          for (
+            let index = 0;
+            index < claims.length;
+            index++
+          ) {
+            const original = extracted.line_items[index];
+            const claim = claims[index];
+
+            if (
+              original?.catch_weight !== true ||
+              !claim?.chargeVerified ||
+              claim.verifiedValues?.weight_unit !== 'lb'
+            ) {
+              continue;
+            }
+
+            diagnostic.eligible++;
+
+            const itemKey = `item_${index}`;
+
+            const diagnosticItem = {
+              ...original,
+              _id: itemKey,
+            };
+
+            try {
+              const proof = createInvoiceEvidenceProofV2({
+                restaurantId,
+                invoiceNumber: diagnosticInvoiceNumber,
+                documentFingerprint,
+                itemKey,
+                item: diagnosticItem,
+                ocrText,
+                secret: diagnosticSecret,
+              });
+
+              diagnostic.signed++;
+
+              const verification = verifyInvoiceSourceProof({
+                proof,
+                restaurantId,
+                invoiceNumber: diagnosticInvoiceNumber,
+                documentFingerprint,
+                itemKey,
+                item: diagnosticItem,
+                secret: diagnosticSecret,
+              });
+
+              if (verification.valid) {
+                diagnostic.verified++;
+              } else {
+                diagnostic.rejected++;
+              }
+            } catch (error) {
+              diagnostic.rejected++;
+            }
+          }
+        }
+
+        console.info('[invoice-evidence-v2-shadow]', {
+          restaurantId,
+          invoiceNumber: diagnosticInvoiceNumber,
+          ...diagnostic,
           authoritative: false,
         });
       } catch (error) {
+
         console.error(
           '[invoice-evidence-shadow] Diagnostic failed:',
           error.message
