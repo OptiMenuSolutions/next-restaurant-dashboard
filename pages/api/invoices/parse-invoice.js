@@ -32,6 +32,9 @@ import {
   validateInvoiceAgainstSource,
 } from '../../../lib/invoiceSourceValidation.js';
 import {
+  validateInvoiceEvidenceClaims,
+} from '../../../lib/invoiceEvidenceClaims.js';
+import {
   createInvoiceSourceProof,
 } from '../../../lib/invoiceSourceProof.js';
 import { createHash } from 'node:crypto';
@@ -245,7 +248,7 @@ Examples:
   - "Slider 2oz Super Thick" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
   - "Chicken Breast 5oz Portion" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
   - "Salmon Fillet 8oz" with QTY_UNIT=LB → size_unit="lb", NOT "oz"
-If no QTY_UNIT column exists, default to "lb" for meat/poultry/seafood, "each" for portioned items.
+If no QTY_UNIT column exists, inspect the invoice's other labels and pricing relationships to determine the purchase unit. Do not assume a unit based on the type of product. If the purchase unit cannot be established from the document, return null and explain the uncertainty. Never invent a weight, volume, count, or case-to-unit conversion.
 
 CATCH-WEIGHT ITEMS:
 Catch-weight means the item is priced by actual weight, not by case.
@@ -287,6 +290,34 @@ CONFIDENCE DEFINITION:
 "high"   = all values clearly readable from the invoice AND math validates within 5%
 "medium" = math validates but one value was derived or OCR required interpretation
 "low"    = math fails for all three formulas, OR a value is unreadable
+
+SOURCE EVIDENCE — REQUIRED FOR EVERY LINE ITEM:
+You must identify the original OCR content supporting each extracted invoice line.
+
+The source evidence must be copied from the actual OCR text supplied above. Do not paraphrase, reconstruct, or invent source text.
+
+For every line item return a source_evidence object containing:
+- row_text: the exact original OCR text representing that product's invoice row, including its printed quantities and prices where available
+- description_text: the exact product description as printed
+- quantity_text: the exact printed shipped quantity
+- purchase_unit_text: the exact printed purchase unit, if present
+- package_text: the exact printed package description, if present
+- unit_price_text: the exact printed purchase price, if present
+- extension_text: the exact printed extended amount, if present
+
+For HTML table OCR, row_text should contain the complete original <tr>...</tr> fragment for the product, preserving the original cells and their order.
+
+For Markdown or plain-text OCR, row_text should contain the complete original product line or contiguous source text representing that product.
+
+Each individual field must refer to text appearing within its source row. If a field is not explicitly printed, return null for that field.
+
+Never claim a derived, inferred, or calculated value was printed on the invoice.
+
+Do not assume column positions, names, ordering, or supplier-specific layouts. Interpret the invoice using its actual headings, labels, and structure.
+
+Source evidence identifies where information came from. It does not constitute independent verification. A separate server-side process will verify every claim against the original OCR.
+
+If the supplier's case charge is documented but the package contents cannot be established, preserve the case charge and mark package conversion as unresolved.
 
 IGNORE: handwritten annotations, circled numbers, crossed-out values, watermarks, signatures.
 
@@ -347,7 +378,16 @@ OUTPUT FORMAT
       "actual_weight": number or null,
       "standard_unit": "lb | oz | each | gal | case",
       "confidence": "high | medium | low",
-      "confidence_reason": "string if not high, null if high"
+      "confidence_reason": "string if not high, null if high",
+      "source_evidence": {
+        "row_text": "exact original OCR row or contiguous source text",
+        "description_text": "exact printed description or null",
+        "quantity_text": "exact printed shipped quantity or null",
+        "purchase_unit_text": "exact printed purchase unit or null",
+        "package_text": "exact printed package description or null",
+        "unit_price_text": "exact printed purchase price or null",
+        "extension_text": "exact printed extended amount or null"
+      }
     }
   ],
   "confidence": {
@@ -881,6 +921,52 @@ export default async function handler(req, res) {
       extracted.line_items || [],
       ocrText
     );
+
+    // Finding #020: Observe the new evidence verifier
+    // without changing production pricing decisions.
+    //
+    // Results are diagnostic only. They cannot create
+    // signed proofs, approve prices, or modify invoices.
+    if (
+      process.env.INVOICE_EVIDENCE_SHADOW_ENABLED === 'true'
+    ) {
+      try {
+        const claims = validateInvoiceEvidenceClaims(
+          extracted.line_items || [],
+          ocrText
+        );
+
+        const reasons = {};
+
+        for (const claim of claims) {
+          if (claim.chargeVerified) continue;
+
+          const reason = claim.reason || 'unknown';
+
+          reasons[reason] = (reasons[reason] || 0) + 1;
+        }
+
+        console.info('[invoice-evidence-shadow]', {
+          restaurantId,
+          invoiceNumber: extracted.invoice_number,
+          totalItems: claims.length,
+          chargeVerified: claims.filter(
+            claim => claim.chargeVerified
+          ).length,
+          packageVerified: claims.filter(
+            claim => claim.packageVerified
+          ).length,
+          rejectionReasons: reasons,
+          authoritative: false,
+        });
+      } catch (error) {
+        console.error(
+          '[invoice-evidence-shadow] Diagnostic failed:',
+          error.message
+        );
+      }
+    }
+
     const foodCount    = allRaw.filter(i => i.is_food).length;
     const nonFoodCount = allRaw.filter(i => !i.is_food).length;
 
