@@ -668,3 +668,173 @@ test('rejects incorrect structured unit for Dijon mustard', () => {
 
   assert.equal(result.status, 'package_discrepancy');
 });
+
+test('recognizes standard dozen package descriptions', () => {
+  const cases = [
+    ['15 DOZ', 1, 180],
+    ['6 DOZEN', 1, 72],
+    ['12 DOZENS', 1, 144],
+    ['2/6 DOZ', 2, 72],
+    ['4 X 3 DOZEN', 4, 36],
+    ['2 6 DOZ', 2, 72],
+    ['15 DOZ CASE', 1, 180],
+  ];
+
+  for (const [raw, pack, size] of cases) {
+    assert.deepEqual(
+      parseOrdinaryInvoicePackage(raw),
+      {
+        pack,
+        size,
+        size_unit: 'each',
+      },
+      `Failed to parse ${raw}`
+    );
+  }
+});
+
+test('documented dozens calculate individual unit costs', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Countable Product',
+      pack_size_raw: '15 DOZ',
+      pack: 15,
+      size: 1,
+      size_unit: 'dz',
+      quantity_shipped: 2,
+      line_total: 84,
+      invoice_price: 42,
+    })
+  );
+
+  assert.equal(result.quantity, 360);
+  assert.equal(result.unit, 'each');
+
+  assert.ok(
+    Math.abs(result.unit_cost - 84 / 360) < 1e-10
+  );
+
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('compound dozen packages calculate correctly', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      item_name: 'Countable Product',
+      pack_size_raw: '2/6 DOZ',
+      pack: 2,
+      size: 6,
+      size_unit: 'doz',
+      quantity_shipped: 1,
+      line_total: 36,
+      invoice_price: 36,
+    })
+  );
+
+  assert.equal(result.quantity, 144);
+  assert.equal(result.unit, 'each');
+  assert.equal(result.unit_cost, 0.25);
+
+  assert.equal(
+    result.pricingStatus,
+    'invoice_document_consistent'
+  );
+});
+
+test('dozen packaging rejects contradictory quantities', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '15 DOZ',
+      pack: 10,
+      size: 1,
+      size_unit: 'dz',
+      quantity_shipped: 2,
+      line_total: 84,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+
+  assert.equal(
+    result.pricingStatus,
+    'package_discrepancy'
+  );
+});
+
+test('dozen packaging rejects contradictory units', () => {
+  const result = calculateVerifiedInvoiceCost(
+    invoiceItem({
+      pack_size_raw: '15 DOZ',
+      pack: 15,
+      size: 1,
+      size_unit: 'lb',
+      quantity_shipped: 2,
+      line_total: 84,
+    })
+  );
+
+  assert.equal(result.unit_cost, null);
+
+  assert.equal(
+    result.pricingStatus,
+    'package_discrepancy'
+  );
+});
+
+test('ambiguous dozen packages remain unverified', () => {
+  const unsupported = [
+    '15 DOZ APPROX',
+    '15 DOZ + BONUS',
+    'MIXED DOZEN CASE',
+    '15 DOZ OR 12 DOZ',
+    '3/#10 CAN',
+  ];
+
+  for (const raw of unsupported) {
+    assert.equal(
+      parseOrdinaryInvoicePackage(raw),
+      null,
+      `Unexpectedly accepted ${raw}`
+    );
+  }
+});
+
+test('existing count and weight packages remain unchanged', () => {
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('12 CT'),
+    {
+      pack: 1,
+      size: 12,
+      size_unit: 'each',
+    }
+  );
+
+  assert.deepEqual(
+    parseOrdinaryInvoicePackage('6/5 LB'),
+    {
+      pack: 6,
+      size: 5,
+      size_unit: 'lb',
+    }
+  );
+});
+
+test('numbered cans remain protected after dozen support', () => {
+  const result = calculateVerifiedInvoiceCost({
+    pack_size_raw: '3/#10 CAN',
+    quantity_shipped: 1,
+    line_total: 50.78,
+    invoice_price: 50.78,
+    catch_weight: false,
+  });
+
+  assert.equal(result.unit_cost, null);
+
+  assert.equal(
+    result.pricingStatus,
+    'needs_package_verification'
+  );
+});

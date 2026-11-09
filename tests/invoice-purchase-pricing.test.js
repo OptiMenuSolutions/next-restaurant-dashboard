@@ -139,3 +139,66 @@ test('does not infer numbered-can physical quantities', () => {
   assert.equal(result.package_quantity, null);
   assert.equal(result.package_unit, null);
 });
+
+test('preserves documented dozen purchase pricing', () => {
+  const item = {
+    quantity_shipped: 2,
+    quantity_unit: 'CS',
+    invoice_price: 42,
+    line_total: 84,
+    pack_size_raw: '15 DOZ',
+    pack: 15,
+    size: 1,
+    size_unit: 'dz',
+    catch_weight: false,
+  };
+
+  const calculatedCost = {
+    quantity: 360,
+    unit: 'each',
+    unit_cost: 84 / 360,
+    pricingStatus: 'invoice_document_consistent',
+  };
+
+  const result = buildInvoicePurchasePricing(
+    item,
+    calculatedCost
+  );
+
+  assert.equal(result.purchase_quantity, 2);
+  assert.equal(result.purchase_unit, 'case');
+  assert.equal(result.purchase_unit_price, 42);
+
+  assert.equal(result.package_quantity, 180);
+  assert.equal(result.package_unit, 'each');
+
+  assert.equal(result.package_description, '15 DOZ');
+
+  assert.equal(
+    result.package_validation_status,
+    'invoice_document_consistent'
+  );
+});
+
+test('unverified dozen packages cannot create physical quantities', () => {
+  const result = buildInvoicePurchasePricing(
+    {
+      quantity_shipped: 2,
+      quantity_unit: 'CS',
+      invoice_price: 42,
+      line_total: 84,
+      pack_size_raw: '15 DOZ APPROX',
+      catch_weight: false,
+    },
+    {
+      unit_cost: null,
+      pricingStatus: 'needs_package_verification',
+    }
+  );
+
+  assert.equal(result.purchase_quantity, 2);
+  assert.equal(result.purchase_unit_price, 42);
+
+  assert.equal(result.package_quantity, null);
+  assert.equal(result.package_unit, null);
+});
