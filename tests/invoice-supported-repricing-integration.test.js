@@ -189,6 +189,7 @@ function invoiceLine(overrides = {}) {
     id: 'line-1',
     invoice_id: 'invoice-1',
     ingredient_id: INGREDIENT_ID,
+    item_name: 'Dijon Mustard',
     restaurant_id: RESTAURANT_ID,
     quantity: 4,
     unit: 'qt',
@@ -208,15 +209,36 @@ function invoiceLine(overrides = {}) {
 }
 
 function invoiceEvidence(overrides = {}) {
+  const invoiceItemId =
+    overrides.invoice_item_id || 'line-1';
+
+  const invoiceId =
+    overrides.invoice_id || 'invoice-1';
+
+  const isSecondLine = invoiceItemId === 'line-2';
+
   return {
     id: 'evidence-1',
-    invoice_item_id: 'line-1',
-    invoice_id: 'invoice-1',
+    invoice_item_id: invoiceItemId,
+    invoice_id: invoiceId,
     restaurant_id: RESTAURANT_ID,
     source_type: 'structured_ocr_table',
     validation_status: 'source_table_consistent',
     invalidated_at: null,
     invalidation_reason: null,
+    evidence: {
+      pricing: {
+        invoice_item_id: invoiceItemId,
+        invoice_id: invoiceId,
+        restaurant_id: RESTAURANT_ID,
+        ingredient_id: null,
+        item_name: 'Dijon Mustard',
+        quantity: 4,
+        unit: 'qt',
+        unit_cost: isSecondLine ? 9 : 7.5,
+        amount: isSecondLine ? 36 : 30,
+      },
+    },
     ...overrides,
   };
 }

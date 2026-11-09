@@ -22,6 +22,7 @@ function invoiceLine(overrides = {}) {
     invoice_id: 'invoice-1',
     restaurant_id: RESTAURANT_ID,
     ingredient_id: 'ingredient-1',
+    item_name: 'Dijon Mustard',
     quantity: 4,
     unit: 'qt',
     unit_cost: 7.5,
@@ -35,8 +36,24 @@ function evidence(overrides = {}) {
   return {
     invoice_id: 'invoice-1',
     invoice_item_id: 'line-1',
+    restaurant_id: RESTAURANT_ID,
     source_type: 'structured_ocr_table',
     validation_status: 'source_table_consistent',
+    invalidated_at: null,
+    invalidation_reason: null,
+    evidence: {
+      pricing: {
+        invoice_item_id: 'line-1',
+        invoice_id: 'invoice-1',
+        restaurant_id: RESTAURANT_ID,
+        ingredient_id: null,
+        item_name: 'Dijon Mustard',
+        quantity: 4,
+        unit: 'qt',
+        unit_cost: 7.5,
+        amount: 30,
+      },
+    },
     ...overrides,
   };
 }
@@ -198,7 +215,21 @@ test('compatible weight pricing is eligible', () => {
     ingredient: ingredient({
       unit: 'oz',
     }),
-    evidence: evidence(),
+    evidence: evidence({
+      evidence: {
+        pricing: {
+          invoice_item_id: 'line-1',
+          invoice_id: 'invoice-1',
+          restaurant_id: RESTAURANT_ID,
+          ingredient_id: null,
+          item_name: 'Dijon Mustard',
+          quantity: 20,
+          unit: 'lb',
+          unit_cost: 4,
+          amount: 80,
+        },
+      },
+    }),
   });
 
   assert.equal(result.eligible, true);
@@ -273,4 +304,82 @@ test('supplier-verified pricing remains eligible without document evidence', () 
 
   assert.equal(result.eligible, true);
   assert.equal(result.classification, 'supplier_verified');
+});
+
+test('ingredient linking preserves authenticated pricing eligibility', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      ingredient_id: 'ingredient-1',
+    }),
+    ingredient: ingredient(),
+    evidence: evidence(),
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(result.classification, 'invoice_supported');
+});
+
+test('changed invoice price cannot reuse authenticated evidence', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      quantity: 4,
+      unit_cost: 8,
+      amount: 32,
+    }),
+    ingredient: ingredient(),
+    evidence: evidence(),
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});
+
+test('changed supplier product cannot reuse authenticated evidence', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      item_name: 'Different Product',
+    }),
+    ingredient: ingredient(),
+    evidence: evidence(),
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});
+
+test('evidence from another restaurant cannot authorize pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient(),
+    evidence: evidence({
+      restaurant_id: 'restaurant-b',
+    }),
+  });
+
+  assert.equal(result.eligible, false);
+});
+
+test('missing original pricing snapshot cannot authorize pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient(),
+    evidence: evidence({
+      evidence: {},
+    }),
+  });
+
+  assert.equal(result.eligible, false);
+});
+
+test('relinking to an incompatible ingredient cannot authorize pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine(),
+    ingredient: ingredient({
+      unit: 'oz',
+    }),
+    evidence: evidence(),
+  });
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'incompatible_units');
 });

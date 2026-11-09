@@ -783,6 +783,189 @@ test('manual linking updates exactly one invoice line', async () => {
   );
 });
 
+test('authenticated repricing runs after first-time invoice linking', async () => {
+  const previousFlag = process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+
+  process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
+
+  try {
+    const db = mockDatabase([
+      {
+        table: 'invoice_items',
+        data: {
+          id: 'line-1',
+          unit: 'oz',
+          unit_cost: 0.5,
+          ingredient_id: null,
+          invoices: {
+            restaurant_id: restaurantId,
+            date: '2026-10-01',
+          },
+        },
+      },
+      {
+        table: 'ingredients',
+        data: {
+          id: 'ingredient-1',
+          name: 'Blueberries',
+          unit: 'oz',
+          last_ordered_at: null,
+        },
+      },
+      {
+        table: 'invoice_items',
+        action: 'update',
+        data: [{ id: 'line-1' }],
+      },
+    ]);
+
+    const deps = enabledDependencies(db);
+    const authenticatedCalls = [];
+
+    const handler = createLinkInvoiceItemHandler({
+      ...deps,
+      repriceAuthenticated: async (...args) => {
+        authenticatedCalls.push(args);
+      },
+    });
+
+    const res = response();
+
+    await handler({
+      method: 'POST',
+      body: {
+        restaurant_id: restaurantId,
+        invoice_item_id: 'line-1',
+        ingredient_id: 'ingredient-1',
+      },
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.moved, 1);
+
+    assert.equal(authenticatedCalls.length, 1);
+
+    assert.equal(authenticatedCalls[0][0], db);
+    assert.equal(authenticatedCalls[0][1], restaurantId);
+    assert.equal(authenticatedCalls[0][2], 'ingredient-1');
+
+    assert.deepEqual(
+      deps.effects.map(effect => effect.type),
+      ['recompute', 'rebuild']
+    );
+
+    assert.equal(
+      db.operations.filter(op =>
+        op.table === 'invoice_items' &&
+        op.action === 'update'
+      ).length,
+      1
+    );
+  } finally {
+    if (previousFlag === undefined) {
+      delete process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = previousFlag;
+    }
+  }
+});
+
+test('authenticated repricing recalculates both ingredients after relinking', async () => {
+  const previousFlag = process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+
+  process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
+
+  try {
+    const db = mockDatabase([
+      {
+        table: 'invoice_items',
+        data: {
+          id: 'line-1',
+          unit: 'oz',
+          unit_cost: 0.5,
+          ingredient_id: 'ingredient-old',
+          invoices: {
+            restaurant_id: restaurantId,
+            date: '2026-10-01',
+          },
+        },
+      },
+      {
+        table: 'ingredients',
+        data: {
+          id: 'ingredient-new',
+          name: 'Blueberries',
+          unit: 'oz',
+          last_ordered_at: null,
+        },
+      },
+      {
+        table: 'invoice_items',
+        action: 'update',
+        data: [{ id: 'line-1' }],
+      },
+    ]);
+
+    const deps = enabledDependencies(db);
+    const authenticatedCalls = [];
+
+    const handler = createLinkInvoiceItemHandler({
+      ...deps,
+      repriceAuthenticated: async (_db, rid, ingredientId) => {
+        authenticatedCalls.push({
+          restaurantId: rid,
+          ingredientId,
+        });
+      },
+    });
+
+    const res = response();
+
+    await handler({
+      method: 'POST',
+      body: {
+        restaurant_id: restaurantId,
+        invoice_item_id: 'line-1',
+        ingredient_id: 'ingredient-new',
+      },
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.moved, 1);
+
+    assert.deepEqual(authenticatedCalls, [
+      {
+        restaurantId,
+        ingredientId: 'ingredient-new',
+      },
+      {
+        restaurantId,
+        ingredientId: 'ingredient-old',
+      },
+    ]);
+
+    const updates = db.operations.filter(
+      op => op.action === 'update'
+    );
+
+    assert.equal(updates.length, 1);
+    assert.deepEqual(updates[0].values, {
+      ingredient_id: 'ingredient-new',
+    });
+
+    assert.deepEqual(
+      deps.effects.map(effect => effect.type),
+      ['recompute', 'rebuild']
+    );
+  } finally {
+    if (previousFlag === undefined) {
+      delete process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = previousFlag;
+    }
+  }
+});
+
 test('manual linking rejects a foreign ingredient', async () => {
   const db = mockDatabase([
     {

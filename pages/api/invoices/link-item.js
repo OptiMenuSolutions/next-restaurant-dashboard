@@ -25,6 +25,10 @@ import {
   fetchAll,
 } from '../../../lib/admin/fetchAll';
 
+import {
+  repriceFromInvoices as repriceFromAuthenticatedInvoices,
+} from '../../../lib/admin/invoiceLines';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -36,6 +40,7 @@ export function createLinkInvoiceItemHandler({
   getMatchingControl = getRestaurantInvoiceMatchingControl,
   recompute = recomputeMenuCosts,
   rebuild = rebuildCurrentInventory,
+  repriceAuthenticated = repriceFromAuthenticatedInvoices,
 } = {}) {
   return async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -175,9 +180,42 @@ export function createLinkInvoiceItemHandler({
     });
   }
 
-  // If the line was previously linked, recalculate both ingredients
-  // from their remaining invoice histories.
-  if (oldIngredientId) {
+  // Authenticated invoice repricing uses the shared
+  // server-side evidence validation pathway.
+  //
+  // Preserve existing legacy behavior until the
+  // invoice-supported repricing feature is enabled.
+  if (
+    process.env.INVOICE_SUPPORTED_REPRICING_ENABLED === 'true'
+  ) {
+    try {
+      await repriceAuthenticated(
+        db,
+        restaurant_id,
+        ingredient.id
+      );
+
+      if (oldIngredientId) {
+        await repriceAuthenticated(
+          db,
+          restaurant_id,
+          oldIngredientId
+        );
+      }
+    } catch (error) {
+      return res.status(500).json({
+        error:
+          'Invoice line linked, but authenticated repricing failed: ' +
+          error.message,
+      });
+    }
+  } else {
+    // Legacy repricing remains unchanged while the
+    // new feature is disabled.
+
+    // If the line was previously linked, recalculate both ingredients
+    // from their remaining invoice histories.
+    if (oldIngredientId) {
     try {
       await repriceFromInvoices(db, restaurant_id, ingredient.id);
       await repriceFromInvoices(db, restaurant_id, oldIngredientId);
@@ -223,6 +261,7 @@ export function createLinkInvoiceItemHandler({
             priceErr.message,
         });
       }
+    }
     }
   }
 
