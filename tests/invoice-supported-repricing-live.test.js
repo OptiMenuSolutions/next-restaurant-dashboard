@@ -7,6 +7,10 @@ import {
   repriceFromInvoices,
 } from '../lib/admin/invoiceLines.js';
 
+import {
+  createLinkInvoiceItemHandler,
+} from '../pages/api/invoices/link-item.js';
+
 const RESTAURANT_ID =
   '30f6f319-6d2c-498d-bd49-f24be4bffe8d';
 
@@ -174,7 +178,7 @@ test('live development invoice-supported repricing', async () => {
           p_lines: [{
             id: lineId,
             invoice_id: invoiceId,
-            ingredient_id: ingredientId,
+            ingredient_id: null,
             item_name: 'Dijon Mustard',
             quantity: 4,
             unit: 'qt',
@@ -198,7 +202,7 @@ test('live development invoice-supported repricing', async () => {
                   invoice_item_id: lineId,
                   invoice_id: invoiceId,
                   restaurant_id: RESTAURANT_ID,
-                  ingredient_id: ingredientId,
+                  ingredient_id: null,
                   item_name: 'Dijon Mustard',
                   quantity: 4,
                   unit: 'qt',
@@ -224,12 +228,124 @@ test('live development invoice-supported repricing', async () => {
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED =
       'true';
 
-    // Exercise the actual application function.
-    await repriceFromInvoices(
+    // Confirm the invoice line is initially unmatched.
+    const { data: beforeLink, error: beforeLinkError } =
+      await db
+        .from('invoice_items')
+        .select('ingredient_id')
+        .eq('id', lineId)
+        .single();
+
+    assert.ifError(beforeLinkError);
+    assert.equal(beforeLink.ingredient_id, null);
+
+    // Confirm authenticated evidence is initially active.
+    const { data: beforeEvidence, error: beforeEvidenceError } =
+      await db
+        .from('invoice_supported_price_evidence')
+        .select('id, invalidated_at, invalidation_reason')
+        .eq('invoice_item_id', lineId)
+        .single();
+
+    assert.ifError(beforeEvidenceError);
+    assert.equal(beforeEvidence.invalidated_at, null);
+    assert.equal(beforeEvidence.invalidation_reason, null);
+
+    // Exercise the actual client invoice-linking handler.
+    // Authentication and matching authorization are
+    // injected for this isolated development test only.
+    const handler = createLinkInvoiceItemHandler({
       db,
-      RESTAURANT_ID,
-      ingredientId
+      verifyAccess: async () => ({
+        error: null,
+        status: 200,
+      }),
+      getMatchingControl: async () => ({
+        matching_enabled: true,
+      }),
+      recompute: async () => {},
+      rebuild: async () => {},
+    });
+
+    const response = {
+      statusCode: 200,
+      body: null,
+
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+
+      json(body) {
+        this.body = body;
+        return this;
+      },
+
+      end() {
+        return this;
+      },
+    };
+
+    await handler({
+      method: 'POST',
+      body: {
+        restaurant_id: RESTAURANT_ID,
+        invoice_item_id: lineId,
+        ingredient_id: ingredientId,
+      },
+    }, response);
+
+    assert.equal(
+      response.statusCode,
+      200,
+      JSON.stringify(response.body)
     );
+
+    assert.equal(response.body.success, true);
+    assert.equal(response.body.moved, 1);
+
+    console.log(
+      'PASS: Client endpoint successfully linked invoice ingredient'
+    );
+
+    // Verify the actual invoice line now references
+    // the selected recipe ingredient.
+    const { data: linkedLine, error: linkedLineError } =
+      await db
+        .from('invoice_items')
+        .select('ingredient_id')
+        .eq('id', lineId)
+        .single();
+
+    assert.ifError(linkedLineError);
+    assert.equal(linkedLine.ingredient_id, ingredientId);
+
+    console.log(
+      'PASS: Ingredient association saved correctly'
+    );
+
+    // Verify that linking did not invalidate
+    // the original authenticated invoice evidence.
+    const { data: afterEvidence, error: afterEvidenceError } =
+      await db
+        .from('invoice_supported_price_evidence')
+        .select('id, invalidated_at, invalidation_reason')
+        .eq('invoice_item_id', lineId)
+        .single();
+
+    assert.ifError(afterEvidenceError);
+
+    assert.equal(afterEvidence.id, beforeEvidence.id);
+    assert.equal(afterEvidence.invalidated_at, null);
+    assert.equal(afterEvidence.invalidation_reason, null);
+
+    console.log(
+      'PASS: Authenticated evidence remained active after linking'
+    );
+
+    // The linking endpoint also invokes the shared
+    // authenticated invoice repricing function.
+    // Verify its result directly below.
 
     // Read the resulting ingredient from PostgreSQL.
     const { data: updated, error: updateError } =
