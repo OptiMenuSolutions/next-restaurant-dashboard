@@ -1868,3 +1868,121 @@ test('rejects an incomplete product name without recognized supplier metadata', 
   assert.equal(result.chargeVerified, false);
   assert.equal(result.reason, 'product_identity_mismatch');
 });
+
+
+test('authenticates catch weight with compact supplier financial headings', () => {
+  const header =
+    '<tr><th>SKU</th><th>DESCRIPTION</th>' +
+    '<th>SHIPPED</th><th>WEIGHT LB</th>' +
+    '<th>PRICE / LB</th><th>TOTAL</th></tr>';
+
+  const row =
+    '<tr><td>CB-102</td>' +
+    '<td>CHICKEN BREAST FRESH</td>' +
+    '<td>1 CS</td><td>18.40</td>' +
+    '<td>4.30</td><td>79.12</td></tr>';
+
+  const makeItem = (overrides = {}) => ({
+    item_name_raw: 'CHICKEN BREAST FRESH',
+    quantity_shipped: 1,
+    quantity_unit: 'lb',
+    invoice_price: 4.30,
+    line_total: 79.12,
+    catch_weight: true,
+    actual_weight: 18.40,
+    source_evidence: {
+      row_text: row,
+      description_text: 'CHICKEN BREAST FRESH',
+      quantity_text: '1 CS',
+      purchase_unit_text: 'CS',
+      weight_text: '18.40',
+      weight_unit_text: 'LB',
+      unit_price_text: '4.30',
+      extension_text: '79.12',
+    },
+    ...overrides,
+  });
+
+  const document = `<table>${header}${row}</table>`;
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [makeItem()],
+    document
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.verifiedValues.quantity_shipped, 1);
+  assert.equal(result.verifiedValues.actual_weight, 18.4);
+  assert.equal(result.verifiedValues.weight_unit, 'lb');
+  assert.equal(result.verifiedValues.invoice_price, 4.3);
+  assert.equal(result.verifiedValues.line_total, 79.12);
+
+  // The extractor may separate "1" from "CS".
+  const separated = makeItem({
+    source_evidence: {
+      ...makeItem().source_evidence,
+      quantity_text: '1',
+    },
+  });
+
+  const [separatedResult] =
+    validateInvoiceEvidenceClaims(
+      [separated],
+      document
+    );
+
+  assert.equal(separatedResult.chargeVerified, true);
+
+  // Incorrect weight cannot be authenticated.
+  const [badWeight] = validateInvoiceEvidenceClaims(
+    [makeItem({ actual_weight: 20 })],
+    document
+  );
+
+  assert.equal(badWeight.chargeVerified, false);
+
+  // Incorrect total cannot be authenticated.
+  const [badTotal] = validateInvoiceEvidenceClaims(
+    [makeItem({ line_total: 90 })],
+    document
+  );
+
+  assert.equal(badTotal.chargeVerified, false);
+
+  // The shipped quantity must still match.
+  const [badCount] = validateInvoiceEvidenceClaims(
+    [makeItem({ quantity_shipped: 2 })],
+    document
+  );
+
+  assert.equal(badCount.chargeVerified, false);
+
+  // No unsupported case-count interpretation.
+  const unsupportedUnit = makeItem({
+    source_evidence: {
+      ...makeItem().source_evidence,
+      purchase_unit_text: 'EA',
+    },
+  });
+
+  const [badUnit] = validateInvoiceEvidenceClaims(
+    [unsupportedUnit],
+    document
+  );
+
+  assert.equal(badUnit.chargeVerified, false);
+
+  // Ambiguous financial column headings remain unsafe.
+  const ambiguous = document.replace(
+    '<th>SHIPPED</th>',
+    '<th>ITEMS</th>'
+  );
+
+  const [badHeading] = validateInvoiceEvidenceClaims(
+    [makeItem()],
+    ambiguous
+  );
+
+  assert.equal(badHeading.chargeVerified, false);
+});
