@@ -1794,3 +1794,77 @@ for (const scenario of embeddedCatchWeightRejections) {
     assert.equal(result.verifiedValues, null);
   });
 }
+
+
+test('authenticates product identity when supplier emergency phone follows the name', () => {
+  const header =
+    '<tr><td>Shipped</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1</td>' +
+    '<td>FRST MRK+BLEACH GERMICIDAL ULTRA ' +
+    'EMERGENCY PHONE: 800-424-9300</td>' +
+    '<td>21.0000</td><td>21.00</td></tr>';
+
+  const extracted = {
+    item_name_raw: 'FRST MRK+BLEACH GERMICIDAL ULTRA',
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text:
+        'FRST MRK+BLEACH GERMICIDAL ULTRA ' +
+        'EMERGENCY PHONE: 800-424-9300',
+      quantity_text: '1',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.verifiedValues.invoice_price, 21);
+  assert.equal(result.verifiedValues.line_total, 21);
+});
+
+test('rejects an incomplete product name without recognized supplier metadata', () => {
+  const header =
+    '<tr><td>Shipped</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1</td>' +
+    '<td>CHICKEN BREAST BONELESS SKINLESS</td>' +
+    '<td>21.0000</td><td>21.00</td></tr>';
+
+  const extracted = {
+    item_name_raw: 'CHICKEN BREAST',
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text:
+        'CHICKEN BREAST BONELESS SKINLESS',
+      quantity_text: '1',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.reason, 'product_identity_mismatch');
+});
