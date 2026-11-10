@@ -1020,6 +1020,14 @@ export default async function handler(req, res) {
           diagnostic.signingConfigured &&
           diagnosticInvoiceNumber
         ) {
+          const diagnosticInvoiceItems =
+            (extracted.line_items || []).map(
+              (lineItem, index) => ({
+                ...lineItem,
+                _id: `item_${index}`,
+              })
+            );
+
           for (
             let index = 0;
             index < claims.length;
@@ -1040,10 +1048,8 @@ export default async function handler(req, res) {
 
             const itemKey = `item_${index}`;
 
-            const diagnosticItem = {
-              ...original,
-              _id: itemKey,
-            };
+            const diagnosticItem =
+              diagnosticInvoiceItems[index];
 
             try {
               const proof = createInvoiceEvidenceProofV2({
@@ -1052,6 +1058,7 @@ export default async function handler(req, res) {
                 documentFingerprint,
                 itemKey,
                 item: diagnosticItem,
+                invoiceItems: diagnosticInvoiceItems,
                 ocrText,
                 secret: diagnosticSecret,
               });

@@ -1464,3 +1464,333 @@ for (const scenario of splitPackageRejections) {
     );
   });
 }
+
+
+test('authenticates a product description followed by supplier safety information', () => {
+  const header =
+    '<tr><td>Item Number</td><td>Ordered</td>' +
+    '<td>Shipped</td><td>Pack</td>' +
+    '<td>Size</td><td>Unit</td>' +
+    '<td>Description</td><td>Price</td>' +
+    '<td>Extension</td><td>ST</td><td></td></tr>';
+
+  const row =
+    '<tr><td>556332</td><td>1</td>' +
+    '<td>1</td><td>6</td>' +
+    '<td>1 GA</td><td></td>' +
+    '<td>FRST MRK+BLEACH GERMICIDAL ULTRA' +
+    '<br/>EMERGENCY PHONE: 800-424-9300</td>' +
+    '<td>21.0000</td><td>21.00</td>' +
+    '<td>T</td><td></td></tr>';
+
+  const item = {
+    item_name_raw: 'FRST MRK+BLEACH GERMICIDAL ULTRA',
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    pack_size_raw: '6 1 GA',
+    pack: 6,
+    size: 1,
+    size_unit: 'gal',
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text: 'FRST MRK+BLEACH GERMICIDAL ULTRA',
+      quantity_text: '1',
+      purchase_unit_text: null,
+      package_text: '6 1 GA',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [item],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.verifiedValues.invoice_price, 21);
+  assert.equal(result.verifiedValues.line_total, 21);
+
+  // The missing purchase unit must still prevent
+  // unsupported package verification.
+  assert.equal(result.packageVerified, false);
+});
+
+
+function descriptionSecurityFixture({
+  printedDescription = 'FRST MRK+BLEACH GERMICIDAL ULTRA EMERGENCY PHONE: 800-424-9300',
+  claimedDescription = 'FRST MRK+BLEACH GERMICIDAL ULTRA',
+  otherCell = '',
+} = {}) {
+  const header =
+    '<tr><td>Shipped</td><td>Description</td>' +
+    '<td>Reference</td><td>Price</td>' +
+    '<td>Extension</td></tr>';
+
+  const row =
+    `<tr><td>1</td><td>${printedDescription}</td>` +
+    `<td>${otherCell}</td>` +
+    '<td>21.0000</td><td>21.00</td></tr>';
+
+  const item = {
+    item_name_raw: claimedDescription,
+    quantity_shipped: 1,
+    invoice_price: 21,
+    line_total: 21,
+    catch_weight: false,
+    source_evidence: {
+      row_text: row,
+      description_text: claimedDescription,
+      quantity_text: '1',
+      unit_price_text: '21.0000',
+      extension_text: '21.00',
+    },
+  };
+
+  return {
+    item,
+    ocrText: `<table>${header}${row}</table>`,
+  };
+}
+
+test('rejects a product description appearing only in another column', () => {
+  const fixture = descriptionSecurityFixture({
+    printedDescription: 'OVEN CLEANER',
+    otherCell: 'FRST MRK+BLEACH GERMICIDAL ULTRA',
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [fixture.item],
+    fixture.ocrText
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.reason, 'source_field_not_found');
+});
+
+test('rejects a product description appearing in the middle of another description', () => {
+  const fixture = descriptionSecurityFixture({
+    printedDescription:
+      'OTHER PRODUCT FRST MRK+BLEACH GERMICIDAL ULTRA',
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [fixture.item],
+    fixture.ocrText
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.reason, 'source_field_not_found');
+});
+
+test('rejects a partial product name that ends inside a word', () => {
+  const fixture = descriptionSecurityFixture({
+    printedDescription:
+      'CHICKEN BREAST MEDIUM GRADE',
+    claimedDescription:
+      'CHICKEN BRE',
+  });
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [fixture.item],
+    fixture.ocrText
+  );
+
+  assert.equal(result.chargeVerified, false);
+  assert.equal(result.reason, 'source_field_not_found');
+});
+
+
+test('authenticates catch-weight pricing with weight in Description and LB purchase unit', () => {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td>' +
+    '<td>ST</td><td></td></tr>';
+
+  const row =
+    '<tr><td>1030906</td><td>1</td>' +
+    '<td>1</td><td>22</td>' +
+    '<td>7 OZ</td><td>LB</td>' +
+    '<td>RANRNCH BEEF SKIRT STK OUTSIDE NR 9.96</td>' +
+    '<td>14.5000</td><td>144.42</td>' +
+    '<td></td><td></td></tr>';
+
+  const extracted = {
+    item_name_raw:
+      'RANRNCH BEEF SKIRT STK OUTSIDE NR 9.96',
+    quantity_shipped: 1,
+    quantity_unit: 'LB',
+    invoice_price: 14.5,
+    line_total: 144.42,
+    pack_size_raw: '22 7 OZ',
+    pack: 22,
+    size: 7,
+    size_unit: 'oz',
+    catch_weight: true,
+    actual_weight: 9.96,
+    source_evidence: {
+      row_text: row,
+      description_text:
+        'RANRNCH BEEF SKIRT STK OUTSIDE NR 9.96',
+      quantity_text: '1',
+      purchase_unit_text: 'LB',
+      package_text: '22 7 OZ',
+      weight_text: '9.96',
+      weight_unit_text: 'LB',
+      unit_price_text: '14.5000',
+      extension_text: '144.42',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+
+  assert.equal(
+    result.verifiedValues.actual_weight,
+    9.96
+  );
+
+  assert.equal(
+    result.verifiedValues.weight_unit,
+    'lb'
+  );
+
+  assert.equal(
+    result.verifiedValues.invoice_price,
+    14.5
+  );
+
+  assert.equal(
+    result.verifiedValues.line_total,
+    144.42
+  );
+});
+
+
+function embeddedCatchWeightFixture({
+  printedDescription = 'BEEF SKIRT STEAK 9.96',
+  claimedWeight = '9.96',
+  actualWeight = 9.96,
+  printedUnit = 'LB',
+  quantityUnit = 'LB',
+  printedPrice = '14.5000',
+  printedExtension = '144.42',
+  extractedPrice = 14.5,
+  extractedExtension = 144.42,
+} = {}) {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1030906</td><td>1</td>' +
+    '<td>1</td><td>22</td>' +
+    '<td>7 OZ</td>' +
+    `<td>${printedUnit}</td>` +
+    `<td>${printedDescription}</td>` +
+    `<td>${printedPrice}</td>` +
+    `<td>${printedExtension}</td></tr>`;
+
+  return {
+    ocrText: `<table>${header}${row}</table>`,
+    item: {
+      item_name_raw: printedDescription,
+      quantity_shipped: 1,
+      quantity_unit: quantityUnit,
+      invoice_price: extractedPrice,
+      line_total: extractedExtension,
+      pack_size_raw: '22 7 OZ',
+      pack: 22,
+      size: 7,
+      size_unit: 'oz',
+      catch_weight: true,
+      actual_weight: actualWeight,
+      source_evidence: {
+        row_text: row,
+        description_text: printedDescription,
+        quantity_text: '1',
+        purchase_unit_text: printedUnit,
+        package_text: '22 7 OZ',
+        weight_text: claimedWeight,
+        weight_unit_text: 'LB',
+        unit_price_text: printedPrice,
+        extension_text: printedExtension,
+      },
+    },
+  };
+}
+
+const embeddedCatchWeightRejections = [
+  {
+    name: 'rejects a weight appearing only in the middle of the description',
+    changes: {
+      printedDescription: 'BEEF SKIRT 9.96 STEAK',
+    },
+  },
+  {
+    name: 'rejects an embedded weight that differs from the printed value',
+    changes: {
+      claimedWeight: '8.96',
+    },
+  },
+  {
+    name: 'rejects an extracted weight inconsistent with the printed weight',
+    changes: {
+      actualWeight: 8.96,
+    },
+  },
+  {
+    name: 'rejects an embedded weight without an LB purchase unit',
+    changes: {
+      printedUnit: '',
+    },
+  },
+  {
+    name: 'rejects an extracted purchase unit that disagrees with LB',
+    changes: {
+      quantityUnit: 'CS',
+    },
+  },
+  {
+    name: 'rejects incorrect catch-weight arithmetic',
+    changes: {
+      printedExtension: '140.00',
+      extractedExtension: 140,
+    },
+  },
+];
+
+for (const scenario of embeddedCatchWeightRejections) {
+  test(scenario.name, () => {
+    const fixture = embeddedCatchWeightFixture(
+      scenario.changes
+    );
+
+    const [result] = validateInvoiceEvidenceClaims(
+      [fixture.item],
+      fixture.ocrText
+    );
+
+    assert.equal(
+      result.chargeVerified,
+      false,
+      scenario.name
+    );
+
+    assert.equal(result.packageVerified, false);
+    assert.equal(result.verifiedValues, null);
+  });
+}

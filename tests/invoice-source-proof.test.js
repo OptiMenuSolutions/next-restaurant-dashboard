@@ -362,6 +362,7 @@ function createV2(fixture) {
     documentFingerprint: DOCUMENT_FINGERPRINT,
     itemKey: 'item_0',
     item: fixture.invoiceItem,
+    invoiceItems: [fixture.invoiceItem],
     ocrText: fixture.ocrText,
     issuedAt: NOW,
     secret: SECRET,
@@ -561,5 +562,107 @@ test('version 2 refuses to sign a mismatched invoice item identity', () => {
   assert.throws(
     () => createV2(fixture),
     /Invoice item identity mismatch/
+  );
+});
+
+
+test('version 2 signs and verifies catch-weight evidence embedded in a description', () => {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1030906</td><td>1</td>' +
+    '<td>1</td><td>22</td>' +
+    '<td>7 OZ</td><td>LB</td>' +
+    '<td>BEEF SKIRT STEAK 9.96</td>' +
+    '<td>14.5000</td><td>144.42</td></tr>';
+
+  const invoiceItem = {
+    _id: 'item_0',
+    item_name_raw: 'BEEF SKIRT STEAK 9.96',
+    quantity_shipped: 1,
+    quantity_unit: 'LB',
+    pack_size_raw: '22 7 OZ',
+    pack: 22,
+    size: 7,
+    size_unit: 'oz',
+    invoice_price: 14.5,
+    line_total: 144.42,
+    catch_weight: true,
+    actual_weight: 9.96,
+    source_evidence: {
+      row_text: row,
+      description_text: 'BEEF SKIRT STEAK 9.96',
+      quantity_text: '1',
+      purchase_unit_text: 'LB',
+      package_text: '22 7 OZ',
+      weight_text: '9.96',
+      weight_unit_text: 'LB',
+      unit_price_text: '14.5000',
+      extension_text: '144.42',
+    },
+  };
+
+  const proof = createInvoiceEvidenceProofV2({
+    restaurantId: 'cedar-test-bistro',
+    invoiceNumber: 'CTB-2111',
+    documentFingerprint: DOCUMENT_FINGERPRINT,
+    itemKey: 'item_0',
+    item: invoiceItem,
+    invoiceItems: [invoiceItem],
+    ocrText: `<table>${header}${row}</table>`,
+    issuedAt: NOW,
+    secret: SECRET,
+  });
+
+  const result = verify(proof, {
+    item: invoiceItem,
+  });
+
+  assert.equal(result.valid, true);
+  assert.equal(result.payload.version, 2);
+  assert.equal(result.payload.pricing.actual_weight, 9.96);
+  assert.equal(result.payload.pricing.weight_unit, 'lb');
+  assert.equal(result.payload.pricing.price_basis, 'per_lb');
+  assert.equal(result.payload.pricing.invoice_price, 14.5);
+  assert.equal(result.payload.pricing.line_total, 144.42);
+});
+
+
+test('version 2 refuses duplicate source claims across invoice items', () => {
+  const fixture = catchWeightFixture();
+
+  // A second invoice item attempts to claim
+  // the exact same original OCR source row.
+  const duplicateItem = {
+    ...fixture.invoiceItem,
+    _id: 'item_1',
+  };
+
+  const invoiceItems = [
+    fixture.invoiceItem,
+    duplicateItem,
+  ];
+
+  // Even though the requested item individually
+  // matches the OCR, the full invoice contains
+  // conflicting claims to the same source row.
+  assert.throws(
+    () => createInvoiceEvidenceProofV2({
+      restaurantId: 'cedar-test-bistro',
+      invoiceNumber: 'CTB-2111',
+      documentFingerprint: DOCUMENT_FINGERPRINT,
+      itemKey: 'item_0',
+      item: fixture.invoiceItem,
+      invoiceItems,
+      ocrText: fixture.ocrText,
+      issuedAt: NOW,
+      secret: SECRET,
+    }),
+    /duplicate source claim/i
   );
 });
