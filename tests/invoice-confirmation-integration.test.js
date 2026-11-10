@@ -347,15 +347,22 @@ function signedSourceItem(invoiceNumber = 'CTB-2111') {
   };
 }
 
+
 async function withEvidencePersistence(callback) {
   const previousFlag =
     process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+
+  const previousAllowlist =
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID;
 
   const previousSecret =
     process.env.INVOICE_SOURCE_PROOF_SECRET;
 
   process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
     'true';
+
+  process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID =
+    RESTAURANT_ID;
 
   process.env.INVOICE_SOURCE_PROOF_SECRET =
     SOURCE_TEST_SECRET;
@@ -368,6 +375,13 @@ async function withEvidencePersistence(callback) {
     } else {
       process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
         previousFlag;
+    }
+
+    if (previousAllowlist === undefined) {
+      delete process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID;
+    } else {
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID =
+        previousAllowlist;
     }
 
     if (previousSecret === undefined) {
@@ -2171,6 +2185,66 @@ test(
           `${scenario.name}: database writer must not run`
         );
       }
+    });
+  }
+);
+
+
+test(
+  'transactional persistence remains disabled for restaurants outside the allowlist',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes, rpcCalls } = createDb();
+
+      // The global flag is enabled, but this restaurant
+      // is not the explicitly permitted restaurant.
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID =
+        'another-restaurant-id';
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'TEST-ALLOWLIST-001',
+        item: {
+          _id: 'item_0',
+          item_name_raw: 'GROUND BEEF',
+          pack_size_raw: '2/5 LB',
+          pack: 2,
+          size: 5,
+          size_unit: 'lb',
+          quantity_shipped: 1,
+          invoice_price: 40,
+          line_total: 40,
+        },
+      });
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      // No transactional database function is called.
+      assert.equal(
+        rpcCalls.filter(call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+        ).length,
+        0
+      );
+
+      // Existing legacy invoice confirmation remains
+      // available for non-allowlisted restaurants.
+      assert.ok(
+        writes.some(write =>
+          write.table === 'invoice_items' &&
+          write.operation === 'insert'
+        )
+      );
     });
   }
 );

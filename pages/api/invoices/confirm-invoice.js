@@ -408,8 +408,24 @@ export function createConfirmInvoiceHandler({
     errors:               [],
   };
 
+  // Transactional evidence persistence requires both:
+  // 1. An explicit global feature flag.
+  // 2. An exact restaurant allowlist match.
+  //
+  // A missing or empty allowlist fails closed.
+  // All other restaurants retain legacy confirmation.
+
+  const evidencePersistenceAllowedRestaurantId =
+    (
+      process.env
+        .INVOICE_SOURCE_EVIDENCE_PERSISTENCE_RESTAURANT_ID ||
+      ''
+    ).trim();
+
   const evidencePersistenceEnabled =
-    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED === 'true';
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED === 'true' &&
+    evidencePersistenceAllowedRestaurantId.length > 0 &&
+    restaurant_id === evidencePersistenceAllowedRestaurantId;
 
   // Legacy invoice confirmation remains unchanged.
   // The transactional pathway requires a stable request identity.
