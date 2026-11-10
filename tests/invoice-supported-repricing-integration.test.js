@@ -671,3 +671,94 @@ test('V2 evidence from another restaurant cannot update ingredient pricing', asy
   assert.equal(result.ingredient.last_price, 0.75);
   assert.equal(result.ingredient.price_status, 'needs_review');
 });
+
+
+test('older authenticated V2 price wins over newer unverified invoice', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Chicken breast',
+      unit: 'oz',
+      standard_unit: 'oz',
+      last_price: null,
+      price_status: 'pending',
+      price_approved_at: null,
+    },
+    lines: [
+      // Newer invoice: recorded price, but no
+      // authenticated evidence.
+      invoiceLine({
+        id: 'newer-line',
+        invoice_id: 'newer-invoice',
+        item_name: 'Chicken Breast Fresh',
+        quantity: 10,
+        unit: 'lb',
+        unit_cost: 4.60,
+        amount: 46,
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-14',
+          created_at: '2026-11-14T12:00:00Z',
+        },
+      }),
+
+      // Older invoice: authenticated V2 source.
+      invoiceLine({
+        id: 'verified-line',
+        invoice_id: 'verified-invoice',
+        item_name: 'Chicken Breast Fresh',
+        quantity: 18.4,
+        unit: 'lb',
+        unit_cost: 4.30,
+        amount: 79.12,
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-10',
+          created_at: '2026-11-10T17:50:00Z',
+        },
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        id: 'verified-evidence',
+        invoice_item_id: 'verified-line',
+        invoice_id: 'verified-invoice',
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+        evidence: {
+          proof_version: 2,
+          pricing: {
+            invoice_item_id: 'verified-line',
+            invoice_id: 'verified-invoice',
+            restaurant_id: RESTAURANT_ID,
+            item_name: 'Chicken Breast Fresh',
+            quantity: 18.4,
+            unit: 'lb',
+            unit_cost: 4.30,
+            amount: 79.12,
+          },
+        },
+      }),
+    ],
+  });
+
+  // $4.30 per lb / 16 oz per lb.
+  // Do not use the newer unsupported $4.60 price.
+  assert.equal(result.ingredient.last_price, 0.26875);
+  assert.equal(result.ingredient.unit, 'oz');
+  assert.equal(result.ingredient.standard_unit, 'oz');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.equal(result.ingredient.is_estimated, false);
+  assert.equal(
+    result.ingredient.last_ordered_at,
+    '2026-11-10'
+  );
+
+  // Exactly one ingredient update is expected.
+  assert.equal(
+    result.writes.filter(
+      write => write.table === 'ingredients'
+    ).length,
+    1
+  );
+});
