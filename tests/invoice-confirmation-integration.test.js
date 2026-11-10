@@ -7,6 +7,10 @@ import {
   createInvoiceSourceProof,
 } from '../lib/invoiceSourceProof.js';
 
+import {
+  deliverInvoiceV2Proofs,
+} from '../lib/invoiceV2ProofDelivery.js';
+
 import { createConfirmInvoiceHandler } from '../pages/api/invoices/confirm-invoice.js';
 import { resolveInvoiceResearchCost } from '../lib/invoiceResearchCosting.js';
 
@@ -1919,5 +1923,254 @@ test(
       line.package_validation_status,
       'needs_package_verification'
     );
+  }
+);
+
+
+test(
+  'delivered V2 catch-weight proof reaches transactional confirmation without changing pricing',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, rpcCalls, writes } = createDb();
+
+      const header =
+        '<tr><td>Item Number</td><td>Ordered</td>' +
+        '<td>Shipped</td><td>Pack</td>' +
+        '<td>Size</td><td>Unit</td>' +
+        '<td>Description</td><td>Price</td>' +
+        '<td>Extension</td></tr>';
+
+      const bleachRow =
+        '<tr><td>556332</td><td>1</td><td>1</td>' +
+        '<td>6</td><td>1 GA</td><td></td>' +
+        '<td>BLEACH GERMICIDAL</td>' +
+        '<td>21.0000</td><td>21.00</td></tr>';
+
+      const steakRow =
+        '<tr><td>1030906</td><td>1</td><td>1</td>' +
+        '<td>22</td><td>7 OZ</td><td>LB</td>' +
+        '<td>BEEF SKIRT STEAK 9.96</td>' +
+        '<td>14.5000</td><td>144.42</td></tr>';
+
+      const ocrText =
+        `<table>${header}${bleachRow}${steakRow}</table>`;
+
+      const bleach = {
+        item_name_raw: 'BLEACH GERMICIDAL',
+        is_food: false,
+        quantity_shipped: 1,
+        invoice_price: 21,
+        line_total: 21,
+        catch_weight: false,
+      };
+
+      const steak = {
+        item_name_raw: 'BEEF SKIRT STEAK 9.96',
+        item_name_normalized: 'Beef Skirt Steak',
+        is_food: true,
+        quantity_shipped: 1,
+        quantity_unit: 'LB',
+        pack_size_raw: '22 7 OZ',
+        pack: 22,
+        size: 7,
+        size_unit: 'oz',
+        invoice_price: 14.5,
+        line_total: 144.42,
+        catch_weight: true,
+        actual_weight: 9.96,
+        source_evidence: {
+          row_text: steakRow,
+          description_text: 'BEEF SKIRT STEAK 9.96',
+          quantity_text: '1',
+          purchase_unit_text: 'LB',
+          package_text: '22 7 OZ',
+          weight_text: '9.96',
+          weight_unit_text: 'LB',
+          unit_price_text: '14.5000',
+          extension_text: '144.42',
+        },
+      };
+
+      const returnedSteak = {
+        ...steak,
+        _id: 'item_0',
+        match_status: 'new',
+      };
+
+      const delivery = deliverInvoiceV2Proofs({
+        allRaw: [bleach, steak],
+        foodItems: [steak],
+        lineItemsWithMatches: [returnedSteak],
+        ocrText,
+        restaurantId: RESTAURANT_ID,
+        invoiceNumber: 'TEST-V2-1001',
+        documentFingerprint: SOURCE_TEST_FINGERPRINT,
+        secret: SOURCE_TEST_SECRET,
+      });
+
+      assert.equal(delivery.signed, 1);
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'TEST-V2-1001',
+        item: returnedSteak,
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+      );
+
+      assert.ok(transaction);
+      assert.equal(transaction.args.p_lines.length, 1);
+      assert.equal(transaction.args.p_evidence.length, 1);
+
+      const line = transaction.args.p_lines[0];
+      const savedEvidence =
+        transaction.args.p_evidence[0];
+
+      assert.equal(line.quantity, 9.96);
+      assert.equal(line.unit, 'lb');
+      assert.equal(line.unit_cost, 14.5);
+      assert.equal(line.amount, 144.42);
+
+      assert.equal(savedEvidence.evidence_version, 2);
+
+      assert.equal(
+        savedEvidence.source_type,
+        'independent_ocr_evidence'
+      );
+
+      assert.equal(
+        savedEvidence.validation_status,
+        'source_charge_verified'
+      );
+
+      assert.equal(
+        savedEvidence.invoice_item_id,
+        line.id
+      );
+
+      assert.equal(
+        savedEvidence.evidence.pricing.quantity,
+        9.96
+      );
+
+      assert.equal(
+        savedEvidence.evidence.pricing.unit,
+        'lb'
+      );
+
+      assert.equal(
+        savedEvidence.evidence.pricing.unit_cost,
+        14.5
+      );
+
+      // Confirmation must not independently modify
+      // ingredient pricing outside the transaction.
+
+      assert.equal(
+        writes.filter(write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+        ).length,
+        0
+      );
+
+      // The successful confirmation above establishes
+      // that the original signed values are accepted.
+      //
+      // Now verify that modifications made after
+      // proof delivery cannot reach the transactional
+      // database writer.
+
+      const originalTransactionCount = rpcCalls.filter(
+        call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+      ).length;
+
+      const tamperingCases = [
+        {
+          name: 'modified purchasing unit',
+          changes: {
+            quantity_unit: 'CS',
+          },
+        },
+        {
+          name: 'modified actual weight',
+          changes: {
+            actual_weight: 10.96,
+          },
+        },
+        {
+          name: 'modified invoice price',
+          changes: {
+            invoice_price: 15.5,
+          },
+        },
+        {
+          name: 'modified invoice total',
+          changes: {
+            line_total: 154.42,
+          },
+        },
+      ];
+
+      for (const scenario of tamperingCases) {
+        const modifiedItem = {
+          ...returnedSteak,
+          ...scenario.changes,
+        };
+
+        const modifiedRequest = createRequest({
+          number: 'TEST-V2-1001',
+          item: modifiedItem,
+        });
+
+        modifiedRequest.body.file_urls = [
+          `${RESTAURANT_ID}/test-invoice.pdf`,
+        ];
+
+        const rejectedResponse = createResponse();
+
+        await handler(
+          modifiedRequest,
+          rejectedResponse
+        );
+
+        assert.equal(
+          rejectedResponse.statusCode,
+          422,
+          scenario.name
+        );
+
+        assert.equal(
+          rpcCalls.filter(
+            call =>
+              call.functionName ===
+              'save_invoice_confirmation_transactional'
+          ).length,
+          originalTransactionCount,
+          `${scenario.name}: database writer must not run`
+        );
+      }
+    });
   }
 );

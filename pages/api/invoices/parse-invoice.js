@@ -39,6 +39,12 @@ import {
   createInvoiceEvidenceProofV2,
   verifyInvoiceSourceProof,
 } from '../../../lib/invoiceSourceProof.js';
+import {
+  buildInvoiceEvidenceSigningCollection,
+} from '../../../lib/invoiceEvidenceSigningCollection.js';
+import {
+  deliverInvoiceV2Proofs,
+} from '../../../lib/invoiceV2ProofDelivery.js';
 import { createHash } from 'node:crypto';
 
 // Vercel's serverless functions have a hard 4.5MB request body limit,
@@ -1364,6 +1370,65 @@ export default async function handler(req, res) {
         }
       }
     }
+
+
+
+    // Step 6G.5: V2 proof delivery.
+    //
+    // Disabled by default. Proof delivery does not
+    // authorize evidence persistence or repricing.
+
+    const v2DeliveryEnabled =
+      process.env.INVOICE_V2_PROOF_DELIVERY_ENABLED === 'true';
+
+    let v2Delivery = {
+      eligible: 0,
+      signed: 0,
+      rejected: 0,
+    };
+
+    if (
+      v2DeliveryEnabled &&
+      sourceProofSecret &&
+      sourceProofSecret.length >= 32 &&
+      invoiceProofNumber
+    ) {
+      try {
+        v2Delivery = deliverInvoiceV2Proofs({
+          allRaw,
+          foodItems,
+          lineItemsWithMatches,
+          ocrText,
+          restaurantId,
+          invoiceNumber: invoiceProofNumber,
+          documentFingerprint,
+          secret: sourceProofSecret,
+        });
+      } catch (error) {
+        // Collection failures cannot leave behind
+        // partially delivered V2 proofs.
+        for (const item of lineItemsWithMatches) {
+          if (item.catch_weight === true) {
+            delete item.invoice_source_proof;
+          }
+        }
+
+        v2Delivery.signed = 0;
+
+        console.error(
+          '[invoice-v2-proof-delivery] Collection failed:',
+          error.message
+        );
+      }
+    }
+
+    console.info('[invoice-v2-proof-delivery]', {
+      restaurantId,
+      invoiceNumber: invoiceProofNumber,
+      enabled: v2DeliveryEnabled,
+      ...v2Delivery,
+      authoritative: false,
+    });
 
     console.info('[invoice-source-proof]', {
       restaurantId,
