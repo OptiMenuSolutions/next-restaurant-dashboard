@@ -244,8 +244,15 @@ function invoiceEvidence(overrides = {}) {
 }
 
 async function runFixture(options, enabled = true) {
+
   const previous =
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+
+  const previousRestaurant =
+    process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+
+  process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+    RESTAURANT_ID;
 
   if (enabled) {
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
@@ -268,6 +275,13 @@ async function runFixture(options, enabled = true) {
       delete process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
     } else {
       process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = previous;
+    }
+    if (previousRestaurant === undefined) {
+      delete process.env
+        .INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+        previousRestaurant;
     }
   }
 }

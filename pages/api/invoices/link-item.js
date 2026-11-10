@@ -29,6 +29,10 @@ import {
   repriceFromInvoices as repriceFromAuthenticatedInvoices,
 } from '../../../lib/admin/invoiceLines';
 
+import {
+  isInvoiceSupportedRepricingEnabled,
+} from '../../../lib/invoiceSupportedRepricingFlag.js';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -185,9 +189,7 @@ export function createLinkInvoiceItemHandler({
   //
   // Preserve existing legacy behavior until the
   // invoice-supported repricing feature is enabled.
-  if (
-    process.env.INVOICE_SUPPORTED_REPRICING_ENABLED === 'true'
-  ) {
+if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
     try {
       await repriceAuthenticated(
         db,

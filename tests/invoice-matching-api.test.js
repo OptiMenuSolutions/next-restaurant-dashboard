@@ -786,6 +786,12 @@ test('manual linking updates exactly one invoice line', async () => {
 test('authenticated repricing runs after first-time invoice linking', async () => {
   const previousFlag = process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
 
+  const previousRestaurant =
+    process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+
+  process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+    restaurantId;
+
   process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
 
   try {
@@ -867,11 +873,24 @@ test('authenticated repricing runs after first-time invoice linking', async () =
     } else {
       process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = previousFlag;
     }
+    if (previousRestaurant === undefined) {
+      delete process.env
+        .INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+        previousRestaurant;
+    }
   }
 });
 
 test('authenticated repricing recalculates both ingredients after relinking', async () => {
   const previousFlag = process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+
+  const previousRestaurant =
+    process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+
+  process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+    restaurantId;
 
   process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
 
@@ -962,6 +981,13 @@ test('authenticated repricing recalculates both ingredients after relinking', as
       delete process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
     } else {
       process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = previousFlag;
+    }
+    if (previousRestaurant === undefined) {
+      delete process.env
+        .INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+        previousRestaurant;
     }
   }
 });

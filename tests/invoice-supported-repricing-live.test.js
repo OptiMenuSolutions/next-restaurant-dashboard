@@ -82,6 +82,9 @@ test('live development invoice-supported repricing', async () => {
   const previousFlag =
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
 
+  const previousRestaurant =
+    process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+
   try {
     // Create an ingredient at $0.20/fl oz.
     const { error: ingredientError } = await db
@@ -227,6 +230,9 @@ test('live development invoice-supported repricing', async () => {
     // isolated test process.
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED =
       'true';
+
+    process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+      RESTAURANT_ID;
 
     // Confirm the invoice line is initially unmatched.
     const { data: beforeLink, error: beforeLinkError } =
@@ -421,6 +427,14 @@ test('live development invoice-supported repricing', async () => {
     } else {
       process.env.INVOICE_SUPPORTED_REPRICING_ENABLED =
         previousFlag;
+    }
+
+    if (previousRestaurant === undefined) {
+      delete process.env
+        .INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
+    } else {
+      process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
+        previousRestaurant;
     }
 
     // Remove only records belonging to this test.
