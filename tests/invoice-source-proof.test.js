@@ -666,3 +666,28 @@ test('version 2 refuses duplicate source claims across invoice items', () => {
     /duplicate source claim/i
   );
 });
+
+
+test('version 2 rejects purchasing-unit changes after signing', () => {
+  const fixture = catchWeightFixture({
+    quantity_unit: 'LB',
+  });
+
+  const proof = createV2(fixture);
+
+  // The original source was authenticated
+  // using its original purchasing unit.
+  // A subsequent change must invalidate
+  // the signed pricing representation.
+  const modifiedItem = {
+    ...fixture.invoiceItem,
+    quantity_unit: 'CS',
+  };
+
+  const result = verify(proof, {
+    item: modifiedItem,
+  });
+
+  assert.equal(result.valid, false);
+  assert.equal(result.reason, 'pricing_modified');
+});

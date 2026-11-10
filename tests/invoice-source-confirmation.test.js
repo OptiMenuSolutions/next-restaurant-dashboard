@@ -3,11 +3,16 @@ import assert from 'node:assert/strict';
 
 import {
   createInvoiceSourceProof,
+  createInvoiceEvidenceProofV2,
 } from '../lib/invoiceSourceProof.js';
 
 import {
   validateConfirmedInvoiceSource,
 } from '../lib/invoiceSourceConfirmation.js';
+
+import {
+  calculateVerifiedInvoiceCost,
+} from '../lib/verifiedInvoiceCosting.js';
 
 const SECRET =
   'synthetic-source-confirmation-test-secret-2026';
@@ -243,4 +248,181 @@ test('confirmation rejects evidence from another document', () => {
 
   assert.equal(result.accepted, false);
   assert.equal(result.reason, 'identity_mismatch');
+});
+
+
+test('confirmation accepts authenticated V2 catch-weight pricing when calculated cost agrees', () => {
+  const header =
+    '<tr><td>Item Number</td>' +
+    '<td>Ordered</td><td>Shipped</td>' +
+    '<td>Pack</td><td>Size</td>' +
+    '<td>Unit</td><td>Description</td>' +
+    '<td>Price</td><td>Extension</td></tr>';
+
+  const row =
+    '<tr><td>1030906</td><td>1</td>' +
+    '<td>1</td><td>22</td>' +
+    '<td>7 OZ</td><td>LB</td>' +
+    '<td>BEEF SKIRT STEAK 9.96</td>' +
+    '<td>14.5000</td><td>144.42</td></tr>';
+
+  const item = {
+    _id: 'item_0',
+    item_name_raw: 'BEEF SKIRT STEAK 9.96',
+    quantity_shipped: 1,
+    quantity_unit: 'LB',
+    pack_size_raw: '22 7 OZ',
+    pack: 22,
+    size: 7,
+    size_unit: 'oz',
+    invoice_price: 14.5,
+    line_total: 144.42,
+    catch_weight: true,
+    actual_weight: 9.96,
+    source_evidence: {
+      row_text: row,
+      description_text: 'BEEF SKIRT STEAK 9.96',
+      quantity_text: '1',
+      purchase_unit_text: 'LB',
+      package_text: '22 7 OZ',
+      weight_text: '9.96',
+      weight_unit_text: 'LB',
+      unit_price_text: '14.5000',
+      extension_text: '144.42',
+    },
+  };
+
+  const proof = createInvoiceEvidenceProofV2({
+    restaurantId: 'restaurant-1',
+    invoiceNumber: 'CTB-2111',
+    documentFingerprint: DOCUMENT_FINGERPRINT,
+    itemKey: 'item_0',
+    item,
+    invoiceItems: [item],
+    ocrText: `<table>${header}${row}</table>`,
+    issuedAt: NOW,
+    secret: SECRET,
+  });
+
+  const signedItem = {
+    ...item,
+    invoice_source_proof: proof,
+  };
+
+  const resolvedCost =
+    calculateVerifiedInvoiceCost(signedItem);
+
+  // The actual calculated quantity must come
+  // from the authenticated weight, not the
+  // printed 22 x 7 OZ package description.
+  assert.equal(resolvedCost.quantity, 9.96);
+  assert.equal(resolvedCost.unit, 'lb');
+  assert.equal(resolvedCost.unit_cost, 14.5);
+
+  const result = validateConfirmedInvoiceSource({
+    item: signedItem,
+    resolvedCost,
+    restaurantId: 'restaurant-1',
+    invoiceNumber: 'CTB-2111',
+    documentFingerprint: DOCUMENT_FINGERPRINT,
+    secret: SECRET,
+    now: NOW,
+  });
+
+  assert.equal(result.accepted, true);
+  assert.equal(result.evidence.proof_version, 2);
+  assert.equal(result.evidence.quantity, 9.96);
+  assert.equal(result.evidence.unit, 'lb');
+
+  assert.equal(result.evidence.unit_cost, 14.5);
+  assert.equal(result.evidence.amount, 144.42);
+
+  // Verify that tampering with authenticated data
+  // cannot authorize invoice-supported pricing.
+  const rejectionCases = [
+    {
+      name: 'modified actual weight',
+      item: {
+        ...signedItem,
+        actual_weight: 10.96,
+      },
+      cost: resolvedCost,
+      reason: 'pricing_modified',
+    },
+    {
+      name: 'modified invoice price',
+      item: {
+        ...signedItem,
+        invoice_price: 15.5,
+      },
+      cost: resolvedCost,
+      reason: 'pricing_modified',
+    },
+    {
+      name: 'modified line total',
+      item: {
+        ...signedItem,
+        line_total: 154.42,
+      },
+      cost: resolvedCost,
+      reason: 'pricing_modified',
+    },
+    {
+      name: 'modified purchasing unit',
+      item: {
+        ...signedItem,
+        quantity_unit: 'CS',
+      },
+      cost: resolvedCost,
+      reason: 'pricing_modified',
+    },
+    {
+      name: 'incorrect calculated unit',
+      item: signedItem,
+      cost: {
+        ...resolvedCost,
+        unit: 'oz',
+      },
+      reason: 'confirmed_cost_mismatch',
+    },
+    {
+      name: 'incorrect calculated unit cost',
+      item: signedItem,
+      cost: {
+        ...resolvedCost,
+        unit_cost: 1.45,
+      },
+      reason: 'confirmed_cost_mismatch',
+    },
+  ];
+
+  for (const scenario of rejectionCases) {
+    const rejected = validateConfirmedInvoiceSource({
+      item: scenario.item,
+      resolvedCost: scenario.cost,
+      restaurantId: 'restaurant-1',
+      invoiceNumber: 'CTB-2111',
+      documentFingerprint: DOCUMENT_FINGERPRINT,
+      secret: SECRET,
+      now: NOW,
+    });
+
+    assert.equal(
+      rejected.accepted,
+      false,
+      scenario.name
+    );
+
+    assert.equal(
+      rejected.reason,
+      scenario.reason,
+      scenario.name
+    );
+
+    assert.equal(
+      rejected.evidence,
+      null,
+      scenario.name
+    );
+  }
 });

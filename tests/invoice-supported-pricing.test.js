@@ -383,3 +383,179 @@ test('relinking to an incompatible ingredient cannot authorize pricing', () => {
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'incompatible_units');
 });
+
+
+test('authenticated V2 catch-weight evidence supports compatible ingredient pricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      item_name: 'Beef Skirt Steak',
+      quantity: 9.96,
+      unit: 'lb',
+      unit_cost: 14.5,
+      amount: 144.42,
+    }),
+    ingredient: ingredient({
+      unit: 'oz',
+    }),
+    evidence: evidence({
+      source_type: 'independent_ocr_evidence',
+      validation_status: 'source_charge_verified',
+      evidence_version: 2,
+      evidence: {
+        proof_version: 2,
+        pricing: {
+          invoice_item_id: 'line-1',
+          invoice_id: 'invoice-1',
+          restaurant_id: RESTAURANT_ID,
+          ingredient_id: null,
+          item_name: 'Beef Skirt Steak',
+          quantity: 9.96,
+          unit: 'lb',
+          unit_cost: 14.5,
+          amount: 144.42,
+        },
+      },
+    }),
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(
+    result.classification,
+    'invoice_supported'
+  );
+  assert.equal(result.standardizedPrice.unit, 'oz');
+
+  // $14.50 per lb = $0.90625 per oz.
+  assert.ok(
+    Math.abs(
+      result.standardizedPrice.price - 0.90625
+    ) < 0.000001
+  );
+});
+
+
+function v2CatchWeightFixture({
+  lineOverrides = {},
+  ingredientOverrides = {},
+  evidenceOverrides = {},
+} = {}) {
+  const line = invoiceLine({
+    item_name: 'Beef Skirt Steak',
+    quantity: 9.96,
+    unit: 'lb',
+    unit_cost: 14.5,
+    amount: 144.42,
+    ...lineOverrides,
+  });
+
+  const ingredientRecord = ingredient({
+    unit: 'oz',
+    ...ingredientOverrides,
+  });
+
+  const evidenceRecord = evidence({
+    source_type: 'independent_ocr_evidence',
+    validation_status: 'source_charge_verified',
+    evidence_version: 2,
+    evidence: {
+      proof_version: 2,
+      pricing: {
+        invoice_item_id: 'line-1',
+        invoice_id: 'invoice-1',
+        restaurant_id: RESTAURANT_ID,
+        ingredient_id: null,
+        item_name: 'Beef Skirt Steak',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      },
+    },
+    ...evidenceOverrides,
+  });
+
+  return {
+    line,
+    ingredient: ingredientRecord,
+    evidence: evidenceRecord,
+  };
+}
+
+test('V2 evidence with mismatched proof version is rejected', () => {
+  const fixture = v2CatchWeightFixture({
+    evidenceOverrides: {
+      evidence: {
+        proof_version: 1,
+        pricing: {
+          invoice_item_id: 'line-1',
+          invoice_id: 'invoice-1',
+          restaurant_id: RESTAURANT_ID,
+          item_name: 'Beef Skirt Steak',
+          quantity: 9.96,
+          unit: 'lb',
+          unit_cost: 14.5,
+          amount: 144.42,
+        },
+      },
+    },
+  });
+
+  const result = evaluateInvoicePricingEligibility(fixture);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});
+
+test('invalidated V2 evidence cannot authorize pricing', () => {
+  const fixture = v2CatchWeightFixture({
+    evidenceOverrides: {
+      invalidated_at: '2026-11-10T12:00:00Z',
+      invalidation_reason: 'invoice_line_modified',
+    },
+  });
+
+  const result = evaluateInvoicePricingEligibility(fixture);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});
+
+test('modified V2 invoice pricing cannot reuse evidence', () => {
+  const fixture = v2CatchWeightFixture({
+    lineOverrides: {
+      unit_cost: 15.5,
+      amount: 154.38,
+    },
+  });
+
+  const result = evaluateInvoicePricingEligibility(fixture);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});
+
+test('V2 catch-weight evidence cannot authorize weight-to-volume conversion', () => {
+  const fixture = v2CatchWeightFixture({
+    ingredientOverrides: {
+      unit: 'fl oz',
+    },
+  });
+
+  const result = evaluateInvoicePricingEligibility(fixture);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'incompatible_units');
+});
+
+test('cross-restaurant V2 evidence cannot authorize pricing', () => {
+  const fixture = v2CatchWeightFixture({
+    evidenceOverrides: {
+      restaurant_id: 'restaurant-b',
+    },
+  });
+
+  const result = evaluateInvoicePricingEligibility(fixture);
+
+  assert.equal(result.eligible, false);
+  assert.equal(result.reason, 'insufficient_source_evidence');
+});

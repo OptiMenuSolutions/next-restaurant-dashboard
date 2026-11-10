@@ -510,3 +510,164 @@ test('newer invalidated evidence cannot override older supplier-verified pricing
     1
   );
 });
+
+
+test('authenticated V2 catch-weight evidence updates only the linked ingredient at standardized cost', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Beef Skirt Steak',
+      unit: 'oz',
+      last_price: 0.75,
+    },
+    lines: [
+      invoiceLine({
+        item_name: 'Beef Skirt Steak',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+        evidence: {
+          proof_version: 2,
+          pricing: {
+            invoice_item_id: 'line-1',
+            invoice_id: 'invoice-1',
+            restaurant_id: RESTAURANT_ID,
+            ingredient_id: null,
+            item_name: 'Beef Skirt Steak',
+            quantity: 9.96,
+            unit: 'lb',
+            unit_cost: 14.5,
+            amount: 144.42,
+          },
+        },
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.90625);
+  assert.equal(result.ingredient.unit, 'oz');
+  assert.equal(result.ingredient.standard_unit, 'oz');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-07');
+
+  assert.equal(
+    result.writes.filter((write) =>
+      write.table === 'ingredients'
+    ).length,
+    1
+  );
+});
+
+
+test('V2 evidence cannot overwrite manually approved ingredient pricing', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Beef Skirt Steak',
+      unit: 'oz',
+      last_price: 1.25,
+      price_status: 'manual',
+      price_approved_at: '2026-11-09T12:00:00Z',
+    },
+    lines: [
+      invoiceLine({
+        item_name: 'Beef Skirt Steak',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+        evidence: {
+          proof_version: 2,
+          pricing: {
+            invoice_item_id: 'line-1',
+            invoice_id: 'invoice-1',
+            restaurant_id: RESTAURANT_ID,
+            item_name: 'Beef Skirt Steak',
+            quantity: 9.96,
+            unit: 'lb',
+            unit_cost: 14.5,
+            amount: 144.42,
+          },
+        },
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 1.25);
+  assert.equal(result.ingredient.price_status, 'manual');
+  assert.equal(result.writes.length, 0);
+});
+
+test('invalidated V2 evidence cannot overwrite ingredient pricing', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Beef Skirt Steak',
+      unit: 'oz',
+      last_price: 0.75,
+    },
+    lines: [
+      invoiceLine({
+        item_name: 'Beef Skirt Steak',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+        invalidated_at: '2026-11-10T12:00:00Z',
+        invalidation_reason: 'invoice_line_modified',
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.75);
+  assert.equal(result.ingredient.price_status, 'needs_review');
+});
+
+test('V2 evidence from another restaurant cannot update ingredient pricing', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Beef Skirt Steak',
+      unit: 'oz',
+      last_price: 0.75,
+    },
+    lines: [
+      invoiceLine({
+        item_name: 'Beef Skirt Steak',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        restaurant_id: 'another-restaurant',
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.75);
+  assert.equal(result.ingredient.price_status, 'needs_review');
+});

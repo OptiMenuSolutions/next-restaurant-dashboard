@@ -267,3 +267,152 @@ test('rejected evidence cannot be inserted', async () => {
   assert.equal(result.saved, false);
   assert.equal(called, false);
 });
+
+
+test('prepares authenticated V2 catch-weight evidence without changing its pricing basis', () => {
+  const result = prepare({
+    savedLine: savedLine({
+      item_name: 'Beef Skirt Steak',
+      quantity: 9.96,
+      unit: 'lb',
+      unit_cost: 14.5,
+      amount: 144.42,
+    }),
+    confirmation: confirmation({
+      evidence: {
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        proof_version: 2,
+        invoice_number: 'CTB-2111',
+        item_key: 'item_0',
+        issued_at: 1794052800000,
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      },
+    }),
+  });
+
+  assert.equal(result.accepted, true);
+
+  assert.equal(
+    result.record.source_type,
+    'independent_ocr_evidence'
+  );
+
+  assert.equal(
+    result.record.validation_status,
+    'source_charge_verified'
+  );
+
+  assert.equal(result.record.evidence_version, 2);
+
+  assert.equal(
+    result.record.evidence.proof_version,
+    2
+  );
+
+  assert.equal(
+    result.record.evidence.pricing.quantity,
+    9.96
+  );
+
+  assert.equal(
+    result.record.evidence.pricing.unit,
+    'lb'
+  );
+
+  assert.equal(
+    result.record.evidence.pricing.unit_cost,
+    14.5
+  );
+
+  assert.equal(
+    result.record.evidence.pricing.amount,
+    144.42
+  );
+});
+
+
+test('rejects V2 evidence claiming V1 source authentication', () => {
+  const result = prepare({
+    confirmation: confirmation({
+      evidence: {
+        ...confirmation().evidence,
+        proof_version: 2,
+      },
+    }),
+  });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'unsupported_source');
+});
+
+test('rejects V1 evidence claiming V2 source authentication', () => {
+  const result = prepare({
+    confirmation: confirmation({
+      evidence: {
+        ...confirmation().evidence,
+        proof_version: 1,
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+      },
+    }),
+  });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'unsupported_source');
+});
+
+test('rejects modified saved V2 catch-weight pricing', () => {
+  const result = prepare({
+    savedLine: savedLine({
+      quantity: 9.96,
+      unit: 'lb',
+      unit_cost: 15.5,
+      amount: 154.38,
+    }),
+    confirmation: confirmation({
+      evidence: {
+        ...confirmation().evidence,
+        proof_version: 2,
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      },
+    }),
+  });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'saved_pricing_mismatch');
+});
+
+test('rejects V2 evidence with inconsistent saved invoice arithmetic', () => {
+  const result = prepare({
+    savedLine: savedLine({
+      quantity: 9.96,
+      unit: 'lb',
+      unit_cost: 14.5,
+      amount: 150,
+    }),
+    confirmation: confirmation({
+      evidence: {
+        ...confirmation().evidence,
+        proof_version: 2,
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        quantity: 9.96,
+        unit: 'lb',
+        unit_cost: 14.5,
+        amount: 144.42,
+      },
+    }),
+  });
+
+  assert.equal(result.accepted, false);
+  assert.equal(result.reason, 'invalid_saved_arithmetic');
+});
