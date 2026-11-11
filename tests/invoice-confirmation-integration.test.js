@@ -13,6 +13,7 @@ import {
 
 import { createConfirmInvoiceHandler } from '../pages/api/invoices/confirm-invoice.js';
 import { resolveInvoiceResearchCost } from '../lib/invoiceResearchCosting.js';
+import { validateInvoiceAgainstSource } from '../lib/invoiceSourceValidation.js';
 
 const RESTAURANT_ID = 'restaurant-test-1';
 
@@ -2469,6 +2470,133 @@ test(
       // Invoice confirmation must not directly
       // overwrite ingredient prices outside the
       // protected downstream pricing calculation.
+      assert.equal(
+        writes.filter(write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+        ).length,
+        0
+      );
+    });
+  }
+);
+
+
+test(
+  'single PACK column case pricing receives V1 evidence and persists correctly',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, rpcCalls, writes } = createDb();
+
+      const header =
+        '<tr><th>DESCRIPTION</th><th>SHP</th>' +
+        '<th>UOM</th><th>PACK</th><th>WEIGHT</th>' +
+        '<th>UNIT COST</th><th>EXTENDED</th></tr>';
+
+      const row =
+        '<tr><td>Ground Beef 80/20</td>' +
+        '<td>1</td><td>CS</td>' +
+        '<td>2 x 5 LB</td><td>-</td>' +
+        '<td>$40.00 / CS</td><td>$40.00</td></tr>';
+
+      const original = {
+        _id: 'item_0',
+        item_name_raw: 'Ground Beef 80/20',
+        item_name_normalized: 'Ground Beef 80/20',
+        quantity_shipped: 1,
+        quantity_unit: 'CS',
+        pack_size_raw: '2 x 5 LB',
+        pack: 2,
+        size: 5,
+        size_unit: 'lb',
+        invoice_price: 40,
+        line_total: 40,
+        catch_weight: false,
+      };
+
+      const [validated] = validateInvoiceAgainstSource(
+        [original],
+        `<table><thead>${header}</thead>${row}</table>`
+      );
+
+      assert.equal(
+        validated.source_validation_status,
+        'source_table_consistent'
+      );
+
+      const invoiceNumber = 'V1-SINGLE-PACK-001';
+
+      const signed = {
+        ...validated,
+        invoice_source_proof: createInvoiceSourceProof({
+          restaurantId: RESTAURANT_ID,
+          invoiceNumber,
+          documentFingerprint: SOURCE_TEST_FINGERPRINT,
+          itemKey: validated._id,
+          item: validated,
+          secret: SOURCE_TEST_SECRET,
+        }),
+      };
+
+      const handler = createHandler(db, unverifiedCost);
+
+      const req = createRequest({
+        number: invoiceNumber,
+        item: signed,
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+      );
+
+      assert.ok(transaction);
+      assert.equal(transaction.args.p_lines.length, 1);
+      assert.equal(transaction.args.p_evidence.length, 1);
+
+      const line = transaction.args.p_lines[0];
+      const evidence = transaction.args.p_evidence[0];
+
+      assert.equal(line.quantity, 10);
+      assert.equal(line.unit, 'lb');
+      assert.equal(line.unit_cost, 4);
+      assert.equal(line.amount, 40);
+
+      assert.equal(line.purchase_quantity, 1);
+      assert.equal(line.purchase_unit, 'case');
+      assert.equal(line.purchase_unit_price, 40);
+
+      assert.equal(line.package_quantity, 10);
+      assert.equal(line.package_unit, 'lb');
+
+      assert.equal(evidence.evidence_version, 1);
+      assert.equal(
+        evidence.source_type,
+        'structured_ocr_table'
+      );
+      assert.equal(
+        evidence.validation_status,
+        'source_table_consistent'
+      );
+      assert.equal(evidence.invoice_item_id, line.id);
+
+      assert.equal(evidence.evidence.pricing.quantity, 10);
+      assert.equal(evidence.evidence.pricing.unit, 'lb');
+      assert.equal(evidence.evidence.pricing.unit_cost, 4);
+      assert.equal(evidence.evidence.pricing.amount, 40);
+
       assert.equal(
         writes.filter(write =>
           write.table === 'ingredients' &&

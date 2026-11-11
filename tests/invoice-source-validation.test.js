@@ -769,3 +769,149 @@ test('unsupported package suffixes cannot create trusted source evidence', () =>
 
   assert.deepEqual(result, original);
 });
+
+
+test(
+  'authenticates a case purchase with one PACK column and explicit case pricing',
+  () => {
+    const header =
+      '<tr><th>DESCRIPTION</th>' +
+      '<th>SHP</th><th>UOM</th>' +
+      '<th>PACK</th><th>WEIGHT</th>' +
+      '<th>UNIT COST</th><th>EXTENDED</th></tr>';
+
+    const row =
+      '<tr><td>Ground Beef 80/20</td>' +
+      '<td>1</td><td>CS</td>' +
+      '<td>2 x 5 LB</td><td>-</td>' +
+      '<td>$40.00 / CS</td>' +
+      '<td>$40.00</td></tr>';
+
+    const original = {
+      item_name_raw: 'Ground Beef 80/20',
+      item_name_normalized: 'Ground Beef 80/20',
+      quantity_shipped: 1,
+      quantity_unit: 'CS',
+      pack_size_raw: '2 x 5 LB',
+      pack: 2,
+      size: 5,
+      size_unit: 'lb',
+      invoice_price: 40,
+      line_total: 40,
+      catch_weight: false,
+    };
+
+    const [validated] = validateInvoiceAgainstSource(
+      [original],
+      `<table><thead>${header}</thead>${row}</table>`
+    );
+
+    assert.equal(
+      validated.source_validation_status,
+      'source_table_consistent'
+    );
+
+    const cost = calculateVerifiedInvoiceCost(validated);
+
+    assert.equal(cost.quantity, 10);
+    assert.equal(cost.unit, 'lb');
+    assert.equal(cost.unit_cost, 4);
+    assert.equal(
+      cost.pricingStatus,
+      'invoice_document_consistent'
+    );
+  }
+);
+
+
+test(
+  'single PACK column rejects unsupported case-pricing evidence',
+  () => {
+    const makeSource = ({
+      shipped = '1',
+      uom = 'CS',
+      pack = '2 x 5 LB',
+      price = '$40.00 / CS',
+      extended = '$40.00',
+    } = {}) => {
+      const header =
+        '<tr><th>DESCRIPTION</th>' +
+        '<th>SHP</th><th>UOM</th>' +
+        '<th>PACK</th><th>WEIGHT</th>' +
+        '<th>UNIT COST</th><th>EXTENDED</th></tr>';
+
+      const row =
+        '<tr><td>Ground Beef 80/20</td>' +
+        `<td>${shipped}</td>` +
+        `<td>${uom}</td>` +
+        `<td>${pack}</td>` +
+        '<td>-</td>' +
+        `<td>${price}</td>` +
+        `<td>${extended}</td></tr>`;
+
+      return `<table><thead>${header}</thead>${row}</table>`;
+    };
+
+    const original = {
+      item_name_raw: 'Ground Beef 80/20',
+      item_name_normalized: 'Ground Beef 80/20',
+      quantity_shipped: 1,
+      quantity_unit: 'CS',
+      pack_size_raw: '2 x 5 LB',
+      pack: 2,
+      size: 5,
+      size_unit: 'lb',
+      invoice_price: 40,
+      line_total: 40,
+      catch_weight: false,
+    };
+
+    const scenarios = [
+      {
+        name: 'fractional case quantity',
+        source: { shipped: '1.5' },
+      },
+      {
+        name: 'incorrect invoice arithmetic',
+        source: { extended: '$80.00' },
+      },
+      {
+        name: 'price per pound instead of per case',
+        source: { price: '$40.00 / LB' },
+      },
+      {
+        name: 'purchase unit does not match price basis',
+        source: { uom: 'EA' },
+      },
+      {
+        name: 'unsupported package description',
+        source: { pack: 'MIXED CASE' },
+      },
+      {
+        name: 'numbered-can package',
+        source: { pack: '3/#10 CAN' },
+      },
+      {
+        name: 'missing package description',
+        source: { pack: '-' },
+      },
+      {
+        name: 'missing case price',
+        source: { price: '-' },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const [result] = validateInvoiceAgainstSource(
+        [{ ...original }],
+        makeSource(scenario.source)
+      );
+
+      assert.notEqual(
+        result.source_validation_status,
+        'source_table_consistent',
+        scenario.name
+      );
+    }
+  }
+);
