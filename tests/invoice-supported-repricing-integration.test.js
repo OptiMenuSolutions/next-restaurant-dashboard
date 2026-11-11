@@ -851,3 +851,63 @@ test('authenticated V2 evidence cannot reprice a restaurant outside the allowlis
     false
   );
 });
+
+test('repeated authenticated repricing avoids redundant ingredient writes', async () => {
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Chicken breast',
+      unit: 'oz',
+      standard_unit: 'oz',
+      last_price: 0.26875,
+      last_ordered_at: '2026-11-10',
+      price_status: 'invoice',
+      is_estimated: false,
+      price_approved_at: null,
+    },
+    lines: [
+      invoiceLine({
+        item_name: 'Chicken Breast Fresh',
+        quantity: 18.4,
+        unit: 'lb',
+        unit_cost: 4.30,
+        amount: 79.12,
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-10',
+          created_at: '2026-11-10T17:50:00Z',
+        },
+      }),
+    ],
+    evidence: [
+      invoiceEvidence({
+        source_type: 'independent_ocr_evidence',
+        validation_status: 'source_charge_verified',
+        evidence_version: 2,
+        evidence: {
+          proof_version: 2,
+          pricing: {
+            invoice_item_id: 'line-1',
+            invoice_id: 'invoice-1',
+            restaurant_id: RESTAURANT_ID,
+            item_name: 'Chicken Breast Fresh',
+            quantity: 18.4,
+            unit: 'lb',
+            unit_cost: 4.30,
+            amount: 79.12,
+          },
+        },
+      }),
+    ],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.26875);
+  assert.equal(result.ingredient.price_status, 'invoice');
+
+  // Repricing must not write an identical value again.
+  assert.equal(
+    result.writes.filter(
+      write => write.table === 'ingredients'
+    ).length,
+    0
+  );
+});
