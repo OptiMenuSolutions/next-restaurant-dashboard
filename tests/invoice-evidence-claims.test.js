@@ -1986,3 +1986,106 @@ test('authenticates catch weight with compact supplier financial headings', () =
 
   assert.equal(badHeading.chargeVerified, false);
 });
+
+
+test(
+  'authenticates catch weight with units in source cells',
+  () => {
+    const sourceHeader =
+      '<tr><th>ITEM / DESCRIPTION</th>' +
+      '<th>SHP</th><th>UOM</th>' +
+      '<th>WEIGHT</th><th>UNIT COST</th>' +
+      '<th>EXTENDED</th></tr>';
+
+    const sourceRow =
+      '<tr><td>Chicken Breast Fresh</td>' +
+      '<td>1</td><td>CS</td>' +
+      '<td>18.40 LB</td>' +
+      '<td>$4.50 / LB</td>' +
+      '<td>$82.80</td></tr>';
+
+    const extracted = {
+      item_name_raw: 'Chicken Breast Fresh',
+      quantity_shipped: 1,
+      quantity_unit: 'CS',
+      actual_weight: 18.4,
+      invoice_price: 4.5,
+      line_total: 82.8,
+      catch_weight: true,
+      pack_size_raw: null,
+      pack: null,
+      size: null,
+      size_unit: 'lb',
+      source_evidence: {
+        row_text: sourceRow,
+        description_text: 'Chicken Breast Fresh',
+        quantity_text: '1',
+        purchase_unit_text: 'CS',
+        package_text: null,
+        weight_text: '18.40 LB',
+        weight_unit_text: 'LB',
+        unit_price_text: '$4.50 / LB',
+        extension_text: '$82.80',
+      },
+    };
+
+    const [result] = validateInvoiceEvidenceClaims(
+      [extracted],
+      `<table>${sourceHeader}${sourceRow}</table>`
+    );
+
+    assert.equal(result.chargeVerified, true);
+    assert.equal(result.packageVerified, false);
+    assert.equal(result.verifiedValues.actual_weight, 18.4);
+    assert.equal(result.verifiedValues.invoice_price, 4.5);
+    assert.equal(result.verifiedValues.line_total, 82.8);
+    assert.equal(result.verifiedValues.weight_unit, 'lb');
+  }
+);
+
+test(
+  'rejects kilograms presented as pounds',
+  () => {
+    const sourceHeader =
+      '<tr><th>ITEM / DESCRIPTION</th>' +
+      '<th>SHP</th><th>UOM</th>' +
+      '<th>WEIGHT</th><th>UNIT COST</th>' +
+      '<th>EXTENDED</th></tr>';
+
+    const sourceRow =
+      '<tr><td>Chicken Breast Fresh</td>' +
+      '<td>1</td><td>CS</td>' +
+      '<td>18.40 KG</td>' +
+      '<td>$4.50 / KG</td>' +
+      '<td>$82.80</td></tr>';
+
+    const extracted = {
+      item_name_raw: 'Chicken Breast Fresh',
+      quantity_shipped: 1,
+      quantity_unit: 'CS',
+      actual_weight: 18.4,
+      invoice_price: 4.5,
+      line_total: 82.8,
+      catch_weight: true,
+      source_evidence: {
+        row_text: sourceRow,
+        description_text: 'Chicken Breast Fresh',
+        quantity_text: '1',
+        purchase_unit_text: 'CS',
+        package_text: null,
+        weight_text: '18.40 KG',
+        weight_unit_text: 'LB',
+        unit_price_text: '$4.50 / KG',
+        extension_text: '$82.80',
+      },
+    };
+
+    const [result] = validateInvoiceEvidenceClaims(
+      [extracted],
+      `<table>${sourceHeader}${sourceRow}</table>`
+    );
+
+    assert.equal(result.chargeVerified, false);
+    assert.equal(result.packageVerified, false);
+  }
+);

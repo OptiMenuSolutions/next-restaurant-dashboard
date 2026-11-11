@@ -140,3 +140,44 @@ test('catch-weight products retain their existing calculation', () => {
   assert.equal(result.unit, 'lb');
   assert.equal(result.unit_cost, 5);
 });
+
+
+test('catch-weight purchase does not require package dimensions', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name_raw: 'Chicken Breast Fresh',
+    quantity_shipped: 1,
+    quantity_unit: 'CS',
+    pack_size_raw: null,
+    pack: null,
+    size: null,
+    size_unit: 'lb',
+    catch_weight: true,
+    actual_weight: 18.4,
+    invoice_price: 4.5,
+    line_total: 82.8,
+  });
+
+  assert.equal(result.quantity, 18.4);
+  assert.equal(result.unit, 'lb');
+  assert.ok(Math.abs(result.unit_cost - 4.5) < 1e-10);
+  assert.equal(result.pricingStatus, 'calculated');
+});
+
+test('catch-weight purchase without actual weight remains unresolved', () => {
+  const result = calculateVerifiedInvoiceCost({
+    item_name_raw: 'Generic Catch Weight Product',
+    quantity_shipped: 1,
+    quantity_unit: 'CS',
+    pack_size_raw: null,
+    catch_weight: true,
+    actual_weight: null,
+    invoice_price: 4.5,
+    line_total: 82.8,
+  });
+
+  assert.equal(result.unit_cost, null);
+  assert.equal(
+    result.pricingStatus,
+    'needs_weight_verification'
+  );
+});

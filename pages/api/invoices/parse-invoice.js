@@ -444,7 +444,7 @@ async function sanityCheckCosts(foodItems, restaurantId) {
     const qty = item.quantity_shipped ?? item.quantity_ordered ?? '?';
     const catchWeight = item.catch_weight ? `catch-weight: ${item.actual_weight ?? '?'} lb` : null;
 
-    return `${idx}: "${item.item_name_normalized || item.item_name_raw}" | qty=${qty} | pack=${pack} | size=${size} ${sizeUnit} | case_price=$${price} | line_total=$${lineTotal}${catchWeight ? ` | ${catchWeight}` : ''}`;
+    return `${idx}: "${item.item_name_normalized || item.item_name_raw}" | shipped_qty=${qty} | pack=${pack} | size=${size} ${sizeUnit} | unit_price=$${price} | line_total=$${lineTotal} | catch_weight=${item.catch_weight === true}${catchWeight ? ` | ${catchWeight}` : ''}`;
   }).join('\n');
 
   const response = await withRetry(() => anthropic.messages.create({
@@ -457,7 +457,25 @@ async function sanityCheckCosts(foodItems, restaurantId) {
 Be AGGRESSIVE — when in doubt, flag it. A false positive that goes to human review
 is far better than a wrong value that gets saved silently.
 
-For each item, run ALL of these checks:
+For each item, run ALL applicable checks below.
+
+IMPORTANT — CATCH-WEIGHT PURCHASES:
+When catch_weight=true, actual_weight is the purchased physical
+quantity, and unit_price is the price per pound.
+
+- Calculate actual_weight × unit_price and compare with line_total.
+- Do NOT require pack or size fields to be populated.
+- Do NOT multiply actual_weight by shipped_qty.
+- shipped_qty may represent cases, while actual_weight represents pounds.
+- Missing pack or size is NOT an error for a valid catch-weight purchase.
+- Do NOT flag a catch-weight item solely because its package dimensions are absent.
+- Flag missing, nonpositive, inconsistent, or unsupported actual weight,
+  unit price, or line total.
+- Source-document authentication is performed separately.
+- Never use plausible arithmetic as a substitute for source evidence.
+
+For ordinary packaged products, continue checking package quantities,
+units, and implied purchase amounts.
 
 1. MATH: Does qty × case_price ≈ line_total (within 10%)?
    For catch-weight: actual_weight × case_price ≈ line_total?
@@ -492,7 +510,8 @@ For each item, run ALL of these checks:
    lb where each expected for portioned items, ct where lb expected for bulk.
    FLAG if unit is "oz" for a bulk meat/cheese item that should be in lb.
 
-5. PACK SIZE SANITY: Does the pack × size make sense for this product?
+5. PACK SIZE SANITY: For non-catch-weight products, does pack × size make sense?
+   Skip this check for catch-weight items with a documented actual weight.
    - Chicken wings: typically 1 case × 40 lb
    - Canned goods: typically 6 #10 cans per case
    - Cooking oil: typically 35 lb jugs or 1 gal containers
