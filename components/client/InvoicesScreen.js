@@ -3,7 +3,10 @@ import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
 } from "./ClientChrome";
-import { invoicePriceChange } from "../../lib/invoiceDisplayPricing";
+import {
+  invoicePriceChange,
+  invoicePurchaseSummary,
+} from "../../lib/invoiceDisplayPricing";
 
 /**
  * InvoicesScreen — ported from "OptiMenu Invoices.dc.html".
@@ -757,23 +760,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
                       overflowWrap: "anywhere",
                     }}
                   >
-                    {i.purchaseQuantity != null && i.purchaseUnit
-                      ? (
-                        <>
-                          {i.purchaseQuantity} {i.purchaseUnit}
-                          {i.purchaseUnitPrice != null
-                            ? ` @ ${money(i.purchaseUnitPrice)}/${i.purchaseUnit}`
-                            : " · Purchase price unresolved"}
-                        </>
-                      )
-                      : (
-                        <>
-                          {i.qty} @ {i.unitCost == null
-                            ? "Cost unresolved"
-                            : money(i.unitCost)}
-                        </>
-                      )
-                    }
+                    {invoicePurchaseSummary(i, money)}
                   </span>
                   <span style={{ fontSize: 9, letterSpacing: "0.06em", color: i.link ? "var(--green)" : "var(--amber)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
                     {i.link ? "→ " + i.link : "▲ not linked to an ingredient"}

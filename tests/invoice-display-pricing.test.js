@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   toDisplayUnitCost,
   invoicePriceChange,
+  invoicePurchaseSummary,
 } from '../lib/invoiceDisplayPricing.js';
 
 
@@ -95,4 +96,74 @@ test('equal unit costs produce zero percentage change', () => {
     }),
     0
   );
+});
+
+
+const formatMoney = value => `$${Number(value).toFixed(2)}`;
+
+test('catch-weight purchase displays its valid physical-unit cost', () => {
+  const result = invoicePurchaseSummary({
+    purchaseQuantity: 1,
+    purchaseUnit: 'case',
+    purchaseUnitPrice: null,
+    qty: '18.4 lb',
+    unit: 'lb',
+    unitCost: 4.6,
+    amount: 84.64,
+  }, formatMoney);
+
+  assert.equal(
+    result,
+    '1 case · Costed as 18.4 lb @ $4.60/lb'
+  );
+});
+
+test('genuinely unresolved purchase remains unresolved', () => {
+  const result = invoicePurchaseSummary({
+    purchaseQuantity: 1,
+    purchaseUnit: 'case',
+    purchaseUnitPrice: null,
+    qty: '1 case',
+    unit: 'case',
+    unitCost: null,
+    amount: 84.64,
+  }, formatMoney);
+
+  assert.equal(
+    result,
+    '1 case · Purchase price unresolved'
+  );
+});
+
+test('ordinary purchases retain their documented case pricing', () => {
+  const result = invoicePurchaseSummary({
+    purchaseQuantity: 2,
+    purchaseUnit: 'case',
+    purchaseUnitPrice: 40,
+    qty: '20 lb',
+    unit: 'lb',
+    unitCost: 4,
+    amount: 80,
+  }, formatMoney);
+
+  assert.equal(result, '2 case @ $40.00/case');
+});
+
+test('missing unit prices never fall back to invoice totals', () => {
+  const result = invoicePurchaseSummary({
+    purchaseQuantity: 1,
+    purchaseUnit: 'case',
+    purchaseUnitPrice: null,
+    qty: '1 case',
+    unit: 'case',
+    unitCost: null,
+    amount: 150,
+  }, formatMoney);
+
+  assert.equal(
+    result,
+    '1 case · Purchase price unresolved'
+  );
+
+  assert.equal(result.includes('$150'), false);
 });
