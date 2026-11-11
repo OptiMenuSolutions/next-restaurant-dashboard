@@ -208,28 +208,44 @@ ROW CLASSIFICATION — classify each row before extracting:
 - "header": column labels → skip
 - "blank": empty → skip
 
+
 CRITICAL — SUBTOTAL CONTAMINATION (quantity AND price):
 Subtotal rows accumulate values from multiple line items above them.
 NEVER use a subtotal row's quantity or price for any line item.
-The last line item before a subtotal row has its OWN values — validate both:
-  - line_total ≈ qty × invoice_price (within 5%) — if not, you grabbed the subtotal price
-  - quantity_shipped should be a small number (cases ordered) — if it's hundreds or thousands, you grabbed a subtotal quantity
-If either the quantity or price looks like an accumulation of prior rows, reject it and mark confidence="low".
+Validate every product against its own printed quantity, price, and extended amount.
+Do not assume a quantity is incorrect merely because it is fractional or large.
+A documented direct-weight purchase of 18.40 LB is valid.
+If the values appear to belong to another row or cannot be reconciled, set confidence="low".
 
 QUANTITY_SHIPPED — CRITICAL DEFINITION:
-quantity_shipped = the number printed in the SHP or ORD column for that row.
-This is ALWAYS the number of cases, units, or catch-weight items actually shipped.
-It is NEVER a derived total. Do NOT multiply quantity_shipped by pack or size.
-Correct examples:
-  - SHP=2, pack=6, size=5 lb → quantity_shipped=2 (2 cases shipped)
-  - SHP=4, pack=1, size=40 lb → quantity_shipped=4 (4 cases shipped)
-  - SHP=1, catch-weight=50.61 lb → quantity_shipped=1 (1 unit shipped)
-Wrong: quantity_shipped=60 when SHP=2, pack=6, size=5 lb (that's 2×6×5=60 lb total, not the shipped qty)
-Wrong: quantity_shipped=360 when SHP=2, pack=6, size=30 lb (that's total lbs, not cases)
+quantity_shipped = the numeric purchased quantity explicitly printed on the invoice.
+Interpret it according to the documented quantity unit and column role.
+
+For case or count purchases:
+- SHP=2, UOM=CS → quantity_shipped=2, quantity_unit="CS"
+- SHP=4, UOM=EA → quantity_shipped=4, quantity_unit="EA"
+- Never multiply a shipped case count by its package contents.
+
+For direct-weight purchases:
+- QUANTITY=18.40 LB → quantity_shipped=18.4, quantity_unit="LB"
+- Fractional quantities are valid when the invoice explicitly bills by weight.
+- actual_weight=18.4 and catch_weight=true when the documented price is per pound.
+- Do not invent an additional case count, package quantity, or packaging description.
+- Do not convert a weight into a case count.
+
+For catch-weight cases with a separate shipped quantity and weight:
+- SHP=1 CS, WEIGHT=18.40 LB → quantity_shipped=1, quantity_unit="CS", actual_weight=18.4
+- Preserve both representations independently.
+- Never replace the shipped case count with the weight.
 
 UNIT PRICE:
-The column labeled "unit cost", "unit price", "price", or "each" = price per CASE.
-Set invoice_price = that value exactly. Do NOT divide it further.
+Interpret the printed price according to the invoice's documented pricing basis.
+- Case-priced purchase → invoice_price is the price per case.
+- Direct-weight purchase → invoice_price is the price per pound.
+- Catch-weight case → invoice_price is the price per pound when the invoice explicitly establishes that basis.
+- Never assume all UNIT COST or PRICE columns represent case prices.
+- Preserve the supplier's printed price without inventing conversions.
+- If the pricing basis is not established, retain the original information and mark it unresolved.
 
 PACK SIZE PARSING:
 "36 1 LB"   → pack=36, size=1, size_unit="lb"
@@ -266,9 +282,14 @@ RULE — applies to every product, including portioned items sold by the case (b
 Example: 9 CS 7OZ ANGUS BURGERS, LBS=90.00, PRICE=4.50, AMOUNT=405.00 → 9 × 4.50 = 40.50 ✗, 90 × 4.50 = 405.00 ✓ → catch_weight=true, quantity_shipped=9, actual_weight=90, invoice_price=4.50 (per lb).
 
 When catch_weight=true:
-  - actual_weight = the value in the WEIGHT column exactly as printed
-  - quantity_shipped = the SHP column value (cases shipped, typically 1–5)
-  - invoice_price = the UNIT COST column value (price per lb)
+  - actual_weight = the actual billed weight explicitly documented on the invoice.
+  - For a separate WEIGHT column, use that printed weight.
+  - For a direct-weight quantity such as 18.40 LB, use the documented quantity as actual_weight.
+  - quantity_shipped = the printed shipped quantity, preserving its original unit and meaning.
+  - If the supplier separately documents 1 CS and 18.40 LB, quantity_shipped=1 and actual_weight=18.4.
+  - If the supplier documents only 18.40 LB, quantity_shipped=18.4 and actual_weight=18.4.
+  - Never invent a case quantity when the invoice only documents weight.
+  - invoice_price = the documented price per pound when that pricing basis is established.
   - VALIDATION (mandatory): actual_weight × invoice_price must ≈ line_total (within 5%)
   - Never divide or multiply the printed actual weight by cases shipped to force the invoice arithmetic to agree.
   - If the printed weight and unit price do not reconcile with the extended amount, set confidence="low" and explain the discrepancy.
@@ -284,6 +305,26 @@ Wrong catch-weight example:
   BABY BACK RIBS — SHP=6, WEIGHT=148 lb total, UNIT COST=3.10, EXTENDED=458.80
   If you set actual_weight=888 (6×148), then 888×3.10=2752.80 ≠ 458.80 → WRONG
   Correct: actual_weight=148, quantity_shipped=6, 148×3.10=458.80 ✓
+
+Correct direct-weight example:
+  DESCRIPTION=Chicken Breast Fresh, QUANTITY=18.40 LB, PRICE PER LB=$4.50 / LB, EXTENDED=$82.80
+  → catch_weight=true
+  → quantity_shipped=18.4, quantity_unit="LB"
+  → actual_weight=18.4, invoice_price=4.5, line_total=82.8
+  → pack_size_raw=null, pack=null, size=null
+  → source_evidence.quantity_text="18.40 LB"
+  → source_evidence.purchase_unit_text="LB"
+  → source_evidence.weight_text="18.40 LB"
+  → source_evidence.weight_unit_text="LB"
+  → source_evidence.unit_price_text="$4.50 / LB"
+  → Validate: 18.4 × 4.5 = 82.8
+  → No case count or package conversion is required.
+
+The source evidence must contain the exact printed text.
+For direct-weight purchases, quantity_text and weight_text may refer to the same source cell because that cell establishes both the purchased quantity and actual billed weight.
+Never manufacture these fields when the source does not document them.
+
+
 
 Common catch-weight items: all whole-muscle beef cuts, pork ribs, brisket, whole fish fillets,
 loaf cheeses (mozzarella, cheddar, jack, pepper jack, gruyere), deli meats, bacon slabs.
@@ -371,7 +412,7 @@ OUTPUT FORMAT
     { "key": "pack", "label": "Pack", "editable": true, "type": "number" },
     { "key": "size", "label": "Size", "editable": true, "type": "number" },
     { "key": "size_unit", "label": "Unit", "editable": false, "type": "text" },
-    { "key": "invoice_price", "label": "Case Price", "editable": true, "type": "number" },
+    { "key": "invoice_price", "label": "Unit Price", "editable": true, "type": "number" },
     { "key": "line_total", "label": "Extended", "editable": true, "type": "number" },
     { "key": "unit_cost_derived", "label": "Unit Cost", "editable": false, "type": "number" }
   ],

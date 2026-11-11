@@ -296,3 +296,104 @@ test(
     );
   }
 );
+
+
+test('V2 signs direct-weight purchases without a case count', () => {
+  const header =
+    '<tr><th>DESCRIPTION</th>' +
+    '<th>QUANTITY</th>' +
+    '<th>PRICE PER LB</th>' +
+    '<th>EXTENDED</th></tr>';
+
+  const row =
+    '<tr><td>Chicken Breast Fresh</td>' +
+    '<td>18.40 LB</td>' +
+    '<td>$4.50 / LB</td>' +
+    '<td>$82.80</td></tr>';
+
+  const original = {
+    item_name_raw: 'Chicken Breast Fresh',
+    item_name_normalized: 'Chicken Breast Fresh',
+    is_food: true,
+    quantity_shipped: 18.4,
+    quantity_unit: 'LB',
+    pack_size_raw: null,
+    pack: null,
+    size: null,
+    size_unit: 'lb',
+    invoice_price: 4.5,
+    line_total: 82.8,
+    catch_weight: true,
+    actual_weight: 18.4,
+    source_evidence: {
+      row_text: row,
+      description_text: 'Chicken Breast Fresh',
+      quantity_text: '18.40 LB',
+      purchase_unit_text: 'LB',
+      package_text: null,
+      weight_text: '18.40 LB',
+      weight_unit_text: 'LB',
+      unit_price_text: '$4.50 / LB',
+      extension_text: '$82.80',
+    },
+  };
+
+  const returned = {
+    ...original,
+    _id: 'item_0',
+    match_status: 'auto',
+  };
+
+  const result = deliverInvoiceV2Proofs({
+    allRaw: [original],
+    foodItems: [original],
+    lineItemsWithMatches: [returned],
+    ocrText: `<table>${header}${row}</table>`,
+    restaurantId: 'restaurant-1',
+    invoiceNumber: 'DIRECT-WEIGHT-001',
+    documentFingerprint: FINGERPRINT,
+    secret: SECRET,
+  });
+
+  assert.equal(result.eligible, 1);
+  assert.equal(result.signed, 1);
+  assert.equal(result.rejected, 0);
+
+  assert.equal(
+    typeof returned.invoice_source_proof,
+    'string'
+  );
+
+  const verification = verifyInvoiceSourceProof({
+    proof: returned.invoice_source_proof,
+    restaurantId: 'restaurant-1',
+    invoiceNumber: 'DIRECT-WEIGHT-001',
+    documentFingerprint: FINGERPRINT,
+    itemKey: 'item_0',
+    item: returned,
+    secret: SECRET,
+  });
+
+  assert.equal(verification.valid, true);
+  assert.equal(verification.payload.version, 2);
+  assert.equal(
+    verification.payload.pricing.quantity_shipped,
+    18.4
+  );
+  assert.equal(
+    verification.payload.pricing.actual_weight,
+    18.4
+  );
+  assert.equal(
+    verification.payload.pricing.price_basis,
+    'per_lb'
+  );
+  assert.equal(
+    verification.payload.pricing.invoice_price,
+    4.5
+  );
+  assert.equal(
+    verification.payload.pricing.line_total,
+    82.8
+  );
+});

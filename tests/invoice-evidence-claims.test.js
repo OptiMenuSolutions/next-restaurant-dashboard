@@ -2089,3 +2089,167 @@ test(
     assert.equal(result.packageVerified, false);
   }
 );
+
+
+test('authenticates direct weight pricing without a case quantity', () => {
+  const header =
+    '<tr><th>DESCRIPTION</th>' +
+    '<th>QUANTITY</th>' +
+    '<th>PRICE PER LB</th>' +
+    '<th>EXTENDED</th></tr>';
+
+  const row =
+    '<tr><td>Chicken Breast Fresh</td>' +
+    '<td>18.40 LB</td>' +
+    '<td>$4.50 / LB</td>' +
+    '<td>$82.80</td></tr>';
+
+  const extracted = {
+    item_name_raw: 'Chicken Breast Fresh',
+    quantity_shipped: 18.4,
+    quantity_unit: 'LB',
+    pack_size_raw: null,
+    pack: null,
+    size: null,
+    size_unit: 'lb',
+    invoice_price: 4.5,
+    line_total: 82.8,
+    catch_weight: true,
+    actual_weight: 18.4,
+    source_evidence: {
+      row_text: row,
+      description_text: 'Chicken Breast Fresh',
+      quantity_text: '18.40 LB',
+      purchase_unit_text: 'LB',
+      package_text: null,
+      weight_text: '18.40 LB',
+      weight_unit_text: 'LB',
+      unit_price_text: '$4.50 / LB',
+      extension_text: '$82.80',
+    },
+  };
+
+  const [result] = validateInvoiceEvidenceClaims(
+    [extracted],
+    `<table>${header}${row}</table>`
+  );
+
+  assert.equal(result.chargeVerified, true);
+  assert.equal(result.packageVerified, false);
+  assert.equal(result.verifiedValues.actual_weight, 18.4);
+  assert.equal(result.verifiedValues.weight_unit, 'lb');
+  assert.equal(result.verifiedValues.invoice_price, 4.5);
+  assert.equal(result.verifiedValues.line_total, 82.8);
+});
+
+
+test('direct-weight authentication rejects unsupported source claims', () => {
+  const header =
+    '<tr><th>DESCRIPTION</th>' +
+    '<th>QUANTITY</th>' +
+    '<th>PRICE PER LB</th>' +
+    '<th>EXTENDED</th></tr>';
+
+  const makeItem = (quantityText = '18.40 LB') => {
+    const row =
+      '<tr><td>Chicken Breast Fresh</td>' +
+      `<td>${quantityText}</td>` +
+      '<td>$4.50 / LB</td>' +
+      '<td>$82.80</td></tr>';
+
+    return {
+      item: {
+        item_name_raw: 'Chicken Breast Fresh',
+        quantity_shipped: 18.4,
+        quantity_unit: 'LB',
+        pack_size_raw: null,
+        pack: null,
+        size: null,
+        size_unit: 'lb',
+        invoice_price: 4.5,
+        line_total: 82.8,
+        catch_weight: true,
+        actual_weight: 18.4,
+        source_evidence: {
+          row_text: row,
+          description_text: 'Chicken Breast Fresh',
+          quantity_text: quantityText,
+          purchase_unit_text: 'LB',
+          package_text: null,
+          weight_text: quantityText,
+          weight_unit_text: 'LB',
+          unit_price_text: '$4.50 / LB',
+          extension_text: '$82.80',
+        },
+      },
+      document: `<table>${header}${row}</table>`,
+    };
+  };
+
+  const validate = (item, document) =>
+    validateInvoiceEvidenceClaims([item], document)[0];
+
+  const valid = makeItem();
+
+  assert.equal(
+    validate(valid.item, valid.document).chargeVerified,
+    true
+  );
+
+  // A kilogram quantity cannot be authenticated as pounds.
+  const kilograms = makeItem('18.40 KG');
+
+  assert.equal(
+    validate(kilograms.item, kilograms.document).chargeVerified,
+    false
+  );
+
+  // The extracted quantity must match the original invoice.
+  const wrongQuantity = makeItem();
+  wrongQuantity.item.quantity_shipped = 20;
+
+  assert.equal(
+    validate(wrongQuantity.item, wrongQuantity.document).chargeVerified,
+    false
+  );
+
+  // The documented weight must match the extracted weight.
+  const wrongWeight = makeItem();
+  wrongWeight.item.actual_weight = 20;
+
+  assert.equal(
+    validate(wrongWeight.item, wrongWeight.document).chargeVerified,
+    false
+  );
+
+  // The extended amount must reconcile with weight × price.
+  const wrongTotal = makeItem();
+  wrongTotal.item.line_total = 90;
+
+  assert.equal(
+    validate(wrongTotal.item, wrongTotal.document).chargeVerified,
+    false
+  );
+
+  // A case quantity cannot use the direct-weight exception.
+  const casePurchase = makeItem('18.40 CS');
+  casePurchase.item.quantity_unit = 'CS';
+  casePurchase.item.source_evidence.purchase_unit_text = 'CS';
+
+  assert.equal(
+    validate(casePurchase.item, casePurchase.document).chargeVerified,
+    false
+  );
+
+  // The original source must explicitly identify a price per pound.
+  const missingPriceBasis = makeItem();
+  missingPriceBasis.item.source_evidence.unit_price_text = '$4.50';
+
+  assert.equal(
+    validate(
+      missingPriceBasis.item,
+      missingPriceBasis.document
+    ).chargeVerified,
+    false
+  );
+});

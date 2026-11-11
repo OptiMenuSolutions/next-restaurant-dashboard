@@ -559,3 +559,44 @@ test('cross-restaurant V2 evidence cannot authorize pricing', () => {
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'insufficient_source_evidence');
 });
+
+
+test('authenticated direct-weight invoice supports ingredient repricing', () => {
+  const result = evaluateInvoicePricingEligibility({
+    line: invoiceLine({
+      item_name: 'Chicken Breast Fresh',
+      quantity: 18.4,
+      unit: 'lb',
+      unit_cost: 4.5,
+      amount: 82.8,
+    }),
+    ingredient: ingredient({
+      unit: 'oz',
+    }),
+    evidence: evidence({
+      source_type: 'independent_ocr_evidence',
+      validation_status: 'source_charge_verified',
+      evidence_version: 2,
+      evidence: {
+        proof_version: 2,
+        pricing: {
+          invoice_item_id: 'line-1',
+          invoice_id: 'invoice-1',
+          restaurant_id: RESTAURANT_ID,
+          ingredient_id: null,
+          item_name: 'Chicken Breast Fresh',
+          quantity: 18.4,
+          unit: 'lb',
+          unit_cost: 4.5,
+          amount: 82.8,
+        },
+      },
+    }),
+  });
+
+  assert.equal(result.eligible, true);
+  assert.equal(result.classification, 'invoice_supported');
+
+  assert.equal(result.standardizedPrice.unit, 'oz');
+  assert.equal(result.standardizedPrice.price, 0.28125);
+});

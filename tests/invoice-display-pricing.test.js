@@ -167,3 +167,18 @@ test('missing unit prices never fall back to invoice totals', () => {
 
   assert.equal(result.includes('$150'), false);
 });
+
+
+test('direct-weight purchases display their documented per-pound cost', () => {
+  const result = invoicePurchaseSummary({
+    purchaseQuantity: 18.4,
+    purchaseUnit: 'lb',
+    purchaseUnitPrice: null,
+    qty: '18.4 lb',
+    unit: 'lb',
+    unitCost: 4.5,
+    amount: 82.8,
+  }, formatMoney);
+
+  assert.equal(result, '18.4 lb @ $4.50/lb');
+});

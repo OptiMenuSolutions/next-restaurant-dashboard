@@ -2328,3 +2328,154 @@ test(
     });
   }
 );
+
+
+
+test(
+  'direct-weight V2 proof persists authenticated pricing without fabricated case quantities',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, rpcCalls, writes } = createDb();
+
+      const header =
+        '<tr><th>DESCRIPTION</th>' +
+        '<th>QUANTITY</th>' +
+        '<th>PRICE PER LB</th>' +
+        '<th>EXTENDED</th></tr>';
+
+      const row =
+        '<tr><td>Chicken Breast Fresh</td>' +
+        '<td>18.40 LB</td>' +
+        '<td>$4.50 / LB</td>' +
+        '<td>$82.80</td></tr>';
+
+      const original = {
+        item_name_raw: 'Chicken Breast Fresh',
+        item_name_normalized: 'Chicken Breast Fresh',
+        is_food: true,
+        quantity_shipped: 18.4,
+        quantity_unit: 'LB',
+        pack_size_raw: null,
+        pack: null,
+        size: null,
+        size_unit: 'lb',
+        invoice_price: 4.5,
+        line_total: 82.8,
+        catch_weight: true,
+        actual_weight: 18.4,
+        source_evidence: {
+          row_text: row,
+          description_text: 'Chicken Breast Fresh',
+          quantity_text: '18.40 LB',
+          purchase_unit_text: 'LB',
+          package_text: null,
+          weight_text: '18.40 LB',
+          weight_unit_text: 'LB',
+          unit_price_text: '$4.50 / LB',
+          extension_text: '$82.80',
+        },
+      };
+
+      const returned = {
+        ...original,
+        _id: 'item_0',
+        match_status: 'new',
+      };
+
+      const delivery = deliverInvoiceV2Proofs({
+        allRaw: [original],
+        foodItems: [original],
+        lineItemsWithMatches: [returned],
+        ocrText: `<table>${header}${row}</table>`,
+        restaurantId: RESTAURANT_ID,
+        invoiceNumber: 'DIRECT-WEIGHT-CONFIRM-001',
+        documentFingerprint: SOURCE_TEST_FINGERPRINT,
+        secret: SOURCE_TEST_SECRET,
+      });
+
+      assert.equal(delivery.signed, 1);
+
+      const handler = createHandler(db, unverifiedCost);
+
+      const req = createRequest({
+        number: 'DIRECT-WEIGHT-CONFIRM-001',
+        item: returned,
+      });
+
+      req.body.file_urls = [
+        `${RESTAURANT_ID}/test-invoice.pdf`,
+      ];
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 200);
+      assert.equal(res.body.success, true);
+
+      const transaction = rpcCalls.find(
+        call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+      );
+
+      assert.ok(transaction);
+      assert.equal(transaction.args.p_lines.length, 1);
+      assert.equal(transaction.args.p_evidence.length, 1);
+
+      const line = transaction.args.p_lines[0];
+      const savedEvidence =
+        transaction.args.p_evidence[0];
+
+      assert.equal(line.quantity, 18.4);
+      assert.equal(line.unit, 'lb');
+      assert.equal(line.unit_cost, 4.5);
+      assert.equal(line.amount, 82.8);
+
+      assert.equal(line.purchase_quantity, 18.4);
+      assert.equal(line.purchase_unit, 'lb');
+      assert.equal(line.purchase_unit_price, null);
+
+      assert.equal(line.package_quantity, null);
+      assert.equal(line.package_unit, null);
+
+      assert.equal(savedEvidence.evidence_version, 2);
+      assert.equal(
+        savedEvidence.validation_status,
+        'source_charge_verified'
+      );
+      assert.equal(
+        savedEvidence.invoice_item_id,
+        line.id
+      );
+
+      assert.equal(
+        savedEvidence.evidence.pricing.quantity,
+        18.4
+      );
+      assert.equal(
+        savedEvidence.evidence.pricing.unit,
+        'lb'
+      );
+      assert.equal(
+        savedEvidence.evidence.pricing.unit_cost,
+        4.5
+      );
+      assert.equal(
+        savedEvidence.evidence.pricing.amount,
+        82.8
+      );
+
+      // Invoice confirmation must not directly
+      // overwrite ingredient prices outside the
+      // protected downstream pricing calculation.
+      assert.equal(
+        writes.filter(write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+        ).length,
+        0
+      );
+    });
+  }
+);
