@@ -280,7 +280,12 @@ function createResponse() {
 function createHandler(
   db,
   resolveCost,
-  { recompute, rebuild } = {}
+  {
+    recompute,
+    rebuild,
+    processCalculations,
+    scheduleCalculations,
+  } = {}
 ) {
   return createConfirmInvoiceHandler({
     db,
@@ -292,6 +297,12 @@ function createHandler(
     rebuild:
       rebuild ||
       (async () => {}),
+    processCalculations:
+      processCalculations ||
+      (async () => ({ skipped: true, errors: [] })),
+    scheduleCalculations:
+      scheduleCalculations ||
+      (promise => promise),
   });
 }
 
@@ -2245,6 +2256,75 @@ test(
           write.operation === 'insert'
         )
       );
+    });
+  }
+);
+
+
+test(
+  'transactional confirmation schedules calculations once and not on replay',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db } = createDb({
+        ownedIngredients: {
+          'ingredient-beef-1': 'Ground Beef',
+        },
+      });
+
+      installIdempotentTransactionMock(db);
+
+      const scheduled = [];
+      const processed = [];
+
+      const handler = createHandler(
+        db,
+        unverifiedCost,
+        {
+          processCalculations: async (
+            _db,
+            restaurantId
+          ) => {
+            processed.push(restaurantId);
+            return { skipped: false, errors: [] };
+          },
+          scheduleCalculations: promise => {
+            scheduled.push(promise);
+          },
+        }
+      );
+
+      const req = ordinaryTransactionalRequest(
+        'AUTO-CALC-001',
+        'auto-calculation-confirmation-000001'
+      );
+
+      req.body.line_items[0].selected_ingredient_id =
+        'ingredient-beef-1';
+
+      req.body.line_items[0].selected_ingredient_name =
+        'Ground Beef';
+
+      req.body.line_items[0].match_status = 'matched';
+
+      const first = createResponse();
+      await handler(req, first);
+
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.body.success, true);
+      assert.equal(scheduled.length, 1);
+
+      await Promise.all(scheduled);
+
+      assert.deepEqual(processed, [RESTAURANT_ID]);
+
+      const replay = createResponse();
+      await handler(req, replay);
+
+      assert.equal(replay.statusCode, 200);
+      assert.equal(replay.body.replayed, true);
+
+      assert.equal(scheduled.length, 1);
+      assert.equal(processed.length, 1);
     });
   }
 );

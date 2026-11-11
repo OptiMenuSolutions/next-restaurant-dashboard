@@ -6,6 +6,10 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { createHash, randomUUID } from 'node:crypto';
+import { waitUntil } from '@vercel/functions';
+import {
+  processInvoiceCalculations,
+} from '../../../lib/admin/processInvoiceCalculations.js';
 import {
   prepareInvoiceSourceEvidence,
   saveInvoiceSourceEvidence,
@@ -51,6 +55,8 @@ export function createConfirmInvoiceHandler({
   resolveCost = resolveInvoiceResearchCost,
   recompute = recomputeMenuCosts,
   rebuild = rebuildCurrentInventory,
+  processCalculations = processInvoiceCalculations,
+  scheduleCalculations = waitUntil,
   verifyAccess = async (req, restaurantId) =>
     import('../../../lib/withRestaurantAuth')
       .then(m => m.verifyRestaurantAccess(req, restaurantId)),
@@ -1009,6 +1015,44 @@ export function createConfirmInvoiceHandler({
           errors: [],
           replayed: true,
         });
+      }
+
+      // The invoice and durable calculation job have
+      // already been committed atomically.
+      //
+      // Attempt processing immediately after confirmation.
+      // If scheduling or processing fails, the queued job
+      // remains available for recovery.
+      if (
+        matchingEnabled &&
+        invoiceItemsToInsert.some(
+          item => Boolean(item.ingredient_id)
+        )
+      ) {
+        try {
+          scheduleCalculations(
+            Promise.resolve()
+              .then(() =>
+                processCalculations(
+                  supabase,
+                  restaurant_id
+                )
+              )
+              .catch(error => {
+                console.error(
+                  '[confirm-invoice calculations]',
+                  restaurant_id,
+                  error
+                );
+              })
+          );
+        } catch (error) {
+          console.error(
+            '[confirm-invoice scheduling]',
+            restaurant_id,
+            error
+          );
+        }
       }
 
       console.info(
