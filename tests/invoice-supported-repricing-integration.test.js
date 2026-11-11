@@ -243,7 +243,11 @@ function invoiceEvidence(overrides = {}) {
   };
 }
 
-async function runFixture(options, enabled = true) {
+async function runFixture(
+  options,
+  enabled = true,
+  allowedRestaurantId = RESTAURANT_ID
+) {
 
   const previous =
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
@@ -252,7 +256,7 @@ async function runFixture(options, enabled = true) {
     process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID;
 
   process.env.INVOICE_SUPPORTED_REPRICING_RESTAURANT_ID =
-    RESTAURANT_ID;
+    allowedRestaurantId;
 
   if (enabled) {
     process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'true';
@@ -774,5 +778,76 @@ test('older authenticated V2 price wins over newer unverified invoice', async ()
       write => write.table === 'ingredients'
     ).length,
     1
+  );
+});
+
+
+test('authenticated V2 evidence cannot reprice a restaurant outside the allowlist', async () => {
+  const result = await runFixture(
+    {
+      ingredientOverrides: {
+        name: 'Chicken breast',
+        unit: 'oz',
+        standard_unit: 'oz',
+        last_price: null,
+        price_status: 'pending',
+        price_approved_at: null,
+      },
+      lines: [
+        invoiceLine({
+          item_name: 'Chicken Breast Fresh',
+          quantity: 18.4,
+          unit: 'lb',
+          unit_cost: 4.30,
+          amount: 79.12,
+        }),
+      ],
+      evidence: [
+        invoiceEvidence({
+          source_type: 'independent_ocr_evidence',
+          validation_status: 'source_charge_verified',
+          evidence_version: 2,
+          evidence: {
+            proof_version: 2,
+            pricing: {
+              invoice_item_id: 'line-1',
+              invoice_id: 'invoice-1',
+              restaurant_id: RESTAURANT_ID,
+              item_name: 'Chicken Breast Fresh',
+              quantity: 18.4,
+              unit: 'lb',
+              unit_cost: 4.30,
+              amount: 79.12,
+            },
+          },
+        }),
+      ],
+    },
+    true,
+    'different-restaurant-id'
+  );
+
+  // The global flag is enabled, but this restaurant
+  // is not the authorized restaurant.
+  assert.equal(result.ingredient.last_price, null);
+  assert.equal(result.ingredient.price_status, 'pending');
+
+  // No ingredient pricing changes are permitted.
+  assert.equal(
+    result.writes.filter(
+      write => write.table === 'ingredients'
+    ).length,
+    0
+  );
+
+  // The unauthorized restaurant must never query
+  // the authenticated evidence table.
+  assert.equal(
+    result.reads.some(
+      read =>
+        read.table ===
+        'invoice_supported_price_evidence'
+    ),
+    false
   );
 });
