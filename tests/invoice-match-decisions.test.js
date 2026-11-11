@@ -936,3 +936,162 @@ test('50. Incorrect AI normalization cannot authorize an unrelated supplier prod
 
   assert.notEqual(result.status, 'auto');
 });
+
+
+test('51. Unique fresh descriptor match becomes automatic', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+      { id: SUGAR_ID, name: 'Chicken thigh', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'auto');
+  assert.equal(result.matches[0].id, FLOUR_ID);
+  assert.equal(
+    result.decision_source,
+    'verified_unique_identity'
+  );
+});
+
+test('52. Generic chicken cannot select between cuts', () => {
+  const result = runMatch({
+    description: 'Chicken',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+      { id: SUGAR_ID, name: 'Chicken thigh', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('53. Fresh and frozen alternatives require review', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+      { id: SUGAR_ID, name: 'Chicken breast frozen', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('54. Administrator rejection blocks unique descriptor matching', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+    decisions: createDecisions({
+      rejections: [
+        ['chicken breast fresh', FLOUR_ID],
+      ],
+    }),
+  });
+
+  assert.notEqual(result.status, 'auto');
+});
+
+test('55. Unknown invoice units prevent automatic matching', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: null,
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('56. Additional product characteristics remain protected', () => {
+  const result = runMatch({
+    description: 'Broccoli Crowns Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Broccoli', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('57. Less confident AI suggestions still require review', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 0.95 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
+
+test('58. Multiple identical ingredient identities require review', () => {
+  const result = runMatch({
+    description: 'Chicken Breast Fresh',
+    invoiceUnit: 'lb',
+    eligibleIngredients: [
+      { id: FLOUR_ID, name: 'Chicken breast', unit: 'oz' },
+      { id: SUGAR_ID, name: 'Chicken breast', unit: 'oz' },
+    ],
+    match: {
+      status: 'ambiguous',
+      matches: [
+        { id: FLOUR_ID, score: 1 },
+      ],
+    },
+  });
+
+  assert.equal(result.status, 'ambiguous');
+});
