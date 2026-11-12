@@ -22,6 +22,7 @@ function createDb({
   ownedIngredients = {},
   matchingControlError = null,
   transactionError = null,
+  appendInvoice = null,
 } = {}) {
   const writes = [];
   const rpcCalls = [];
@@ -143,6 +144,19 @@ function createDb({
         },
 
         maybeSingle() {
+          if (table === 'invoices') {
+            const matches =
+              appendInvoice &&
+              state.filters.every(filter =>
+                appendInvoice[filter.column] === filter.value
+              );
+
+            return Promise.resolve({
+              data: matches ? appendInvoice : null,
+              error: null,
+            });
+          }
+
           if (table === 'restaurant_invoice_matching_controls') {
             if (matchingControlError) {
               return Promise.resolve({
@@ -2616,13 +2630,31 @@ test(
       const scenarios = [
         {
           name: 'explicit delivery date',
+          invoiceDate: '2026-10-27',
           deliveryDate: '2026-10-28',
+          deliveryDateStatus: 'explicit',
           expected: '2026-10-28',
         },
         {
           name: 'invoice-date fallback',
+          invoiceDate: '2026-10-27',
           deliveryDate: null,
+          deliveryDateStatus: 'not_printed',
           expected: '2026-10-27',
+        },
+        {
+          name: 'neither date known',
+          invoiceDate: null,
+          deliveryDate: null,
+          deliveryDateStatus: 'not_printed',
+          expected: null,
+        },
+        {
+          name: 'delivery date without invoice date',
+          invoiceDate: null,
+          deliveryDate: '2026-10-28',
+          deliveryDateStatus: 'explicit',
+          expected: '2026-10-28',
         },
       ];
 
@@ -2645,6 +2677,12 @@ test(
             line_total: 40,
           },
         });
+
+        req.body.invoice.invoice_date =
+          scenario.invoiceDate;
+
+        req.body.invoice.delivery_date_status =
+          scenario.deliveryDateStatus;
 
         if (scenario.deliveryDate !== null) {
           req.body.invoice.delivery_date =
@@ -2671,7 +2709,7 @@ test(
 
         assert.equal(
           transaction.args.p_invoice.date,
-          '2026-10-27',
+          scenario.invoiceDate,
           scenario.name
         );
 
@@ -2772,5 +2810,435 @@ test(
         scenario.name
       );
     }
+  }
+);
+
+test(
+  'legacy confirmation preserves invoice and delivery dates',
+  async () => {
+    const previousFlag =
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+      'false';
+
+    try {
+      const scenarios = [
+        {
+          name: 'explicit delivery date',
+          invoiceDate: '2026-10-27',
+          deliveryDate: '2026-10-28',
+          deliveryDateStatus: 'explicit',
+          expected: '2026-10-28',
+        },
+        {
+          name: 'invoice-date fallback',
+          invoiceDate: '2026-10-27',
+          deliveryDate: null,
+          deliveryDateStatus: 'not_printed',
+          expected: '2026-10-27',
+        },
+        {
+          name: 'neither date known',
+          invoiceDate: null,
+          deliveryDate: null,
+          deliveryDateStatus: 'not_printed',
+          expected: null,
+        },
+        {
+          name: 'delivery date without invoice date',
+          invoiceDate: null,
+          deliveryDate: '2026-10-28',
+          deliveryDateStatus: 'explicit',
+          expected: '2026-10-28',
+        },
+      ];
+
+      for (const scenario of scenarios) {
+        const { db, writes, rpcCalls } = createDb();
+        const handler = createHandler(db, unverifiedCost);
+
+        const req = createRequest({
+          number: 'TEST-LEGACY-DELIVERY-001',
+          item: {
+            _id: 'legacy-delivery-date-line',
+            item_name_raw: 'GROUND BEEF',
+            item_name_normalized: 'Ground Beef',
+            pack_size_raw: '2/5 LB',
+            pack: 2,
+            size: 5,
+            size_unit: 'lb',
+            quantity_shipped: 1,
+            invoice_price: 40,
+            line_total: 40,
+          },
+        });
+
+        req.body.invoice.invoice_date =
+          scenario.invoiceDate;
+
+        req.body.invoice.delivery_date_status =
+          scenario.deliveryDateStatus;
+
+        req.body.invoice.delivery_date =
+          scenario.deliveryDate;
+
+        const res = createResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200, scenario.name);
+        assert.equal(res.body.success, true, scenario.name);
+
+        assert.equal(
+          rpcCalls.some(call =>
+            call.functionName ===
+            'save_invoice_confirmation_transactional'
+          ),
+          false,
+          scenario.name
+        );
+
+        const invoiceInserts = writes.filter(write =>
+          write.table === 'invoices' &&
+          write.operation === 'insert'
+        );
+
+        assert.equal(
+          invoiceInserts.length,
+          1,
+          scenario.name
+        );
+
+        assert.equal(
+          invoiceInserts[0].rows.date,
+          scenario.invoiceDate,
+          scenario.name
+        );
+
+        assert.equal(
+          invoiceInserts[0].rows.delivery_date,
+          scenario.expected,
+          scenario.name
+        );
+      }
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+      } else {
+        process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+          previousFlag;
+      }
+    }
+  }
+);
+
+test(
+  'delivery date changes cannot reuse a successful confirmation request',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db } = createDb();
+      const transactions =
+        installIdempotentTransactionMock(db);
+
+      const handler = createHandler(db, unverifiedCost);
+
+      const req = createRequest({
+        number: 'TEST-DELIVERY-REPLAY-001',
+        item: {
+          _id: 'delivery-replay-line',
+          item_name_raw: 'GROUND BEEF',
+          item_name_normalized: 'Ground Beef',
+          pack_size_raw: '2/5 LB',
+          pack: 2,
+          size: 5,
+          size_unit: 'lb',
+          quantity_shipped: 1,
+          invoice_price: 40,
+          line_total: 40,
+        },
+      });
+
+      req.body.invoice.delivery_date = '2026-10-28';
+
+      const first = createResponse();
+      await handler(req, first);
+
+      assert.equal(first.statusCode, 200);
+      assert.equal(first.body.success, true);
+      assert.equal(transactions.receipts.size, 1);
+
+      const replay = createResponse();
+      await handler(req, replay);
+
+      assert.equal(replay.statusCode, 200);
+      assert.equal(replay.body.replayed, true);
+      assert.equal(replay.body.invoice_id, first.body.invoice_id);
+      assert.equal(transactions.receipts.size, 1);
+
+      req.body.invoice.delivery_date = '2026-10-29';
+
+      const changed = createResponse();
+      await handler(req, changed);
+
+      assert.equal(changed.statusCode, 409);
+      assert.equal(changed.body.success, false);
+      assert.equal(transactions.receipts.size, 1);
+      assert.equal(transactions.calls.length, 3);
+
+      assert.equal(
+        transactions.calls[0].p_request_fingerprint,
+        transactions.calls[1].p_request_fingerprint
+      );
+
+      assert.notEqual(
+        transactions.calls[0].p_request_fingerprint,
+        transactions.calls[2].p_request_fingerprint
+      );
+
+      assert.equal(
+        transactions.calls[0].p_invoice.delivery_date,
+        '2026-10-28'
+      );
+
+      assert.equal(
+        transactions.calls[2].p_invoice.delivery_date,
+        '2026-10-29'
+      );
+    });
+  }
+);
+
+test(
+  'unresolved delivery dates cannot silently use invoice-date fallback',
+  async () => {
+    const previousFlag =
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+
+    try {
+      for (const transactional of [false, true]) {
+        const verify = async () => {
+          for (const status of [
+            'conflicting',
+            'unreadable',
+            'unexpected',
+            'explicit',
+          ]) {
+            const { db, writes, rpcCalls } = createDb();
+            const handler = createHandler(db, unverifiedCost);
+
+            const req = createRequest({
+              number: 'TEST-DELIVERY-CONFLICT-001',
+              item: {
+                _id: 'delivery-conflict-line',
+                item_name_raw: 'GROUND BEEF',
+                item_name_normalized: 'Ground Beef',
+                pack_size_raw: '2/5 LB',
+                pack: 2,
+                size: 5,
+                size_unit: 'lb',
+                quantity_shipped: 1,
+                invoice_price: 40,
+                line_total: 40,
+              },
+            });
+
+            req.body.invoice.delivery_date = null;
+            req.body.invoice.delivery_date_status = status;
+
+            const res = createResponse();
+
+            await handler(req, res);
+
+            const label = `${transactional}:${status}`;
+
+            assert.equal(res.statusCode, 422, label);
+            assert.equal(
+              res.body.code,
+              'DELIVERY_DATE_REVIEW_REQUIRED',
+              label
+            );
+
+            assert.equal(
+              writes.length,
+              0,
+              label
+            );
+
+            assert.equal(
+              rpcCalls.some(call =>
+                call.functionName ===
+                'save_invoice_confirmation_transactional'
+              ),
+              false,
+              label
+            );
+          }
+        };
+
+        if (transactional) {
+          await withEvidencePersistence(verify);
+        } else {
+          process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+            'false';
+          await verify();
+        }
+      }
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED;
+      } else {
+        process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+          previousFlag;
+      }
+    }
+  }
+);
+
+test(
+  'legacy append rejects explicit date conflicts and permits continuation fallback',
+  async () => {
+    await withEvidencePersistence(async () => {
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+        'false';
+
+      const scenarios = [
+        {
+          name: 'matching explicit date',
+          date: '2026-10-28',
+          status: 'explicit',
+          expected: 200,
+        },
+        {
+          name: 'conflicting explicit date',
+          date: '2026-10-29',
+          status: 'explicit',
+          expected: 409,
+        },
+        {
+          name: 'continuation invoice-date fallback',
+          date: '2026-10-27',
+          status: 'not_printed',
+          expected: 200,
+        },
+        {
+          name: 'continuation without dates',
+          date: null,
+          invoiceDate: null,
+          status: 'not_printed',
+          expected: 200,
+        },
+      ];
+
+      for (const scenario of scenarios) {
+        const { db, writes } = createDb({
+          appendInvoice: {
+            id: 'invoice-test-1',
+            restaurant_id: RESTAURANT_ID,
+            date: '2026-10-27',
+            delivery_date: '2026-10-28',
+          },
+        });
+
+        const handler = createHandler(db, unverifiedCost);
+        const req = createRequest({
+          number: 'TEST-APPEND-DATE-001',
+          item: sourceValidatedItem(),
+        });
+
+        req.body.append_to_invoice_id = 'invoice-test-1';
+        req.body.invoice.delivery_date = scenario.date;
+        req.body.invoice.delivery_date_status = scenario.status;
+
+        if (Object.hasOwn(scenario, 'invoiceDate')) {
+          req.body.invoice.invoice_date = scenario.invoiceDate;
+        }
+
+        const res = createResponse();
+        await handler(req, res);
+
+        assert.equal(
+          res.statusCode,
+          scenario.expected,
+          scenario.name
+        );
+
+        if (scenario.expected === 409) {
+          assert.equal(
+            res.body.code,
+            'APPEND_DELIVERY_DATE_CONFLICT'
+          );
+          assert.equal(writes.length, 0);
+        } else {
+          assert.equal(res.body.success, true);
+          assert.ok(
+            writes.some(write =>
+              write.table === 'invoice_items' &&
+              write.operation === 'insert'
+            )
+          );
+        }
+
+        assert.equal(
+          writes.some(write =>
+            write.table === 'invoices' &&
+            ['insert', 'update'].includes(write.operation)
+          ),
+          false,
+          'Appending must preserve the parent invoice'
+        );
+      }
+    });
+  }
+);
+
+test(
+  'transactional append forwards date status and reports database conflicts',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const { db, writes, rpcCalls } = createDb({
+        transactionError:
+          'Append delivery date conflicts with parent invoice',
+      });
+
+      const handler = createHandler(db, unverifiedCost);
+      const req = createRequest({
+        number: 'TEST-APPEND-DATE-002',
+        item: sourceValidatedItem(),
+      });
+
+      req.body.append_to_invoice_id = 'invoice-test-1';
+      req.body.invoice.delivery_date = '2026-10-29';
+      req.body.invoice.delivery_date_status = 'explicit';
+
+      const res = createResponse();
+      await handler(req, res);
+
+      assert.equal(res.statusCode, 409);
+      assert.equal(
+        res.body.code,
+        'APPEND_DELIVERY_DATE_CONFLICT'
+      );
+      assert.equal(writes.length, 0);
+
+      const transaction = rpcCalls.find(call =>
+        call.functionName ===
+        'save_invoice_confirmation_transactional'
+      );
+
+      assert.ok(transaction);
+      assert.equal(
+        transaction.args.p_append_to_invoice_id,
+        'invoice-test-1'
+      );
+      assert.equal(
+        transaction.args.p_invoice.delivery_date,
+        '2026-10-29'
+      );
+      assert.equal(
+        transaction.args.p_invoice.delivery_date_status,
+        'explicit'
+      );
+    });
   }
 );

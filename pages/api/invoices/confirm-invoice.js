@@ -341,6 +341,25 @@ export function createConfirmInvoiceHandler({
     });
   }
 
+  const deliveryDateStatus = invoice.delivery_date_status;
+
+  if (
+    deliveryDateStatus != null &&
+    (
+      !['explicit', 'not_printed'].includes(deliveryDateStatus) ||
+      (
+        deliveryDateStatus === 'explicit' &&
+        !submittedDeliveryDate
+      )
+    )
+  ) {
+    return res.status(422).json({
+      error:
+        'The delivery date needs review before this invoice can be saved.',
+      code: 'DELIVERY_DATE_REVIEW_REQUIRED',
+    });
+  }
+
   const deliveryDate =
     submittedDeliveryDate || originalInvoiceDate;
 
@@ -535,7 +554,7 @@ export function createConfirmInvoiceHandler({
       const { data: existingInvoice, error: existingInvoiceError } =
         await supabase
           .from('invoices')
-          .select('id, restaurant_id')
+          .select('id, restaurant_id, date, delivery_date')
           .eq('id', append_to_invoice_id)
           .eq('restaurant_id', restaurant_id)
           .maybeSingle();
@@ -549,6 +568,24 @@ export function createConfirmInvoiceHandler({
       if (!existingInvoice) {
         return res.status(404).json({
           error: 'Invoice not found for this restaurant.',
+        });
+      }
+
+      const parentDeliveryDate =
+        existingInvoice.delivery_date ??
+        existingInvoice.date ??
+        null;
+
+      if (
+        submittedDeliveryDate &&
+        deliveryDateStatus !== 'not_printed' &&
+        submittedDeliveryDate !== parentDeliveryDate
+      ) {
+        return res.status(409).json({
+          success: false,
+          code: 'APPEND_DELIVERY_DATE_CONFLICT',
+          error:
+            'This page has a different delivery date from the saved invoice. Review the dates before appending it.',
         });
       }
 
@@ -926,6 +963,9 @@ export function createConfirmInvoiceHandler({
         number: invoice.invoice_number || null,
         date: originalInvoiceDate,
         delivery_date: deliveryDate,
+        delivery_date_status:
+          deliveryDateStatus ??
+          (submittedDeliveryDate ? 'explicit' : 'not_printed'),
         amount: invoice.total_amount ?? null,
         non_food_total: invoice.non_food_total ?? null,
         tax_amount: invoice.tax_amount ?? null,
@@ -1013,6 +1053,20 @@ export function createConfirmInvoiceHandler({
           /reused with different contents/i.test(
             transactionError.message || ''
           );
+
+        const appendDateConflict =
+          /Append delivery date conflicts with parent invoice/i.test(
+            transactionError.message || ''
+          );
+
+        if (appendDateConflict) {
+          return res.status(409).json({
+            success: false,
+            code: 'APPEND_DELIVERY_DATE_CONFLICT',
+            error:
+              'This page has a different delivery date from the saved invoice. Review the dates before appending it.',
+          });
+        }
 
         return res.status(
           fingerprintMismatch ? 409 : 500

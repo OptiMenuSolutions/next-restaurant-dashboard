@@ -45,11 +45,23 @@ BEGIN
     IF v_definition ~
         'number,[[:space:]]*date,[[:space:]]*delivery_date,[[:space:]]*amount,'
     THEN
-        IF v_definition NOT LIKE
-            '%p_invoice->>''delivery_date''%'
+        IF COALESCE(
+            substring(
+                regexp_replace(
+                    v_definition,
+                    '[[:space:]]+',
+                    ' ',
+                    'g'
+                )
+                FROM
+                $pattern$INSERT INTO public\.invoices \(.*?;$pattern$
+            ) LIKE
+            $expected$%VALUES ( v_invoice_id, p_restaurant_id, p_invoice->>'supplier', p_invoice->>'number', (p_invoice->>'date')::date, COALESCE(NULLIF(p_invoice->>'delivery_date', '')::date, (p_invoice->>'date')::date), (p_invoice->>'amount')::numeric,%$expected$,
+            false
+        ) IS NOT TRUE
         THEN
             RAISE EXCEPTION
-                'Delivery date column exists but value mapping is missing';
+                'Delivery date insert mapping or invoice-date fallback is unexpected';
         END IF;
 
         RETURN;
@@ -93,5 +105,81 @@ BEGIN
     EXECUTE v_definition;
 END;
 $migration$;
+
+-- Reject conflicting continuation-page dates after the parent
+-- invoice has been locked and its restaurant ownership checked.
+DO $append_migration$
+DECLARE
+    v_definition text;
+    v_anchor_matches integer;
+
+    v_anchor_pattern text :=
+        '(IF NOT FOUND THEN[[:space:]]+RAISE EXCEPTION[[:space:]]+''Append target does not belong to restaurant'';[[:space:]]+END IF;)';
+
+    v_guard text := $guard$
+        IF COALESCE(
+            p_invoice->>'delivery_date_status',
+            'explicit'
+        ) <> 'not_printed'
+           AND NULLIF(p_invoice->>'delivery_date', '') IS NOT NULL
+           AND NULLIF(p_invoice->>'delivery_date', '')::date
+               IS DISTINCT FROM (
+                   SELECT COALESCE(i.delivery_date, i.date)
+                   FROM public.invoices AS i
+                   WHERE i.id = v_invoice_id
+                     AND i.restaurant_id = p_restaurant_id
+               )
+        THEN
+            RAISE EXCEPTION
+                'Append delivery date conflicts with parent invoice';
+        END IF;
+$guard$;
+BEGIN
+    SELECT pg_get_functiondef(
+        to_regprocedure(
+            'public.save_invoice_confirmation_transactional(uuid,text,text,uuid,jsonb,jsonb,jsonb,jsonb,boolean)'
+        )
+    )
+    INTO v_definition;
+
+    IF v_definition IS NULL THEN
+        RAISE EXCEPTION
+            'Transactional confirmation function not found';
+    END IF;
+
+    SELECT COUNT(*)
+    INTO v_anchor_matches
+    FROM regexp_matches(
+        v_definition,
+        v_anchor_pattern,
+        'g'
+    );
+
+    IF v_anchor_matches <> 1 THEN
+        RAISE EXCEPTION
+            'Unexpected append ownership-check structure';
+    END IF;
+
+    IF position(v_guard IN v_definition) > 0 THEN
+        RETURN;
+    END IF;
+
+    IF position(
+        'Append delivery date conflicts with parent invoice'
+        IN v_definition
+    ) > 0 THEN
+        RAISE EXCEPTION
+            'Unexpected existing append delivery-date guard';
+    END IF;
+
+    v_definition := regexp_replace(
+        v_definition,
+        v_anchor_pattern,
+        '\1' || chr(10) || v_guard
+    );
+
+    EXECUTE v_definition;
+END;
+$append_migration$;
 
 COMMIT;
