@@ -1425,3 +1425,181 @@ test(
     );
   }
 );
+
+test(
+  'legacy first-time linking respects delivery timing and manual approvals',
+  async () => {
+    const previousFlag =
+      process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+
+    process.env.INVOICE_SUPPORTED_REPRICING_ENABLED = 'false';
+
+    try {
+      const scenarios = [
+        {
+          name: 'delivery date wins over older invoice date',
+          invoiceDate: '2026-10-01',
+          deliveryDate: '2026-11-11',
+          currentDate: '2026-11-10',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-11',
+        },
+        {
+          name: 'future delivery cannot update current price',
+          invoiceDate: '2026-11-11',
+          deliveryDate: '2999-12-31',
+          currentDate: '2026-11-10',
+          expectedWrites: 0,
+        },
+        {
+          name: 'unknown dates cannot invent a purchase date',
+          invoiceDate: null,
+          deliveryDate: null,
+          currentDate: null,
+          expectedWrites: 0,
+        },
+        {
+          name: 'missing delivery date uses invoice date',
+          invoiceDate: '2026-11-10',
+          deliveryDate: null,
+          currentDate: '2026-11-09',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-10',
+        },
+        {
+          name: 'older delivery cannot replace newer purchase',
+          invoiceDate: '2026-11-11',
+          deliveryDate: '2026-11-09',
+          currentDate: '2026-11-10',
+          expectedWrites: 0,
+        },
+        {
+          name: 'manual approval cannot be overwritten',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-11',
+          currentDate: null,
+          manual: true,
+          expectedWrites: 0,
+        },
+      ];
+
+      for (const scenario of scenarios) {
+        const responses = [
+          {
+            table: 'invoice_items',
+            data: {
+              id: 'delivery-link-line',
+              unit: 'each',
+              unit_cost: 5,
+              ingredient_id: null,
+              price_verification_status: 'verified',
+              price_verification_source: 'trusted_supplier',
+              price_verified_at: '2026-11-01T12:00:00Z',
+              price_verification_evidence: {
+                supplier: 'Synthetic Development Supplier',
+                verification: 'supplier_document',
+              },
+              invoices: {
+                restaurant_id: restaurantId,
+                date: scenario.invoiceDate,
+                delivery_date: scenario.deliveryDate,
+              },
+            },
+          },
+          {
+            table: 'ingredients',
+            data: {
+              id: 'delivery-link-ingredient',
+              name: 'Synthetic Test Ingredient',
+              unit: 'each',
+              last_ordered_at: scenario.currentDate,
+              price_status: scenario.manual ? 'manual' : 'invoice',
+              price_approved_at: scenario.manual
+                ? '2026-11-01T12:00:00Z'
+                : null,
+            },
+          },
+          {
+            table: 'invoice_items',
+            action: 'update',
+            data: [{ id: 'delivery-link-line' }],
+          },
+        ];
+
+        if (scenario.expectedWrites === 1) {
+          responses.push({
+            table: 'ingredients',
+            action: 'update',
+            data: null,
+          });
+        }
+
+        const db = mockDatabase(responses);
+        const deps = enabledDependencies(db);
+        const res = response();
+
+        await createLinkInvoiceItemHandler(deps)({
+          method: 'POST',
+          body: {
+            restaurant_id: restaurantId,
+            invoice_item_id: 'delivery-link-line',
+            ingredient_id: 'delivery-link-ingredient',
+          },
+        }, res);
+
+        assert.equal(res.statusCode, 200, scenario.name);
+        assert.equal(res.body.moved, 1, scenario.name);
+
+        const priceUpdates = db.operations.filter(op =>
+          op.table === 'ingredients' &&
+          op.action === 'update'
+        );
+
+        assert.equal(
+          priceUpdates.length,
+          scenario.expectedWrites,
+          scenario.name
+        );
+
+        if (scenario.expectedWrites === 1) {
+          assert.equal(
+            priceUpdates[0].values.last_ordered_at,
+            scenario.expectedPurchaseDate,
+            scenario.name
+          );
+
+          assert.equal(
+            priceUpdates[0].values.last_price,
+            5,
+            scenario.name
+          );
+
+          assert.equal(
+            priceUpdates[0].values.unit,
+            'each',
+            scenario.name
+          );
+        }
+
+        const lineUpdates = db.operations.filter(op =>
+          op.table === 'invoice_items' &&
+          op.action === 'update'
+        );
+
+        assert.equal(lineUpdates.length, 1, scenario.name);
+        assert.deepEqual(
+          lineUpdates[0].values,
+          { ingredient_id: 'delivery-link-ingredient' },
+          scenario.name
+        );
+      }
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
+      } else {
+        process.env.INVOICE_SUPPORTED_REPRICING_ENABLED =
+          previousFlag;
+      }
+    }
+  }
+);

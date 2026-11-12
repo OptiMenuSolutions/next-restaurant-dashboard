@@ -246,7 +246,8 @@ function invoiceEvidence(overrides = {}) {
 async function runFixture(
   options,
   enabled = true,
-  allowedRestaurantId = RESTAURANT_ID
+  allowedRestaurantId = RESTAURANT_ID,
+  afterReprice = null
 ) {
 
   const previous =
@@ -272,6 +273,10 @@ async function runFixture(
       RESTAURANT_ID,
       INGREDIENT_ID
     );
+
+    if (afterReprice) {
+      await afterReprice(fixture);
+    }
 
     return fixture;
   } finally {
@@ -910,4 +915,320 @@ test('repeated authenticated repricing avoids redundant ingredient writes', asyn
     ).length,
     0
   );
+});
+
+function datedEvidencePurchase({
+  id,
+  invoiceId,
+  invoiceDate,
+  deliveryDate,
+  unitCost,
+  quantity = 4,
+  unit = 'qt',
+  itemName = 'Dijon Mustard',
+  version = 1,
+}) {
+  const amount = Math.round(quantity * unitCost * 100) / 100;
+
+  const savedLine = invoiceLine({
+    id,
+    invoice_id: invoiceId,
+    item_name: itemName,
+    quantity,
+    unit,
+    unit_cost: unitCost,
+    amount,
+    invoices: {
+      restaurant_id: RESTAURANT_ID,
+      date: invoiceDate,
+      delivery_date: deliveryDate,
+      created_at: `${invoiceDate}T12:00:00Z`,
+    },
+  });
+
+  const savedEvidence = invoiceEvidence({
+    id: `dated-evidence-${id}`,
+    invoice_item_id: id,
+    invoice_id: invoiceId,
+    evidence_version: version,
+    source_type: version === 2
+      ? 'independent_ocr_evidence'
+      : 'structured_ocr_table',
+    validation_status: version === 2
+      ? 'source_charge_verified'
+      : 'source_table_consistent',
+    evidence: {
+      proof_version: version,
+      pricing: {
+        invoice_item_id: id,
+        invoice_id: invoiceId,
+        restaurant_id: RESTAURANT_ID,
+        ingredient_id: null,
+        item_name: itemName,
+        quantity,
+        unit,
+        unit_cost: unitCost,
+        amount,
+      },
+    },
+  });
+
+  return {
+    line: savedLine,
+    evidence: savedEvidence,
+  };
+}
+
+test('future authenticated V1 delivery cannot replace delivered pricing', async () => {
+  const delivered = datedEvidencePurchase({
+    id: 'delivered-v1',
+    invoiceId: 'delivered-invoice-v1',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2026-11-09',
+    unitCost: 7.5,
+  });
+
+  const future = datedEvidencePurchase({
+    id: 'future-v1',
+    invoiceId: 'future-invoice-v1',
+    invoiceDate: '2026-11-08',
+    deliveryDate: '2999-12-31',
+    unitCost: 9,
+  });
+
+  const evidence = [delivered.evidence, future.evidence];
+  const evidenceBefore = structuredClone(evidence);
+
+  const result = await runFixture({
+    lines: [delivered.line, future.line],
+    evidence,
+  });
+
+  assert.equal(result.ingredient.last_price, 0.234375);
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-09');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.deepEqual(evidence, evidenceBefore);
+});
+
+test('future authenticated V2 delivery cannot replace delivered pricing', async () => {
+  const delivered = datedEvidencePurchase({
+    id: 'delivered-v2',
+    invoiceId: 'delivered-invoice-v2',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2026-11-09',
+    unitCost: 13,
+    quantity: 9.96,
+    unit: 'lb',
+    itemName: 'Beef Skirt Steak',
+    version: 2,
+  });
+
+  const future = datedEvidencePurchase({
+    id: 'future-v2',
+    invoiceId: 'future-invoice-v2',
+    invoiceDate: '2026-11-08',
+    deliveryDate: '2999-12-31',
+    unitCost: 14.5,
+    quantity: 9.96,
+    unit: 'lb',
+    itemName: 'Beef Skirt Steak',
+    version: 2,
+  });
+
+  const evidence = [delivered.evidence, future.evidence];
+  const evidenceBefore = structuredClone(evidence);
+
+  const result = await runFixture({
+    ingredientOverrides: {
+      name: 'Beef Skirt Steak',
+      unit: 'oz',
+      standard_unit: 'oz',
+      last_price: 0.75,
+    },
+    lines: [delivered.line, future.line],
+    evidence,
+  });
+
+  assert.equal(result.ingredient.last_price, 0.8125);
+  assert.equal(result.ingredient.unit, 'oz');
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-09');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.deepEqual(evidence, evidenceBefore);
+});
+
+test('future-only authenticated purchase cannot remain current verified pricing', async () => {
+  const future = datedEvidencePurchase({
+    id: 'future-only',
+    invoiceId: 'future-only-invoice',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2999-12-31',
+    unitCost: 9,
+  });
+
+  const result = await runFixture({
+    ingredientOverrides: {
+      last_price: 0.20,
+      last_ordered_at: '2026-11-07',
+      price_status: 'invoice',
+    },
+    lines: [future.line],
+    evidence: [future.evidence],
+  });
+
+  assert.equal(result.ingredient.last_price, 0.20);
+  assert.equal(result.ingredient.price_status, 'needs_review');
+  assert.equal(result.ingredient.is_estimated, true);
+});
+
+test('moving latest delivery into the future restores the earlier eligible price', async () => {
+  const older = datedEvidencePurchase({
+    id: 'correction-older',
+    invoiceId: 'correction-older-invoice',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2026-11-09',
+    unitCost: 7.5,
+  });
+
+  const latest = datedEvidencePurchase({
+    id: 'correction-latest',
+    invoiceId: 'correction-latest-invoice',
+    invoiceDate: '2026-11-08',
+    deliveryDate: '2026-11-11',
+    unitCost: 9,
+  });
+
+  const evidence = [older.evidence, latest.evidence];
+  const evidenceBefore = structuredClone(evidence);
+
+  const result = await runFixture(
+    {
+      lines: [older.line, latest.line],
+      evidence,
+    },
+    true,
+    RESTAURANT_ID,
+    async (fixture) => {
+      assert.equal(fixture.ingredient.last_price, 0.28125);
+      assert.equal(
+        fixture.ingredient.last_ordered_at,
+        '2026-11-11'
+      );
+
+      latest.line.invoices.delivery_date = '2999-12-31';
+
+      await repriceFromInvoices(
+        fixture.db,
+        RESTAURANT_ID,
+        INGREDIENT_ID
+      );
+    }
+  );
+
+  assert.equal(result.ingredient.last_price, 0.234375);
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-09');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.equal(latest.line.invoices.date, '2026-11-08');
+  assert.deepEqual(evidence, evidenceBefore);
+});
+
+test('correcting a future delivery to a delivered date reevaluates its price', async () => {
+  const older = datedEvidencePurchase({
+    id: 'future-correction-older',
+    invoiceId: 'future-correction-older-invoice',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2026-11-09',
+    unitCost: 7.5,
+  });
+
+  const corrected = datedEvidencePurchase({
+    id: 'future-correction-newer',
+    invoiceId: 'future-correction-newer-invoice',
+    invoiceDate: '2026-11-05',
+    deliveryDate: '2999-12-31',
+    unitCost: 9,
+  });
+
+  const evidence = [older.evidence, corrected.evidence];
+  const evidenceBefore = structuredClone(evidence);
+
+  const result = await runFixture(
+    {
+      lines: [older.line, corrected.line],
+      evidence,
+    },
+    true,
+    RESTAURANT_ID,
+    async (fixture) => {
+      assert.equal(fixture.ingredient.last_price, 0.234375);
+      assert.equal(
+        fixture.ingredient.last_ordered_at,
+        '2026-11-09'
+      );
+
+      corrected.line.invoices.delivery_date = '2026-11-11';
+
+      await repriceFromInvoices(
+        fixture.db,
+        RESTAURANT_ID,
+        INGREDIENT_ID
+      );
+    }
+  );
+
+  assert.equal(result.ingredient.last_price, 0.28125);
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-11');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.equal(corrected.line.invoices.date, '2026-11-05');
+  assert.deepEqual(evidence, evidenceBefore);
+});
+
+test('delivery-date correction cannot reactivate invalidated evidence', async () => {
+  const valid = datedEvidencePurchase({
+    id: 'valid-date-evidence',
+    invoiceId: 'valid-date-invoice',
+    invoiceDate: '2026-11-07',
+    deliveryDate: '2026-11-09',
+    unitCost: 7.5,
+  });
+
+  const invalidated = datedEvidencePurchase({
+    id: 'invalidated-date-evidence',
+    invoiceId: 'invalidated-date-invoice',
+    invoiceDate: '2026-11-08',
+    deliveryDate: '2026-11-11',
+    unitCost: 9,
+  });
+
+  invalidated.evidence.invalidated_at =
+    '2026-11-08T15:00:00Z';
+  invalidated.evidence.invalidation_reason =
+    'invoice_line_modified';
+
+  const evidence = [valid.evidence, invalidated.evidence];
+  const evidenceBefore = structuredClone(evidence);
+
+  const result = await runFixture(
+    {
+      lines: [valid.line, invalidated.line],
+      evidence,
+    },
+    true,
+    RESTAURANT_ID,
+    async (fixture) => {
+      assert.equal(fixture.ingredient.last_price, 0.234375);
+
+      invalidated.line.invoices.delivery_date = '2026-11-10';
+
+      await repriceFromInvoices(
+        fixture.db,
+        RESTAURANT_ID,
+        INGREDIENT_ID
+      );
+    }
+  );
+
+  assert.equal(result.ingredient.last_price, 0.234375);
+  assert.equal(result.ingredient.last_ordered_at, '2026-11-09');
+  assert.equal(result.ingredient.price_status, 'invoice');
+  assert.deepEqual(evidence, evidenceBefore);
 });

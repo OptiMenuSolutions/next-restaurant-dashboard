@@ -22,6 +22,11 @@ import {
 import {
   safeInvoiceStandardPrice,
 } from '../../../lib/safeInvoicePricing';
+import {
+  getInvoiceEffectiveDate,
+  isDeliveredInvoice,
+  isManuallyApprovedPrice,
+} from '../../../lib/invoiceRepricing';
 import { isInternalCall } from '../../../lib/scannerAuth';
 import { parseNumberedCanPack } from '../../../lib/invoicePackageSize';
 import {
@@ -370,6 +375,8 @@ export function createConfirmInvoiceHandler({
     new Date().toISOString().split('T')[0];
 
   const appendMode = !!append_to_invoice_id;
+  let purchaseDate = deliveryDate;
+  const pricingAsOfDate = new Date().toISOString().slice(0, 10);
 
   // Verify ownership independently of the invoice parser.
   // Client-submitted ingredient IDs cannot expand matching eligibility.
@@ -589,6 +596,7 @@ export function createConfirmInvoiceHandler({
         });
       }
 
+      purchaseDate = getInvoiceEffectiveDate(existingInvoice);
       invoiceRecord = { id: existingInvoice.id };
       results.invoice_id = existingInvoice.id;
 
@@ -681,10 +689,14 @@ export function createConfirmInvoiceHandler({
     // Until then, existing ingredient prices are preserved.
 
     const ingredientUpdates = {};
+    const deliveredForPricing = isDeliveredInvoice(
+      { delivery_date: purchaseDate },
+      pricingAsOfDate
+    );
 
     for (const item of activeItems) {
       const ingredientId = permittedIngredientId(item);
-      if (!ingredientId) continue;
+      if (!ingredientId || !deliveredForPricing) continue;
 
       const cost = resolvedCost(item);
       const verification = cost?.priceVerification;
@@ -711,7 +723,7 @@ export function createConfirmInvoiceHandler({
         last_price: standardized.price,
         unit: standardized.unit,
         standard_unit: standardized.unit,
-        last_ordered_at: invoiceDate,
+        last_ordered_at: purchaseDate,
         is_estimated: false,
         price_status: 'invoice',
       };
@@ -724,7 +736,7 @@ export function createConfirmInvoiceHandler({
       const { data: current, error: currentError } =
         await supabase
           .from('ingredients')
-          .select('id, last_ordered_at')
+          .select('id, last_ordered_at, price_status, price_approved_at')
           .in('id', updateIds)
           .eq('restaurant_id', restaurant_id);
 
@@ -732,9 +744,12 @@ export function createConfirmInvoiceHandler({
 
       for (const ingredient of current || []) {
         if (
-          ingredient.last_ordered_at &&
-          String(ingredient.last_ordered_at).slice(0, 10) >
-            String(invoiceDate).slice(0, 10)
+          isManuallyApprovedPrice(ingredient) ||
+          (
+            ingredient.last_ordered_at &&
+            String(ingredient.last_ordered_at).slice(0, 10) >
+              String(purchaseDate).slice(0, 10)
+          )
         ) {
           delete ingredientUpdates[ingredient.id];
         }

@@ -20,6 +20,7 @@ const RESTAURANT_ID = 'restaurant-test-1';
 function createDb({
   status = 'legacy_enabled',
   ownedIngredients = {},
+  ingredientOverrides = {},
   matchingControlError = null,
   transactionError = null,
   appendInvoice = null,
@@ -228,12 +229,17 @@ function createDb({
                 .filter(id =>
                   Object.hasOwn(ownedIngredients, id)
                 )
-                .map(id => ({ id }));
+                .map(id => ({
+                  id,
+                  last_ordered_at: null,
+                  ...ingredientOverrides[id],
+                }));
             } else {
               data = Object.keys(ownedIngredients).map(
                 id => ({
                   id,
                   last_ordered_at: null,
+                  ...ingredientOverrides[id],
                 })
               );
             }
@@ -3239,6 +3245,233 @@ test(
         transaction.args.p_invoice.delivery_date_status,
         'explicit'
       );
+    });
+  }
+);
+
+test(
+  'legacy confirmation respects delivery timing and preserves protected prices',
+  async () => {
+    await withEvidencePersistence(async () => {
+      process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
+        'false';
+
+      const verifiedResult = {
+        status: 'verified',
+        verificationStatus: 'verified',
+        conversionApproved: true,
+        sourceConsensus: {
+          conversionApproved: true,
+        },
+        conversion: {
+          fromUnit: 'can',
+          toUnit: 'oz',
+          factor: 104,
+          scope: 'per_container',
+          basis: 'authenticated_supplier_record',
+        },
+      };
+
+      const resolveVerifiedCost = (item, supplier) =>
+        resolveInvoiceResearchCost(item, supplier, {
+          enabled: true,
+          researchProduct: async () => verifiedResult,
+        });
+
+      const scenarios = [
+        {
+          name: 'explicit delivered date',
+          invoiceDate: '2026-10-27',
+          deliveryDate: '2026-11-11',
+          status: 'explicit',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-11',
+        },
+        {
+          name: 'invoice-date fallback',
+          invoiceDate: '2026-11-10',
+          deliveryDate: null,
+          status: 'not_printed',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-10',
+        },
+        {
+          name: 'future delivery saves without repricing',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2999-12-31',
+          status: 'explicit',
+          expectedWrites: 0,
+        },
+        {
+          name: 'unknown dates save without repricing',
+          invoiceDate: null,
+          deliveryDate: null,
+          status: 'not_printed',
+          expectedWrites: 0,
+        },
+        {
+          name: 'older delivery cannot overwrite newer purchase',
+          invoiceDate: '2026-11-11',
+          deliveryDate: '2026-11-09',
+          status: 'explicit',
+          current: {
+            last_ordered_at: '2026-11-10',
+          },
+          expectedWrites: 0,
+        },
+        {
+          name: 'manual approval remains protected',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-11',
+          status: 'explicit',
+          current: {
+            price_status: 'manual',
+            price_approved_at: '2026-11-01T12:00:00Z',
+            last_price: 0.90,
+          },
+          expectedWrites: 0,
+        },
+        {
+          name: 'continuation uses parent delivery date',
+          invoiceDate: '2026-10-27',
+          deliveryDate: '2026-10-27',
+          status: 'not_printed',
+          append: true,
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-11',
+        },
+      ];
+
+      for (const scenario of scenarios) {
+        const { db, writes, rpcCalls } = createDb({
+          ownedIngredients: {
+            'ingredient-test-1': 'Strawberry Glaze',
+          },
+          ingredientOverrides: {
+            'ingredient-test-1': scenario.current || {},
+          },
+          appendInvoice: scenario.append ? {
+            id: 'invoice-test-1',
+            restaurant_id: RESTAURANT_ID,
+            date: '2026-11-10',
+            delivery_date: '2026-11-11',
+          } : null,
+        });
+
+        const handler = createHandler(
+          db,
+          resolveVerifiedCost
+        );
+
+        const req = createRequest({
+          number: 'TEST-LEGACY-DELIVERY-PRICING',
+          item: {
+            _id: 'legacy-delivery-pricing-line',
+            item_name: 'Strawberry Glaze',
+            supplier_sku: 'SUP456',
+            brand: 'Example Foods',
+            selected_ingredient_id: 'ingredient-test-1',
+            selected_ingredient_name: 'Strawberry Glaze',
+            match_status: 'matched',
+            pack_size_raw: '3/#10 CAN',
+            quantity_shipped: 1,
+            invoice_price: 50.78,
+            line_total: 50.78,
+          },
+        });
+
+        req.body.invoice.invoice_date =
+          scenario.invoiceDate;
+
+        req.body.invoice.delivery_date =
+          scenario.deliveryDate;
+
+        req.body.invoice.delivery_date_status =
+          scenario.status;
+
+        if (scenario.append) {
+          req.body.append_to_invoice_id = 'invoice-test-1';
+        }
+
+        const res = createResponse();
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200, scenario.name);
+        assert.equal(res.body.success, true, scenario.name);
+        assert.equal(res.body.items_saved, 1, scenario.name);
+
+        assert.equal(
+          rpcCalls.some(call =>
+            call.functionName ===
+            'save_invoice_confirmation_transactional'
+          ),
+          false,
+          scenario.name
+        );
+
+        const updates = writes.filter(write =>
+          write.table === 'ingredients' &&
+          write.operation === 'update'
+        );
+
+        assert.equal(
+          updates.length,
+          scenario.expectedWrites,
+          scenario.name
+        );
+
+        if (scenario.expectedWrites === 1) {
+          assert.equal(
+            updates[0].rows.last_ordered_at,
+            scenario.expectedPurchaseDate,
+            scenario.name
+          );
+
+          assert.equal(
+            updates[0].rows.unit,
+            'oz',
+            scenario.name
+          );
+
+          assert.ok(
+            Math.abs(
+              updates[0].rows.last_price - 50.78 / 312
+            ) < 1e-10,
+            scenario.name
+          );
+        }
+
+        const invoiceInserts = writes.filter(write =>
+          write.table === 'invoices' &&
+          write.operation === 'insert'
+        );
+
+        if (scenario.append) {
+          assert.equal(
+            invoiceInserts.length,
+            0,
+            scenario.name
+          );
+        } else {
+          assert.equal(
+            invoiceInserts.length,
+            1,
+            scenario.name
+          );
+
+          assert.equal(
+            invoiceInserts[0].rows.date,
+            scenario.invoiceDate,
+            scenario.name
+          );
+
+          assert.equal(
+            invoiceInserts[0].rows.delivery_date,
+            scenario.deliveryDate ?? scenario.invoiceDate,
+            scenario.name
+          );
+        }
+      }
     });
   }
 );

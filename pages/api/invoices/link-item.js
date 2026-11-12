@@ -15,6 +15,9 @@ import {
 } from '../../../lib/invoiceMatchingControls';
 import {
   selectInvoiceRepricingSource,
+  getInvoiceEffectiveDate,
+  isDeliveredInvoice,
+  isManuallyApprovedPrice,
 } from '../../../lib/invoiceRepricing';
 
 import {
@@ -114,7 +117,7 @@ export function createLinkInvoiceItemHandler({
       'price_verification_source, ' +
       'price_verified_at, ' +
       'price_verification_evidence, ' +
-      'invoices!inner(restaurant_id, date)'
+      'invoices!inner(restaurant_id, date, delivery_date)'
     )
     .eq('id', invoice_item_id)
     .single();
@@ -128,7 +131,7 @@ export function createLinkInvoiceItemHandler({
   // Verify the selected ingredient belongs to this restaurant.
   const { data: ingredient, error: ingredientErr } = await db
     .from('ingredients')
-    .select('id, name, unit, last_ordered_at')
+    .select('id, name, unit, last_ordered_at, price_status, price_approved_at')
     .eq('id', ingredient_id)
     .eq('restaurant_id', restaurant_id)
     .single();
@@ -152,6 +155,9 @@ export function createLinkInvoiceItemHandler({
       },
     });
   }
+
+  const purchaseDate = getInvoiceEffectiveDate(line.invoices);
+  const pricingAsOfDate = new Date().toISOString().slice(0, 10);
 
   const invoiceDate =
     line.invoices.date || new Date().toISOString().split('T')[0];
@@ -232,8 +238,12 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
     // than the ingredient's current recorded purchase.
     const unitCost = Number(line.unit_cost);
     const isNewest =
-      !ingredient.last_ordered_at ||
-      String(invoiceDate) >= String(ingredient.last_ordered_at);
+      isDeliveredInvoice(line.invoices, pricingAsOfDate) &&
+      !isManuallyApprovedPrice(ingredient) &&
+      (
+        !ingredient.last_ordered_at ||
+        String(purchaseDate) >= String(ingredient.last_ordered_at)
+      );
 
     const verifiedPrice = safeInvoiceStandardPrice(
       unitCost,
@@ -251,7 +261,7 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
           last_price: verifiedPrice.price,
           unit: verifiedPrice.unit,
           standard_unit: verifiedPrice.unit,
-          last_ordered_at: invoiceDate,
+          last_ordered_at: purchaseDate,
           is_estimated: false,
         })
         .eq('id', ingredient.id)
@@ -311,7 +321,7 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
 async function repriceFromInvoices(db, restaurantId, ingredientId) {
   const { data: ingredient, error: ingredientErr } = await db
     .from('ingredients')
-    .select('id, name, last_ordered_at, price_status')
+    .select('id, name, last_ordered_at, price_status, price_approved_at')
     .eq('id', ingredientId)
     .eq('restaurant_id', restaurantId)
     .single();
@@ -319,6 +329,8 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
   if (ingredientErr || !ingredient) {
     throw new Error('Could not load ingredient for repricing.');
   }
+
+  if (isManuallyApprovedPrice(ingredient)) return;
 
   const lines = await fetchAll(
     () => db
@@ -329,7 +341,7 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
         'price_verification_source, ' +
         'price_verified_at, ' +
         'price_verification_evidence, ' +
-        'invoices!inner(restaurant_id, date, created_at)'
+        'invoices!inner(restaurant_id, date, delivery_date, created_at)'
       )
       .eq('ingredient_id', ingredientId)
       .eq('invoices.restaurant_id', restaurantId)
@@ -350,6 +362,15 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
     // Existing valid pricing must survive unsupported
     // invoice units or package quantities.
     return;
+  } else if (
+    decision.status === 'not_delivered' &&
+    ingredient.price_status === 'invoice'
+  ) {
+    updates = {
+      price_status: 'needs_review',
+      is_estimated: true,
+      price_approved_at: null,
+    };
   } else if (
     ingredient.last_ordered_at &&
     ingredient.price_status === 'invoice'
