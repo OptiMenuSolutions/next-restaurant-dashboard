@@ -76,6 +76,7 @@ function calculate({
   const invoices = deliveries.map((item) => ({
     id: item.invoice_id,
     date: item.invoices.date,
+    delivery_date: item.invoices.delivery_date ?? null,
   }));
 
   const menuItems = [{
@@ -94,9 +95,8 @@ function calculate({
     }],
   }];
 
-  const eligibleDeliveries = deliveries.filter(
-    (item) => item.invoices.date <= throughDate
-  );
+  // The inventory functions must enforce delivery cutoffs themselves.
+  const eligibleDeliveries = deliveries;
 
   const eligibleSales = sales.filter(
     (item) => item.sale_date <= throughDate
@@ -308,6 +308,7 @@ function conversionScenario({
   const invoices = invoiceItems.map((item) => ({
     id: item.invoice_id,
     date: item.invoices.date,
+    delivery_date: item.invoices.delivery_date ?? null,
   }));
 
   const menuItems = [{
@@ -484,4 +485,146 @@ test('inventory replay uses the same approved conversion as FIFO', () => {
 
   assert.equal(remaining(base, 'replay-delivery'), 18);
   assert.equal(remaining(replay, 'replay-delivery'), 18);
+});
+
+test('future deliveries stay out of inventory while physical counts remain usable', () => {
+  const future = delivery('future', '2026-11-01', 100);
+  future.invoices.delivery_date = '2999-12-31';
+
+  assert.equal(
+    totalRemaining(calculate({ deliveries: [future] })),
+    0
+  );
+
+  const counted = calculate({
+    deliveries: [future],
+    counts: [
+      physicalCount('count-future', '2026-11-04', 20),
+    ],
+  });
+
+  assert.equal(totalRemaining(counted), 20);
+  assert.ok(
+    counted.every(row => row.stockSource === 'count')
+  );
+});
+
+test('delivered stock is included even when its invoice date is later than the cutoff', () => {
+  const received = delivery('received', '2026-11-10', 100);
+  received.invoices.delivery_date = '2026-11-02';
+
+  const rows = calculate({
+    deliveries: [received],
+    sales: [
+      sale('received-sale', '2026-11-03', 25),
+    ],
+  });
+
+  assert.equal(remaining(rows, 'received'), 75);
+  assert.equal(rows[0].deliveryDate, '2026-11-02');
+});
+
+test('unknown delivery and invoice dates do not create inventory', () => {
+  const unknown = delivery('unknown', null, 100);
+  unknown.invoices.delivery_date = null;
+
+  assert.equal(
+    totalRemaining(calculate({ deliveries: [unknown] })),
+    0
+  );
+});
+
+test('sales before actual delivery do not consume that delivery', () => {
+  const received = delivery('later-arrival', '2026-11-01', 100);
+  received.invoices.delivery_date = '2026-11-03';
+
+  const rows = calculate({
+    deliveries: [received],
+    sales: [
+      sale('before-arrival', '2026-11-02', 20),
+      sale('after-arrival', '2026-11-04', 30),
+    ],
+  });
+
+  assert.equal(remaining(rows, 'later-arrival'), 70);
+});
+
+test('FIFO follows delivery order when invoice dates have the opposite order', () => {
+  const later = delivery('later-batch', '2026-11-01', 100);
+  later.invoices.delivery_date = '2026-11-04';
+
+  const earlier = delivery('earlier-batch', '2026-11-03', 100);
+  earlier.invoices.delivery_date = '2026-11-02';
+
+  const rows = calculate({
+    deliveries: [later, earlier],
+    sales: [
+      sale('first-sale', '2026-11-03', 60),
+      sale('second-sale', '2026-11-05', 50),
+    ],
+  });
+
+  assert.equal(remaining(rows, 'earlier-batch'), 0);
+  assert.equal(remaining(rows, 'later-batch'), 90);
+});
+
+test('stock age and remaining shelf life start at delivery date', () => {
+  const received = delivery('age-test', '2026-11-01', 100);
+  received.invoices.delivery_date = '2026-11-03';
+
+  const [row] = calculate({
+    deliveries: [received],
+  });
+
+  assert.equal(row.daysSinceDelivery, 2);
+  assert.equal(row.daysLeft, row.shelfLife - 2);
+  assert.equal(row.deliveryDate, '2026-11-03');
+});
+
+test('delivery-date corrections rebuild stock deterministically', () => {
+  const received = delivery('corrected', '2026-11-01', 100);
+  received.invoices.delivery_date = '2026-11-03';
+
+  const scenario = {
+    deliveries: [received],
+    sales: [
+      sale('correction-before', '2026-11-02', 30),
+      sale('correction-after', '2026-11-04', 20),
+    ],
+  };
+
+  assert.equal(
+    remaining(calculate(scenario), 'corrected'),
+    80
+  );
+
+  received.invoices.delivery_date = '2026-11-01';
+
+  const rebuilt = calculate(scenario);
+
+  assert.equal(remaining(rebuilt, 'corrected'), 50);
+  assert.deepEqual(calculate(scenario), rebuilt);
+
+  received.invoices.delivery_date = '2999-12-31';
+
+  assert.equal(totalRemaining(calculate(scenario)), 0);
+});
+
+test('a confirmation before the corrected delivery date cannot deduct that stock', () => {
+  const received = delivery('confirmation-date', '2026-11-01', 100);
+  received.invoices.delivery_date = '2026-11-03';
+
+  const rows = calculate({
+    deliveries: [received],
+    confirmations: [
+      confirmation(
+        'too-early',
+        'confirmation-date',
+        '2026-11-02',
+        100
+      ),
+    ],
+  });
+
+  assert.equal(remaining(rows, 'confirmation-date'), 100);
 });
