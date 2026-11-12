@@ -395,6 +395,25 @@ Remove vendor codes, item numbers, brand names from the normalized name.
 Preserve size info (e.g. "7oz", "21-25ct") in the name only — do not use it as the purchase unit.
 
 ════════════════════════════════════════
+INVOICE AND DELIVERY DATES
+════════════════════════════════════════
+
+Extract the original invoice date and the delivery date separately.
+
+- invoice_date: The date the supplier issued the invoice.
+- delivery_date: The date the products were actually delivered or received.
+
+DELIVERY DATE RULES:
+1. If the document explicitly identifies a delivery date, extract that date.
+2. If no explicit delivery date exists, use invoice_date as the delivery_date fallback.
+3. If neither date can be reliably identified, return null for delivery_date.
+4. Never substitute an order date, due date, payment date, or upload date for the delivery date.
+5. Do not invent a delivery date from context or assumptions.
+6. Preserve invoice_date independently, even when it differs from delivery_date.
+7. Return dates in YYYY-MM-DD format.
+8. If multiple delivery dates conflict and cannot be resolved, return null for delivery_date rather than guessing.
+
+════════════════════════════════════════
 OUTPUT FORMAT
 ════════════════════════════════════════
 
@@ -402,6 +421,7 @@ OUTPUT FORMAT
   "supplier": "string",
   "invoice_number": "string or null",
   "invoice_date": "YYYY-MM-DD or null",
+  "delivery_date": "YYYY-MM-DD or null",
   "total_amount": number or null,
   "tax_amount": number or null,
   "fees_amount": number or null,
@@ -452,6 +472,7 @@ OUTPUT FORMAT
     "supplier": "high | medium | low",
     "invoice_number": "high | medium | low",
     "invoice_date": "high | medium | low",
+    "delivery_date": "high | medium | low",
     "total_amount": "high | medium | low"
   }
 }`,
@@ -1518,6 +1539,7 @@ export default async function handler(req, res) {
           // Saved as printed. The normalized form is only for the duplicate check.
           invoice_number: extracted.invoice_number ? String(extracted.invoice_number).trim() : null,
           invoice_date:   extracted.invoice_date,
+          delivery_date: extracted.delivery_date ?? extracted.invoice_date ?? null,
           total_amount:   extracted.total_amount,
           tax_amount:     extracted.tax_amount ?? null,
           fees_amount:    extracted.fees_amount ?? null,

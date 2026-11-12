@@ -2607,3 +2607,170 @@ test(
     });
   }
 );
+
+
+test(
+  'transactional confirmation preserves explicit and fallback delivery dates',
+  async () => {
+    await withEvidencePersistence(async () => {
+      const scenarios = [
+        {
+          name: 'explicit delivery date',
+          deliveryDate: '2026-10-28',
+          expected: '2026-10-28',
+        },
+        {
+          name: 'invoice-date fallback',
+          deliveryDate: null,
+          expected: '2026-10-27',
+        },
+      ];
+
+      for (const scenario of scenarios) {
+        const { db, rpcCalls } = createDb();
+        const handler = createHandler(db, unverifiedCost);
+
+        const req = createRequest({
+          number: 'TEST-DELIVERY-DATE-001',
+          item: {
+            _id: 'delivery-date-test-line',
+            item_name_raw: 'GROUND BEEF',
+            item_name_normalized: 'Ground Beef',
+            pack_size_raw: '2/5 LB',
+            pack: 2,
+            size: 5,
+            size_unit: 'lb',
+            quantity_shipped: 1,
+            invoice_price: 40,
+            line_total: 40,
+          },
+        });
+
+        if (scenario.deliveryDate !== null) {
+          req.body.invoice.delivery_date =
+            scenario.deliveryDate;
+        }
+
+        const res = createResponse();
+
+        await handler(req, res);
+
+        assert.equal(
+          res.statusCode,
+          200,
+          scenario.name
+        );
+
+        const transaction = rpcCalls.find(
+          call =>
+            call.functionName ===
+            'save_invoice_confirmation_transactional'
+        );
+
+        assert.ok(transaction, scenario.name);
+
+        assert.equal(
+          transaction.args.p_invoice.date,
+          '2026-10-27',
+          scenario.name
+        );
+
+        assert.equal(
+          transaction.args.p_invoice.delivery_date,
+          scenario.expected,
+          scenario.name
+        );
+      }
+    });
+  }
+);
+
+
+test(
+  'invalid invoice and delivery dates are rejected before persistence',
+  async () => {
+    const scenarios = [
+      {
+        name: 'impossible delivery date',
+        invoiceDate: '2026-10-27',
+        deliveryDate: '2026-02-30',
+      },
+      {
+        name: 'incorrect delivery date format',
+        invoiceDate: '2026-10-27',
+        deliveryDate: '10/28/2026',
+      },
+      {
+        name: 'invalid invoice date',
+        invoiceDate: '2026-13-01',
+        deliveryDate: null,
+      },
+      {
+        name: 'non-string delivery date',
+        invoiceDate: '2026-10-27',
+        deliveryDate: 20261028,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { db, rpcCalls, writes } = createDb();
+
+      const handler = createHandler(
+        db,
+        unverifiedCost
+      );
+
+      const req = createRequest({
+        number: 'TEST-INVALID-DATE-001',
+        item: {
+          _id: 'invalid-date-test-line',
+          item_name_raw: 'GROUND BEEF',
+          item_name_normalized: 'Ground Beef',
+          pack_size_raw: '2/5 LB',
+          pack: 2,
+          size: 5,
+          size_unit: 'lb',
+          quantity_shipped: 1,
+          invoice_price: 40,
+          line_total: 40,
+        },
+      });
+
+      req.body.invoice.invoice_date =
+        scenario.invoiceDate;
+
+      if (scenario.deliveryDate !== null) {
+        req.body.invoice.delivery_date =
+          scenario.deliveryDate;
+      }
+
+      const res = createResponse();
+
+      await handler(req, res);
+
+      assert.equal(
+        res.statusCode,
+        422,
+        scenario.name
+      );
+
+      assert.equal(
+        rpcCalls.some(call =>
+          call.functionName ===
+          'save_invoice_confirmation_transactional'
+        ),
+        false,
+        scenario.name
+      );
+
+      assert.equal(
+        writes.some(write =>
+          write.table === 'invoices' &&
+          write.operation === 'insert'
+        ),
+        false,
+        scenario.name
+      );
+    }
+  }
+);

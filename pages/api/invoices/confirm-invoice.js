@@ -298,8 +298,59 @@ export function createConfirmInvoiceHandler({
     evidencePersistenceEnabled: false,
   });
 
-  const invoiceDate = invoice.invoice_date || new Date().toISOString().split('T')[0];
-  const appendMode  = !!append_to_invoice_id;
+  // Preserve the original invoice date separately from
+  // the operational delivery date.
+  //
+  // Never use the upload date to invent a delivery date.
+  const validInvoiceDate = (value) => {
+    if (value == null || value === '') return null;
+
+    if (
+      typeof value !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(value)
+    ) {
+      return null;
+    }
+
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    ) ? value : null;
+  };
+
+  const originalInvoiceDate = validInvoiceDate(
+    invoice.invoice_date
+  );
+
+  const submittedDeliveryDate = validInvoiceDate(
+    invoice.delivery_date
+  );
+
+  if (
+    (invoice.invoice_date != null &&
+      invoice.invoice_date !== '' &&
+      !originalInvoiceDate) ||
+    (invoice.delivery_date != null &&
+      invoice.delivery_date !== '' &&
+      !submittedDeliveryDate)
+  ) {
+    return res.status(422).json({
+      error: 'Invoice or delivery date is invalid.',
+    });
+  }
+
+  const deliveryDate =
+    submittedDeliveryDate || originalInvoiceDate;
+
+  // Existing calculation pathways still use invoiceDate
+  // until delivery-date processing is updated in Step 22.4.
+  const invoiceDate =
+    originalInvoiceDate ||
+    new Date().toISOString().split('T')[0];
+
+  const appendMode = !!append_to_invoice_id;
 
   // Verify ownership independently of the invoice parser.
   // Client-submitted ingredient IDs cannot expand matching eligibility.
@@ -542,7 +593,8 @@ export function createConfirmInvoiceHandler({
           restaurant_id,
           supplier:   invoice.supplier       || null,
           number:     invoice.invoice_number || null,
-          date:       invoice.invoice_date   || null,
+          date:       originalInvoiceDate,
+          delivery_date: deliveryDate,
           amount:     invoice.total_amount   || null,
           non_food_total: invoice.non_food_total ?? null,
           tax_amount:     invoice.tax_amount     ?? null,
@@ -872,7 +924,8 @@ export function createConfirmInvoiceHandler({
         id: invoiceRecord.id,
         supplier: invoice.supplier || null,
         number: invoice.invoice_number || null,
-        date: invoice.invoice_date || null,
+        date: originalInvoiceDate,
+        delivery_date: deliveryDate,
         amount: invoice.total_amount ?? null,
         non_food_total: invoice.non_food_total ?? null,
         tax_amount: invoice.tax_amount ?? null,
