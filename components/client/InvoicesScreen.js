@@ -141,6 +141,7 @@ export default function InvoicesScreen({
   onMergeDuplicates,
   onKeepDuplicates,
   onMarkReviewed,
+  onChangeDeliveryDate,
   uploadStatus = null,
   unmatchedTotal = 0,
   onSearch,
@@ -308,7 +309,7 @@ export default function InvoicesScreen({
           title={selected.number || "Invoice"}
         />
         <div style={{ flex: 1, minHeight: 0, padding: 12, display: "flex", flexDirection: "column", background: "var(--panel)" }}>
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} onChangeDeliveryDate={onChangeDeliveryDate} />
         </div>
         <MobileNav active="invoices" NavLink={NavLink} />
       </Shell>
@@ -574,19 +575,21 @@ export default function InvoicesScreen({
             </div>
           </div>
 
-          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} />
+          <Receipt invoice={selected} onOpen={onOpen} onFlag={onFlag} ingredientOptions={ingredientOptions} onLinkLine={onLinkLine} onDelete={onDelete} onMergeDuplicates={onMergeDuplicates} onKeepDuplicates={onKeepDuplicates} onMarkReviewed={onMarkReviewed} onChangeDeliveryDate={onChangeDeliveryDate} />
         </div>
       </div>
     </Shell>
   );
 }
 
-function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, onDelete, onMergeDuplicates, onKeepDuplicates, onMarkReviewed }) {
+function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, onDelete, onMergeDuplicates, onKeepDuplicates, onMarkReviewed, onChangeDeliveryDate }) {
   const [linkMode, setLinkMode] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  useEffect(() => { setLinkMode(false); setConfirmDelete(false); setActionError(""); }, [invoice && invoice.id]);
+  const [editingDate, setEditingDate] = useState(false);
+  const [dateDraft, setDateDraft] = useState("");
+  useEffect(() => { setLinkMode(false); setConfirmDelete(false); setActionError(""); setEditingDate(false); setDateDraft(""); }, [invoice && invoice.id]);
   async function run(fn) {
     setBusy(true);
     setActionError("");
@@ -670,11 +673,40 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", flexShrink: 0 }}>
             {fields.map((f) => (
               <div key={f.label}>
-                <div style={{ fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)" }}>{f.label}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 8, letterSpacing: "0.14em", color: "var(--ink-faint)" }}>
+                  {f.label}
+                  {f.label === "DATE" && onChangeDeliveryDate && (
+                    <button type="button" disabled={busy || editingDate} onClick={() => {
+                      setDateDraft(s.displayIsoDate || s.isoDate || "");
+                      setActionError("");
+                      setEditingDate(true);
+                    }} style={{ background: "none", border: "none", padding: 0, fontFamily: MONO, fontSize: 8, color: "var(--accent-deep)", cursor: "pointer" }}>
+                      EDIT DATE
+                    </button>
+                  )}
+                </div>
                 <div style={{ fontSize: 11, color: f.color, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.value}</div>
               </div>
             ))}
           </div>
+          {editingDate && onChangeDeliveryDate && (
+            <form onSubmit={(event) => {
+              event.preventDefault();
+              run(async () => {
+                await onChangeDeliveryDate(s, dateDraft);
+                setEditingDate(false);
+              });
+            }} style={{ marginTop: 10, padding: 10, border: "1px dashed var(--paper-line)", borderRadius: 4, flexShrink: 0 }}>
+              <label style={{ display: "block", fontSize: 10 }}>
+                Delivery date
+                <input type="date" required min="0001-01-01" max="9999-12-31" disabled={busy} value={dateDraft} onChange={(event) => setDateDraft(event.target.value)} style={{ display: "block", marginTop: 6, width: "100%", boxSizing: "border-box", padding: 7, fontFamily: MONO, color: "var(--ink)", background: "var(--paper)", border: "1px solid var(--paper-line)", borderRadius: 4 }} />
+              </label>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button type="submit" disabled={busy || !dateDraft} style={btn}>{busy ? "SAVING…" : "SAVE DATE"}</button>
+                <button type="button" disabled={busy} onClick={() => setEditingDate(false)} style={btn}>CANCEL</button>
+              </div>
+            </form>
+          )}
           {s.scannedBy && !s.scanReviewed && (
             <div style={{ marginTop: 10, border: "1px dashed var(--amber)", borderRadius: 4, padding: "8px 10px", fontSize: 10, lineHeight: 1.5, color: "var(--ink)", flexShrink: 0 }}>
               <span style={{ color: "var(--amber)", fontWeight: 500 }}>

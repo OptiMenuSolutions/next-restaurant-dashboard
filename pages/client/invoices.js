@@ -85,6 +85,7 @@ function toInvoice(row) {
     date: displayDate ? shortDate(displayDate) : "Date unknown",
     year: displayDate ? yearOf(displayDate) : null,
     displayIsoDate: displayDate,
+    storedDeliveryDate: row.delivery_date || null,
     isoDate: row.date || null,
     amount: row.amount == null ? null : Math.round(parseFloat(row.amount) * 100) / 100,
     nonFoodTotal: row.non_food_total ?? null,
@@ -484,6 +485,50 @@ export default function InvoicesPage() {
     );
   }, [reloadInvoices]);
 
+  const handleChangeDeliveryDate = useCallback(async (invoice, deliveryDate) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Please sign in again.");
+
+    const res = await fetch("/api/invoices/update-delivery-date", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        restaurant_id: restaurantId,
+        invoice_id: invoice.id,
+        expected_delivery_date: invoice.storedDeliveryDate ?? null,
+        delivery_date: deliveryDate,
+      }),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok || json.success !== true) {
+      throw new Error(json.error || "Could not save the delivery date.");
+    }
+
+    const displayDate = json.invoice.delivery_date || json.invoice.date || null;
+
+    await reloadInvoices(
+      (prev) => prev && {
+        ...prev,
+        invoices: prev.invoices.map((v) => v.id === invoice.id ? {
+          ...v,
+          date: displayDate ? shortDate(displayDate) : "Date unknown",
+          year: displayDate ? yearOf(displayDate) : null,
+          displayIsoDate: displayDate,
+          storedDeliveryDate: json.invoice.delivery_date,
+          isoDate: json.invoice.date || null,
+        } : v),
+      },
+      { revalidate: false }
+    );
+
+    clearCachedPages(AFFECTED_BY_INVOICES);
+  }, [restaurantId, reloadInvoices]);
+
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const lastUpload = invoices[0]?.displayIsoDate ? "Last invoice " + invoices[0].date : "";
@@ -701,6 +746,11 @@ export default function InvoicesPage() {
         ingredientOptions={ingredientOptions}
         onLinkLine={handleLinkLine}
         onMarkReviewed={tourMode ? null : handleMarkReviewed}
+        onChangeDeliveryDate={
+          !tourMode && process.env.NEXT_PUBLIC_INVOICE_DELIVERY_DATE_CORRECTIONS_ENABLED === "true"
+            ? handleChangeDeliveryDate
+            : null
+        }
         openInvoiceId={router.query.invoice || null}
         onSearch={() => setSearchOpen(true)}
         onSignOut={signOut}
