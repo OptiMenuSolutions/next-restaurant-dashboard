@@ -65,6 +65,7 @@ const dupKeyOf = (v) =>
 /* invoices row -> screen invoice. `status` mirrors the old page's logic:
    processed once the OCR run has both a number and an amount. */
 function toInvoice(row) {
+  const displayDate = row.delivery_date || row.date || null;
   const processed = row.processed === true || (row.number && row.amount != null);
   const flagged = row.needs_review === true || row.status === "review";
   // Supabase's embedded count() comes back as invoice_items: [{ count: N }].
@@ -81,8 +82,9 @@ function toInvoice(row) {
     file: row.file_name || (row.file_url ? String(row.file_url).split("/").pop() : ""),
     fileUrl: row.file_url || null,
     supplier: row.supplier || "Unknown supplier",
-    date: shortDate(row.date),
-    year: yearOf(row.date),
+    date: displayDate ? shortDate(displayDate) : "Date unknown",
+    year: displayDate ? yearOf(displayDate) : null,
+    displayIsoDate: displayDate,
     isoDate: row.date || null,
     amount: row.amount == null ? null : Math.round(parseFloat(row.amount) * 100) / 100,
     nonFoodTotal: row.non_food_total ?? null,
@@ -216,7 +218,14 @@ export default function InvoicesPage() {
     restaurantId ? ["invoices", restaurantId, tourMode] : null,
     () => loadInvoices(restaurantId, tourMode)
   );
-  const invoices = invData?.invoices || EMPTY_LIST;
+  const invoices = useMemo(
+    () => [...(invData?.invoices || EMPTY_LIST)].sort(
+      (a, b) => String(b.displayIsoDate || "").localeCompare(
+        String(a.displayIsoDate || "")
+      )
+    ),
+    [invData?.invoices]
+  );
   const ingredientOptions = invData?.ingredientOptions || EMPTY_LIST;
   const loading = accountLoading || (!!restaurantId && !invData && !invError);
   const error = accountError || (invError ? invError.message || "Could not load your invoices" : null);
@@ -477,7 +486,7 @@ export default function InvoicesPage() {
 
   const now = new Date();
   const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const lastUpload = invoices[0]?.isoDate ? "Last invoice " + invoices[0].date : "";
+  const lastUpload = invoices[0]?.displayIsoDate ? "Last invoice " + invoices[0].date : "";
 
   const initials = (userName || "Chef")
     .split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();

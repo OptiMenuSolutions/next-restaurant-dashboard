@@ -184,9 +184,10 @@ export default function InvoicesScreen({
   const now = new Date();
   const monthSpend = rows
     .filter((v) => {
-      if (!v.isoDate) return false;
-      const d = new Date(v.isoDate);
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      const displayDate = v.displayIsoDate ?? v.isoDate;
+      if (!displayDate) return false;
+      const [year, month] = String(displayDate).slice(0, 10).split("-").map(Number);
+      return year === now.getFullYear() && month === now.getMonth() + 1;
     })
     .reduce((a, v) => a + (v.amount || 0), 0);
   const pendingCount = rows.filter((v) => v.status !== "processed").length;
@@ -195,7 +196,10 @@ export default function InvoicesScreen({
   const scansToReview = rows.filter((v) => v.scannedBy && !v.scanReviewed).length;
 
   // Month groups, in list order (newest first), with each month's total.
-  const monthKeyOf = (v) => (v.isoDate ? String(v.isoDate).slice(0, 7) : "none");
+  const monthKeyOf = (v) => {
+    const displayDate = v.displayIsoDate ?? v.isoDate;
+    return displayDate ? String(displayDate).slice(0, 7) : "none";
+  };
   const monthTotals = rows.reduce((acc, v) => {
     const k = monthKeyOf(v);
     const t = acc[k] || { count: 0, total: 0 };
@@ -605,11 +609,16 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
   const unmatched = items.filter((i) => !i.link).length;
   // Rises of 3% or more since the ingredient's previous invoice.
   const priceUps = items.filter((i) => (priceChange(i) || 0) >= 3).length;
-  const year = s.year || new Date().getFullYear();
+  const dateText =
+    !s.date || s.date === "Date unknown" || s.date === "—"
+      ? "Date unknown"
+      : s.year
+        ? `${s.date}, ${s.year}`
+        : s.date;
 
   const fields = [
     { label: "INVOICE NO.", value: s.number || "Pending review", color: s.number ? "var(--ink)" : "var(--amber)" },
-    { label: "INVOICE DATE", value: `${s.date}, ${year}`, color: "var(--ink)" },
+    { label: "DATE", value: dateText, color: "var(--ink)" },
     { label: "UPLOADED", value: s.file || "—", color: "var(--ink-soft)" },
     { label: "STATUS", value: meta.label, color: meta.color },
   ];
@@ -655,7 +664,7 @@ function Receipt({ invoice, onOpen, onFlag, ingredientOptions = [], onLinkLine, 
           )}
           <div style={{ textAlign: "center", flexShrink: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.06em" }}>{s.supplier}</div>
-            <div style={{ fontSize: 8.5, letterSpacing: "0.16em", color: "var(--ink-faint)", marginTop: 3 }}>{(s.number || "NO NUMBER YET") + " · " + s.date + " " + year}</div>
+            <div style={{ fontSize: 8.5, letterSpacing: "0.16em", color: "var(--ink-faint)", marginTop: 3 }}>{(s.number || "NO NUMBER YET") + " · " + dateText}</div>
           </div>
           <div style={{ borderTop: "1px dashed var(--paper-line)", margin: "11px 0" }} />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 14px", flexShrink: 0 }}>
