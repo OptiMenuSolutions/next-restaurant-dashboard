@@ -115,15 +115,15 @@ function decorate(d) {
       cost: ings.some((i) => i.cost == null || i.unpriced)
         ? null
         : ings.reduce((a, i) => a + Number(i.cost), 0),
-      costThen: ings.some((i) => i.cost == null || i.unpriced)
+      costThen: !ings.length || ings.some((i) => i.costThen == null || i.unpriced)
         ? null
         : ings.reduce(
-            (a, i) => a + Number(i.costThen != null ? i.costThen : i.cost),
+            (a, i) => a + Number(i.costThen),
             0
           ),
       allEstimated: ings.length > 0 && ings.every((i) => i.estimated),
       /* no per-line history available -> the Δ column shows "—" */
-      unknownMove: ings.length > 0 && ings.every((i) => i.costThen == null),
+      unknownMove: !ings.length || ings.some((i) => i.costThen == null),
     };
   });
   const lines = components.reduce((a, c) => a + c.ingredients.length, 0);
@@ -141,7 +141,9 @@ function decorate(d) {
     ? null
     : d.costThen != null
       ? Number(d.costThen)
-      : components.reduce((a, c) => a + c.costThen, 0);
+      : !components.length || components.some((c) => c.costThen == null)
+        ? null
+        : components.reduce((a, c) => a + c.costThen, 0);
 
   const price = Number(d.price) || 0;
   const margin = cost != null && price > 0
@@ -674,10 +676,10 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
       note: "weighted by covers",
     },
     {
-      label: "Menu drift",
+      label: "Cost impact",
       value: avgDrift != null ? ppLabel(avgDrift) : "—",
       color: avgDrift != null ? ppColor(avgDrift) : "var(--muted)",
-      note: "average across costed dishes",
+      note: "at today's menu prices",
     },
   ];
 
@@ -718,8 +720,8 @@ function MenuSummary({ data, tgt, belowTarget, estimated, periodLabel, onPick, o
 
       <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column", background: "var(--panel)", padding: "16px 22px 18px" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexShrink: 0 }}>
-          <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>Where the margin went</span>
-          <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.06em", color: "var(--faint)" }}>Across the price history</span>
+          <span style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--muted)" }}>Recorded cost comparison</span>
+          <span style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.06em", color: "var(--faint)" }}>At today's menu prices</span>
         </div>
         <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", marginTop: 10, borderTop: "1px dashed var(--line)" }}>
           {slippers.map((d) => (
@@ -1100,12 +1102,12 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
         <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", marginTop: 3 }}>{covers ? "LAST 30 DAYS" : "NO SALES SYNCED"}</div>
       </div>
       <div style={{ padding: stacked ? "16px 14px" : "18px 14px", borderLeft: "1px solid var(--line-soft)" }}>
-        <div style={{ ...kick, fontSize: 9.5 }}>Earned · 30D</div>
+        <div style={{ ...kick, fontSize: 9.5 }}>Est. contribution · 30D</div>
         <div style={{ fontSize: 24, fontWeight: 800, letterSpacing: "-0.04em", marginTop: 9, fontVariantNumeric: "tabular-nums" }}>{awaiting || !covers ? "—" : money0(covers * (price - realCost))}</div>
         <div style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)", marginTop: 3, whiteSpace: "nowrap" }}>
           {awaiting ? "AWAITING PRICES" : live && covers ? (
             <span style={{ color: "var(--accent-deep)" }}>{delta <= 0 ? "+" : "−"}{money0(Math.abs(delta) * covers)} SANDBOX</span>
-          ) : `${money2(price - realCost)} A PLATE`}
+          ) : `${money2(price - realCost)} / PLATE TODAY`}
         </div>
       </div>
     </div>
@@ -1117,17 +1119,25 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
   const trend = (
     <div style={{ ...box, padding: "12px 13px 10px", minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 6, flexShrink: 0 }}>
-        <span style={h3}>Margin, {hist.length > 1 ? `${hist.length} months` : "trend"}</span>
+        <span
+          style={h3}
+          title="Recorded cost observations compared at today's menu price. Historical selling-price and recipe changes are not reconstructed."
+        >
+          Cost comparison
+        </span>
         {hist.length > 1 && Math.abs(trendMove) >= 0.05 && (
           <span style={{ fontFamily: MONO, fontSize: 10, color: "var(--faint)" }}>{trendMove < 0 ? "▼" : "▲"} {Math.abs(trendMove).toFixed(1)} PTS</span>
         )}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.4, marginTop: 6 }}>
+        Recorded costs at today's menu price. Historical margins are unavailable here.
       </div>
       {hist.length > 1 ? (
         stacked ? (
           <div style={{ marginTop: 12 }}>
             <MarginTrend history={hist} tgt={tgt} whatIf={live ? margin : null} height={180} />
             <div style={{ fontFamily: MONO, fontSize: 9, letterSpacing: "0.06em", color: "var(--faint)", textAlign: "center", marginTop: 10 }}>
-              TAP A MONTH TO SEE ITS MARGIN
+              RECORDED COSTS AT TODAY'S MENU PRICE
             </div>
           </div>
         ) : (
@@ -1137,7 +1147,7 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
         )
       ) : (
         <div style={{ flex: stacked ? undefined : 1, display: "flex", alignItems: "center", fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 8 }}>
-          The trend appears once this dish has a second month of invoice prices.
+          The comparison appears after costs have been recorded in two different months. It uses today's menu price.
         </div>
       )}
     </div>
@@ -1287,12 +1297,12 @@ function DishDetail({ d, tgt, onBack, stacked = false, sandbox = false, setSandb
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-                <span style={kick}>Earned · 30D</span>
+                <span style={kick}>Est. contribution · 30D</span>
                 <strong style={{ fontSize: 15, fontVariantNumeric: "tabular-nums" }}>
                   {awaiting || !covers ? "—" : money0(covers * (price - realCost))}
                 </strong>
                 <span style={{ fontSize: 10.5, color: "var(--faint)" }}>
-                  {awaiting ? "Awaiting prices" : `${money2(price - realCost)} a plate`}
+                  {awaiting ? "Awaiting prices" : `${money2(price - realCost)} / plate at today's price and cost`}
                 </span>
               </div>
               {live && covers > 0 && (

@@ -51,17 +51,40 @@ const num = (v) => Number(v) || 0;
 
 /** menu_item_cost_history rows -> monthly margin series (%). */
 function toMarginHistory(rows, price) {
-  if (!price) return [];
+  if (!Number.isFinite(price) || price <= 0) return [];
+
+  const ordered = (rows || [])
+    .map((r) => ({
+      ...r,
+      timestamp: Date.parse(r.created_at || r.recorded_at),
+      cost: r.cost ?? r.new_cost,
+    }))
+    .filter((r) =>
+      Number.isFinite(r.timestamp) &&
+      r.timestamp <= Date.now() &&
+      r.cost != null &&
+      String(r.cost).trim() !== "" &&
+      Number.isFinite(Number(r.cost)) &&
+      Number(r.cost) >= 0
+    )
+    .sort((a, b) =>
+      a.timestamp - b.timestamp ||
+      String(a.id || "").localeCompare(String(b.id || ""))
+    );
+
   const byMonth = new Map();
-  (rows || []).forEach((r) => {
-    const iso = r.created_at || r.recorded_at;
-    const cost = num(r.cost ?? r.new_cost);
-    if (!iso || !cost) return;
-    byMonth.set(monthKey(iso), { label: monthLabel(iso), cost });
+  ordered.forEach((r) => {
+    const iso = new Date(r.timestamp).toISOString();
+    byMonth.set(monthKey(iso), {
+      label: monthLabel(iso),
+      cost: Number(r.cost),
+    });
   });
-  return [...byMonth.entries()]
-    .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-    .map(([, b]) => ({ label: b.label, value: ((price - b.cost) / price) * 100 }));
+
+  return [...byMonth.values()].map((r) => ({
+    label: r.label,
+    value: ((price - r.cost) / price) * 100,
+  }));
 }
 
 /** One menu_items row (with nested recipe) -> screen dish. */
@@ -168,11 +191,10 @@ function toDish(row, costHistory, covers, opts = {}) {
 
   const costThen = history.length
     ? price - (history[0].value / 100) * price
-    : cost;
+    : null;
 
-  // Plate cost change over the last 30 days, read from the saved cost
-  // history (recomputeMenuCosts dates each row to its invoice). Rows arrive
-  // oldest first.
+  // Recorded cost change over the last 30 days.
+  // These are calculation timestamps, not invoice delivery dates.
   const cutoff = new Date(Date.now() - 30 * 86400000).toISOString();
   const hist = (costHistory || []).filter((r) => r.created_at && num(r.new_cost) > 0);
   const before = hist.filter((r) => r.created_at <= cutoff);
@@ -346,20 +368,23 @@ export default function MenuItemsPage() {
     const loadHistory = async () => {
       const out = [];
       const PAGE = 1000;
-      for (let from = 0; ; from += PAGE) {
+
+      for (let from = 0; ; ) {
         const page = await readRows(
           supabase
             .from("menu_item_cost_history")
-            .select("menu_item_id, old_cost, new_cost, created_at, menu_items!inner(restaurant_id)")
+            .select("id, menu_item_id, old_cost, new_cost, created_at, menu_items!inner(restaurant_id)")
             .eq("menu_items.restaurant_id", restaurantId)
             .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
             .range(from, from + PAGE - 1),
           "menu cost history"
         );
+
+        if (page.length === 0) return out;
         out.push(...page);
-        if (page.length < PAGE) break;
+        from += page.length;
       }
-      return out;
     };
 
     async function readAllRows(makeQuery, label) {
