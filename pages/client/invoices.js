@@ -13,6 +13,7 @@ import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
 import { toDisplayUnitCost } from "../../lib/invoiceDisplayPricing";
 import { loadRestaurantTimezone, restaurantLocalDate } from "../../lib/restaurantTime";
 import { readAllInvoiceRows } from "../../lib/invoiceReporting";
+import { clearInvoiceComparisons, invoiceComparisons } from "../../lib/invoiceComparisons";
 
 const EMPTY_LIST = [];
 const AFFECTED_BY_INVOICES = ["ingredients", "dashboard", "menu-items", "analytics"];
@@ -164,6 +165,14 @@ export default function InvoicesPage() {
   };
 
   const [lines, setLines] = useState({}); // invoiceId -> line items
+  const [lineLoadError, setLineLoadError] = useState("");
+  const lineLoadEpoch = useRef(0);
+  const pendingLineLoads = useRef(new Set());
+  const resetInvoiceLines = useCallback(() => {
+    lineLoadEpoch.current += 1;
+    setLines({});
+    setLineLoadError("");
+  }, []);
   const [fileLinks, setFileLinks] = useState({}); // invoiceId -> signed file link
   const fileLinkCache = useRef(new Map());
   const [, setTourEndedTick] = useState(0);
@@ -317,35 +326,22 @@ export default function InvoicesPage() {
     };
   }, [invoices, signFile]);
 
-  /* For each linked line, the same ingredient's unit price on its most recent
-     earlier invoice, skipping copies of this same invoice number. Only
-     compared when both lines use the same unit, so a case price is never
-     compared with a per-lb price. */
+  // Compare only server-validated prices from earlier eligible delivery dates.
   const withPrevPrices = useCallback(async (invoice, rows) => {
-    const ids = [...new Set(rows.map((l) => l.ingredientId).filter(Boolean))];
-    if (!ids.length || !invoice?.isoDate || isTourQueryActive()) return rows;
-    const { data: past } = await supabase
-      .from("invoice_items")
-      .select("ingredient_id, unit, unit_cost, invoices!invoice_items_invoice_id_fkey!inner(id, date, number, restaurant_id)")
-      .in("ingredient_id", ids)
-      .eq("invoices.restaurant_id", restaurantId)
-      .lt("invoices.date", invoice.isoDate)
-      .limit(2000);
-    const latest = new Map();
-    for (const p of past || []) {
-      const inv = p.invoices;
-      if (!inv || inv.id === invoice.id) continue;
-      if (invoice.number && inv.number === invoice.number) continue; // a copy of this invoice
-      const cur = latest.get(p.ingredient_id);
-      if (!cur || String(inv.date) > String(cur.date)) {
-        latest.set(p.ingredient_id, { date: inv.date, unit: p.unit || "", unitCost: Number(p.unit_cost) });
-      }
+    if (!rows.some((row) => row.ingredientId) || isTourQueryActive()) {
+      return clearInvoiceComparisons(rows);
     }
-    return rows.map((l) => {
-      const prev = l.ingredientId ? latest.get(l.ingredientId) : null;
-      if (!prev || !(prev.unitCost > 0) || prev.unit !== (l.unit || "")) return l;
-      return { ...l, prevUnitCost: prev.unitCost, prevDate: shortDate(prev.date) };
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error || !session?.access_token) throw new Error("Please sign in again.");
+    const response = await fetch("/api/ingredients/purchase-history", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      cache: "no-store",
     });
+    const report = await response.json();
+    if (!response.ok) throw new Error(report.error || "Could not load price comparisons.");
+    return invoiceComparisons(invoice, rows, report, restaurantId).map((row) => ({
+      ...row, prevDate: row.prevDate ? shortDate(row.prevDate) : null,
+    }));
   }, [restaurantId]);
 
   /* Line items are fetched lazily when a row is selected — same two queries the
@@ -353,21 +349,40 @@ export default function InvoicesPage() {
   const handleSelect = useCallback(async (invoice) => {
     if (invoice) signFile(invoice);
     if (!invoice || lines[invoice.id]) return;
-    if (isTourQueryActive()) {
-      const sample = await fetchSampleData();
-      const matched = sample?.invoices?.find((iv) => iv.id === invoice.id);
-      if (matched) {
-        setLines((prev) => ({ ...prev, [invoice.id]: (matched.invoice_items || []).map(toLine) }));
-        return;
+    const epoch = lineLoadEpoch.current;
+    const key = epoch + ":" + invoice.id;
+    if (pendingLineLoads.current.has(key)) return;
+    pendingLineLoads.current.add(key);
+    try {
+      if (isTourQueryActive()) {
+        const sample = await fetchSampleData();
+        const matched = sample?.invoices?.find((iv) => iv.id === invoice.id);
+        if (matched) {
+          if (epoch === lineLoadEpoch.current) {
+            setLines((prev) => ({ ...prev, [invoice.id]: (matched.invoice_items || []).map(toLine) }));
+          }
+          return;
+        }
       }
+      const { data, error } = await supabase
+        .from("invoice_items")
+        .select("*, ingredients(name, unit)")
+        .eq("invoice_id", invoice.id)
+        .order("item_name");
+      if (error) throw error;
+      if (!Array.isArray(data)) throw new Error("Invalid invoice-line response.");
+      const rows = await withPrevPrices(invoice, data.map(toLine));
+      if (epoch === lineLoadEpoch.current) {
+        setLineLoadError("");
+        setLines((prev) => ({ ...prev, [invoice.id]: rows }));
+      }
+    } catch (error) {
+      if (epoch === lineLoadEpoch.current) {
+        setLineLoadError(error.message || "Could not load invoice lines. Please retry.");
+      }
+    } finally {
+      pendingLineLoads.current.delete(key);
     }
-    const { data } = await supabase
-      .from("invoice_items")
-      .select("*, ingredients(name, unit)")
-      .eq("invoice_id", invoice.id)
-      .order("item_name");
-    const rows = await withPrevPrices(invoice, (data || []).map(toLine));
-    setLines((prev) => ({ ...prev, [invoice.id]: rows }));
   }, [lines, signFile, withPrevPrices]);
 
   /* Link one invoice line to an ingredient (or a new one), then refresh that
@@ -386,16 +401,25 @@ export default function InvoicesPage() {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Could not link that line.");
-    const { data } = await supabase
+    resetInvoiceLines();
+    clearCachedPages(AFFECTED_BY_INVOICES);
+    const epoch = lineLoadEpoch.current;
+    const { data, error: lineError } = await supabase
       .from("invoice_items")
       .select("*, ingredients(name, unit)")
       .eq("invoice_id", invoice.id)
       .order("item_name");
-    const fresh = await withPrevPrices(invoice, (data || []).map(toLine));
+    if (lineError) throw lineError;
+    if (!Array.isArray(data)) throw new Error("Invalid invoice-line response.");
+    const fresh = await withPrevPrices(invoice, data.map(toLine));
     // A relink can also move same-name lines on other invoices. The API does
     // not say which invoices, so drop every other cached invoice; handleSelect
     // refetches them when they are opened.
-    setLines((prev) => (json.moved > 1 ? { [invoice.id]: fresh } : { ...prev, [invoice.id]: fresh }));
+    if (epoch === lineLoadEpoch.current) {
+      lineLoadEpoch.current += 1;
+      setLineLoadError("");
+      setLines({ [invoice.id]: fresh });
+    }
     if (choice.newName && json.ingredient) {
       reloadInvoices(
         (prev) => prev && { ...prev, ingredientOptions: [...prev.ingredientOptions.filter((o) => o.id !== json.ingredient.id), json.ingredient].sort((a, b) => a.name.localeCompare(b.name)) },
@@ -405,12 +429,13 @@ export default function InvoicesPage() {
     // Prices and inventory changed: those pages load fresh on their next visit.
     clearCachedPages(AFFECTED_BY_INVOICES);
     return json;
-  }, [restaurantId, reloadInvoices, withPrevPrices]);
+  }, [restaurantId, reloadInvoices, withPrevPrices, resetInvoiceLines]);
 
-  /* Pre-load the first invoice's lines so the receipt is never blank. */
+  /* Load the selected invoice again after a comparison cache reset. */
   useEffect(() => {
-    if (invoices.length) handleSelect(invoices[0]);
-  }, [invoices, handleSelect]);
+    const active = invoices.find((v) => String(v.id) === String(router.query.invoice)) || invoices[0];
+    if (active) handleSelect(active);
+  }, [invoices, handleSelect, router.query.invoice]);
 
   const withLines = useMemo(
     () => invoices.map((v) => ({
@@ -458,11 +483,11 @@ export default function InvoicesPage() {
     });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error || "Could not delete that invoice.");
-    setLines({}); // other invoices' price notes may have shifted
+    resetInvoiceLines();
     await reloadInvoices();
     clearCachedPages(AFFECTED_BY_INVOICES);
     return json;
-  }, [restaurantId, reloadInvoices]);
+  }, [restaurantId, reloadInvoices, resetInvoiceLines]);
   const handleDelete = (invoice) => deleteInvoices([invoice.id]);
   // Keeps the invoice being viewed and removes its copies.
   const handleMergeDuplicates = (invoice) => deleteInvoices((invoice.dup?.others || []).map((o) => o.id));
@@ -514,6 +539,7 @@ export default function InvoicesPage() {
       throw new Error(json.error || "Could not save the delivery date.");
     }
 
+    resetInvoiceLines();
     const displayDate = json.invoice.delivery_date || json.invoice.date || null;
 
     await reloadInvoices(
@@ -532,7 +558,7 @@ export default function InvoicesPage() {
     );
 
     clearCachedPages(AFFECTED_BY_INVOICES);
-  }, [restaurantId, reloadInvoices]);
+  }, [restaurantId, reloadInvoices, resetInvoiceLines]);
 
   const reportToday = invData?.today || null;
   const monthLabel = reportToday
@@ -639,6 +665,7 @@ export default function InvoicesPage() {
     }
 
     setUploadStatus(null);
+    resetInvoiceLines();
     await reloadInvoices();
     clearCachedPages(AFFECTED_BY_INVOICES);
   }
@@ -747,7 +774,7 @@ export default function InvoicesPage() {
         onMergeDuplicates={tourMode ? null : handleMergeDuplicates}
         onKeepDuplicates={handleKeepDuplicates}
         loading={loading}
-        error={error}
+        error={error || lineLoadError}
         onRetry={() => router.reload()}
         onUpload={() => fileInput.current && fileInput.current.click()}
         onSelect={handleSelect}
