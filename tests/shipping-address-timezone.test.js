@@ -179,6 +179,9 @@ test('partial, coarse and incomplete street matches are rejected', async () => {
     match({ types: ['postal_code'] }),
     match({ address_components: components().filter(c => !c.types.includes('street_number')) }),
     match({ geometry: { location_type: 'APPROXIMATE', location: { lat: 40, lng: -74 } } }),
+    match({ geometry: { location_type: 'GEOMETRIC_CENTER', location: { lat: 40, lng: -74 } } }),
+    match({ types: ['premise'], partial_match: true, geometry: { location_type: 'GEOMETRIC_CENTER', location: { lat: 40, lng: -74 } } }),
+    match({ types: ['premise'], address_components: components().filter(c => !c.types.includes('route')), geometry: { location_type: 'GEOMETRIC_CENTER', location: { lat: 40, lng: -74 } } }),
   ]) {
     await assert.rejects(resolveShippingAddressTimezone(ADDRESS, dependencies({ matches: [candidate] })), {
       code: 'ADDRESS_INCOMPLETE_MATCH', status: 422,
@@ -205,4 +208,22 @@ test('Google ZERO_RESULTS is an address failure rather than a service failure', 
       status: 'ZERO_RESULTS', results: [],
     }) }),
   }), { code: 'ADDRESS_NOT_FOUND', status: 422 });
+});
+
+test('complete premise and subpremise centers are valid address locations', async () => {
+  for (const types of [['premise', 'street_address'], ['subpremise']]) {
+    const deps = dependencies({ matches: [match({
+      types,
+      geometry: {
+        location_type: 'GEOMETRIC_CENTER',
+        location: { lat: 40.2171, lng: -74.7429 },
+      },
+    })] });
+    const result = await resolveShippingAddressTimezone(ADDRESS, deps);
+    assert.equal(result.timezone, 'America/New_York');
+    assert.deepEqual(deps.calls[1], {
+      latitude: 40.2171,
+      longitude: -74.7429,
+    });
+  }
 });
