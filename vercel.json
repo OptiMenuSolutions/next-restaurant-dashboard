@@ -46,6 +46,10 @@
     {
       "path": "/api/cron/historical-invoice-matching",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/activate-invoice-deliveries",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
