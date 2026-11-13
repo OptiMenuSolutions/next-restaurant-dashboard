@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { analyticsDishMetrics } from "../../lib/analyticsReporting";
 import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileSegmented, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD,
@@ -254,21 +255,14 @@ export default function AnalyticsScreen({
   const perDish = (() => {
     const map = new Map();
     win.forEach((d) => d.items.forEach((x) => {
-      const e = map.get(x.name) || { name: x.name, cat: x.category || x.cat || "", price: x.price, cost: x.cost, qty: 0, rev: 0, cogs: 0 };
+      const e = map.get(x.name) || { name: x.name, cat: x.category || x.cat || "", price: x.price, cost: x.cost, costMissing: false, qty: 0, rev: 0, cogs: 0 };
       e.qty += x.qty; e.rev += x.rev; e.cogs += x.cogs;
+      e.costMissing = e.costMissing || x.cost == null;
       e.price = x.price || e.price;
       if (x.cost != null) e.cost = x.cost;
       map.set(x.name, e);
     }));
-    return [...map.values()].map((d) => {
-      const known = d.cost != null;
-      return {
-        ...d,
-        contribPer: known ? d.price - d.cost : null,
-        contribTotal: known ? d.qty * (d.price - d.cost) : null,
-        foodCostPct: known && d.price ? (d.cost / d.price) * 100 : null,
-      };
-    });
+    return [...map.values()].map(analyticsDishMetrics);
   })();
   // Classes only for dishes with a known cost; the rest show as Unpriced.
   const pricedDishes = perDish.filter((d) => d.contribPer != null);
@@ -314,8 +308,8 @@ export default function AnalyticsScreen({
     const mKpis = [
       { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
       { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
-      { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, note: `Target ${targetFoodCost}%`, bar: true },
-      { label: "Verified gross profit", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
+      { label: "Est. food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, note: `Target ${targetFoodCost}%`, bar: true },
+      { label: "Est. contribution", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
     ];
     const mGap = span <= 7 ? 12 : span <= 14 ? 6 : 2;
     const syncLine = syncStamp || (posConnected ? `${posSystem} · synced` : "Manual upload");
@@ -340,6 +334,9 @@ export default function AnalyticsScreen({
                 </button>
               ) : null}
             />
+            <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4, marginTop: 6 }}>
+              Costs use today's recipes and prices. Sales may use today's menu price when POS revenue and prices are missing. Historical margins are unavailable.
+            </div>
           </div>
 
           {/* pinned while scrolling: section tabs + range */}
@@ -485,7 +482,7 @@ export default function AnalyticsScreen({
           {mobileSection === "close" && (
             <div aria-label="Last night close-out" style={{ background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, border: "1px solid var(--paper-line)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10, boxShadow: "var(--card-lift)", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
               <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 3 }}>
-                <div style={mzLabel}>Close-out · Z report</div>
+                <div style={mzLabel}>Sales summary</div>
                 <div style={{ fontFamily: SANS, fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em" }}>{DAY_FULL[zNight.dow]} {zNight.label}</div>
                 <div style={{ fontSize: 10, color: "var(--ink-soft)" }}>LAST SERVICE NIGHT</div>
               </div>
@@ -494,12 +491,12 @@ export default function AnalyticsScreen({
                 <div style={mzRow}><span>COVERS SOLD</span><span>{num(zNight.qty)}</span></div>
                 <div style={mzRow}><span>NET SALES</span><span>{money0(zNight.rev)}</span></div>
                 <div style={{ ...mzRow, color: "var(--ink-soft)" }}><span>COSTED SALES</span><span>{money0(zNight.costedRev)}</span></div>
-                <div style={{ ...mzRow, color: "var(--ink-soft)" }}><span>PLATE COST</span><span>{money0(zNight.cogs)}</span></div>
+                <div style={{ ...mzRow, color: "var(--ink-soft)" }}><span>EST. RECIPE COST</span><span>{money0(zNight.cogs)}</span></div>
               </div>
               <div style={mzRule} />
               <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 12.5, fontWeight: 500 }}>
                 <div style={mzRow}><span>FOOD COST</span><span style={{ color: zFc != null && zFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{zFc == null ? "—" : pct1(zFc)}</span></div>
-                <div style={mzRow}><span>GROSS MARGIN</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
+                <div style={mzRow}><span>EST. CONTRIBUTION</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
               </div>
               {zPrev && (
                 <>
@@ -533,7 +530,7 @@ export default function AnalyticsScreen({
               <div style={{ fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
                 * {zUnpriced.length
                   ? `${money0(zUnpricedRev)} from ${zUnpriced.length <= 2 ? zUnpriced.map((x) => x.name).join(" and ") : zUnpriced.length + " unpriced dishes"} left out of food cost until priced.`
-                  : "Every dish sold was fully costed."}
+                  : "Every dish has a current recipe-cost estimate."}
               </div>
             </div>
           )}
@@ -561,8 +558,8 @@ export default function AnalyticsScreen({
   const kpiCards = [
     { label: "Net sales", value: money0(rev), color: "var(--text)", delta: salesD, note: priorNote },
     { label: "Covers sold", value: num(qty), color: "var(--text)", delta: qtyD, note: `${num(qty / (span || 1))} a night on average` },
-    { label: "Food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, bar: true },
-    { label: "Verified gross profit", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
+    { label: "Est. food cost", value: foodCost == null ? "—" : pct1(foodCost), color: fcColor(foodCost), delta: fcD, bar: true },
+    { label: "Est. contribution", value: contribution == null ? "—" : money0(contribution), color: contribution == null ? "var(--faint)" : "var(--text)", delta: gmD, note: costedRev ? `on ${Math.round(costedShare * 100)}% of sales that are costed` : "awaiting pricing" },
   ];
 
   return (
@@ -576,6 +573,9 @@ export default function AnalyticsScreen({
             <div style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--faint)", marginBottom: 5 }}>{syncStamp || `${restaurantName} · ${posSystem}`}</div>
             <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.035em", lineHeight: 1.1 }}>
               Sales &amp; food cost <span style={{ color: "var(--faint)" }}>· last {span} nights</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4, marginTop: 6, maxWidth: 620 }}>
+              Costs use today's recipes and prices. Sales may use today's menu price when POS revenue and prices are missing. Historical margins are unavailable.
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -737,7 +737,7 @@ export default function AnalyticsScreen({
           {/* ── right: close-out ticket for the last service night ── */}
           <div aria-label="Last night close-out" style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", gap: 10, background: "var(--paper)", color: "var(--ink)", fontFamily: MONO, border: "1px solid var(--paper-line)", borderRadius: 12, boxShadow: "var(--card-lift)", padding: "16px 18px", animation: "om-print .45s cubic-bezier(.25,.8,.35,1) both" }}>
             <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 3, flexShrink: 0 }}>
-              <div style={zLabel}>Close-out · Z report</div>
+              <div style={zLabel}>Sales summary</div>
               <div style={{ fontFamily: SANS, fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em" }}>{DAY_FULL[zNight.dow]} {zNight.label}</div>
               <div style={{ fontSize: 10, color: "var(--ink-soft)" }}>LAST SERVICE NIGHT</div>
             </div>
@@ -746,12 +746,12 @@ export default function AnalyticsScreen({
               <div style={zRow}><span>COVERS SOLD</span><span>{num(zNight.qty)}</span></div>
               <div style={zRow}><span>NET SALES</span><span>{money0(zNight.rev)}</span></div>
               <div style={{ ...zRow, color: "var(--ink-soft)" }}><span>COSTED SALES</span><span>{money0(zNight.costedRev)}</span></div>
-              <div style={{ ...zRow, color: "var(--ink-soft)" }}><span>PLATE COST</span><span>{money0(zNight.cogs)}</span></div>
+              <div style={{ ...zRow, color: "var(--ink-soft)" }}><span>EST. RECIPE COST</span><span>{money0(zNight.cogs)}</span></div>
             </div>
             <div style={zRule} />
             <div style={{ display: "flex", flexDirection: "column", gap: 5, fontSize: 11.5, fontWeight: 500, flexShrink: 0 }}>
               <div style={zRow}><span>FOOD COST</span><span style={{ color: zFc != null && zFc > targetFoodCost ? "var(--red)" : "var(--ink)" }}>{zFc == null ? "—" : pct1(zFc)}</span></div>
-              <div style={zRow}><span>GROSS MARGIN</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
+              <div style={zRow}><span>EST. CONTRIBUTION</span><span>{zNight.costedRev ? money0(zNight.costedRev - zNight.cogs) : "—"}</span></div>
             </div>
             {zPrev && (
               <>
@@ -785,7 +785,7 @@ export default function AnalyticsScreen({
             <div style={{ flexShrink: 0, fontSize: 10.5, lineHeight: 1.45, color: "var(--ink-soft)" }}>
               * {zUnpriced.length
                 ? `${money0(zUnpricedRev)} from ${zUnpriced.length <= 2 ? zUnpriced.map((x) => x.name).join(" and ") : zUnpriced.length + " unpriced dishes"} left out of food cost until priced.`
-                : "Every dish sold was fully costed."}
+                : "Every dish has a current recipe-cost estimate."}
             </div>
           </div>
 

@@ -16,6 +16,7 @@ const EMPTY_COSTS = {};
 import CsvImportPreview from "../../components/CsvImportPreview";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
+import { analyticsRevenue } from "../../lib/analyticsReporting";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -234,12 +235,12 @@ export default function AnalyticsPage() {
       const key = name.toLowerCase().trim();
       const menu = costs[key] || {};
       const qty = num(s.quantity_sold);
-      const revenue = s.revenue != null ? num(s.revenue) : qty * num(s.unit_price || menu.price);
+      const revenue = analyticsRevenue(s, menu.price);
       const known = menu.cost != null;
       const line = night.items.get(name) || {
         name,
         category: s.category || menu.category || "",
-        price: num(s.unit_price) || menu.price || (qty ? revenue / qty : 0),
+        price: s.unit_price != null ? num(s.unit_price) : (qty ? revenue / qty : 0),
         cost: known ? menu.cost : null,
         qty: 0, rev: 0, cogs: 0, costedRev: 0,
       };
