@@ -16,7 +16,8 @@ const EMPTY_COSTS = {};
 import CsvImportPreview from "../../components/CsvImportPreview";
 import { fetchSampleData } from "../../lib/seedSampleData";
 import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
-import { analyticsRevenue } from "../../lib/analyticsReporting";
+import { analyticsRevenue, eligibleAnalyticsSales, loadAnalyticsSales } from "../../lib/analyticsReporting";
+import { loadRestaurantTimezone, restaurantLocalDate } from "../../lib/restaurantTime";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -48,8 +49,6 @@ function isTourQueryActive() {
  * see README-screens.md.
  */
 
-const PAGE_SIZE = 1000;
-const MAX_PAGES = 10;
 const num = (v) => Number(v) || 0;
 const dateOf = (s) => (typeof s.sale_date === "string" ? s.sale_date.slice(0, 10) : s.sale_date);
 const labelOf = (iso) => {
@@ -125,28 +124,10 @@ export default function AnalyticsPage() {
   const { data: anData, error: anError, mutate: reloadAnalytics } = useSWR(
     restaurantId ? ["analytics", restaurantId, tourMode] : null,
     async () => {
-      // Sales: the first page tells us the total, then the remaining pages
-      // (up to MAX_PAGES) load all at once instead of one after another.
-      // The id tiebreak keeps pages from overlapping when nights share a date.
-      const salesPage = (from, withCount) =>
-        supabase
-          .from("pos_sales")
-          .select("*", withCount ? { count: "exact" } : undefined)
-          .eq("restaurant_id", restaurantId)
-          .order("sale_date", { ascending: false })
-          .order("id", { ascending: false })
-          .range(from, from + PAGE_SIZE - 1);
-      const loadSales = async () => {
-        const first = await salesPage(0, true);
-        if (first.error || !first.data?.length) return [];
-        const total = Math.min(first.count ?? first.data.length, PAGE_SIZE * MAX_PAGES);
-        const pages = Math.ceil(total / PAGE_SIZE);
-        if (pages <= 1) return first.data;
-        const rest = await Promise.all(
-          Array.from({ length: pages - 1 }, (_, k) => salesPage((k + 1) * PAGE_SIZE, false))
-        );
-        return rest.reduce((rows, r) => rows.concat(r.data || []), first.data);
-      };
+      const today = restaurantLocalDate(
+        await loadRestaurantTimezone(supabase, restaurantId)
+      );
+      const loadSales = () => loadAnalyticsSales(supabase, restaurantId, today);
 
       let menu = [];
       let sessions = [];
@@ -157,7 +138,7 @@ export default function AnalyticsPage() {
         menu = sample?.menuItems || [];
         // Sample data has no upload_sessions row; syncStamp below falls back
         // to the sales rows' own pos_system and count.
-        if (sample) sales = sample.posSales || [];
+        if (sample) sales = eligibleAnalyticsSales(sample.posSales || [], today);
         // fetchSampleData() failed: sales stays null and the real query runs.
       } else {
         const [{ data: realMenu }, { data: realSessions }, { data: realPos }, realSales] = await Promise.all([
@@ -208,7 +189,7 @@ export default function AnalyticsPage() {
         };
       });
 
-      return { sales, costs, session: sessions[0] || null, shift4 };
+      return { sales, costs, session: sessions[0] || null, shift4, today };
     }
   );
   const sales = anData?.sales || EMPTY_LIST;
