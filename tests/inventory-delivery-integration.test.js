@@ -18,6 +18,8 @@ function inventoryDatabase({
   invoiceDate = '2026-11-10',
   deliveryDate = '2026-11-02',
   failTable = null,
+  operationalTimezone = 'America/New_York',
+  storedDeliveryDate = '2000-01-01',
 } = {}) {
   const invoice = {
     id: 'invoice-owned',
@@ -41,7 +43,7 @@ function inventoryDatabase({
     invoice_id: invoice.id,
     ingredient_id: INGREDIENT.id,
     ingredient_name: INGREDIENT.name,
-    delivery_date: '2000-01-01',
+    delivery_date: storedDeliveryDate,
     shelf_life: 7,
     unit: 'oz',
     invoiced_qty: 100,
@@ -50,7 +52,7 @@ function inventoryDatabase({
   };
 
   const tables = {
-    restaurants: [{ id: RID }],
+    restaurants: [{ id: RID, operational_timezone: operationalTimezone }],
     inventory_count_sessions: [],
 
     invoices: [invoice, foreignInvoice],
@@ -402,3 +404,69 @@ test(
     assert.equal(counted.totalValue, null);
   }
 );
+
+test('stored inventory waits for the restaurant local delivery day', async (t) => {
+  t.mock.timers.enable({
+    apis: ['Date'],
+    now: Date.parse('2026-11-12T06:00:00Z'),
+  });
+
+  for (const [operationalTimezone, expectedInvoiceRows] of [
+    ['America/New_York', 1],
+    ['America/Los_Angeles', 0],
+  ]) {
+    const rows = await loadCurrentInventory(inventoryDatabase({
+      operationalTimezone,
+      storedDeliveryDate: '2026-11-12',
+    }), RID);
+
+    assert.equal(
+      rows.filter(row => row.stockSource === 'invoice').length,
+      expectedInvoiceRows
+    );
+    assert.equal(
+      rows.find(row => row.stockSource === 'count').remainingQty,
+      10
+    );
+  }
+});
+
+test('stored inventory age uses the restaurant local calendar', async (t) => {
+  t.mock.timers.enable({
+    apis: ['Date'],
+    now: Date.parse('2026-11-12T06:00:00Z'),
+  });
+
+  for (const [operationalTimezone, expectedAge] of [
+    ['America/New_York', 2],
+    ['America/Los_Angeles', 1],
+  ]) {
+    const rows = await loadCurrentInventory(inventoryDatabase({
+      operationalTimezone,
+      storedDeliveryDate: '2026-11-10',
+    }), RID);
+    const purchase = rows.find(row => row.stockSource === 'invoice');
+
+    assert.equal(purchase.daysSinceDelivery, expectedAge);
+    assert.equal(purchase.daysLeft, 7 - expectedAge);
+  }
+});
+
+test('inventory calculations and reads require configured local time', async () => {
+  await assert.rejects(
+    calculateInventory(
+      inventoryDatabase({ operationalTimezone: null }),
+      RID,
+      '2026-11-05'
+    ),
+    { code: 'RESTAURANT_TIMEZONE_REQUIRED' }
+  );
+
+  await assert.rejects(
+    loadCurrentInventory(
+      inventoryDatabase({ operationalTimezone: null }),
+      RID
+    ),
+    { code: 'RESTAURANT_TIMEZONE_REQUIRED' }
+  );
+});

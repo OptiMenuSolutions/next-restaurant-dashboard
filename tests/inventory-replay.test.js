@@ -71,6 +71,7 @@ function calculate({
   sales = [],
   counts = [],
   confirmations = [],
+  timeZone = 'America/New_York',
   throughDate = '2026-11-05',
 } = {}) {
   const invoices = deliveries.map((item) => ({
@@ -111,6 +112,7 @@ function calculate({
     keptItemIds: new Set(),
     learnedShelfLives: {},
     confirmationEvents: confirmations,
+    timeZone,
   };
 
   const base = computeWasteRisk(
@@ -273,6 +275,7 @@ function conversionScenario({
   deliveries,
   sales,
   confirmations = [],
+  timeZone = 'America/New_York',
 }) {
   const ingredient = {
     id: ingredientId,
@@ -353,6 +356,7 @@ function conversionScenario({
     keptItemIds: new Set(),
     learnedShelfLives: {},
     confirmationEvents: confirmations,
+    timeZone,
   };
 
   return {
@@ -627,4 +631,41 @@ test('a confirmation before the corrected delivery date cannot deduct that stock
   });
 
   assert.equal(remaining(rows, 'confirmation-date'), 100);
+});
+
+test('confirmation replay assigns events to the restaurant local day', () => {
+  const event = {
+    ...confirmation('timezone-confirmation', 'a', '2026-11-03', 20),
+    confirmed_at: '2026-11-04T06:00:00Z',
+  };
+
+  const eastern = calculate({
+    timeZone: 'America/New_York',
+    deliveries: [delivery('a', '2026-11-01', 100)],
+    confirmations: [event],
+    throughDate: '2026-11-03',
+  });
+
+  const pacific = calculate({
+    timeZone: 'America/Los_Angeles',
+    deliveries: [delivery('a', '2026-11-01', 100)],
+    confirmations: [event],
+    throughDate: '2026-11-03',
+  });
+
+  assert.equal(remaining(eastern, 'a'), 100);
+  assert.equal(remaining(pacific, 'a'), 80);
+});
+
+test('confirmation replay cannot guess an unconfigured time zone', () => {
+  assert.throws(
+    () => calculate({
+      timeZone: null,
+      deliveries: [delivery('a', '2026-11-01', 100)],
+      confirmations: [
+        confirmation('timezone-confirmation', 'a', '2026-11-03', 20),
+      ],
+    }),
+    { code: 'RESTAURANT_TIMEZONE_REQUIRED' }
+  );
 });

@@ -62,6 +62,10 @@ export default async function handler(req, res) {
 
     if (error) {
       const messages = {
+        'Restaurant time zone is not configured': [
+          422,
+          'Configure the restaurant time zone in Restaurant settings before reviewing this count.',
+        ],
         COUNT_ACCESS_DENIED: [
           403,
           'You cannot review this inventory count.',

@@ -7,6 +7,7 @@ import ProfileScreen from "../../components/client/ProfileScreen";
 import { enforceAccountGuard } from "../../lib/enforceAccountGuard";
 import { parseMenuFiles, splitForMenuUpdate } from "../../lib/parseMenu";
 import ParseReviewModal from "../../components/ParseReviewModal";
+import { saveShippingAddress } from "../../lib/saveShippingAddress";
 
 /**
  * pages/client/profile.js — data container.
@@ -34,6 +35,8 @@ export default function ProfilePage() {
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [restaurantName, setRestaurantName] = useState("");
+  const [operationalTimezone, setOperationalTimezone] = useState(null);
+  const [shippingAddress, setShippingAddress] = useState(null);
   const [targetFoodCost, setTargetFoodCost] = useState(30);
   const [notifPrefs, setNotifPrefs] = useState({ weekly: true, priceAlert: true, lowMargin: false });
   const [freezeSettings, setFreezeSettings] = useState({ beef: false, poultry: false, pork: false, seafood: false, bakery: false });
@@ -71,6 +74,13 @@ export default function ProfilePage() {
           if (!rest) return;
           if (!cancelled && rest) {
             setRestaurantName(rest.name || "");
+            setOperationalTimezone(rest.operational_timezone ?? null);
+            setShippingAddress({
+              shipping_address_line1: rest.shipping_address_line1 ?? null,
+              shipping_city: rest.shipping_city ?? null,
+              shipping_state: rest.shipping_state ?? null,
+              shipping_zip: rest.shipping_zip ?? null,
+            });
             if (rest.target_food_cost != null) setTargetFoodCost(Number(rest.target_food_cost));
             setNotifPrefs({
               weekly: rest.notif_weekly_summary ?? true,
@@ -121,6 +131,19 @@ export default function ProfilePage() {
     const { error } = await supabase.from("restaurants").update({ name }).eq("id", restaurantId);
     if (error) throw error;
     setRestaurantName(name);
+  };
+
+  const saveAddress = async (address, expected) => {
+    const result = await saveShippingAddress(supabase, restaurantId, address, { expected });
+    const saved = {
+      shipping_address_line1: result.restaurant.shipping_address_line1,
+      shipping_city: result.restaurant.shipping_city,
+      shipping_state: result.restaurant.shipping_state,
+      shipping_zip: result.restaurant.shipping_zip,
+    };
+    setShippingAddress(saved);
+    setOperationalTimezone(result.restaurant.operational_timezone);
+    return saved;
   };
 
   const saveFoodCost = async (pct) => {
@@ -302,6 +325,9 @@ export default function ProfilePage() {
         initialTab={initialTab}
         user={{ name: userName, email: userEmail }}
         restaurantName={restaurantName}
+        operationalTimezone={operationalTimezone}
+        shippingAddress={shippingAddress}
+        onSaveShippingAddress={!loading && restaurantId ? saveAddress : undefined}
         targetFoodCost={targetFoodCost}
         notifPrefs={notifPrefs}
         freezeSettings={freezeSettings}

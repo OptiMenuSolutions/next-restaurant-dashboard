@@ -60,18 +60,34 @@ export default function InventoryCountReview({
   const mountedRef = useRef(false);
 
   useEffect(() => {
+    let cancelled = false;
     mountedRef.current = true;
 
-    setDate(
-      new Date().toLocaleDateString("en-CA", {
-        timeZone: "America/New_York",
+    request("/api/inventory/count-context")
+      .then((result) => {
+        if (
+          typeof result.today !== "string" ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(result.today)
+        ) {
+          throw new Error("Could not read the restaurant local date.");
+        }
+
+        if (!cancelled) {
+          // Preserve a date the owner already entered while loading.
+          setDate((current) => current || result.today);
+        }
       })
-    );
+      .catch((err) => {
+        if (!cancelled && !busyRef.current) {
+          setError(err.message || "Could not load the restaurant local date.");
+        }
+      });
 
     return () => {
+      cancelled = true;
       mountedRef.current = false;
     };
-  }, []);
+  }, [request, sessionId]);
 
   async function submitCount() {
     if (busyRef.current || !review) return;

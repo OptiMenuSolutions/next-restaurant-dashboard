@@ -12,6 +12,7 @@ function createFixture({
   ingredientOverrides = {},
   lines = [],
   evidence = [],
+  operationalTimezone = 'America/New_York',
 } = {}) {
   const ingredient = {
     id: INGREDIENT_ID,
@@ -29,6 +30,10 @@ function createFixture({
   const writes = [];
 
   const tables = {
+    restaurants: [{
+      id: RESTAURANT_ID,
+      operational_timezone: operationalTimezone,
+    }],
     restaurant_invoice_matching_controls: [{
       restaurant_id: RESTAURANT_ID,
       status: 'legacy_enabled',
@@ -1231,4 +1236,87 @@ test('delivery-date correction cannot reactivate invalidated evidence', async ()
   assert.equal(result.ingredient.last_ordered_at, '2026-11-09');
   assert.equal(result.ingredient.price_status, 'invoice');
   assert.deepEqual(evidence, evidenceBefore);
+});
+
+test('shared repricing uses each restaurant local date at the same instant', async (t) => {
+  t.mock.timers.enable({
+    apis: ['Date'],
+    now: Date.parse('2026-11-12T06:00:00Z'),
+  });
+
+  for (const [operationalTimezone, delivered] of [
+    ['America/New_York', true],
+    ['America/Los_Angeles', false],
+  ]) {
+    const result = await runFixture({
+      operationalTimezone,
+      lines: [invoiceLine({
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: '2026-11-10',
+          delivery_date: '2026-11-12',
+          created_at: '2026-11-10T12:00:00Z',
+        },
+      })],
+      evidence: [invoiceEvidence()],
+    });
+
+    assert.equal(
+      result.ingredient.last_price,
+      delivered ? 0.234375 : 0.20
+    );
+    assert.equal(
+      result.ingredient.price_status,
+      delivered ? 'invoice' : 'needs_review'
+    );
+  }
+});
+
+for (const [season, midnight] of [
+  ['winter', '2026-11-12T08:00:00Z'],
+  ['summer', '2026-07-12T07:00:00Z'],
+]) {
+  test('shared repricing waits for Los Angeles midnight in ' + season, async (t) => {
+    const midnightMs = Date.parse(midnight);
+    const deliveryDate = midnight.slice(0, 10);
+    t.mock.timers.enable({
+      apis: ['Date'],
+      now: midnightMs - 1,
+    });
+
+    const options = () => ({
+      operationalTimezone: 'America/Los_Angeles',
+      lines: [invoiceLine({
+        invoices: {
+          restaurant_id: RESTAURANT_ID,
+          date: deliveryDate,
+          delivery_date: deliveryDate,
+          created_at: deliveryDate + 'T12:00:00Z',
+        },
+      })],
+      evidence: [invoiceEvidence()],
+    });
+
+    const before = await runFixture(options());
+    assert.equal(before.ingredient.last_price, 0.20);
+    assert.equal(before.ingredient.price_status, 'needs_review');
+
+    t.mock.timers.tick(1);
+
+    const delivered = await runFixture(options());
+    assert.equal(delivered.ingredient.last_price, 0.234375);
+    assert.equal(delivered.ingredient.price_status, 'invoice');
+    assert.equal(delivered.ingredient.last_ordered_at, deliveryDate);
+  });
+}
+
+test('missing restaurant timezone blocks shared repricing before ingredient writes', async () => {
+  const fixture = createFixture({ operationalTimezone: null });
+
+  await assert.rejects(
+    repriceFromInvoices(fixture.db, RESTAURANT_ID, INGREDIENT_ID),
+    { code: 'RESTAURANT_TIMEZONE_REQUIRED' }
+  );
+
+  assert.deepEqual(fixture.writes, []);
 });

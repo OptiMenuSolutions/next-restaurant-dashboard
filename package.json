@@ -20,6 +20,7 @@
     "canvas": "^3.2.2",
     "exceljs": "^4.4.0",
     "formidable": "^3.5.4",
+    "geo-tz": "8.1.11",
     "next": "^16.2.1",
     "pdf-parse": "^2.4.5",
     "pdf2pic": "^3.2.0",

@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useAccountChrome, CSS as CHROME_CSS } from "./AccountChrome";
 import { useIsMobile, useInApp, MobileBackBar, MobileNav } from "./ClientChrome";
 import ScannersCard from "./ScannersCard";
+import RestaurantShippingAddressSetting from "./RestaurantShippingAddressSetting";
 import SupportConversation from "./SupportConversation";
 import SupportConversations from "./SupportConversations";
 
@@ -29,6 +30,7 @@ import SupportConversations from "./SupportConversations";
 export default function ProfileScreen({
   user = { name: "Marco Rossi", email: "marco@lunaosteria.com" },
   restaurantName: restaurantNameProp = "Luna Osteria",
+  operationalTimezone = null, shippingAddress = null, onSaveShippingAddress,
   targetFoodCost: targetFoodCostProp = 30,
   notifPrefs = { weekly: true, priceAlert: true, lowMargin: false },
   freezeSettings: freezeSettingsProp = { beef: false, poultry: false, pork: false, seafood: false, bakery: false },
@@ -369,6 +371,12 @@ export default function ProfileScreen({
                   <div style={{ fontSize: 14.5, fontWeight: 600 }}>{restaurantName}</div>
                 )}
               </div>
+
+              <RestaurantShippingAddressSetting
+                address={shippingAddress}
+                timeZone={operationalTimezone}
+                onSave={onSaveShippingAddress}
+              />
 
               <div style={{ padding: "14px 18px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>

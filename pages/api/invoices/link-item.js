@@ -11,6 +11,10 @@ import {
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import {
+  loadRestaurantTimezone,
+  restaurantLocalDate,
+} from '../../../lib/restaurantTime';
+import {
   getRestaurantInvoiceMatchingControl,
 } from '../../../lib/invoiceMatchingControls';
 import {
@@ -157,10 +161,25 @@ export function createLinkInvoiceItemHandler({
   }
 
   const purchaseDate = getInvoiceEffectiveDate(line.invoices);
-  const pricingAsOfDate = new Date().toISOString().slice(0, 10);
+  let pricingAsOfDate;
 
-  const invoiceDate =
-    line.invoices.date || new Date().toISOString().split('T')[0];
+  try {
+    pricingAsOfDate = restaurantLocalDate(
+      await loadRestaurantTimezone(db, restaurant_id)
+    );
+  } catch (error) {
+    const needsConfiguration = [
+      'RESTAURANT_TIMEZONE_REQUIRED',
+      'RESTAURANT_TIMEZONE_INVALID',
+    ].includes(error.code);
+
+    return res.status(needsConfiguration ? 422 : 503).json({
+      code: error.code || 'RESTAURANT_TIMEZONE_LOAD_FAILED',
+      error: needsConfiguration
+        ? 'Configure the restaurant time zone in Restaurant settings before linking this item.'
+        : 'Could not load the restaurant time zone. Please retry.',
+    });
+  }
 
   // Change only the explicitly selected invoice line.
   // Never propagate a correction to historical lines automatically.
@@ -225,8 +244,8 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
     // from their remaining invoice histories.
     if (oldIngredientId) {
     try {
-      await repriceFromInvoices(db, restaurant_id, ingredient.id);
-      await repriceFromInvoices(db, restaurant_id, oldIngredientId);
+      await repriceFromInvoices(db, restaurant_id, ingredient.id, pricingAsOfDate);
+      await repriceFromInvoices(db, restaurant_id, oldIngredientId, pricingAsOfDate);
     } catch (error) {
       return res.status(500).json({
         error: 'Invoice line linked, but ingredient repricing failed: ' +
@@ -284,7 +303,7 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
       restaurant_id,
       [ingredient.id, oldIngredientId].filter(Boolean),
       {
-        effectiveDate: invoiceDate,
+        effectiveDate: purchaseDate,
         reason: 'invoice_link',
       }
     );
@@ -318,7 +337,7 @@ if (isInvoiceSupportedRepricingEnabled(restaurant_id)) {
 }
 
 // Reprice an ingredient using its newest linked invoice line.
-async function repriceFromInvoices(db, restaurantId, ingredientId) {
+async function repriceFromInvoices(db, restaurantId, ingredientId, asOfDate) {
   const { data: ingredient, error: ingredientErr } = await db
     .from('ingredients')
     .select('id, name, last_ordered_at, price_status, price_approved_at')
@@ -351,7 +370,7 @@ async function repriceFromInvoices(db, restaurantId, ingredientId) {
 
   const decision = selectInvoiceRepricingSource(
     lines,
-    { requireVerified: true }
+    { requireVerified: true, asOfDate }
   );
 
   let updates;

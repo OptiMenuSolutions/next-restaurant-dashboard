@@ -13,6 +13,7 @@ import RecipeWorkspace, {
 import LeaveGuardModal from "../../components/LeaveGuardModal";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { mutate } from "swr";
+import { saveShippingAddress } from "../../lib/saveShippingAddress";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -116,34 +117,32 @@ export default function OnboardingPage() {
 
   const saveOnboardingStep = async (stepNumber, data) => {
     if (!restaurantId) {
-      // Effect that loads restaurantId hasn't finished yet — throw rather
-      // than silently no-op, so continueStep's catch blocks it from
-      // advancing (and losing this step's data) instead of pretending it saved.
       throw new Error("Still setting up your account — please wait a moment and try again.");
     }
-    const updates =
-      stepNumber === 1
-        ? {
-            name: data.name, cuisine_type: data.cuisine, // `style` still has no column, same as before
-            freezes_beef: !!data.freezesBeef,
-            freezes_poultry: !!data.freezesPoultry,
-            freezes_pork: !!data.freezesPork,
-            freezes_seafood: !!data.freezesSeafood,
-            freezes_bakery: !!data.freezesBakery,
-          }
-        : {
-            shipping_address_line1: data.addrLine1,
-            shipping_city: data.addrCity,
-            shipping_state: data.addrState,
-            shipping_zip: data.addrZip,
-            // Name + address are the only two things actually required to use
-            // the app (see enforceAccountGuard's requireOnboarding check) —
-            // menu/invoices/POS on steps 3-5 are genuinely optional and can be
-            // added later from their real pages. So this is the point
-            // "onboarding" is considered done for gating purposes, not step 5.
-            onboarding_completed_at: new Date().toISOString(),
-          };
-    const { error } = await supabase.from("restaurants").update(updates).eq("id", restaurantId);
+
+    if (stepNumber === 2) {
+      await saveShippingAddress(supabase, restaurantId, {
+        shipping_address_line1: data.addrLine1,
+        shipping_city: data.addrCity,
+        shipping_state: data.addrState,
+        shipping_zip: data.addrZip,
+      }, { completeOnboarding: true });
+      return;
+    }
+
+    if (stepNumber !== 1) {
+      throw new Error("That onboarding step cannot be saved here.");
+    }
+
+    const { error } = await supabase.from("restaurants").update({
+      name: data.name,
+      cuisine_type: data.cuisine,
+      freezes_beef: !!data.freezesBeef,
+      freezes_poultry: !!data.freezesPoultry,
+      freezes_pork: !!data.freezesPork,
+      freezes_seafood: !!data.freezesSeafood,
+      freezes_bakery: !!data.freezesBakery,
+    }).eq("id", restaurantId);
     if (error) throw error;
   };
 
@@ -151,40 +150,22 @@ export default function OnboardingPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { router.push("/client/login"); return; }
 
-    const { data: profile } = await supabase
-      .from("profiles").select("restaurant_id").eq("id", user.id).single();
+    const { data: profile, error: profileReadError } = await supabase
+      .from("profiles").select("restaurant_id").eq("id", user.id).maybeSingle();
+    if (profileReadError) throw profileReadError;
 
-    if (profile?.restaurant_id) {
+    let targetRestaurantId = profile?.restaurant_id;
+
+    if (targetRestaurantId) {
       const { error } = await supabase
         .from("restaurants")
-        .update({
-          name,
-          shipping_address_line1: addrLine1,
-          shipping_city: addrCity,
-          shipping_state: addrState,
-          shipping_zip: addrZip,
-          cuisine_type: cuisine,
-          onboarding_completed_at: new Date().toISOString(),
-        })
-        .eq("id", profile.restaurant_id);
+        .update({ name, cuisine_type: cuisine })
+        .eq("id", targetRestaurantId);
       if (error) throw error;
     } else {
-      // Defensive fallback only — shouldn't normally happen. If it does,
-      // the profiles row itself never got created (see signup.js/login.js's
-      // comments on the email-confirmation timing case), so the trigger
-      // never fired. Create both explicitly rather than fail here.
       const { data: restaurant, error: restError } = await supabase
         .from("restaurants")
-        .insert({
-          name,
-          user_id: user.id,
-          shipping_address_line1: addrLine1,
-          shipping_city: addrCity,
-          shipping_state: addrState,
-          shipping_zip: addrZip,
-          cuisine_type: cuisine,
-          onboarding_completed_at: new Date().toISOString(),
-        })
+        .insert({ name, user_id: user.id, cuisine_type: cuisine })
         .select()
         .single();
       if (restError) throw restError;
@@ -193,12 +174,17 @@ export default function OnboardingPage() {
         .from("profiles")
         .upsert({ id: user.id, email: user.email, restaurant_id: restaurant.id }, { onConflict: "id" });
       if (profileError) throw profileError;
+      targetRestaurantId = restaurant.id;
     }
 
-    // Refresh the shared account copy, so the dashboard sees the
-    // subscription and finished onboarding instead of an older cached copy.
-    // No redirect here: the wizard's "Your kitchen is set up" screen stays up
-    // until the owner clicks Go to dashboard.
+    await saveShippingAddress(supabase, targetRestaurantId, {
+      shipping_address_line1: addrLine1,
+      shipping_city: addrCity,
+      shipping_state: addrState,
+      shipping_zip: addrZip,
+    }, { completeOnboarding: true });
+
+    // Refresh account data only after the address and timezone are saved.
     await mutate("account");
   };
 

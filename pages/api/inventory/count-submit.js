@@ -94,6 +94,12 @@ export default async function handler(req, res) {
     );
 
     if (reviewError) {
+      if (reviewError.message === 'Restaurant time zone is not configured') {
+        return res.status(422).json({
+          error: 'Configure the restaurant time zone in Restaurant settings before submitting this count.',
+        });
+      }
+
       return res.status(409).json({
         error: 'This count needs a fresh review. Reload saved values and review again.',
       });

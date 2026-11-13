@@ -17,6 +17,10 @@ import {
 import { rebuildCurrentInventory } from '../../../lib/currentInventory';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
 import {
+  loadRestaurantTimezone,
+  restaurantLocalDate,
+} from '../../../lib/restaurantTime';
+import {
   calculateStandardizedCost,
 } from '../../../lib/standardizedUnits';
 import {
@@ -368,15 +372,9 @@ export function createConfirmInvoiceHandler({
   const deliveryDate =
     submittedDeliveryDate || originalInvoiceDate;
 
-  // Existing calculation pathways still use invoiceDate
-  // until delivery-date processing is updated in Step 22.4.
-  const invoiceDate =
-    originalInvoiceDate ||
-    new Date().toISOString().split('T')[0];
-
   const appendMode = !!append_to_invoice_id;
   let purchaseDate = deliveryDate;
-  const pricingAsOfDate = new Date().toISOString().slice(0, 10);
+  let pricingAsOfDate = null;
 
   // Verify ownership independently of the invoice parser.
   // Client-submitted ingredient IDs cannot expand matching eligibility.
@@ -536,6 +534,26 @@ export function createConfirmInvoiceHandler({
     });
   }
 
+  if (!evidencePersistenceEnabled && matchingEnabled) {
+    try {
+      pricingAsOfDate = restaurantLocalDate(
+        await loadRestaurantTimezone(supabase, restaurant_id)
+      );
+    } catch (error) {
+      const needsConfiguration = [
+        'RESTAURANT_TIMEZONE_REQUIRED',
+        'RESTAURANT_TIMEZONE_INVALID',
+      ].includes(error.code);
+
+      return res.status(needsConfiguration ? 422 : 503).json({
+        code: error.code || 'RESTAURANT_TIMEZONE_LOAD_FAILED',
+        error: needsConfiguration
+          ? 'Configure the restaurant time zone in Restaurant settings before saving this invoice.'
+          : 'Could not load the restaurant time zone. Please retry.',
+      });
+    }
+  }
+
   try {
     // ── Step 1: Prepare or create the invoice record ──────────────────────────
 
@@ -689,10 +707,13 @@ export function createConfirmInvoiceHandler({
     // Until then, existing ingredient prices are preserved.
 
     const ingredientUpdates = {};
-    const deliveredForPricing = isDeliveredInvoice(
-      { delivery_date: purchaseDate },
-      pricingAsOfDate
-    );
+    const deliveredForPricing =
+      !evidencePersistenceEnabled &&
+      matchingEnabled &&
+      isDeliveredInvoice(
+        { delivery_date: purchaseDate },
+        pricingAsOfDate
+      );
 
     for (const item of activeItems) {
       const ingredientId = permittedIngredientId(item);
@@ -1282,7 +1303,7 @@ export function createConfirmInvoiceHandler({
           supabase,
           restaurant_id,
           Object.keys(ingredientUpdates),
-          { effectiveDate: invoiceDate }
+          { effectiveDate: purchaseDate }
         );
       } catch (err) {
         results.errors.push(

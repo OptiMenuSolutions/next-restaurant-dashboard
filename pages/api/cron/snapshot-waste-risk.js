@@ -28,6 +28,10 @@ import { withJobRun } from '../../../lib/admin/jobRun';
 import { runUsage } from '../../../lib/pos/runUsage';
 import { deliverPriceAlerts, deliverLowMarginAlerts } from '../../../lib/notifications/priceAlerts';
 import { processInvoiceCalculations } from '../../../lib/admin/processInvoiceCalculations';
+import {
+  previousCalendarDate,
+  wasteSnapshotDates,
+} from '../../../lib/wasteSnapshotDates';
 
 export const config = { maxDuration: 300 };
 
@@ -53,10 +57,7 @@ const CONFIRMATION_THRESHOLD = 20;
 // "an unverified guess is treated as proven fact").
 const EXPIRY_WINDOW_DAYS = 3;
 
-async function snapshotRestaurant(restaurantId, snapshotDate) {
-  // snapshotDate is 'YYYY-MM-DD'. Compute "as of" noon on that day so the
-  // date math in computeWasteRisk isn't sensitive to timezone edge cases.
-  const asOfDate = new Date(`${snapshotDate}T12:00:00`);
+async function snapshotRestaurant(restaurantId, snapshotDate, today) {
 
   const {
     risks: wasteRisk,
@@ -112,9 +113,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   // Estimated expiration is a risk signal, not proof of disposal.
   // Keep the delivery in inventory while asking the restaurant what happened.
 
-  const prevDate = new Date(asOfDate);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().split('T')[0];
+  const prevDateStr = previousCalendarDate(snapshotDate);
 
   const prevRows = await readAllInventoryRows(
     () => supabase
@@ -181,9 +180,7 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
         Number(row.remaining_qty) * Number(row.unit_cost),
       status: 'pending',
       delivery_date: row.delivery_date || null,
-      last_asked_date: new Date().toLocaleDateString('en-CA', {
-        timeZone: 'America/New_York',
-      }),
+      last_asked_date: today,
     }));
 
     // Never overwrite an existing answer or recreate a resolved prompt.
@@ -200,40 +197,6 @@ async function snapshotRestaurant(restaurantId, snapshotDate) {
   return rows.length;
 }
 
-// Items the kitchen said it is still using go back to pending, so they are
-// asked again today. The trigger records today's date as last_asked_date.
-async function reaskKeptConfirmations() {
-  const { error, count } = await supabase
-    .from('waste_confirmations')
-    .update({ status: 'pending' }, { count: 'exact' })
-    .eq('status', 'kept');
-  if (error) {
-    console.error('[cron:waste-snapshot] Failed to re-ask kept items:', error.message);
-    return 0;
-  }
-  return count || 0;
-}
-
-async function expireStaleConfirmations() {
-  // Measured from when it was last asked, not created, so an item the
-  // kitchen has been keeping for a week is not expired the day it is re-asked.
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - EXPIRY_WINDOW_DAYS);
-  const cutoffDate = cutoff.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-
-  const { error, count } = await supabase
-    .from('waste_confirmations')
-    .update({ status: 'expired_unconfirmed' }, { count: 'exact' })
-    .eq('status', 'pending')
-    .or(`last_asked_date.lt.${cutoffDate},and(last_asked_date.is.null,created_at.lt.${cutoff.toISOString()})`);
-
-  if (error) {
-    console.error('[cron:waste-snapshot] Failed to expire stale confirmations:', error.message);
-    return 0;
-  }
-  return count || 0;
-}
-
 async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ message: 'Method not allowed' });
 
@@ -248,15 +211,9 @@ async function handler(req, res) {
   if (shiftError) console.error('[cron:waste-snapshot] Sample date shift failed:', shiftError.message);
   else if (shiftedDays) console.log(`[cron:waste-snapshot] Sample data moved forward ${shiftedDays} day(s)`);
 
-  // Snapshot *yesterday* (ET) — the most recently fully-completed service day.
-  const now = new Date();
-  const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  estNow.setDate(estNow.getDate() - 1);
-  const snapshotDate = estNow.toISOString().split('T')[0];
-
   const { data: restaurants, error } = await supabase
     .from('restaurants')
-    .select('id, name');
+    .select('id, name, operational_timezone, onboarding_completed_at');
 
   if (error || !restaurants?.length) {
     console.error('[cron:waste-snapshot] Failed to fetch restaurants:', error?.message);
@@ -264,11 +221,59 @@ async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to fetch restaurants' });
   }
 
-  console.log(`[cron:waste-snapshot] Snapshotting ${restaurants.length} restaurants — ${snapshotDate}`);
+  console.log(`[cron:waste-snapshot] Snapshotting ${restaurants.length} restaurants using local dates`);
 
   const results = { success: [], skipped: [], failed: [], inventoryFailed: [] };
+  const snapshotDates = {};
+  let reaskedCount = 0;
+  let expiredCount = 0;
 
   for (const restaurant of restaurants) {
+    if (!restaurant.onboarding_completed_at && restaurant.operational_timezone == null) {
+      results.skipped.push(restaurant.name || 'Unnamed restaurant');
+      continue;
+    }
+
+    let today;
+    let snapshotDate;
+
+    try {
+      ({ today, snapshotDate } = wasteSnapshotDates(
+        restaurant.operational_timezone
+      ));
+      snapshotDates[restaurant.id] = snapshotDate;
+    } catch (error) {
+      results.failed.push({ name: restaurant.name, error: error.message });
+      continue;
+    }
+
+    // Run even when a snapshot already exists for the local day.
+    try {
+      const { data, error } = await supabase.rpc(
+        'maintain_restaurant_waste_confirmations',
+        {
+          p_restaurant_id: restaurant.id,
+          p_expiry_window_days: EXPIRY_WINDOW_DAYS,
+        }
+      );
+
+      if (error) throw error;
+      if (
+        data?.restaurant_id !== restaurant.id ||
+        !Number.isInteger(data.reasked) || data.reasked < 0 ||
+        !Number.isInteger(data.expired) || data.expired < 0
+      ) {
+        throw new Error('Invalid waste-confirmation maintenance result');
+      }
+
+      reaskedCount += data.reasked;
+      expiredCount += data.expired;
+    } catch (error) {
+      results.failed.push({
+        name: `Waste confirmations for ${restaurant.name}`,
+        error: error.message,
+      });
+    }
     try {
       const calculations = await processInvoiceCalculations(
         supabase,
@@ -346,7 +351,7 @@ async function handler(req, res) {
     }
 
     try {
-      const rowCount = await snapshotRestaurant(restaurant.id, snapshotDate);
+      const rowCount = await snapshotRestaurant(restaurant.id, snapshotDate, today);
       results.success.push(`${restaurant.name} (${rowCount} rows)`);
       console.log(`[cron:waste-snapshot] ✓ ${restaurant.name} — ${rowCount} rows`);
     } catch (err) {
@@ -355,22 +360,20 @@ async function handler(req, res) {
     }
   }
 
-  const reaskedCount = await reaskKeptConfirmations();
-  const expiredCount = await expireStaleConfirmations();
   console.log(`[cron:waste-snapshot] ${reaskedCount} kept item(s) re-asked`);
 
   console.log(`[cron:waste-snapshot] Done — ${results.success.length} snapshotted, ${results.skipped.length} skipped, ${results.failed.length} failed, ${expiredCount} confirmations expired`);
   if (results.failed.length || results.inventoryFailed.length) {
     await sendCronAlert(
       'Waste snapshot cron',
-      `${results.inventoryFailed.length} inventory rebuild(s) and ${results.failed.length} waste snapshot(s) failed for ${snapshotDate}.`,
+      `${results.inventoryFailed.length} inventory rebuild(s) and ${results.failed.length} waste processing task(s) failed; dates follow each restaurant's local calendar.`,
       [
         ...results.inventoryFailed.map(f => `Inventory, ${f.name}: ${f.error}`),
         ...results.failed.map(f => `Snapshot, ${f.name}: ${f.error}`),
       ]
     );
   }
-  return res.status(200).json({ date: snapshotDate, expiredConfirmations: expiredCount, ...results });
+  return res.status(200).json({ snapshotDates, expiredConfirmations: expiredCount, ...results });
 }
 
 export default withJobRun('snapshot-waste-risk', handler);

@@ -244,7 +244,7 @@ test('unauthorized deletion never reaches matching controls', async () => {
 });
 
 
-function mockDatabase(responses) {
+function mockDatabase(responses, { operationalTimezone = 'America/New_York' } = {}) {
   const operations = [];
 
   function query(table) {
@@ -303,6 +303,22 @@ function mockDatabase(responses) {
     };
 
     function nextResponse() {
+      if (operation.table === 'restaurants' && operation.action === 'select') {
+        const scoped = operation.filters.some(filter =>
+          filter[0] === 'eq' &&
+          filter[1] === 'id' &&
+          filter[2] === restaurantId
+        );
+
+        return {
+          data: scoped ? {
+            id: restaurantId,
+            operational_timezone: operationalTimezone,
+          } : null,
+          error: null,
+        };
+      }
+
       if (!responses.length) {
         throw new Error(
           `No mock response for ${operation.action} ${table}`
@@ -1428,7 +1444,11 @@ test(
 
 test(
   'legacy first-time linking respects delivery timing and manual approvals',
-  async () => {
+  async (t) => {
+    t.mock.timers.enable({
+      apis: ['Date'],
+      now: Date.parse('2026-11-12T06:00:00Z'),
+    });
     const previousFlag =
       process.env.INVOICE_SUPPORTED_REPRICING_ENABLED;
 
@@ -1436,6 +1456,23 @@ test(
 
     try {
       const scenarios = [
+        {
+          name: 'Eastern link can use its current local delivery',
+          operationalTimezone: 'America/New_York',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-12',
+          currentDate: '2026-11-10',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-12',
+        },
+        {
+          name: 'Pacific link cannot use tomorrow local delivery',
+          operationalTimezone: 'America/Los_Angeles',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-12',
+          currentDate: '2026-11-10',
+          expectedWrites: 0,
+        },
         {
           name: 'delivery date wins over older invoice date',
           invoiceDate: '2026-10-01',
@@ -1534,7 +1571,10 @@ test(
           });
         }
 
-        const db = mockDatabase(responses);
+        const db = mockDatabase(responses, {
+          operationalTimezone:
+            scenario.operationalTimezone || 'America/New_York',
+        });
         const deps = enabledDependencies(db);
         const res = response();
 
@@ -1603,3 +1643,46 @@ test(
     }
   }
 );
+
+test('missing restaurant timezone rejects linking before any writes', async () => {
+  const db = mockDatabase([
+    {
+      table: 'invoice_items',
+      data: {
+        id: 'timezone-line',
+        unit: 'each',
+        unit_cost: 5,
+        ingredient_id: null,
+        invoices: {
+          restaurant_id: restaurantId,
+          date: '2026-11-10',
+          delivery_date: '2026-11-12',
+        },
+      },
+    },
+    {
+      table: 'ingredients',
+      data: {
+        id: 'timezone-ingredient',
+        name: 'Synthetic Test Ingredient',
+        unit: 'each',
+      },
+    },
+  ], { operationalTimezone: null });
+  const deps = enabledDependencies(db);
+  const res = response();
+
+  await createLinkInvoiceItemHandler(deps)({
+    method: 'POST',
+    body: {
+      restaurant_id: restaurantId,
+      invoice_item_id: 'timezone-line',
+      ingredient_id: 'timezone-ingredient',
+    },
+  }, res);
+
+  assert.equal(res.statusCode, 422);
+  assert.equal(res.body.code, 'RESTAURANT_TIMEZONE_REQUIRED');
+  assert.equal(db.operations.filter(op => op.action !== 'select').length, 0);
+  assert.deepEqual(deps.effects, []);
+});

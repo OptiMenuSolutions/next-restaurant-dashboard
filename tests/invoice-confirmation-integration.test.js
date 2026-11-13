@@ -24,6 +24,7 @@ function createDb({
   matchingControlError = null,
   transactionError = null,
   appendInvoice = null,
+  operationalTimezone = 'America/New_York',
 } = {}) {
   const writes = [];
   const rpcCalls = [];
@@ -145,6 +146,21 @@ function createDb({
         },
 
         maybeSingle() {
+          if (table === 'restaurants') {
+            const matches = state.filters.every(filter =>
+              filter.column === 'id' &&
+              filter.value === RESTAURANT_ID
+            );
+
+            return Promise.resolve({
+              data: matches ? {
+                id: RESTAURANT_ID,
+                operational_timezone: operationalTimezone,
+              } : null,
+              error: null,
+            });
+          }
+
           if (table === 'invoices') {
             const matches =
               appendInvoice &&
@@ -3251,7 +3267,11 @@ test(
 
 test(
   'legacy confirmation respects delivery timing and preserves protected prices',
-  async () => {
+  async (t) => {
+    t.mock.timers.enable({
+      apis: ['Date'],
+      now: Date.parse('2026-11-12T06:00:00Z'),
+    });
     await withEvidencePersistence(async () => {
       process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED =
         'false';
@@ -3279,6 +3299,23 @@ test(
         });
 
       const scenarios = [
+        {
+          name: 'Eastern delivery is eligible on its local date',
+          operationalTimezone: 'America/New_York',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-12',
+          status: 'explicit',
+          expectedWrites: 1,
+          expectedPurchaseDate: '2026-11-12',
+        },
+        {
+          name: 'Pacific delivery waits for its local date',
+          operationalTimezone: 'America/Los_Angeles',
+          invoiceDate: '2026-11-10',
+          deliveryDate: '2026-11-12',
+          status: 'explicit',
+          expectedWrites: 0,
+        },
         {
           name: 'explicit delivered date',
           invoiceDate: '2026-10-27',
@@ -3350,6 +3387,8 @@ test(
           ingredientOverrides: {
             'ingredient-test-1': scenario.current || {},
           },
+          operationalTimezone:
+            scenario.operationalTimezone || 'America/New_York',
           appendInvoice: scenario.append ? {
             id: 'invoice-test-1',
             restaurant_id: RESTAURANT_ID,
@@ -3475,3 +3514,57 @@ test(
     });
   }
 );
+
+test('legacy confirmation requires restaurant timezone before making any writes', async () => {
+  await withEvidencePersistence(async () => {
+    process.env.INVOICE_SOURCE_EVIDENCE_PERSISTENCE_ENABLED = 'false';
+    const { db, writes } = createDb({ operationalTimezone: null });
+    const handler = createHandler(db, unverifiedCost);
+    const req = createRequest({
+      number: 'TEST-TIMEZONE-REQUIRED',
+      item: sourceValidatedItem(),
+    });
+    const res = createResponse();
+
+    await handler(req, res);
+
+    assert.equal(res.statusCode, 422);
+    assert.equal(res.body.code, 'RESTAURANT_TIMEZONE_REQUIRED');
+    assert.deepEqual(writes, []);
+  });
+});
+
+test('transactional confirmation can save while timezone configuration is pending', async () => {
+  await withEvidencePersistence(async () => {
+    const { db, writes, rpcCalls } = createDb({
+      operationalTimezone: null,
+      ownedIngredients: {
+        'ingredient-test-1': 'Dijon Mustard',
+      },
+    });
+    const handler = createHandler(db, unverifiedCost);
+    const req = createRequest({
+      number: 'TEST-TIMEZONE-PENDING-TRANSACTION',
+      item: {
+        ...sourceValidatedItem(),
+        selected_ingredient_id: 'ingredient-test-1',
+        selected_ingredient_name: 'Dijon Mustard',
+        match_status: 'matched',
+      },
+    });
+    const res = createResponse();
+
+    await handler(req, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.body.success, true);
+    assert.deepEqual(writes, []);
+
+    const saves = rpcCalls.filter(call =>
+      call.functionName === 'save_invoice_confirmation_transactional'
+    );
+    assert.equal(saves.length, 1);
+    assert.equal(saves[0].args.p_lines[0].ingredient_id, 'ingredient-test-1');
+    assert.equal(saves[0].args.p_queue_calculations, true);
+  });
+});
