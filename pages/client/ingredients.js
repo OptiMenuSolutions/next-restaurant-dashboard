@@ -15,6 +15,8 @@ import { convertInvoiceCostToStandardUnit, getStandardUnitForIngredient } from "
 import { loadCurrentInventory } from "../../lib/currentInventory";
 import { computeWasteRisk, convertQuantity } from "../../lib/computeWasteRisk";
 import { getShelfLife, isProtein } from "../../lib/shelfLife";
+import { loadRestaurantTimezone, restaurantLocalDate } from "../../lib/restaurantTime";
+import { ingredientPurchaseRows, purchaseAge, purchaseAmount, ingredientDisplayPrice } from "../../lib/ingredientPurchasing";
 
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -33,17 +35,15 @@ function isTourQueryActive() {
    first) and its on-hand inventory rows (loadCurrentInventory's shape).
    Fill = on hand / the newest delivery's size, capped at 100%: FIFO uses
    older stock first, so anything on hand includes the newest delivery. */
-const DAY_MS = 86400000;
-function shelfFields(name, unit, lines, invRows) {
-  const now = Date.now();
+function shelfFields(name, unit, lines, invRows, today) {
   let bought28 = 0;
   let spend30 = 0;
   for (const r of lines) {
-    const age = (now - Date.parse(`${String(r.invoices?.date).slice(0, 10)}T12:00:00`)) / DAY_MS;
-    if (!(age >= 0)) continue;
+    const age = purchaseAge(today, r.invoices?.effective_date);
+    if (age == null || age < 0) continue;
     const qty = Number(r.quantity) || 0;
-    if (age <= 30) spend30 += Number(r.amount) || qty * (Number(r.unit_cost) || 0);
-    if (age <= 28 && qty > 0) {
+    if (age < 30) spend30 += purchaseAmount(r);
+    if (age < 28 && qty > 0) {
       const q = !r.unit || r.unit === unit ? qty : convertQuantity(qty, r.unit, unit, name);
       if (q != null) bought28 += q;
     }
@@ -94,11 +94,11 @@ function shelfFields(name, unit, lines, invRows) {
 
 /* Sample invoice_items have no ingredient_id set (unlike real invoice
    data), so tour-mode history is matched by normalized name instead of FK. */
-function buildSampleIngredientRows(sample) {
+function buildSampleIngredientRows(sample, today) {
   const flatItems = [];
   (sample.invoices || []).forEach((inv) => {
     (inv.invoice_items || []).forEach((item) => {
-      flatItems.push({ ...item, invoices: { id: inv.id, date: inv.date, supplier: inv.supplier, number: inv.number } });
+      flatItems.push({ ...item, invoices: { ...inv, restaurant_id: SAMPLE_RESTAURANT_ID } });
     });
   });
 
@@ -106,6 +106,7 @@ function buildSampleIngredientRows(sample) {
   // menu_item_components -> component_ingredients -> ingredients, so build
   // the same ingredient-id -> [dishes] map the real data path builds from
   // componentLinks, just sourced from the sample menuItems array instead.
+  const deliveredItems = ingredientPurchaseRows(flatItems, SAMPLE_RESTAURANT_ID, today);
   const menuByIngredient = new Map();
   (sample.menuItems || []).forEach((mi) => {
     (mi.menu_item_components || []).forEach((comp) => {
@@ -132,7 +133,7 @@ function buildSampleIngredientRows(sample) {
   // On-hand estimate for the sample, the same way the tour dashboard does it.
   // Sample lines are unlinked, so rows are keyed by product name.
   const sampleInv = new Map();
-  computeWasteRisk(flatItems, sample.invoices || [], sample.posSales || [], sample.menuItems || [])
+  computeWasteRisk(flatItems, sample.invoices || [], (sample.posSales || []).filter((sale) => sale.sale_date && String(sale.sale_date).slice(0, 10) <= today), sample.menuItems || [], new Date(today + "T12:00:00"))
     .filter((r) => r.remainingQty > 0)
     .forEach((r) => {
       const k = String(r.name || "").toLowerCase().trim();
@@ -140,9 +141,8 @@ function buildSampleIngredientRows(sample) {
     });
 
   return (sample.ingredients || []).map((g) => {
-    const lines = flatItems
-      .filter((r) => (r.ingredient_name_normalized || r.item_name || "").toLowerCase().trim() === (g.name || "").toLowerCase().trim())
-      .sort((a, b) => (String(a.invoices.date) < String(b.invoices.date) ? 1 : -1));
+    const lines = deliveredItems
+      .filter((r) => (r.ingredient_name_normalized || r.item_name || "").toLowerCase().trim() === (g.name || "").toLowerCase().trim());
 
     return {
       id: g.id,
@@ -151,19 +151,19 @@ function buildSampleIngredientRows(sample) {
       estimated: !!g.is_estimated,
       estimatedPrice: Number(g.last_price) || 0,
       supplier: lines[0]?.invoices?.supplier || null,
-      lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
+      lastOrdered: lines[0] ? shortDate(lines[0].invoices.effective_date) : null,
       history: toHistory(lines, g.unit || "ea", g.name),
       purchases: lines.map((r) => ({
-      date: shortDate(r.invoices.date),
-        iso: String(r.invoices.date).slice(0, 10),
+      date: shortDate(r.invoices.effective_date),
+        iso: String(r.invoices.effective_date).slice(0, 10),
         supplier: r.invoices.supplier || "Supplier",
         invoice: r.invoices.number || "No number",
         invoiceId: r.invoices.id,
         qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
-        unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
+        unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name),
       })),
       menuItems: menuByIngredient.get(g.id) || [],
-      ...shelfFields(g.name, g.unit || "ea", lines, sampleInv.get((g.name || "").toLowerCase().trim()) || []),
+      ...shelfFields(g.name, g.unit || "ea", lines, sampleInv.get((g.name || "").toLowerCase().trim()) || [], today),
     };
   });
 }
@@ -191,6 +191,9 @@ const shortDate = (iso) => `${monthLabel(iso)} ${Number(String(iso).slice(8, 10)
    same conversion confirm-invoice uses when it saves last_price, so the
    page and the saved price always agree. Null when the units don't line up. */
 function toIngredientUnitCost(r, ingUnit, ingName) {
+  if (Object.prototype.hasOwnProperty.call(r, "display_unit_cost")) {
+    return r.display_unit_cost;
+  }
   const cost = Number(r.unit_cost);
   if (!isFinite(cost) || cost <= 0) return null;
   const from = r.unit || ingUnit;
@@ -202,9 +205,9 @@ function toIngredientUnitCost(r, ingUnit, ingName) {
 function toHistory(rows, ingUnit, ingName) {
   const byMonth = new Map();
   rows.forEach((r) => {
-    const iso = r.invoices?.date;
+    const iso = r.invoices?.effective_date;
     const unitCost = toIngredientUnitCost(r, ingUnit, ingName);
-    if (!iso || !isFinite(unitCost) || unitCost <= 0) return;
+    if (!iso || unitCost == null || !Number.isFinite(unitCost) || unitCost < 0) return;
     const key = monthKey(iso);
     const bucket = byMonth.get(key) || { label: monthLabel(iso), sum: 0, n: 0 };
     bucket.sum += unitCost;
@@ -240,16 +243,17 @@ export default function IngredientsPage() {
     if (tourMode) {
       const sample = await fetchSampleData();
       if (sample) {
-        const rows = buildSampleIngredientRows(sample);
-        const thisMonth = monthKey(new Date().toISOString());
+        const today = restaurantLocalDate(await loadRestaurantTimezone(supabase, restaurantId));
+        const rows = buildSampleIngredientRows(sample, today);
+        const thisMonth = monthKey(today);
         const flatItems = [];
         (sample.invoices || []).forEach((inv) => {
-          (inv.invoice_items || []).forEach((item) => flatItems.push({ ...item, invoices: { date: inv.date } }));
+          (inv.invoice_items || []).forEach((item) => flatItems.push({ ...item, invoices: { ...inv, restaurant_id: SAMPLE_RESTAURANT_ID } }));
         });
-        const spend = flatItems
-          .filter((r) => monthKey(r.invoices.date) === thisMonth)
-          .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0);
-        return { rows, spend };
+        const spend = ingredientPurchaseRows(flatItems, SAMPLE_RESTAURANT_ID, today)
+          .filter((r) => monthKey(r.invoices.effective_date) === thisMonth)
+          .reduce((a, r) => a + purchaseAmount(r), 0);
+        return { rows, spend, today };
       }
       // fetchSampleData() failed — fall through to the real query below.
     }
@@ -294,15 +298,19 @@ export default function IngredientsPage() {
           .order("id", { ascending: true }),
         "your ingredients"
       ),
-      readAllRows(
-        () => supabase
-          .from("invoice_items")
-          .select("*, invoices!invoice_items_invoice_id_fkey!inner(id, date, supplier, number, restaurant_id)")
-          .not("ingredient_id", "is", null)
-          .eq("invoices.restaurant_id", restaurantId)
-          .order("id", { ascending: true }),
-        "ingredient purchase history"
-      ),
+      (async () => {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error || !session?.access_token) throw new Error("Please sign in again.");
+        const response = await fetch("/api/ingredients/purchase-history", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          cache: "no-store",
+        });
+        const report = await response.json();
+        if (!response.ok || report.restaurantId !== restaurantId || !Array.isArray(report.items)) {
+          throw new Error(report.error || "Could not load ingredient purchase history.");
+        }
+        return report;
+      })(),
       // Legacy recipes are merged with component recipes below.
       readAllRows(
         () => supabase
@@ -342,7 +350,8 @@ export default function IngredientsPage() {
       invByName.set(k, [...(invByName.get(k) || []), r]);
     }
 
-    const history = (items || []).filter((i) => i.invoices?.date && i.invoices?.restaurant_id === restaurantId);
+    const today = items.today;
+    const history = ingredientPurchaseRows(items.items, restaurantId, today);
 
     const byIngredient = new Map();
     history.forEach((r) => {
@@ -393,9 +402,7 @@ export default function IngredientsPage() {
     });
 
     const rows = (ings || []).map((g) => {
-      const lines = (byIngredient.get(g.id) || []).sort((a, b) =>
-        String(a.invoices.date) < String(b.invoices.date) ? 1 : -1
-      );
+      const lines = byIngredient.get(g.id) || [];
       return {
         id: g.id,
         name: g.name,
@@ -403,35 +410,37 @@ export default function IngredientsPage() {
         estimated: !!g.is_estimated,
         // Only invoice prices and admin-approved estimates are shown to the
         // restaurant. A raw AI guess from the menu parse shows as no price.
-        estimatedPrice: g.is_estimated === false || g.price_approved_at ? Number(g.last_price) || 0 : null,
+        estimatedPrice: ingredientDisplayPrice(g),
+        priceSource: g.price_status !== "invoice" && g.price_approved_at ? "manual" : "invoice",
         supplier: lines[0]?.invoices?.supplier || null,
-        lastOrdered: g.last_ordered_at ? shortDate(g.last_ordered_at) : lines[0] ? shortDate(lines[0].invoices.date) : null,
+        lastOrdered: lines[0] ? shortDate(lines[0].invoices.effective_date) : null,
         history: toHistory(lines, g.unit || "ea", g.name),
         purchases: lines.map((r) => ({
-          date: shortDate(r.invoices.date),
-          iso: String(r.invoices.date).slice(0, 10),
+          date: shortDate(r.invoices.effective_date),
+          iso: String(r.invoices.effective_date).slice(0, 10),
           supplier: r.invoices.supplier || "Supplier",
           invoice: r.invoices.number || "No number",
           invoiceId: r.invoices.id,
           qty: [r.quantity, r.unit || g.unit].filter(Boolean).join(" "),
-          unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name) ?? (Number(r.unit_cost) || 0),
+          unitCost: toIngredientUnitCost(r, g.unit || "ea", g.name),
         })),
         menuItems: menuByIngredient.get(g.id) || [],
         ...shelfFields(
           g.name,
           g.unit || "ea",
           lines,
-          invById.get(g.id) || invByName.get((g.name || "").toLowerCase().trim()) || []
+          invById.get(g.id) || invByName.get((g.name || "").toLowerCase().trim()) || [],
+          today
         ),
       };
     });
 
-    /* Summary spend: this month's invoiced line items. */
-    const thisMonth = monthKey(new Date().toISOString());
+    /* Linked ingredient purchases eligible this restaurant-local month. */
+    const thisMonth = monthKey(today);
     const spend = history
-      .filter((r) => monthKey(r.invoices.date) === thisMonth)
-      .reduce((a, r) => a + (Number(r.amount) || Number(r.unit_cost) * Number(r.quantity) || 0), 0);
-    return { rows, spend };
+      .filter((r) => monthKey(r.invoices.effective_date) === thisMonth)
+      .reduce((a, r) => a + purchaseAmount(r), 0);
+    return { rows, spend, today };
   }, []);
 
   // Account (login, profile, restaurant) comes from the shared cache: loaded
@@ -461,13 +470,18 @@ export default function IngredientsPage() {
   }, []);
 
   const summary = useMemo(() => {
-    const now = new Date();
+    const today = ingData?.today;
+    const month = today
+      ? new Date(today + "T12:00:00Z").toLocaleDateString("en-US", {
+          month: "long", year: "numeric", timeZone: "UTC",
+        })
+      : "Loading";
     return {
       spend,
-      periodLabel: now.toLocaleDateString("en-US", { month: "long", year: "numeric" }) + " · priced from your invoices",
-      rangeLabel: "Since the first invoice",
+      periodLabel: month + " · eligible ingredient purchases",
+      rangeLabel: "Recorded delivery prices",
     };
-  }, [spend]);
+  }, [spend, ingData?.today]);
 
   const initials = (userName || "Chef").split(" ").map((p) => p[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
 

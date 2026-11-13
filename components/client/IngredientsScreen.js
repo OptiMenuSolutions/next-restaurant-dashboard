@@ -39,7 +39,7 @@ const pctColor = (p) => (p == null ? "var(--faint)" : p > 1.5 ? "var(--amber)" :
 const COLUMNS = [
   { label: "Ingredient", align: "left" },
   { label: "Price", align: "center" },
-  { label: "30d", align: "right" },
+  { label: "Δ", align: "right" },
   { label: "On hand · vs next 7 days", align: "left" },
 ];
 
@@ -101,10 +101,10 @@ export const DEMO_INGREDIENTS = [
 function decorate(g) {
   const h = g.history || [];
   // Purchases arrive newest first, each already in the ingredient's unit.
-  const buys = (g.purchases || []).filter((p) => Number(p.unitCost) > 0);
-  const price = buys.length
-    ? Number(buys[0].unitCost)
-    : h.length ? h[h.length - 1].value : g.estimatedPrice != null ? g.estimatedPrice : null;
+  const buys = (g.purchases || []).filter((p) => p.unitCost != null && Number.isFinite(Number(p.unitCost)) && Number(p.unitCost) >= 0);
+  const price = Object.prototype.hasOwnProperty.call(g, "estimatedPrice")
+    ? g.estimatedPrice
+    : buys.length ? Number(buys[0].unitCost) : null;
   // No invoice history and no approved price: nothing to show yet.
   const awaiting = price == null;
   // Change since the previous delivery. History is averaged by month, so two
@@ -118,8 +118,10 @@ function decorate(g) {
     menuItems: g.menuItems || [],
     price,
     awaiting,
-    pct: prev ? ((price - prev) / prev) * 100 : null,
-    spanPct: h.length > 1 ? ((price - h[0].value) / h[0].value) * 100 : null,
+    pct: g.priceSource !== "manual" && buys.length > 1 && prev > 0
+      ? ((Number(buys[0].unitCost) - prev) / prev) * 100 : null,
+    spanPct: g.priceSource !== "manual" && h.length > 1 && h[0].value > 0
+      ? ((h[h.length - 1].value - h[0].value) / h[0].value) * 100 : null,
   };
 }
 
@@ -573,7 +575,7 @@ function Summary({ all, risers, fallers, unpriced, override, onPick, onNeedsPric
         {spend != null && (
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.045em", fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{typeof spend === "number" ? moneyN(spend, 0) : spend}</div>
-            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>Invoiced spend</div>
+            <div style={{ fontFamily: MONO, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--accent-deep)", marginTop: 7 }}>Eligible purchases</div>
           </div>
         )}
       </div>

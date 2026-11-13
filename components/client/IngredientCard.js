@@ -21,7 +21,7 @@ import { convertQuantity } from "../../lib/computeWasteRisk";
 const money2 = (n) => money(n, 2);
 // Display the same precision used by the price chart.
 const unitMoney = (n) => {
-  if (n == null || !Number.isFinite(Number(n))) return "—";
+  if (n == null || !Number.isFinite(Number(n))) return "Unresolved";
   const rounded = Number(Number(n).toFixed(3));
   return "$" + rounded.toLocaleString("en-US", {
     minimumFractionDigits: 2,
@@ -44,16 +44,21 @@ export function qtyLabel(n, unit) {
 const kicker = { fontFamily: MONO, fontSize: 9.5, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--faint)", whiteSpace: "nowrap" };
 
 export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBack }) {
-  const buys = useMemo(() => (g.purchases || []).filter((p) => Number(p.unitCost) > 0), [g]);
+  const buys = g.purchases || [];
+  const pricedBuys = useMemo(() => buys.filter((p) =>
+    p.unitCost != null && Number.isFinite(Number(p.unitCost)) && Number(p.unitCost) >= 0
+  ), [g]);
   const last = buys[0] || null;
-  const prev = buys[1] || null;
+  const prev = pricedBuys[1] || null;
   const weekUse = Number(g.boughtPerWeek) || 0;
   const onHand = Number(g.onHand) || 0;
 
   /* Price note under the big number. */
   const priceNote = g.awaiting
-    ? "AWAITING AN INVOICE"
-    : g.estimated
+    ? "AWAITING A VERIFIED PRICE"
+    : g.priceSource === "manual"
+      ? "MANUALLY APPROVED"
+      : g.estimated
       ? "ESTIMATED · NO INVOICE YET"
       : g.pct == null || !prev
         ? "FROM INVOICE"
@@ -73,7 +78,7 @@ export default function IngredientCard({ g, onOpenMenuItem, onOpenInvoice, onBac
   const leftLabel = dl <= 0 ? "USE TODAY" : dl === 1 ? "1 DAY LEFT" : dl + " DAYS LEFT";
 
   /* Last 6 invoice prices, oldest to newest. */
-  const chart = useMemo(() => buildChart(buys.slice(0, 6).reverse()), [buys]);
+  const chart = useMemo(() => buildChart(pricedBuys.slice(0, 6).reverse()), [pricedBuys]);
 
   /* Dishes: this ingredient's cost on each plate, in its own unit. */
   const dishes = (g.menuItems || []).map((m) => {
@@ -290,15 +295,20 @@ function buildChart(rows) {
    callout, three tiles, price chart, dishes, then every purchase. Returns
    a fragment so the screen's scroll area spaces the sections. */
 export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
-  const buys = (g.purchases || []).filter((p) => Number(p.unitCost) > 0);
+  const buys = g.purchases || [];
+  const pricedBuys = buys.filter((p) =>
+    p.unitCost != null && Number.isFinite(Number(p.unitCost)) && Number(p.unitCost) >= 0
+  );
   const last = buys[0] || null;
-  const prev = buys[1] || null;
+  const prev = pricedBuys[1] || null;
   const weekUse = Number(g.boughtPerWeek) || 0;
   const onHand = Number(g.onHand) || 0;
 
   const priceNote = g.awaiting
-    ? "AWAITING AN INVOICE"
-    : g.estimated
+    ? "AWAITING A VERIFIED PRICE"
+    : g.priceSource === "manual"
+      ? "MANUALLY APPROVED"
+      : g.estimated
       ? "ESTIMATED · NO INVOICE YET"
       : g.pct == null || !prev
         ? "FROM INVOICE"
@@ -316,7 +326,7 @@ export function MobileIngredientCard({ g, onOpenMenuItem, onOpenInvoice }) {
   const atRiskDollars = g.price ? atRiskQty * g.price : null;
   const leftLabel = dl <= 0 ? "USE TODAY" : dl === 1 ? "1 DAY LEFT" : dl + " DAYS LEFT";
 
-  const chart = buildChart(buys.slice(0, 6).reverse());
+  const chart = buildChart(pricedBuys.slice(0, 6).reverse());
   const first = chart.points[0];
   const lastPt = chart.points[chart.points.length - 1];
   const span = chart.points.length > 1 && first.value ? ((lastPt.value - first.value) / first.value) * 100 : null;
