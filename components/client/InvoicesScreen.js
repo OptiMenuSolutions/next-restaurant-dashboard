@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { invoiceMonthSpend } from "../../lib/invoiceReporting";
 import {
   Shell, Header, MobileHeader, MobileNav, MobileTitle, MobileBackBar, mCard, LoadingState, EmptyState, ErrorState, StatePage,
   useTheme, useIsMobile, MONO, SANS, PAGE_PAD, SearchIcon, money, money0,
@@ -125,6 +126,7 @@ function resolveAmount(v) {
 
 export default function InvoicesScreen({
   invoices: invoicesProp,
+  today = null,
   loading = false,
   error = null,
   onRetry,
@@ -182,15 +184,8 @@ export default function InvoicesScreen({
   const selected = openInvoiceId
     ? rows.find((v) => String(v.id) === String(openInvoiceId))
     : rows.find((v) => v.id === selectedId) || rows[0];
-  const now = new Date();
-  const monthSpend = rows
-    .filter((v) => {
-      const displayDate = v.displayIsoDate ?? v.isoDate;
-      if (!displayDate) return false;
-      const [year, month] = String(displayDate).slice(0, 10).split("-").map(Number);
-      return year === now.getFullYear() && month === now.getMonth() + 1;
-    })
-    .reduce((a, v) => a + (v.amount || 0), 0);
+  // Use stored totals: lazy-loaded receipt lines must not change the KPI.
+  const monthSpend = invoiceMonthSpend(list, today);
   const pendingCount = rows.filter((v) => v.status !== "processed").length;
   const countLabel = `Showing ${rows.length} of ${rows.length} invoices`;
   const dupCopies = rows.filter((v) => v.dup && v.dup.isCopy).length;
@@ -321,7 +316,11 @@ export default function InvoicesScreen({
     const nReview = rows.filter((v) => v.status === "review").length;
     const nNeed = nPending + nReview;
     const firstNeed = rows.find((v) => v.status !== "processed");
-    const monthShort = now.toLocaleDateString("en-US", { month: "short" });
+    const monthShort = today
+      ? new Date(today + "T12:00:00Z").toLocaleDateString("en-US", {
+          month: "short", timeZone: "UTC",
+        })
+      : "—";
     const openRow = (v) => { pick(v); setMobileDetail(true); };
     const kpi = { fontFamily: MONO, fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--muted)" };
     const kpiVal = { fontSize: 19, fontWeight: 800, letterSpacing: "-0.035em", marginTop: 4, fontVariantNumeric: "tabular-nums" };
@@ -346,7 +345,7 @@ export default function InvoicesScreen({
           <div style={{ ...mCard, display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
             <div style={{ padding: "12px 12px 11px" }}>
               <div style={kpi}>Spend · {monthShort}</div>
-              <div style={kpiVal}>{money0(monthSpend)}</div>
+              <div style={kpiVal}>{monthSpend == null ? "—" : money0(monthSpend)}</div>
             </div>
             <div style={{ padding: "12px 12px 11px", borderLeft: "1px solid var(--line-soft)" }}>
               <div style={kpi}>Invoices</div>
@@ -463,7 +462,7 @@ export default function InvoicesScreen({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div style={{ display: "flex", alignItems: "baseline", paddingRight: 6 }}>
               {[
-                { label: "Spend this month", value: money0(monthSpend) },
+                { label: "Spend this month", value: monthSpend == null ? "—" : money0(monthSpend) },
                 { label: "Invoices", value: String(rows.length) },
                 { label: "Unmatched lines", value: String(unmatchedTotal) },
               ].map((k, i) => (

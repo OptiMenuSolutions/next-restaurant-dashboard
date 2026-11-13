@@ -11,6 +11,8 @@ import UniversalSearch from "../../components/UniversalSearch";
 import useSWR from "swr";
 import { useGuardedAccount, clearCachedPages } from "../../lib/useAccount";
 import { toDisplayUnitCost } from "../../lib/invoiceDisplayPricing";
+import { loadRestaurantTimezone, restaurantLocalDate } from "../../lib/restaurantTime";
+import { readAllInvoiceRows } from "../../lib/invoiceReporting";
 
 const EMPTY_LIST = [];
 const AFFECTED_BY_INVOICES = ["ingredients", "dashboard", "menu-items", "analytics"];
@@ -174,10 +176,11 @@ export default function InvoicesPage() {
 
   // Returns { invoices, ingredientOptions } for the shared cache.
   const loadInvoices = useCallback(async (restId, tourMode) => {
+    const today = restaurantLocalDate(await loadRestaurantTimezone(supabase, restId));
     if (tourMode) {
       const sample = await fetchSampleData();
       if (sample) {
-        return { invoices: (sample.invoices || []).map(toInvoice), ingredientOptions: [] };
+        return { invoices: (sample.invoices || []).map(toInvoice), ingredientOptions: [], today };
       }
       // fetchSampleData() failed — fall through to the real query rather
       // than leave the tour on a blank invoices page.
@@ -188,13 +191,13 @@ export default function InvoicesPage() {
     // has actually been clicked/lazy-loaded via handleSelect below.
     // All three run at once; none needs another's result.
     const [invRes, ingRes, unmatchedRes] = await Promise.all([
-      supabase
+      readAllInvoiceRows(() => supabase
         .from("invoices")
         .select("*, invoice_items(count)")
         .eq("restaurant_id", restId)
         .order("date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
-        .limit(1000),
+        .order("id", { ascending: false })),
       supabase
         .from("ingredients")
         .select("id, name, unit")
@@ -209,7 +212,9 @@ export default function InvoicesPage() {
         .eq("invoices.restaurant_id", restId),
     ]);
     if (invRes.error) throw invRes.error;
-    return { invoices: (invRes.data || []).map(toInvoice), ingredientOptions: ingRes.data || [], unmatchedTotal: unmatchedRes.count || 0 };
+    if (ingRes.error) throw ingRes.error;
+    if (unmatchedRes.error) throw unmatchedRes.error;
+    return { invoices: (invRes.data || []).map(toInvoice), ingredientOptions: ingRes.data || [], unmatchedTotal: unmatchedRes.count || 0, today };
   }, []);
 
   // Invoice list kept between visits: coming back shows it at once while a
@@ -529,8 +534,12 @@ export default function InvoicesPage() {
     clearCachedPages(AFFECTED_BY_INVOICES);
   }, [restaurantId, reloadInvoices]);
 
-  const now = new Date();
-  const monthLabel = now.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const reportToday = invData?.today || null;
+  const monthLabel = reportToday
+    ? new Date(reportToday + "T12:00:00Z").toLocaleDateString("en-US", {
+        month: "long", year: "numeric", timeZone: "UTC",
+      })
+    : "Date unavailable";
   const lastUpload = invoices[0]?.displayIsoDate ? "Last invoice " + invoices[0].date : "";
 
   const initials = (userName || "Chef")
@@ -731,6 +740,7 @@ export default function InvoicesPage() {
       )}
       <InvoicesScreen
         invoices={withDupes}
+        today={reportToday}
         unmatchedTotal={invData?.unmatchedTotal || 0}
         uploadStatus={uploadStatus}
         onDelete={tourMode ? null : handleDelete}
