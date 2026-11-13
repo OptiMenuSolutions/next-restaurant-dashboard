@@ -8,6 +8,18 @@
     },
     "pages/api/ai-recommendations.js": {
       "maxDuration": 60
+    },
+    "pages/api/queues/invoice-delivery-calculations.js": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "invoice-delivery-calculations",
+          "retryAfterSeconds": 600,
+          "maxDeliveries": 5,
+          "maxConcurrency": 3
+        }
+      ]
     }
   },
   "crons": [
@@ -49,7 +61,7 @@
     },
     {
       "path": "/api/cron/activate-invoice-deliveries",
-      "schedule": "*/5 * * * *"
+      "schedule": "15 8 * * *"
     }
   ]
 }
