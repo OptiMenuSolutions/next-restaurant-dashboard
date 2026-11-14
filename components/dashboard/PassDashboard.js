@@ -245,6 +245,7 @@ export default function PassDashboard({
   user = { firstName: "Marco", initials: "MR" },
   dateLabel = "Monday, August 24",
   timeLabel = "4:41 PM",
+  greeting = "Welcome",
   optiScore = { value: 78, max: 100, label: "Good" },
   stats = DEMO_STATS,
   tickets = DEMO_TICKETS,
@@ -294,8 +295,8 @@ export default function PassDashboard({
   const openCalendarDayEntry = useMemo(() => {
     if (openCalendarDay == null || week.viewYear == null || week.viewMonth == null) return null;
     return (monthWeekData || []).find((d) => {
-      const dDate = new Date(d.date + "T12:00:00");
-      return dDate.getFullYear() === week.viewYear && dDate.getMonth() === week.viewMonth && dDate.getDate() === openCalendarDay;
+      const dDate = new Date(d.date + "T00:00:00.000Z");
+      return dDate.getUTCFullYear() === week.viewYear && dDate.getUTCMonth() === week.viewMonth && dDate.getUTCDate() === openCalendarDay;
     }) || null;
   }, [openCalendarDay, monthWeekData, week.viewYear, week.viewMonth]);
 
@@ -785,6 +786,7 @@ export default function PassDashboard({
         user={user}
         dateLabel={dateLabel}
         timeLabel={timeLabel}
+        greeting={greeting}
         optiScore={optiScore}
         buckets={buckets}
         scoreTone={scoreTone}
@@ -939,7 +941,7 @@ export default function PassDashboard({
                   minWidth: 0,
                 }}
               >
-                {(() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; })()}, {user.firstName}.{" "}
+                {greeting}, {user.firstName}.{" "}
                 <span style={{ color: "var(--faint)", fontWeight: 700 }}>
                   {tickets.length
                     ? "Tonight\u2019s pass is set."
@@ -1513,7 +1515,7 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
 /* One scroll, ordered for a pre-service glance: OptiScore and its
    barometers, then tonight's tickets one at a time (Back / Next), then
    waste risk, then the month in review. */
-function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buckets, scoreTone, stats, tickets, ticketsStatus, onRetryTickets, serviceNumber, waste, activeNav, Link, weekView, tourActive }) {
+function MobileView({ restaurantName, user, dateLabel, timeLabel, greeting, optiScore, buckets, scoreTone, stats, tickets, ticketsStatus, onRetryTickets, serviceNumber, waste, activeNav, Link, weekView, tourActive }) {
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [allWaste, setAllWaste] = useState(false);
@@ -1524,8 +1526,6 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, optiScore, buc
   const atStart = i === 0;
   const atEnd = i === n - 1;
 
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   const visibleWaste = allWaste ? waste : waste.slice(0, 4);
 
   const monoK = { fontFamily: MONO, fontSize: "10px", letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)" };

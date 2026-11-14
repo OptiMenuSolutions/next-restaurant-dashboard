@@ -15,6 +15,9 @@ import { fetchSampleData, SAMPLE_AI_RECOMMENDATIONS } from "../../lib/seedSample
 import UniversalSearch from "../../components/UniversalSearch";
 import useSWR from "swr";
 import { useGuardedAccount } from "../../lib/useAccount";
+import { loadRestaurantTimezone, restaurantLocalDate } from "../../lib/restaurantTime";
+import { dashboardClock, dashboardMonth, trailingDashboardWeek } from "../../lib/dashboardCalendar";
+import { eligibleAnalyticsSales } from "../../lib/analyticsReporting";
 
 const EMPTY_DASH = { ingredients: [], menuItems: [], wasteRisk: [], stats: null };
 import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
@@ -61,12 +64,6 @@ function pricedCost(item, trust = false) {
     total += lineCost;
   }
   return total;
-}
-
-/* Monday-first weekday index of the 1st of the given month. */
-function firstWeekdayIndex(date) {
-  const d = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); // 0 = Sun
-  return (d + 6) % 7;
 }
 
 /* Recommendation row -> ticket. Point `recs` at whatever the current page
@@ -170,6 +167,8 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
 // point Week in Review at the sample restaurant's real history during a
 // tour, instead of the signed-in user's own (likely brand-new, empty) one.
 const SAMPLE_RESTAURANT_ID = "00000000-0000-0000-0000-000000000001";
+// Explicit tour fixture setting. Client RLS cannot read the sample restaurant row.
+const SAMPLE_TIMEZONE = "America/New_York";
 
 /* Same detection useTour uses internally — kept independent rather than
    reading it off the hook, so this file's data-loading isn't coupled to the
@@ -193,7 +192,7 @@ function flattenSampleInvoiceItems(sampleInvoices) {
   const out = [];
   for (const inv of sampleInvoices || []) {
     for (const item of inv.invoice_items || []) {
-      out.push({ ...item, invoice_id: inv.id, invoices: { id: inv.id, date: inv.date, restaurant_id: inv.restaurant_id } });
+      out.push({ ...item, invoice_id: inv.id, invoices: { id: inv.id, date: inv.date, delivery_date: inv.delivery_date, restaurant_id: inv.restaurant_id } });
     }
   }
   return out;
@@ -382,30 +381,45 @@ export default function DashboardPage() {
   // silently lingering for the rest of the session.
   const tourActive = isTourQueryActive();
 
-  // Days up to and including signup have no real sales history for this
-  // restaurant. Not applied during the tour, which borrows the sample
-  // restaurant's history.
-  const signupDay = !tourActive && restaurantCreatedAt
-    ? new Date(restaurantCreatedAt).toLocaleDateString("en-CA")
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const refreshClock = () => setNow(new Date());
+    const timer = window.setInterval(refreshClock, 30 * 1000);
+    window.addEventListener("focus", refreshClock);
+    document.addEventListener("visibilitychange", refreshClock);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshClock);
+      document.removeEventListener("visibilitychange", refreshClock);
+    };
+  }, []);
+  const { data: timeZone, error: clockError, mutate: reloadClock } = useSWR(
+    restaurantId ? ["dashboard-clock", restaurantId, tourActive] : null,
+    () => tourActive ? SAMPLE_TIMEZONE : loadRestaurantTimezone(supabase, restaurantId)
+  );
+  const clock = useMemo(() => timeZone && !clockError ? dashboardClock(timeZone, now) : null,
+    [timeZone, clockError, now]);
+  const today = clock?.today || null;
+  const signupDay = !tourActive && today && Number.isFinite(Date.parse(restaurantCreatedAt))
+    ? restaurantLocalDate(timeZone, new Date(restaurantCreatedAt))
     : null;
 
   /* ── data ── kept in the shared cache: a return visit shows the last copy
      at once while a fresh one loads in the background. ── */
   const { data: dashData, error: dashError, mutate: reloadDash } = useSWR(
-    restaurantId ? ["dashboard", restaurantId, tourActive] : null,
+    restaurantId && today ? ["dashboard", restaurantId, tourActive, today] : null,
     async () => {
       if (tourActive) {
         const sample = await fetchSampleData();
         if (sample) {
           const sampleInvoiceItems = flattenSampleInvoiceItems(sample.invoices);
-          const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sample.posSales || [], sample.menuItems || []);
+          const sampleSales = eligibleAnalyticsSales(sample.posSales || [], today);
+          // computeWasteRisk reads calendar fields in the browser's zone.
+          const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sampleSales, sample.menuItems || [], new Date(`${today}T12:00:00`));
           const priced = (sample.menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
           const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
           const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
           const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
-          const ytdSpend = (sample.invoices || [])
-            .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
-            .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
           return {
             ingredients: sample.ingredients || [],
             menuItems: sample.menuItems || [],
@@ -414,23 +428,19 @@ export default function DashboardPage() {
               avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
               lowMargin: margins.filter((m) => m < 50).length,
               expiring: wasteRisk.filter((w) => w.daysLeft <= 3).length,
-              ytdSpend,
               pctAbove50,
               pctBelow25,
               pricedCount: margins.length,
             },
           };
         }
-        // fetchSampleData() failed: fall through to the real data below
-        // rather than leave the tour blank.
+        throw new Error("Could not load tour data. Please try again.");
       }
 
       // Waste risk comes from current_inventory, the same rows Tonight's Dish
       // reads, rebuilt overnight and whenever an invoice is saved or linked.
-      const [{ data: invoices }, { data: ingredients }, { data: menuItems }, wasteRisk] =
+      const [ingredientResult, menuResult, wasteRisk] =
         await Promise.all([
-          // Only used for year-to-date spend: this year's rows, two columns.
-          supabase.from("invoices").select("date, amount").eq("restaurant_id", restaurantId).gte("date", `${new Date().getFullYear()}-01-01`),
           supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
           supabase.from("menu_items")
           .select(`
@@ -456,6 +466,10 @@ export default function DashboardPage() {
             .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
           loadCurrentInventory(supabase, restaurantId),
         ]);
+      if (ingredientResult.error) throw ingredientResult.error;
+      if (menuResult.error) throw menuResult.error;
+      const ingredients = ingredientResult.data;
+      const menuItems = menuResult.data;
       // Only dishes whose every ingredient has an invoice or approved price.
       const margins = (menuItems || [])
         .map((m) => ({ price: Number(m.price) || 0, cost: pricedCost(m) }))
@@ -463,9 +477,6 @@ export default function DashboardPage() {
         .map((m) => ((m.price - m.cost) / m.price) * 100);
       const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
       const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
-      const ytdSpend = (invoices || [])
-        .filter((iv) => String(iv.date || "").slice(0, 4) === String(new Date().getFullYear()))
-        .reduce((s, iv) => s + (Number(iv.amount) || 0), 0);
 
       return {
         ingredients: ingredients || [],
@@ -475,7 +486,6 @@ export default function DashboardPage() {
           avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
           lowMargin: margins.filter((m) => m < 50).length,
           expiring: wasteRisk.length,
-          ytdSpend,
           pctAbove50,
           pctBelow25,
           pricedCount: margins.length,
@@ -485,54 +495,48 @@ export default function DashboardPage() {
   );
   const data = dashData || EMPTY_DASH;
   const noRestaurant = !!account && !restaurantId;
-  const loading = accountLoading || (!!restaurantId && !dashData && !dashError);
+  const loading = accountLoading || (!!restaurantId && !today && !clockError) || (!!restaurantId && !!today && !dashData && !dashError);
   const error =
     accountError ||
+    (clockError ? "Could not load the restaurant clock: " + clockError.message : "") ||
     (noRestaurant ? "Could not determine restaurant access" : "") ||
     (dashError ? "Failed to fetch dashboard data: " + dashError.message : "");
 
-  // Which month the desktop calendar is currently browsing. Defaults to the
-  // current month; useWeekInReview always fetches the trailing 7 days too
-  // (for the "last 7 nights" summary stats), so browsing history doesn't
-  // lose that regardless of what month is in view.
-  const [viewDate, setViewDate] = useState(() => {
-    const d = new Date();
-    return { year: d.getFullYear(), month: d.getMonth() };
-  });
-  const isCurrentMonth = viewDate.year === new Date().getFullYear() && viewDate.month === new Date().getMonth();
-  const monthRangeFrom = new Date(viewDate.year, viewDate.month, 1).toLocaleDateString("en-CA");
-  const monthRangeTo = new Date(viewDate.year, viewDate.month + 1, 0).toLocaleDateString("en-CA");
-
+  // A null choice follows the restaurant's current month across midnight.
+  // Browsed history stays selected; switching restaurant or tour resets it.
+  const [monthChoice, setMonthChoice] = useState(null);
+  const calendarScope = `${restaurantId}:${tourActive}:${timeZone || ""}`;
+  const viewDate = useMemo(() => dashboardMonth(
+    today, monthChoice?.scope === calendarScope ? monthChoice.month : null
+  ), [today, monthChoice, calendarScope]);
+  const isCurrentMonth = viewDate?.isCurrentMonth ?? true;
   const goToPrevMonth = () => {
-    setViewDate((v) => (v.month === 0 ? { year: v.year - 1, month: 11 } : { year: v.year, month: v.month - 1 }));
+    if (!viewDate) return;
+    const { year, month } = viewDate;
+    setMonthChoice({ scope: calendarScope, month: month === 0
+      ? { year: year - 1, month: 11 } : { year, month: month - 1 } });
   };
   const goToNextMonth = () => {
-    if (isCurrentMonth) return; // never browse into the future
-    setViewDate((v) => (v.month === 11 ? { year: v.year + 1, month: 0 } : { year: v.year, month: v.month + 1 }));
+    if (!viewDate || isCurrentMonth) return;
+    const { year, month } = viewDate;
+    const next = month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 };
+    setMonthChoice(dashboardMonth(today, next).isCurrentMonth
+      ? null : { scope: calendarScope, month: next });
   };
 
-  const { weekData, weekExtraSold, weekWasteSaved, hitRate, loading: weekLoading } =
+  const { weekData, weekExtraSold, weekWasteSaved, hitRate, error: weekError, reloadWeek } =
     useWeekInReview(
       tourActive ? SAMPLE_RESTAURANT_ID : restaurantId,
       data.wasteRisk,
       data.menuItems,
-      monthRangeFrom,
-      monthRangeTo
+      viewDate?.from,
+      viewDate?.to,
+      today
     );
 
-  // Mobile's Week tab has no month-browsing UI — it always means "the last
-  // 7 nights," regardless of what month desktop is currently viewing. Once
-  // a month range is requested, `weekData` contains the union of that month
-  // and the trailing 7 days, so mobile needs its own filtered slice rather
-  // than reading the same array desktop's calendar uses.
-  const last7WeekData = useMemo(() => {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 6);
-    const start = cutoff.toLocaleDateString("en-CA"); // local date, so evenings don't drop the oldest night
-    return (weekData || [])
-      .filter((d) => d.date >= start)
-      .map((d) => (signupDay && d.date <= signupDay ? { ...d, extraSold: null } : d));
-  }, [weekData, signupDay]);
+  const last7WeekData = useMemo(() => trailingDashboardWeek(weekData || [], today)
+    .map((d) => (signupDay && d.date <= signupDay ? { ...d, extraSold: null } : d)),
+  [weekData, today, signupDay]);
 
   /* ── tonight's recommendations ── kept between visits; rechecked at most
      every 5 minutes ── */
@@ -680,20 +684,19 @@ export default function DashboardPage() {
     }
   }
 
-  const now = new Date();
-
   // Calendar cells + "top performer" are scoped to the browsed month
   // (viewDate), not always "now" — so navigating months actually changes
   // what's shown instead of just changing a label. Days outside the
   // browsed month are filtered out even though `weekData` may also contain
   // the trailing-7-day union (which can spill into an adjacent month).
   const week = useMemo(() => {
+    if (!viewDate) return { month: "", stats: [], top: { name: "—" }, days: {} };
     const days = {};
     let top = null;
     (weekData || []).forEach((d) => {
-      const dDate = new Date(d.date + "T12:00:00");
-      if (dDate.getFullYear() !== viewDate.year || dDate.getMonth() !== viewDate.month) return;
-      const day = dDate.getDate();
+      const dDate = new Date(d.date + "T00:00:00.000Z");
+      if (dDate.getUTCFullYear() !== viewDate.year || dDate.getUTCMonth() !== viewDate.month) return;
+      const day = dDate.getUTCDate();
       days[day] = d.extraSold; // null = no sales for that night yet, shown as a dash
       (d.dishes || []).forEach((dish) => {
         if (dish.diff !== null && dish.diff !== undefined && (!top || dish.diff > top.delta)) {
@@ -702,27 +705,26 @@ export default function DashboardPage() {
       });
     });
     if (signupDay) {
-      const dim = new Date(viewDate.year, viewDate.month + 1, 0).getDate();
+      const dim = viewDate.daysInMonth;
       for (let dd = 1; dd <= dim; dd++) {
         const iso = `${viewDate.year}-${String(viewDate.month + 1).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
         if (iso <= signupDay) days[dd] = null;
       }
     }
-    const viewMonthDate = new Date(viewDate.year, viewDate.month, 1);
     return {
       month: MONTHS[viewDate.month] + " " + viewDate.year,
       viewYear: viewDate.year,
       viewMonth: viewDate.month,
       stats: [
-        { label: "Extra sold", sub: "7 NIGHTS", value: (weekExtraSold >= 0 ? "+" : "") + (weekExtraSold || 0), tone: (weekExtraSold || 0) >= 0 ? "green" : "muted" },
-        { label: "Waste saved", sub: "EST. 7 NIGHTS", value: money(weekWasteSaved), tone: "green" },
-        { label: "Hit rate", sub: "ABOVE AVG", value: Math.round((hitRate || 0) * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
+        { label: "Extra sold", sub: "7 NIGHTS", value: weekExtraSold == null ? "—" : (weekExtraSold >= 0 ? "+" : "") + weekExtraSold, tone: (weekExtraSold || 0) >= 0 ? "green" : "muted" },
+        { label: "Waste saved", sub: "EST. 7 NIGHTS", value: weekWasteSaved == null ? "—" : money(weekWasteSaved), tone: "green" },
+        { label: "Hit rate", sub: "ABOVE AVG", value: hitRate == null ? "—" : Math.round(hitRate * (hitRate <= 1 ? 100 : 1)) + "%", tone: "accent" },
       ],
       top: top ? { name: top.name, date: top.date, delta: (top.delta > 0 ? "+" : "") + (Math.round(top.delta * 10) / 10) } : { name: "—", date: "", delta: "0" },
       days,
-      firstWeekdayIndex: firstWeekdayIndex(viewMonthDate),
-      daysInMonth: new Date(viewDate.year, viewDate.month + 1, 0).getDate(),
-      todayDay: isCurrentMonth ? now.getDate() : null,
+      firstWeekdayIndex: viewDate.firstWeekdayIndex,
+      daysInMonth: viewDate.daysInMonth,
+      todayDay: viewDate.todayDay,
     };
   }, [weekData, weekExtraSold, weekWasteSaved, hitRate, viewDate, isCurrentMonth, signupDay]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -872,16 +874,17 @@ export default function DashboardPage() {
 
       <PassDashboard
         loading={loading}
-        error={error || null}
-        onRetry={() => { reloadDash(); reloadRecs(); reloadResolution(); }}
+        error={error || (weekError ? "Failed to fetch calendar data: " + weekError.message : "") || null}
+        onRetry={() => { reloadClock(); reloadDash(); reloadWeek(); reloadRecs(); reloadResolution(); }}
         activeNav="dashboard"
         NavLink={({ href, children, style, className }) => (
           <Link href={href} style={style} className={className}>{children}</Link>
         )}
         restaurantName={restaurantName}
         user={{ firstName, initials }}
-        dateLabel={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-        timeLabel={now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+        dateLabel={clock?.dateLabel || ""}
+        timeLabel={clock?.timeLabel || ""}
+        greeting={clock?.greeting || "Welcome"}
         optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label, buckets: optiScoreDetail.buckets || [] }}
         stats={stats}
         tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive)}
