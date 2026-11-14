@@ -12,10 +12,11 @@
 // POST { action: 'approve-bulk', ingredientIds } approves each at its AI guess, as one batch
 // POST { action: 'set-state', restaurantId, state }
 
-import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID, etDate } from '../../../lib/admin/requireAdmin';
+import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID } from '../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../lib/admin/withAdminAuth';
 import { fetchAll } from '../../../lib/admin/fetchAll';
 import { recomputeMenuCosts } from '../../../lib/recomputeMenuCosts';
+import { isCostReviewReference, isCostApprovalToday, loadCostReviewHistory } from '../../../lib/admin/costReviewHistory';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 const $ = (n) => `$${Number(n).toFixed(2)}`;
@@ -30,14 +31,20 @@ function volatility(values) {
 }
 
 async function load() {
-  const today = etDate();
-  const since = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
-  const [{ data: rest }, ingredients, dishes, { data: globals }] = await Promise.all([
-    db.from('restaurants').select('id, name, state, shipping_state, deactivated_at'),
-    fetchAll(() => db.from('ingredients').select('id, restaurant_id, name, unit, last_price, last_ordered_at, is_estimated, price_approved_at, price_skipped_at, ai_estimate').order('id')),
+  const now = new Date();
+  const [restaurantResult, ingredients, dishes, globalResult] = await Promise.all([
+    db.from('restaurants').select('id, name, state, shipping_state, deactivated_at, operational_timezone'),
+    fetchAll(() => db.from('ingredients').select('id, restaurant_id, name, unit, last_price, last_ordered_at, is_estimated, price_status, price_approved_at, price_skipped_at, ai_estimate').order('id')),
     fetchAll(() => db.from('component_ingredients').select('id, ingredient_id, menu_item_components!inner(menu_item_id, menu_items!inner(archived_at))').order('id')),
     db.from('global_ingredients').select('name, aliases, reference_price, reference_unit'),
   ]);
+  if (restaurantResult.error) throw restaurantResult.error;
+  if (globalResult.error) throw globalResult.error;
+  const rest = restaurantResult.data;
+  const globals = globalResult.data;
+  if (!Array.isArray(rest) || !Array.isArray(globals)) {
+    throw new Error('Could not load cost-review reference data.');
+  }
   // State comes from the shipping address; the admin-set state is only a fallback.
   const restById = new Map((rest || []).map((r) => [r.id, { ...r, state: String(r.shipping_state || r.state || '').trim().toUpperCase() || null }]));
   const real = (rid) => rid !== TOUR_RESTAURANT_ID && restById.get(rid) && !restById.get(rid).deactivated_at;
@@ -63,25 +70,16 @@ async function load() {
   // Invoice-priced ingredients by name, across restaurants.
   const pricedByName = new Map();
   for (const g of ingredients) {
-    if (g.is_estimated !== false || !(Number(g.last_price) > 0) || !real(g.restaurant_id)) continue;
+    if (!real(g.restaurant_id) || !isCostReviewReference(g, restById.get(g.restaurant_id), now)) continue;
     const k = norm(g.name);
     if (!pricedByName.has(k)) pricedByName.set(k, []);
     pricedByName.get(k).push(g);
   }
 
-  // Price history for those, from their invoice lines (last 180 days).
-  const pricedIds = [...pricedByName.values()].flat().map((g) => g.id);
-  const history = new Map();
-  for (let i = 0; i < pricedIds.length; i += 300) {
-    const chunk = pricedIds.slice(i, i + 300);
-    const rows = await fetchAll(() => db.from('invoice_items').select('id, ingredient_id, unit, unit_cost, invoices!inner(date)').in('ingredient_id', chunk).gte('invoices.date', since).order('id'));
-    for (const r of rows) {
-      if (!(Number(r.unit_cost) > 0)) continue;
-      const key = `${r.ingredient_id}|${r.unit || ''}`;
-      if (!history.has(key)) history.set(key, []);
-      history.get(key).push(Number(r.unit_cost));
-    }
-  }
+  // Compare verified prices per ingredient unit, using delivered purchases only.
+  const history = await loadCostReviewHistory(
+    db, [...pricedByName.values()].flat(), rest, { now }
+  );
   const moveFor = (name) => {
     let best = null;
     for (const g of pricedByName.get(norm(name)) || []) {
@@ -110,7 +108,7 @@ async function load() {
     const guess = Number(g.last_price) > 0 ? Number(g.last_price) : null;
     const why = [`AI estimate from reading the ${r?.name || ''} menu.`];
     if (ref) why.push(`Library reference is ${$(ref.price)}${ref.unit ? '/' + ref.unit : ''}.`);
-    if (lastPaid) why.push(`${restById.get(lastPaid.restaurant_id)?.name || 'Another restaurant'} paid ${$(lastPaid.last_price)}/${lastPaid.unit} on an invoice${lastPaid.last_ordered_at ? ' dated ' + lastPaid.last_ordered_at : ''}.`);
+    if (lastPaid) why.push(`${restById.get(lastPaid.restaurant_id)?.name || 'Another restaurant'} has an invoice price of ${$(lastPaid.last_price)}/${lastPaid.unit}${lastPaid.last_ordered_at ? ' effective ' + lastPaid.last_ordered_at : ''}.`);
     if (!ref && !lastPaid) why.push('Nothing to check it against yet.');
     const compare = lastPaid && lastPaid.unit === g.unit ? Number(lastPaid.last_price) : ref && ref.unit === g.unit ? ref.price : null;
     const warn = guess && compare && Math.abs(guess - compare) / compare >= 0.4 ? `${guess > compare ? '+' : ''}${Math.round(((guess - compare) / compare) * 100)}% vs ${lastPaid && lastPaid.unit === g.unit ? 'what was paid' : 'library'}` : null;
@@ -131,11 +129,10 @@ async function load() {
   };
 
   const pending = pendingAll.map(row).sort((a, b) => a.restaurant.localeCompare(b.restaurant) || b.dishes - a.dishes || a.name.localeCompare(b.name));
-  const startET = new Date(`${today}T00:00:00-05:00`).toISOString();
   // Grouped by click: a shared price or a bulk approval is one row.
   const batches = new Map();
   for (const g of ingredients) {
-    if (!(g.price_approved_at && g.price_approved_at >= startET && g.is_estimated !== false && real(g.restaurant_id))) continue;
+    if (!(isCostApprovalToday(g.price_approved_at, now) && g.is_estimated !== false && real(g.restaurant_id))) continue;
     if (!batches.has(g.price_approved_at)) batches.set(g.price_approved_at, []);
     batches.get(g.price_approved_at).push(g);
   }
