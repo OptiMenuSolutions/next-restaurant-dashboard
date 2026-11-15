@@ -127,6 +127,10 @@ export function createUpdateDeliveryDateHandler({
 
       if (error) {
         const messages = {
+          PT409: [
+            409,
+            'This invoice changed. Reload it before saving the date.',
+          ],
           '40001': [
             409,
             'This invoice changed. Reload it before saving the date.',

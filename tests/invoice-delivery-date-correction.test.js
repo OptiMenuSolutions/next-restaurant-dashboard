@@ -217,6 +217,7 @@ test(
   'database stale-date and ownership failures remain explicit errors',
   async () => {
     for (const [code, expected] of [
+      ['PT409', 409],
       ['40001', 409],
       ['42501', 403],
       ['P0002', 404],
