@@ -248,13 +248,15 @@ function RestaurantsPage() {
                     {r.lastDish && <span style={{ fontFamily: MONO, fontSize: 11, color: 'var(--muted)' }}>{shortDate(r.lastDish.date)}</span>}
                   </td>
                   <td style={td}>
-                    {r.tags.length ? (
+                    {r.reportingError ? (
+                      <span title={r.reportingError} style={{ color: 'var(--amber)', fontSize: 12 }}>Date unavailable</span>
+                    ) : r.tags.length ? (
                       <>
-                        <div aria-label={`${r.views[6]} views yesterday, ${week} in 7 days`} style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 22 }}>
+                        <div aria-label={`${r.views[6]} views today, ${week} in 7 days`} style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 22 }}>
                           {r.views.map((n, i) => <span key={i} style={{ width: 6, borderRadius: 1, height: Math.max(2, (n / peak) * 22), background: i === 6 ? 'var(--accent)' : 'var(--line)' }} />)}
                           <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, marginLeft: 6 }}>{r.views[6]}</span>
                         </div>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>yesterday · {week} this week</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>today · {week} in 7 days</span>
                       </>
                     ) : (
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>No tags yet</span>
@@ -262,8 +264,8 @@ function RestaurantsPage() {
                   </td>
                   <td style={{ ...td, color: 'var(--muted)' }}>{planText(r.subscription_status)}</td>
                   <td style={{ ...td, paddingRight: 18, textAlign: 'right' }}>
-                    <span style={{ fontFamily: MONO, fontWeight: 600 }}>{r.sales.rows ? money(r.sales.total, 0) : '—'}</span>
-                    <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{r.sales.rows ? `${Math.round(r.sales.items).toLocaleString()} items sold` : r.conn ? 'No sales last month' : 'No POS connected'}</span>
+                    <span style={{ fontFamily: MONO, fontWeight: 600 }}>{r.reportingError ? '—' : r.sales.rows ? money(r.sales.total, 0) : '—'}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{r.reportingError || `${r.sales.month} · ${r.sales.rows ? `${Math.round(r.sales.items).toLocaleString()} items sold` : r.conn ? 'No sales' : 'No POS connected'}`}</span>
                   </td>
                 </tr>
               );
@@ -284,6 +286,7 @@ function RestaurantsPage() {
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {[r.town, r.owner?.name].filter(Boolean).join(' · ') || '—'}
+                  {r.reportingError && <span style={{ display: 'block', color: 'var(--amber)', marginTop: 3 }}>{r.reportingError}</span>}
                 </div>
 
                 <div style={{
@@ -336,7 +339,7 @@ function RestaurantsPage() {
         )}
       </section>
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--muted)' }}>
-        Health reflects account status and operational checks. Data Readiness measures menu, recipe, ingredient pricing, and POS data availability. Setup bars, in order: menu parsed · first invoice · POS connected · tags placed · scanner added. Staff page views count every tag tap. Their sales come from the restaurant’s POS for last month.
+        Health reflects account status and operational checks. Data Readiness measures menu, recipe, ingredient pricing, and POS data availability. Setup bars, in order: menu parsed · first invoice · POS connected · tags placed · scanner added. Staff page views count every tag tap over seven days including today. View dates and last month’s POS sales follow each restaurant’s configured time zone.
       </p>
     </>
   );

@@ -359,7 +359,7 @@ function Thread({ id, replies, onChanged }) {
               ['POS', r.pos],
               ['Last invoice', shortDate(r.lastInvoice)],
               ['Tonight’s Dish', r.lastDish ? shortDate(r.lastDish.date) : 'Not running'],
-              ['Staff page', `${r.views} views this week`],
+              ['Staff page', r.reportingError ? 'Date unavailable' : `${r.views} views in 7 days`],
               ['Plan', r.plan ? r.plan.replace(/_/g, ' ') : 'No plan'],
             ].map(([k, v]) => (
               <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5, borderTop: '1px solid var(--line-soft)', paddingTop: 6 }}>

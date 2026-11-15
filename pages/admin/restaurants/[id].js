@@ -523,7 +523,7 @@ function Overview({
     ['LAST INVOICE', ago(r.lastInvoice), `${r.invoiceCount} in all · ${r.unreviewedCount} to check`],
     ['POS', r.conn ? (r.conn.status === 'connected' ? `Synced ${ago(r.conn.last_synced_at).toLowerCase()}` : r.conn.status) : 'Not connected', r.conn?.last_error || (r.conn ? r.conn.provider : 'No POS yet')],
     ['TONIGHT’S DISH', r.hasDishToday ? 'Ran today' : r.lastDish ? `Last ${shortDate(r.lastDish.date)}` : 'Not running', r.lastDish?.title || ''],
-    ['STAFF PAGE', `${week} views`, `last 7 days · ${r.views[6]} yesterday`],
+    ['STAFF PAGE', r.reportingError ? '—' : `${week} views`, r.reportingError || `last 7 days · ${r.views[6]} today`],
     ['MENU', `${r.menuCount} items`, 'Active on their menu'],
   ];
 

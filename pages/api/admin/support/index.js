@@ -34,7 +34,8 @@ export default async function handler(req, res) {
           id: f.id, name: f.name, town: f.town, status: f.status, health: f.health,
           plan: f.subscription_status, lastInvoice: f.lastInvoice, setupDone: f.setupDone, nextStep: f.nextStep,
           pos: f.conn ? `${f.conn.provider || 'POS'} · ${f.conn.status}` : 'Not connected',
-          lastDish: f.lastDish, views: f.views.reduce((a, b) => a + b, 0),
+          lastDish: f.lastDish, views: f.reportingError ? null : f.views.reduce((a, b) => a + b, 0),
+          reportingError: f.reportingError,
         },
       });
     }
