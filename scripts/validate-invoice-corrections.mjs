@@ -92,6 +92,13 @@ async function cleanup(expectedName = fixtureName) {
     if (restaurantId) assert.equal(rid, restaurantId);
     assert.equal(profile?.restaurant_id, rid);
 
+    checked(await db.from('invoice_match_rejections').delete()
+      .eq('restaurant_id', rid).eq('reason', expectedName)
+      .eq('rejected_by', ownerId));
+    checked(await db.from('invoice_match_decision_audit').delete()
+      .eq('restaurant_id', rid).eq('reason', expectedName)
+      .eq('admin_id', ownerId));
+
     // Use the existing account-purge transaction; audit DELETE stays restricted.
     checked(await db.rpc('purge_restaurant', { target: rid }));
 
@@ -411,6 +418,17 @@ try {
   assert.equal(checked(await db.from('notification_email_outbox').select('id')
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
+
+  if (process.argv.includes('--deletions')) {
+    const { validateInvoiceDeletions } =
+      await import('./validate-invoice-deletions.mjs');
+    await validateInvoiceDeletions({
+      db, restaurantId, ownerId, fixtureName, cedarId: CEDAR_ID,
+      ingredientId, dishId, invoiceIds, today, printedDate, future,
+      baseline, incoming, late, saveInvoice, processJobs,
+      expectState, job, audits, pass,
+    });
+  }
 } catch (error) {
   failure = error;
 } finally {
