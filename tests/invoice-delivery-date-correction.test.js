@@ -11,6 +11,8 @@ const UID = '9fb236c6-f282-480d-977e-b8ea00958b26';
 
 function fixture(options = {}) {
   const calls = [];
+  const workers = [];
+  const background = [];
 
   const req = {
     method: 'POST',
@@ -74,9 +76,18 @@ function fixture(options = {}) {
       };
     },
     isEnabled: () => options.enabled !== false,
+    processCalculations: async (database, restaurantId) => {
+      workers.push({ database, restaurantId });
+      if (options.workerError) throw new Error('Synthetic worker failure');
+      return { skipped: false, errors: [] };
+    },
+    schedule: work => {
+      background.push(work);
+      if (options.scheduleError) throw new Error('Synthetic scheduler failure');
+    },
   });
 
-  return { req, res, calls, handler };
+  return { req, res, calls, workers, background, handler };
 }
 
 test(
@@ -300,3 +311,48 @@ test(
     assert.equal(malformed.calls.length, 0);
   }
 );
+
+test('a queued correction starts one immediate calculation attempt', async () => {
+  const f = fixture();
+  await f.handler(f.req, f.res);
+  await Promise.all(f.background);
+  assert.equal(f.res.statusCode, 200);
+  assert.equal(f.background.length, 1);
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.workers[0].restaurantId, RID);
+  assert.equal(f.workers[0].database.rpc instanceof Function, true);
+  assert.equal(f.calls.length, 1);
+});
+
+test('disabled, rejected, locked, and no-op requests start no worker', async () => {
+  const unchanged = { success: true, changed: false, calculations_queued: false,
+    invoice: { id: IID, restaurant_id: RID, date: '2026-11-09', delivery_date: '2026-11-11' } };
+  for (const options of [{ enabled: false }, { rpcError: { code: 'PT409' } },
+    { matching: false }, { result: unchanged }, { result: { success: true } }]) {
+    const f = fixture(options);
+    await f.handler(f.req, f.res);
+    await Promise.all(f.background);
+    assert.equal(f.background.length, 0);
+    assert.equal(f.workers.length, 0);
+  }
+});
+
+test('worker failure does not turn a saved correction into a failed save', async () => {
+  const f = fixture({ workerError: true });
+  await f.handler(f.req, f.res);
+  await Promise.all(f.background);
+  assert.equal(f.res.statusCode, 200);
+  assert.equal(f.res.body.success, true);
+  assert.equal(f.res.body.calculations_queued, true);
+  assert.equal(f.calls.length, 1);
+});
+
+test('scheduler failure preserves the saved correction and durable queue request', async () => {
+  const f = fixture({ scheduleError: true });
+  await f.handler(f.req, f.res);
+  await Promise.all(f.background);
+  assert.equal(f.res.statusCode, 200);
+  assert.equal(f.res.body.success, true);
+  assert.equal(f.calls[0].args.p_queue_calculations, true);
+  assert.equal(f.calls.length, 1);
+});

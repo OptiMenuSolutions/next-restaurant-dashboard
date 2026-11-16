@@ -1,3 +1,7 @@
+import { waitUntil } from '@vercel/functions';
+
+export const config = { maxDuration: 300 };
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function validDate(value) {
@@ -23,6 +27,12 @@ export function createUpdateDeliveryDateHandler({
   },
   isEnabled = () =>
     process.env.INVOICE_DELIVERY_DATE_CORRECTIONS_ENABLED === 'true',
+  processCalculations = async (database, restaurantId) => {
+    const { processInvoiceCalculations } =
+      await import('../../../lib/admin/processInvoiceCalculations');
+    return processInvoiceCalculations(database, restaurantId);
+  },
+  schedule = waitUntil,
 } = {}) {
   return async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -159,6 +169,20 @@ export function createUpdateDeliveryDateHandler({
         typeof result.calculations_queued !== 'boolean'
       ) {
         throw new Error('Unexpected delivery-date correction result.');
+      }
+
+      if (result.calculations_queued) {
+        try {
+          const work = Promise.resolve()
+            .then(() => processCalculations(database, body.restaurant_id))
+            .catch(error => {
+              console.error('[update-delivery-date calculations]', error.message);
+            });
+          schedule(work);
+        } catch (error) {
+          // The correction and durable job are already committed.
+          console.error('[update-delivery-date scheduling]', error.message);
+        }
       }
 
       return res.status(200).json(result);

@@ -316,6 +316,11 @@ try {
     });
   }
 
+  if (process.argv.includes('--delivery-date-activation')) {
+    const { prepareDeliveryDateActivation } = await import('./validate-delivery-date-activation.mjs');
+    await prepareDeliveryDateActivation({ db, restaurantId, ownerId, fixtureName, today });
+  }
+
   const baseline = await saveInvoice(older, older, 6.40);
   assert.deepEqual((await processJobs()).errors, []);
   await expectState(0.20, 0.40, [baseline]);
@@ -418,6 +423,14 @@ try {
   assert.equal(checked(await db.from('notification_email_outbox').select('id')
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
+
+  if (process.argv.includes('--delivery-date-activation')) {
+    const { validateDeliveryDateActivation } = await import('./validate-delivery-date-activation.mjs');
+    await validateDeliveryDateActivation({
+      db, restaurantId, ownerId, cedarId: CEDAR_ID, today, future,
+      baseline, incoming, late, processJobs, expectState, job, audits, pass,
+    });
+  }
 
   if (process.argv.includes('--mark-reviewed')) {
     const { validateInvoiceReview } = await import('./validate-invoice-review.mjs');
