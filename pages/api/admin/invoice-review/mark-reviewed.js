@@ -9,38 +9,59 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-export default withAdminAuth(async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).end();
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-  const { invoice_id } = req.body;
-  if (!invoice_id) return res.status(400).json({ error: 'invoice_id required' });
+export function createMarkInvoiceReviewedHandler({ db = supabase } = {}) {
+  return async function handler(req, res, session) {
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      return res.status(405).end();
+    }
+    if (session?.profile?.role !== 'admin' || !UUID.test(session?.user?.id || '')) {
+      return res.status(403).json({ error: 'Administrator authorization required.' });
+    }
 
-  try {
-    const now = new Date().toISOString();
+    let body;
+    try { body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body; }
+    catch { return res.status(400).json({ error: 'A valid invoice_id is required.' }); }
+    if (!body || Array.isArray(body) || typeof body !== 'object' ||
+      Object.keys(body).some(key => key !== 'invoice_id') ||
+      typeof body.invoice_id !== 'string' || !UUID.test(body.invoice_id)) {
+      return res.status(400).json({ error: 'A valid invoice_id is required.' });
+    }
 
-    const [{ error: invErr }, { error: itemsErr }] = await Promise.all([
-      supabase
-        .from('invoices')
-        .update({
-          reviewed:    true,
-          reviewed_at: now,
-          reviewed_by: adminUser.id,
-        })
-        .eq('id', invoice_id),
+    try {
+      const { data: invoice, error: lookupError } = await db.from('invoices')
+        .select('id,restaurant_id').eq('id', body.invoice_id).maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!invoice) return res.status(404).json({ error: 'Invoice not found.' });
+      if (invoice.id !== body.invoice_id || !UUID.test(invoice.restaurant_id || '')) {
+        throw new Error('Invalid invoice ownership record.');
+      }
+      const { data: result, error } = await db.rpc('mark_invoice_reviewed_transactional', {
+        p_restaurant_id: invoice.restaurant_id,
+        p_invoice_id: invoice.id,
+        p_admin_id: session.user.id,
+      });
+      if (error) {
+        if (error.code === '42501') return res.status(403).json({ error: 'Administrator authorization required.' });
+        if (error.code === 'P0002') return res.status(404).json({ error: 'Invoice not found.' });
+        throw error;
+      }
+      if (result?.success !== true || result.invoice_id !== invoice.id ||
+        result.restaurant_id !== invoice.restaurant_id || result.reviewed !== true ||
+        !UUID.test(result.reviewed_by || '') || typeof result.reviewed_at !== 'string' ||
+        !Number.isFinite(Date.parse(result.reviewed_at)) ||
+        !Number.isInteger(result.reviewed_lines) || result.reviewed_lines < 0 ||
+        typeof result.changed !== 'boolean') {
+        throw new Error('Unexpected invoice review result.');
+      }
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error('[invoice-review mark-reviewed]', error.message);
+      return res.status(500).json({ error: 'Could not mark the invoice as reviewed.' });
+    }
+  };
+}
 
-      supabase
-        .from('invoice_items')
-        .update({ reviewed: true })
-        .eq('invoice_id', invoice_id),
-    ]);
-
-    if (invErr)    throw invErr;
-    if (itemsErr)  throw itemsErr;
-
-    return res.status(200).json({ success: true });
-
-  } catch (err) {
-    console.error('[invoice-review mark-reviewed]', err);
-    return res.status(500).json({ error: err.message });
-  }
-});
+export default withAdminAuth(createMarkInvoiceReviewedHandler());
