@@ -419,6 +419,15 @@ try {
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
 
+  if (process.argv.includes('--admin-save')) {
+    const { validateAdminInvoiceSave } =
+      await import('./validate-admin-invoice-save.mjs');
+    await validateAdminInvoiceSave({
+      db, restaurantId, ownerId, fixtureName, cedarId: CEDAR_ID,
+      today, printedDate, baseline, incoming, late, processJobs, expectState, job, pass,
+    });
+  }
+
   if (process.argv.includes('--evidence-integrity')) {
     const { validateInvoiceEvidenceIntegrity } =
       await import('./validate-invoice-evidence-integrity.mjs');
