@@ -419,6 +419,15 @@ try {
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
 
+  if (process.argv.includes('--correction-queue')) {
+    const { validateInvoiceCorrectionQueue } =
+      await import('./validate-invoice-correction-queue.mjs');
+    await validateInvoiceCorrectionQueue({
+      db, restaurantId, ownerId, fixtureName, cedarId: CEDAR_ID,
+      ingredientId, invoiceIds, baseline, incoming, late, expectState, pass,
+    });
+  }
+
   if (process.argv.includes('--historical-concurrency')) {
     const { validateHistoricalMatchConcurrency } =
       await import('./validate-historical-match-concurrency.mjs');
