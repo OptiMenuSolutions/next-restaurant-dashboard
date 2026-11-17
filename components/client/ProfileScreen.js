@@ -481,17 +481,31 @@ export default function ProfileScreen({
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px" }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>
-                    {posConnection?.status === "connected" ? "Shift4 connected" : posConnection?.status === "error" ? "Shift4 sync problem" : "Shift4 / SkyTab"}
+                    {posConnection?.status === "disconnecting"
+                      ? "Shift4 disconnect pending"
+                      : posConnection?.status === "connected"
+                        ? "Shift4 connected"
+                        : posConnection?.status === "error"
+                          ? "Shift4 sync problem"
+                          : "Shift4 / SkyTab"}
                   </div>
                   <div style={{ fontSize: 12, color: posConnection?.status === "error" ? "var(--red)" : "var(--faint)", marginTop: 2, lineHeight: 1.5 }}>
-                    {posConnection?.status === "connected"
-                      ? (posConnection.lastSyncedAt ? `Last synced ${new Date(posConnection.lastSyncedAt).toLocaleString()}` : "First sync runs tonight.")
-                      : posConnection?.status === "error"
-                        ? "Your last sync failed. Reconnect Shift4 to resume syncing."
-                        : "Connect your Shift4 POS to sync sales automatically every night."}
+                    {posConnection?.status === "disconnecting"
+                      ? "Sales syncing is paused. Retry Disconnect to finish removing the connection."
+                      : posConnection?.status === "installing"
+                        ? "Setup needs to finish. Select Continue setup to retry your location."
+                        : posConnection?.status === "connected"
+                          ? (
+                              posConnection.lastSyncedAt
+                                ? `Last synced ${new Date(posConnection.lastSyncedAt).toLocaleString()}`
+                                : "First sync runs tonight."
+                            )
+                          : posConnection?.status === "error"
+                            ? "Your last sync failed. Reconnect Shift4 to resume syncing."
+                            : "Connect your Shift4 POS to sync sales automatically every night."}
                   </div>
                 </div>
-                {posConnection?.status === "connected" ? (
+                {["connected", "disconnecting"].includes(posConnection?.status) ? (
                   <button
                     type="button" disabled={posBusy} style={{ ...cancelBtn, opacity: posBusy ? 0.6 : 1 }}
                     onClick={async () => {
@@ -502,7 +516,11 @@ export default function ProfileScreen({
                       finally { setPosBusy(false); }
                     }}
                   >
-                    {posBusy ? "Disconnecting…" : "Disconnect"}
+                    {posBusy
+                      ? "Disconnecting…"
+                      : posConnection?.status === "disconnecting"
+                        ? "Retry Disconnect"
+                        : "Disconnect"}
                   </button>
                 ) : (
                   <button
@@ -513,7 +531,13 @@ export default function ProfileScreen({
                       catch (e) { flash(e?.message || "Could not start the Shift4 connection", true); setPosBusy(false); }
                     }}
                   >
-                    {posBusy ? "Opening Shift4…" : posConnection?.status === "error" ? "Reconnect" : "Connect"}
+                    {posBusy
+                      ? "Opening Shift4…"
+                      : posConnection?.status === "installing"
+                        ? "Continue setup"
+                        : posConnection?.status === "error"
+                          ? "Reconnect"
+                          : "Connect"}
                   </button>
                 )}
               </div>

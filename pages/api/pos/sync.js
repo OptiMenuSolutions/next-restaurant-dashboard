@@ -14,6 +14,10 @@
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { saveTickets } from '../../../lib/pos/saveTickets';
+import {
+  saveShift4Sync,
+  updateShift4Connection,
+} from '../../../lib/pos/shift4-state';
 
 export const config = { maxDuration: 300 };
 
@@ -69,23 +73,57 @@ export default async function handler(req, res) {
   const provider = getProvider(conn.provider);
   const range = reqFrom && reqTo ? { from: reqFrom, to: reqTo } : defaultRange();
 
+  const validDate = (s) =>
+    typeof s === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+    !Number.isNaN(Date.parse(s)) &&
+    new Date(s).toISOString().slice(0, 10) === s;
+
+  if (
+    !validDate(range.from) ||
+    !validDate(range.to) ||
+    range.from > range.to
+  ) {
+    return res.status(400).json({
+      error: 'Use a valid from/to date range in YYYY-MM-DD format',
+    });
+  }
+
+  const startedAt = new Date().toISOString();
+
   try {
-    // ── Refresh the access token if it is an OAuth provider and near expiry ─────
     let connection = conn;
-    if (provider.authType === 'oauth2' && conn.expires_at) {
+
+    // Shift4 sales use HMAC. Its dedicated refresh job owns OAuth renewal.
+    if (
+      provider.authType === 'oauth2' &&
+      conn.provider !== 'shift4' &&
+      conn.expires_at
+    ) {
       const soon = new Date(Date.now() + 5 * 60 * 1000);
+
       if (new Date(conn.expires_at) < soon) {
         const refreshed = await provider.refresh(conn);
+
         if (refreshed) {
-          await supabase
+          const { error: tokenSaveError } = await supabase
             .from('pos_connections')
             .update({
               access_token: refreshed.accessToken,
+              refresh_token: refreshed.refreshToken || conn.refresh_token,
               expires_at: refreshed.expiresAt,
               updated_at: new Date().toISOString(),
             })
             .eq('id', conn.id);
-          connection = { ...conn, access_token: refreshed.accessToken, expires_at: refreshed.expiresAt };
+
+          if (tokenSaveError) throw new Error(tokenSaveError.message);
+
+          connection = {
+            ...conn,
+            access_token: refreshed.accessToken,
+            refresh_token: refreshed.refreshToken || conn.refresh_token,
+            expires_at: refreshed.expiresAt,
+          };
         }
       }
     }
@@ -99,6 +137,30 @@ export default async function handler(req, res) {
       tickets = result.tickets;
     } else {
       records = await provider.fetchSales(connection, range);
+    }
+
+    if (conn.provider === 'shift4') {
+      const saved = await saveShift4Sync(
+        supabase,
+        conn,
+        range,
+        { sales: records, tickets },
+        startedAt
+      );
+
+      if (!saved.saved) {
+        return res.status(409).json({
+          error: 'The connection changed or a newer sync completed. Reload and try again.',
+        });
+      }
+
+      return res.status(200).json({
+        synced: records.length,
+        tickets: saved.tickets,
+        lines: saved.lines,
+        from: range.from,
+        to: range.to,
+      });
     }
 
     // ── Idempotent replace of this provider's API rows in the range ────────────
@@ -153,11 +215,36 @@ export default async function handler(req, res) {
     return res.status(200).json({ synced: records.length, ...ticketCounts, from: range.from, to: range.to });
 
   } catch (err) {
-    console.error(`[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`, err.message);
+    console.error(
+      `[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`,
+      err.message
+    );
+
+    if (conn.provider === 'shift4') {
+      try {
+        await updateShift4Connection(supabase, conn, {
+          last_error: err.message,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (saveError) {
+        console.error(
+          '[pos/sync] Could not record failure:',
+          saveError.message
+        );
+      }
+
+      return res.status(502).json({ error: err.message });
+    }
+
     await supabase
       .from('pos_connections')
-      .update({ status: 'error', last_error: err.message, updated_at: new Date().toISOString() })
+      .update({
+        status: 'error',
+        last_error: err.message,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', conn.id);
+
     return res.status(502).json({ error: err.message });
   }
 }

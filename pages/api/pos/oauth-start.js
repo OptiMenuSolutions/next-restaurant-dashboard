@@ -60,8 +60,22 @@ export default async function handler(req, res) {
   }
 
   const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL}/api/pos/oauth-callback`;
-  const state = signState({ restaurantId, provider: providerId, returnTo: safeReturnTo, ts: Date.now() });
+  const nonce = crypto.randomBytes(32).toString('hex');
+
+  const state = signState({
+    restaurantId,
+    provider: providerId,
+    returnTo: safeReturnTo,
+    ts: Date.now(),
+    nonce,
+  });
+
   const url = provider.getAuthUrl({ state, redirectUri });
+
+  res.setHeader(
+    'Set-Cookie',
+    `pos_oauth_nonce=${nonce}; HttpOnly; Secure; SameSite=Lax; Path=/api/pos/oauth-callback; Max-Age=900`
+  );
 
   return res.status(200).json({ url });
 }

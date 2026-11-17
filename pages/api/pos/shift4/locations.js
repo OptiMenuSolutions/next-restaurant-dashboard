@@ -15,7 +15,11 @@ export default async function handler(req, res) {
   if (!restaurantId) return res.status(401).json({ error: 'Unauthorized' });
 
   const conn = await getShift4Connection(restaurantId);
-  if (!conn || conn.status !== 'pending' || !conn.access_token) {
+  if (
+    !conn ||
+    !['pending', 'installing'].includes(conn.status) ||
+    !conn.access_token
+  ) {
     return res.status(409).json({
       error: 'There is no Shift4 connection in progress. Go back and click Connect Shift4 to start again.',
       restart: true,
@@ -24,7 +28,19 @@ export default async function handler(req, res) {
 
   try {
     const locations = await shift4.listLocations(conn.access_token);
-    return res.status(200).json({ locations });
+
+    const selectable = locations.map((l) =>
+      conn.status === 'installing'
+        ? {
+            ...l,
+            isAvailable:
+              l.id === conn.shift4_location_id &&
+              (l.isAvailable || l.reason === 'INSTALLED'),
+          }
+        : l
+    );
+
+    return res.status(200).json({ locations: selectable });
   } catch (err) {
     console.error('[pos/shift4/locations]', err.message);
     if (err.status === 401) {

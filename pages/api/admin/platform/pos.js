@@ -117,10 +117,47 @@ export default async function handler(req, res) {
     const b = req.body || {};
 
     if (b.action === 'retry') {
-      const { data: c } = await db.from('pos_connections').select('id, restaurant_id, status').eq('id', b.id).single();
-      if (!c) return res.status(404).json({ error: 'Not found' });
-      if (c.status !== 'error') return res.status(400).json({ error: 'Only a connection in error can be retried' });
-      const { error } = await db.from('pos_connections').update({ status: 'connected', last_error: null, updated_at: new Date().toISOString() }).eq('id', c.id);
+      const { data: c } = await db
+        .from('pos_connections')
+        .select(
+          'id, restaurant_id, provider, status, shift4_location_id'
+        )
+        .eq('id', b.id)
+        .single();
+
+      if (!c) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+
+      if (c.status !== 'error') {
+        return res.status(400).json({
+          error: 'Only a connection in error can be retried',
+        });
+      }
+
+      if (c.provider === 'shift4' && !c.shift4_location_id) {
+        return res.status(409).json({
+          error: 'Only an existing failed connection can be retried. Reconnect a removed location from Profile.',
+        });
+      }
+
+      const { data: saved, error } = await db
+        .from('pos_connections')
+        .update({
+          status: 'connected',
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', c.id)
+        .eq('status', 'error')
+        .select('id');
+
+      if (!error && !saved?.length) {
+        return res.status(409).json({
+          error: 'The connection changed. Reload and try again.',
+        });
+      }
+
       if (error) throw new Error(error.message);
       const { data: r } = await db.from('restaurants').select('id, name').eq('id', c.restaurant_id).single();
       await writeAuditLog({ admin_id: admin.user.id, admin_name: admin.name, action: 'Set POS connection back to connected', target_restaurant_id: r?.id || null, target_restaurant_name: r?.name || null });
