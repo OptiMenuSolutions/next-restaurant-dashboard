@@ -64,7 +64,8 @@ export function posFixture({ restaurantId, mustardId, today }) {
     expected: { beef: 36, chicken: 6, bun: 6, onion: 4.5, mustard: 10 } };
 }
 
-export async function validatePosConsumption({ db, restaurantId, ingredientId, ownerId, today, pass }) {
+export async function validatePosConsumption({ db, restaurantId, ingredientId, ownerId, today, pass,
+  ingestTickets = async tickets => tickets }) {
   const checked = result => {
     if (result.error) throw new Error(result.error.message);
     return result.data;
@@ -81,6 +82,9 @@ export async function validatePosConsumption({ db, restaurantId, ingredientId, o
   const { restaurantLocalDate } = await import('../lib/restaurantTime.js');
   const f = posFixture({ restaurantId, mustardId: ingredientId, today });
   const { ids } = f;
+  const save = async tickets => saveTickets(db, {
+    restaurantId, posSystem: 'shift4', tickets: await ingestTickets(tickets),
+  });
   const stock = async () => checked(await db.from('current_inventory')
     .select('invoice_item_id,ingredient_id,unit,invoiced_qty,remaining_qty')
     .eq('restaurant_id', restaurantId).order('invoice_item_id'));
@@ -125,7 +129,7 @@ export async function validatePosConsumption({ db, restaurantId, ingredientId, o
     item_name: 'Validation Burger', quantity_sold: 6, refunds: 1, voids: 0,
     pos_system: 'shift4', upload_session_id: null };
   checked(await db.from('pos_sales').insert(aggregate));
-  assert.deepEqual(await saveTickets(db, { restaurantId, posSystem: 'shift4', tickets: f.tickets }),
+  assert.deepEqual(await save(f.tickets),
     { tickets: 8, lines: 8 });
   pass('Eight synthetic tickets and a compiled batch recipe are isolated from live POS connections.');
 
@@ -175,7 +179,7 @@ export async function validatePosConsumption({ db, restaurantId, ingredientId, o
   assert.deepEqual(await job(), settledJob);
   pass('Repeating a completed worker changes no publication, stock, or job.');
 
-  await saveTickets(db, { restaurantId, posSystem: 'shift4', tickets: f.tickets });
+  await save(f.tickets);
   assert.equal((await run()).error, null);
   const replay = await reconcile(f.expected, 6);
   assert.deepEqual(replay.sales.map(row => row.id).sort(), publication.sales.map(row => row.id).sort());
@@ -190,7 +194,7 @@ export async function validatePosConsumption({ db, restaurantId, ingredientId, o
   pass('A current recipe edit preserves the captured recipe of previously prepared sales.');
 
   const ninth = f.ticket(9, 1, []);
-  await saveTickets(db, { restaurantId, posSystem: 'shift4', tickets: [ninth] });
+  await save([ninth]);
   checked(await db.from('pos_sales').update({ quantity_sold: 7 })
     .eq('id', aggregate.id).eq('restaurant_id', restaurantId));
   assert.equal((await run()).error, null);
@@ -199,7 +203,7 @@ export async function validatePosConsumption({ db, restaurantId, ingredientId, o
   pass('A new ticket uses the edited eight-ounce recipe while older tickets keep six ounces.');
 
   const corrected = f.ticket(1, 1, []);
-  await saveTickets(db, { restaurantId, posSystem: 'shift4', tickets: [corrected] });
+  await save([corrected]);
   checked(await db.from('pos_sales').update({ quantity_sold: 6 })
     .eq('id', aggregate.id).eq('restaurant_id', restaurantId));
   assert.equal((await run()).error, null);

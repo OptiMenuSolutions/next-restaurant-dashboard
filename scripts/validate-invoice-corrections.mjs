@@ -424,6 +424,11 @@ try {
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
 
+  if (process.argv.includes('--shift4-ingestion')) {
+    const { validateShift4Ingestion } = await import('./validate-shift4-ingestion.mjs');
+    await validateShift4Ingestion({ db, restaurantId, ingredientId, ownerId, today, pass });
+  }
+
   if (process.argv.includes('--pos-consumption')) {
     const { validatePosConsumption } = await import('./validate-pos-consumption.mjs');
     await validatePosConsumption({ db, restaurantId, ingredientId, ownerId, today, pass });
