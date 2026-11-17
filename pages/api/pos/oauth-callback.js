@@ -7,6 +7,7 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
+import { updateShift4Connection } from '../../../lib/pos/shift4-state';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,7 +17,7 @@ const supabase = createClient(
 const STATE_SECRET = process.env.OAUTH_STATE_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL;
 
-function verifyState(state) {
+function verifyState(state, cookie) {
   const [data, sig] = String(state || '').split('.');
   if (!data || !sig) throw new Error('Malformed state');
   const expected = crypto.createHmac('sha256', STATE_SECRET).update(data).digest('base64url');
@@ -24,7 +25,14 @@ function verifyState(state) {
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new Error('Bad state signature');
-  return JSON.parse(Buffer.from(data, 'base64url').toString());
+  const payload = JSON.parse(Buffer.from(data, 'base64url').toString());
+  const nonce = String(cookie || '').split(';').map((v) => v.trim())
+    .find((v) => v.startsWith('pos_oauth_nonce='))?.slice('pos_oauth_nonce='.length);
+  if (!Number.isFinite(payload.ts) || Date.now() - payload.ts > 15 * 60 * 1000
+    || payload.ts > Date.now() + 60000 || !nonce || nonce !== payload.nonce) {
+    throw new Error('Expired state or different browser');
+  }
+  return payload;
 }
 
 function back(res, query, returnTo = '/client/profile') {
@@ -33,15 +41,17 @@ function back(res, query, returnTo = '/client/profile') {
 }
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   const { code, state, error: providerError } = req.query;
 
   let parsed = null;
   try {
-    parsed = verifyState(state);
+    parsed = verifyState(state, req.headers.cookie);
   } catch {
     // handled below
   }
   const returnTo = parsed?.returnTo || '/client/profile';
+  res.setHeader('Set-Cookie', 'pos_oauth_nonce=; HttpOnly; Secure; SameSite=Lax; Path=/api/pos/oauth-callback; Max-Age=0');
 
   // A denied or failed connect always lands on Profile, which shows what
   // happened next to the Connect button (Shift4 OA-004). Onboarding's
@@ -53,22 +63,21 @@ export default async function handler(req, res) {
 
   try {
     const provider = getProvider(providerId);
+    let existing = null;
+    if (providerId === 'shift4') {
+      const loaded = await supabase.from('pos_connections').select('*')
+        .eq('restaurant_id', restaurantId).eq('provider', 'shift4').maybeSingle();
+      if (loaded.error) throw new Error(loaded.error.message);
+      existing = loaded.data;
+      if (existing?.status === 'disconnecting') throw new Error('Finish disconnecting Shift4 before starting a new connection');
+    }
     const redirectUri = `${APP_URL}/api/pos/oauth-callback`;
     const result = await provider.exchangeCode({ code, redirectUri });
 
     if (providerId === 'shift4' && result.pendingLocation) {
-      const { data: existing, error: existingError } = await supabase
-        .from('pos_connections')
-        .select('id, status, shift4_location_id')
-        .eq('restaurant_id', restaurantId)
-        .eq('provider', providerId)
-        .maybeSingle();
-
-      if (existingError) throw new Error(existingError.message);
-
       const hasExistingLink =
         existing?.shift4_location_id &&
-        ['connected', 'error', 'pending'].includes(existing.status);
+        ['connected', 'error', 'pending', 'installing'].includes(existing.status);
 
       if (hasExistingLink) {
         const locations = await provider.listLocations(result.accessToken);
@@ -79,7 +88,8 @@ export default async function handler(req, res) {
 
         // Verify the freshly authorized account can see the same location
         // and that Shift4 still reports OptiMenu installed there.
-        if (!linkedLocation || linkedLocation.reason !== 'INSTALLED') {
+        if (!linkedLocation || (linkedLocation.reason !== 'INSTALLED'
+          && !(existing.status === 'installing' && linkedLocation.isAvailable))) {
           throw new Error(
             'The existing Shift4 location could not be verified as installed. The saved connection was not changed.'
           );
@@ -87,16 +97,14 @@ export default async function handler(req, res) {
 
         // Refresh credentials on the existing link without entering the
         // location picker or temporarily changing its status to pending.
-        result.pendingLocation = false;
+        result.pendingLocation = existing.status === 'installing';
       }
     }
 
-    const { error: upsertError } = await supabase
-      .from('pos_connections')
-      .upsert({
+    const values = {
         restaurant_id: restaurantId,
         provider: providerId,
-        status: result.pendingLocation ? 'pending' : 'connected',
+        status: existing?.status === 'installing' ? 'installing' : result.pendingLocation ? 'pending' : 'connected',
         access_token: result.accessToken,
         refresh_token: result.refreshToken,
         merchant_id: result.merchantId,
@@ -105,8 +113,18 @@ export default async function handler(req, res) {
         last_error: null,
         token_error: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'restaurant_id,provider' });
-    if (upsertError) throw new Error(upsertError.message);
+      };
+    if (providerId === 'shift4' && existing) {
+      if (!await updateShift4Connection(supabase, existing, values)) {
+        throw new Error('The connection changed during authorization. Start again.');
+      }
+    } else {
+      const query = supabase.from('pos_connections');
+      const { error: saveError } = providerId === 'shift4'
+        ? await query.insert(values)
+        : await query.upsert(values, { onConflict: 'restaurant_id,provider' });
+      if (saveError) throw new Error(saveError.message);
+    }
 
     // Shift4: the merchant still has to pick which location to connect.
     if (result.pendingLocation) {

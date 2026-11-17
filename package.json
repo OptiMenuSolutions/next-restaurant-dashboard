@@ -41,9 +41,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:inventory": "tsx --test tests/inventory-replay.test.js"
+    "test:inventory": "tsx --test tests/inventory-replay.test.js",
+    "test:shift4": "tsx --test tests/shift4-ingestion.test.js tests/shift4-lifecycle.test.js tests/shift4-provider.test.js tests/shift4-sync-postgres.test.js"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.16",
     "@types/react": "19.1.9",
     "autoprefixer": "^10.4.21",
     "pg": "^8.23.1",
