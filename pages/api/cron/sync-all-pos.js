@@ -9,6 +9,7 @@ import { sendCronAlert } from '../../../lib/cronAlert';
 import { saveTickets } from '../../../lib/pos/saveTickets';
 import { runUsage } from '../../../lib/pos/runUsage';
 import { withJobRun } from '../../../lib/admin/jobRun';
+import { saveShift4Sync, updateShift4Connection } from '../../../lib/pos/shift4-state';
 
 export const config = { maxDuration: 300 };
 
@@ -29,6 +30,7 @@ function defaultRange(days = 3) {
 
 async function syncConnection(conn, range) {
   const provider = getProvider(conn.provider);
+  const startedAt = new Date().toISOString();
 
   let connection = conn;
 
@@ -40,15 +42,18 @@ async function syncConnection(conn, range) {
     if (new Date(conn.expires_at) < soon) {
       const refreshed = await provider.refresh(conn);
       if (refreshed) {
-        await supabase
+        const { error: tokenSaveError } = await supabase
           .from('pos_connections')
           .update({
             access_token: refreshed.accessToken,
+            refresh_token: refreshed.refreshToken || conn.refresh_token,
             expires_at: refreshed.expiresAt,
             updated_at: new Date().toISOString(),
           })
           .eq('id', conn.id);
-        connection = { ...conn, access_token: refreshed.accessToken, expires_at: refreshed.expiresAt };
+        if (tokenSaveError) throw new Error(tokenSaveError.message);
+        connection = { ...conn, access_token: refreshed.accessToken,
+          refresh_token: refreshed.refreshToken || conn.refresh_token, expires_at: refreshed.expiresAt };
       }
     }
   }
@@ -62,6 +67,22 @@ async function syncConnection(conn, range) {
     tickets = result.tickets;
   } else {
     records = await provider.fetchSales(connection, range);
+  }
+
+  if (conn.provider === 'shift4') {
+    const saved = await saveShift4Sync(supabase, conn, range,
+      { sales: records, tickets }, startedAt);
+    if (!saved.saved) return { rows: 0, tickets: 0, lines: 0, skipped: true };
+    let usage = null;
+    try {
+      usage = await runUsage(supabase, conn.restaurant_id);
+      if (usage.error) throw new Error(usage.error);
+    } catch (error) {
+      usage = { error: error.message };
+      await sendCronAlert('POS ingredient usage',
+        `Sales saved for ${conn.restaurant_id}, but ingredient usage needs a retry.`, [error.message]);
+    }
+    return { rows: records.length, tickets: saved.tickets, lines: saved.lines, usage };
   }
 
   // ─── Delete old records in date range (except user uploads) ────────────
@@ -117,37 +138,10 @@ async function syncConnection(conn, range) {
     })
     .eq('id', conn.id);
 
-  let usage = null;
-
-  if (conn.provider === 'shift4') {
-    try {
-      usage = await runUsage(
-        supabase,
-        conn.restaurant_id
-      );
-
-      if (usage.error) throw new Error(usage.error);
-    } catch (error) {
-      usage = { error: error.message };
-
-      console.error(
-        '[pos-usage:after-sync]',
-        conn.restaurant_id,
-        error.message
-      );
-
-      await sendCronAlert(
-        'POS ingredient usage',
-        `Sales saved for ${conn.restaurant_id}, but ingredient usage needs a retry.`,
-        [error.message]
-      );
-    }
-  }
 
   return {
     rows: records.length,
     ...ticketCounts,
-    usage,
   };
 }
 
@@ -188,11 +182,15 @@ async function handler(req, res) {
   if (!live.length) return res.status(200).json({ synced: 0 });
 
   const range = defaultRange();
-  const results = { success: [], failed: [] };
+  const results = { success: [], failed: [], skipped: [] };
 
   for (const conn of live) {
     try {
       const counts = await syncConnection(conn, range);
+      if (counts.skipped) {
+        results.skipped.push({ restaurantId: conn.restaurant_id, provider: conn.provider });
+        continue;
+      }
       results.success.push({ restaurantId: conn.restaurant_id, provider: conn.provider, ...counts });
       console.log(`[cron:sync-all-pos] ✓ ${conn.provider} for ${conn.restaurant_id} — ${counts.rows} sales rows, ${counts.tickets} tickets, ${counts.lines} lines`);
     } catch (err) {
@@ -209,10 +207,14 @@ async function handler(req, res) {
         failureUpdate.status = 'error';
       }
 
-      const { error: statusError } = await supabase
-        .from('pos_connections')
-        .update(failureUpdate)
-        .eq('id', conn.id);
+      let statusError;
+      if (conn.provider === 'shift4') {
+        try { await updateShift4Connection(supabase, conn, failureUpdate); }
+        catch (error) { statusError = error; }
+      } else {
+        ({ error: statusError } = await supabase.from('pos_connections')
+          .update(failureUpdate).eq('id', conn.id));
+      }
 
       if (statusError) {
         console.error(
@@ -231,7 +233,8 @@ async function handler(req, res) {
       results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}: ${f.error}`)
     );
   }
-  return res.status(200).json({ synced: results.success.length, failed: results.failed.length, results });
+  return res.status(200).json({ synced: results.success.length, failed: results.failed.length,
+    skipped: results.skipped.length, results });
 }
 
 export default withJobRun('sync-all-pos', handler);

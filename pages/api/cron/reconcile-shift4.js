@@ -18,6 +18,7 @@ import { createClient } from '@supabase/supabase-js';
 import shift4 from '../../../lib/pos/providers/shift4';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { withJobRun } from '../../../lib/admin/jobRun';
+import { disconnectedShift4State, updateShift4Connection } from '../../../lib/pos/shift4-state';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -30,6 +31,15 @@ async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // Snapshot connections before the external request. A connection created or
+  // reauthorized while it runs must not be judged against an older listing.
+  const { data: connections, error } = await supabase
+    .from('pos_connections')
+    .select('id, restaurant_id, status, shift4_location_id, shift4_timezone, access_token, refresh_token')
+    .eq('provider', 'shift4')
+    .not('shift4_location_id', 'is', null);
+  if (error) return res.status(500).json({ error: error.message });
+
   let installed;
   try {
     installed = await shift4.listInstalledLocations();
@@ -37,18 +47,6 @@ async function handler(req, res) {
     console.error('[cron:reconcile-shift4] Could not list installed locations:', err.message);
     await sendCronAlert('Shift4 reconciliation', 'Could not load installed locations from Shift4, so nothing was checked today.', [err.message]);
     return res.status(500).json({ error: err.message });
-  }
-
-  const { data: connections, error } = await supabase
-    .from('pos_connections')
-    .select('id, restaurant_id, status, shift4_location_id, shift4_timezone')
-    .eq('provider', 'shift4')
-    .not('shift4_location_id', 'is', null);
-
-  if (error) {
-    console.error('[cron:reconcile-shift4] Could not load connections:', error.message);
-    await sendCronAlert('Shift4 reconciliation', 'Could not load Shift4 connections from the database, so nothing was checked today.', [error.message]);
-    return res.status(500).json({ error: error.message });
   }
 
   const installedById = new Map(installed.map((l) => [l.id, l]));
@@ -63,28 +61,22 @@ async function handler(req, res) {
 
     if (!location) {
       if (conn.status !== 'connected' && conn.status !== 'error') continue;
-      const { error: updateError } = await supabase
-        .from('pos_connections')
-        .update({
-          status: 'disconnected',
-          shift4_location_id: null,
-          last_error: 'No longer installed in Shift4 (found by the daily reconciliation)',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', conn.id);
-      if (updateError) failures.push(`restaurant ${conn.restaurant_id}: ${updateError.message}`);
-      else disconnected.push(`location ${locationId}, restaurant ${conn.restaurant_id}`);
+      try {
+        const saved = await updateShift4Connection(supabase, conn, disconnectedShift4State(
+          'No longer installed in Shift4 (found by the daily reconciliation)'
+        ));
+        if (saved) disconnected.push(`location ${locationId}, restaurant ${conn.restaurant_id}`);
+      } catch (error) { failures.push(`restaurant ${conn.restaurant_id}: ${error.message}`); }
       continue;
     }
 
     linkedIds.add(locationId);
     if (location.timeZone && location.timeZone !== conn.shift4_timezone) {
-      const { error: tzError } = await supabase
-        .from('pos_connections')
-        .update({ shift4_timezone: location.timeZone, updated_at: new Date().toISOString() })
-        .eq('id', conn.id);
-      if (tzError) failures.push(`time zone for restaurant ${conn.restaurant_id}: ${tzError.message}`);
-      else timeZonesSaved++;
+      try {
+        if (await updateShift4Connection(supabase, conn, {
+          shift4_timezone: location.timeZone, updated_at: new Date().toISOString(),
+        })) timeZonesSaved++;
+      } catch (error) { failures.push(`time zone for restaurant ${conn.restaurant_id}: ${error.message}`); }
     }
   }
 
@@ -112,12 +104,13 @@ async function handler(req, res) {
     `[cron:reconcile-shift4] ${installed.length} installed, ${connections.length} connections, ` +
     `${disconnected.length} disconnected, ${unlinked.length} unlinked, ${timeZonesSaved} time zones saved`
   );
-  return res.status(200).json({
+  return res.status(failures.length ? 500 : 200).json({
     installed: installed.length,
     connections: connections.length,
     disconnected: disconnected.length,
     unlinked: unlinked.map((l) => l.id),
     timeZonesSaved,
+    failures,
   });
 }
 

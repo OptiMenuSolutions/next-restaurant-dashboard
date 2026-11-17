@@ -275,6 +275,10 @@ export default function ProfilePage() {
   };
 
   const connectShift4 = async () => {
+    if (posConnection?.status === 'installing' && router.query.pos !== 'error') {
+      window.location.assign('/client/connect-shift4');
+      return;
+    }
     if (!restaurantId) throw new Error("No restaurant on this account yet.");
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch("/api/pos/oauth-start", {
@@ -294,7 +298,15 @@ export default function ProfilePage() {
       headers: { Authorization: `Bearer ${session?.access_token}` },
     });
     const json = await res.json();
-    if (!res.ok) throw new Error(json.error || "Could not disconnect Shift4.");
+    if (!res.ok) {
+      // An ambiguous remote failure leaves the connection paused. Refresh the
+      // card so Retry Disconnect is available without a full page reload.
+      const statusResponse = await fetch('/api/pos/shift4/status', {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (statusResponse.ok) setPosConnection((await statusResponse.json()).connection);
+      throw new Error(json.error || "Could not disconnect Shift4.");
+    }
     setPosConnection((c) => (c ? { ...c, status: "disconnected" } : c));
   };
 
