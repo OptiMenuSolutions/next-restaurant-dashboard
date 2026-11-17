@@ -274,6 +274,8 @@ function HealthPage() {
         )}
       </Card>
 
+      {/* Hidden for the Shift4 certification call (Nov 17, 2026). Remove this wrapper afterward. */}
+      {false && (
       <Card title="Errors">
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: -4 }}>Every new error also lands on Today as a to-do. A job that fails or has problems adds one here by itself.</div>
         <Pills label="Error status" value={errTab} onChange={(value) => {
@@ -325,6 +327,7 @@ function HealthPage() {
           </table>
         </div>
       </Card>
+      )}
     </>
   );
 }
