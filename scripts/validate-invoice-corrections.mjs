@@ -29,7 +29,7 @@ globalThis.fetch = (input, options) => {
 
   if (
     url.origin !== STAGING_URL ||
-    !/^\/(rest\/v1|auth\/v1\/admin)(\/|$)/.test(url.pathname)
+    !/^\/(rest\/v1|auth\/v1\/(?:admin|token|user|logout))(\/|$)/.test(url.pathname)
   ) {
     throw new Error('Blocked a request outside the staging test APIs.');
   }
@@ -423,6 +423,11 @@ try {
   assert.equal(checked(await db.from('notification_email_outbox').select('id')
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
+
+  if (process.argv.includes('--waste-response')) {
+    const { validateWasteConfirmationResponse } = await import('./validate-waste-confirmation-response.mjs');
+    await validateWasteConfirmationResponse({ db, restaurantId, ownerId, ingredientId, today, pass });
+  }
 
   if (process.argv.includes('--inventory-reconciliation')) {
     const { validateInventoryReconciliation } = await import('./validate-inventory-reconciliation.mjs');

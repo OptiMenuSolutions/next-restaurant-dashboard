@@ -6,6 +6,7 @@ import supabase from "../../lib/supabaseClient";
 import { computeWasteRisk } from "../../lib/computeWasteRisk"; // tour sample data only
 import { loadCurrentInventory } from "../../lib/currentInventory";
 import { computeWasteResolution } from "../../lib/computeWasteResolution";
+import { saveWasteConfirmationResponse } from "../../lib/saveWasteConfirmationResponse";
 import { useWeekInReview } from "../../lib/useWeekInReview";
 import PassDashboard from "../../components/dashboard/PassDashboard";
 import WasteConfirmationModal from "../../components/dashboard/WasteConfirmationModal";
@@ -621,13 +622,7 @@ export default function DashboardPage() {
   async function handleWasteConfirmationRespond(id, status) {
     // Save the answer first. The database trigger records the
     // confirmation timestamp and estimated adjustment.
-    const { error } = await supabase
-      .from("waste_confirmations")
-      .update({ status })
-      .eq("id", id)
-      .eq("restaurant_id", restaurantId);
-
-    if (error) throw error;
+    await saveWasteConfirmationResponse(supabase, restaurantId, id, status);
 
     // The response is committed even if the subsequent rebuild fails.
     // Refresh the confirmation list immediately so it is not shown again.
