@@ -110,6 +110,9 @@ function HealthPage() {
   if (error) return <ErrorState message={error} onRetry={load} />;
   if (!data) return <LoadingState label="Loading jobs and health…" />;
 
+  // Hidden for the Shift4 certification call (Nov 17, 2026). Remove this filter afterward.
+  const jobs = data.jobs.filter((j) => !['snapshot-waste-risk', 'generate-recommendations'].includes(j.key));
+
   const selectedJob = data.jobs.find((j) => j.key === String(router.query.job || ''));
   const job = selectedJob || data.jobs.find((j) => j.key === open);
   const selectedError = data.errors.find((e) => e.id === String(router.query.error || ''));
@@ -201,7 +204,7 @@ function HealthPage() {
           {!data.tracking && ' No runs recorded yet. The first ones show up after tonight’s jobs.'}
         </div>
         <div style={{ display: isPhone ? 'none' : 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-          {data.jobs.map((j) => {
+          {jobs.map((j) => {
             const on = j.key === open;
             return (
               <button key={j.key} type="button" aria-expanded={on} onClick={() => setOpen(on ? null : j.key)}
@@ -220,7 +223,7 @@ function HealthPage() {
 
         {isPhone && (
           <div style={{ display: 'grid', gap: 10 }}>
-            {data.jobs.map((j) => (
+            {jobs.map((j) => (
               <div key={j.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, background: 'var(--shell)' }}>
                 <button type="button" onClick={() => router.push({ pathname: '/admin/health', query: { job: j.key } }, undefined, { shallow: true })} style={{ display: 'grid', width: '100%', gap: 7, padding: 0, border: 0, background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer' }}>
                   <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
