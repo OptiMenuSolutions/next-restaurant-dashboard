@@ -44,5 +44,6 @@ export default async function handler(req, res) {
     .eq('id', conn.id);
 
   if (error) return res.status(500).json({ error: error.message });
+  console.log(`[pos/shift4/disconnect] OptiMenu removed from location ${conn.shift4_location_id || 'none'}, tokens cleared`);
   return res.status(200).json({ ok: true });
 }

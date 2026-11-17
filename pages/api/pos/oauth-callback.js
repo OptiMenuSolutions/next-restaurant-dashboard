@@ -46,7 +46,10 @@ export default async function handler(req, res) {
   // A denied or failed connect always lands on Profile, which shows what
   // happened next to the Connect button (Shift4 OA-004). Onboarding's
   // returnTo is the dashboard, which has no place to show it.
-  if (providerError) return back(res, `pos=denied`, '/client/profile');
+  if (providerError) {
+    console.log(`[pos/oauth-callback] merchant cancelled the sign-in (${providerError}), returned to Profile`);
+    return back(res, `pos=denied`, '/client/profile');
+  }
   if (!code || !parsed) return back(res, `pos=error`, '/client/profile');
 
   const { restaurantId, provider: providerId } = parsed;
@@ -110,9 +113,11 @@ export default async function handler(req, res) {
 
     // Shift4: the merchant still has to pick which location to connect.
     if (result.pendingLocation) {
+      console.log(`[pos/oauth-callback] ${providerId} sign-in approved, tokens saved, sending merchant to the location picker`);
       return res.redirect(`${APP_URL}/client/connect-shift4?returnTo=${encodeURIComponent(returnTo)}`);
     }
 
+    console.log(`[pos/oauth-callback] ${providerId} sign-in approved, tokens saved`);
     return back(res, `pos=connected&provider=${providerId}`, returnTo);
   } catch (err) {
     console.error(`[pos/oauth-callback] ${providerId} connect failed:`, err.message);

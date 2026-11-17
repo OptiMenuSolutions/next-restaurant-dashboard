@@ -64,5 +64,6 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Connected in Shift4, but we could not save it. Please contact support.' });
   }
 
+  console.log(`[pos/shift4/install] OptiMenu installed on location ${locationId} (${target.name}), connection saved`);
   return res.status(200).json({ ok: true, locationName: target.name });
 }
