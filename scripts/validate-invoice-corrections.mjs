@@ -424,6 +424,11 @@ try {
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
 
+  if (process.argv.includes('--pos-consumption')) {
+    const { validatePosConsumption } = await import('./validate-pos-consumption.mjs');
+    await validatePosConsumption({ db, restaurantId, ingredientId, ownerId, today, pass });
+  }
+
   if (process.argv.includes('--delivery-date-activation')) {
     const { validateDeliveryDateActivation } = await import('./validate-delivery-date-activation.mjs');
     await validateDeliveryDateActivation({
