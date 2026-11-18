@@ -424,6 +424,11 @@ try {
     .eq('restaurant_id', restaurantId)).length, 0);
   pass('Cost history uses calculation time; Cedar stays unchanged; no email is queued.');
 
+  if (process.argv.includes('--dashboard-financials')) {
+    const { validateDashboardFinancials } = await import('./validate-dashboard-financials.mjs');
+    await validateDashboardFinancials({ db, restaurantId, ownerId, ingredientId, dishId, pass });
+  }
+
   if (process.argv.includes('--waste-response')) {
     const { validateWasteConfirmationResponse } = await import('./validate-waste-confirmation-response.mjs');
     await validateWasteConfirmationResponse({ db, restaurantId, ownerId, ingredientId, today, pass });

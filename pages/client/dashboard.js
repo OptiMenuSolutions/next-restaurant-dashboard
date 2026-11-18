@@ -21,7 +21,7 @@ import { dashboardClock, dashboardMonth, trailingDashboardWeek } from "../../lib
 import { eligibleAnalyticsSales } from "../../lib/analyticsReporting";
 
 const EMPTY_DASH = { ingredients: [], menuItems: [], wasteRisk: [], stats: null };
-import { calculateVerifiedIngredientCost } from "../../lib/verifiedIngredientCost";
+import { dashboardDishFinancials, dashboardMarginStats, loadDashboardMenuItems } from "../../lib/dashboardFinancials";
 
 /**
  * pages/client/dashboard.js — "Tonight's Pass" dashboard, v5 shell.
@@ -41,31 +41,7 @@ const TICKET_META = [
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const money = (n) => "$" + Math.round(n || 0).toLocaleString();
 
-/* Live plate cost using only prices the restaurant is allowed to see:
-   invoice prices (is_estimated === false) or admin-approved estimates.
-   Returns null if any ingredient is an unapproved AI guess, or the dish
-   has no recipe rows. `trust` (tour sample data) uses the stored cost. */
-function pricedCost(item, trust = false) {
-  if (trust) return Number(item?.cost) > 0 ? Number(item.cost) : null;
-  const lines = (item?.menu_item_components || []).flatMap((c) => c.component_ingredients || []);
-  if (!lines.length) return null;
-  let total = 0;
-  for (const ci of lines) {
-    const g = ci.ingredients || {};
-    if (!(g.is_estimated === false || !!g.price_approved_at)) return null;
-    const recipeUnit = ci.unit || g.unit || "each";
-    const lineCost = calculateVerifiedIngredientCost(
-      Number(ci.quantity) || 0,
-      recipeUnit,
-      g
-    );
-
-    if (lineCost === null) return null;
-
-    total += lineCost;
-  }
-  return total;
-}
+// Dashboard recipe costs and margin statistics use dashboardFinancials.js.
 
 /* Recommendation row -> ticket. Point `recs` at whatever the current page
    already produces (the AI recommendation call / selectedRec source). */
@@ -136,15 +112,11 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
       if (others.length) why += ` Also clears ${others.join(" and ")}.`;
     }
 
-    const price = item ? parseFloat(item.price || 0) : 0;
-    // Cost only from prices the restaurant may see (invoice or approved).
-    // null hides both the $/cover and the margin chip. The AI's own
-    // r.margin isn't used for real accounts — it came from unapproved
-    // guesses. The tour's sample recs keep it.
-    const cost = item ? pricedCost(item, trust) : null;
-    const coverMargin = price > 0 && cost != null ? price - cost : null;
+    const financials = item ? dashboardDishFinancials(item, { sample: trust }) : null;
+    const coverMargin = financials?.contribution ?? null;
     const aiMargin = r.margin != null && !isNaN(parseFloat(r.margin)) ? parseFloat(r.margin) : null;
-    const marginVal = price > 0 && cost != null ? ((price - cost) / price) * 100 : trust ? aiMargin : null;
+    const marginVal = financials?.marginPct ?? (trust ? aiMargin : null);
+    const estimated = financials?.estimated === true;
 
     return {
       ...TICKET_META[i],
@@ -153,8 +125,8 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
       pitch: r.talkingPoint || r.description || "",
       reason: r.description || "",
       why,
-      margin: marginVal != null ? "MARGIN " + Math.round(marginVal) + "%" : "",
-      cover: coverMargin != null ? "$" + coverMargin.toFixed(2) + "/COVER" : "",
+      margin: marginVal != null ? (estimated ? "EST. MARGIN " : "MARGIN ") + Math.round(marginVal) + "%" : "",
+      cover: coverMargin != null ? (estimated ? "EST. " : "") + "$" + coverMargin.toFixed(2) + "/COVER" : "",
       recipe,
       riskNote: riskCount
         ? "▲ " + riskCount + (riskCount === 1 ? " ingredient" : " ingredients") +
@@ -417,21 +389,14 @@ export default function DashboardPage() {
           const sampleSales = eligibleAnalyticsSales(sample.posSales || [], today);
           // computeWasteRisk reads calendar fields in the browser's zone.
           const wasteRisk = computeWasteRisk(sampleInvoiceItems, sample.invoices || [], sampleSales, sample.menuItems || [], new Date(`${today}T12:00:00`));
-          const priced = (sample.menuItems || []).filter((m) => m.price > 0 && m.cost > 0);
-          const margins = priced.map((m) => ((m.price - m.cost) / m.price) * 100);
-          const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
-          const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+          const financialStats = dashboardMarginStats(sample.menuItems || [], { sample: true });
           return {
             ingredients: sample.ingredients || [],
             menuItems: sample.menuItems || [],
             wasteRisk,
             stats: {
-              avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
-              lowMargin: margins.filter((m) => m < 50).length,
+              ...financialStats,
               expiring: wasteRisk.filter((w) => w.daysLeft <= 3).length,
-              pctAbove50,
-              pctBelow25,
-              pricedCount: margins.length,
             },
           };
         }
@@ -440,56 +405,19 @@ export default function DashboardPage() {
 
       // Waste risk comes from current_inventory, the same rows Tonight's Dish
       // reads, rebuilt overnight and whenever an invoice is saved or linked.
-      const [ingredientResult, menuResult, wasteRisk] =
-        await Promise.all([
-          supabase.from("ingredients").select("*").eq("restaurant_id", restaurantId).limit(1000),
-          supabase.from("menu_items")
-          .select(`
-            id, name, price, cost, category,
-            menu_item_components(
-              id, name, cost,
-              component_ingredients(
-                quantity, unit,
-                ingredients(
-                  id, name, unit, last_price, is_estimated, price_approved_at,
-                  ingredient_unit_conversions(
-                    id, ingredient_id, from_unit, to_unit, factor, basis, evidence
-                  ),
-                  ingredient_conversion_default_links(
-                    ingredient_conversion_defaults(
-                      id, label, from_unit, to_unit, factor, basis, evidence, source_url
-                    )
-                  )
-                )
-              )
-            )
-          `)
-            .eq("restaurant_id", restaurantId).is("archived_at", null).limit(500),
-          loadCurrentInventory(supabase, restaurantId),
-        ]);
-      if (ingredientResult.error) throw ingredientResult.error;
-      if (menuResult.error) throw menuResult.error;
-      const ingredients = ingredientResult.data;
-      const menuItems = menuResult.data;
-      // Only dishes whose every ingredient has an invoice or approved price.
-      const margins = (menuItems || [])
-        .map((m) => ({ price: Number(m.price) || 0, cost: pricedCost(m) }))
-        .filter((m) => m.price > 0 && m.cost != null)
-        .map((m) => ((m.price - m.cost) / m.price) * 100);
-      const pctAbove50 = margins.length ? margins.filter((m) => m >= 50).length / margins.length : 0;
-      const pctBelow25 = margins.length ? margins.filter((m) => m < 25).length / margins.length : 0;
+      const [menuItems, wasteRisk] = await Promise.all([
+        loadDashboardMenuItems(supabase, restaurantId),
+        loadCurrentInventory(supabase, restaurantId),
+      ]);
+      const financialStats = dashboardMarginStats(menuItems, { restaurantId });
 
       return {
-        ingredients: ingredients || [],
+        ingredients: [],
         menuItems: menuItems || [],
         wasteRisk,
         stats: {
-          avgMargin: margins.length ? margins.reduce((a, b) => a + b, 0) / margins.length : 0,
-          lowMargin: margins.filter((m) => m < 50).length,
+          ...financialStats,
           expiring: wasteRisk.length,
-          pctAbove50,
-          pctBelow25,
-          pricedCount: margins.length,
         },
       };
     }
@@ -732,15 +660,15 @@ export default function DashboardPage() {
   const stats = s
     ? [
         {
-          label: "Avg margin",
+          label: s.estimatedCount ? "Est. avg margin" : "Avg margin",
           value: s.pricedCount ? s.avgMargin.toFixed(1) + "%" : "—",
-          note: s.pricedCount ? `target ${Math.round(marginTarget)}% · ${s.pricedCount} priced` : "awaiting pricing",
+          note: s.pricedCount ? `target ${Math.round(marginTarget)}% · ${s.pricedCount}/${s.totalCount} priced${s.estimatedCount ? ` · ${s.estimatedCount} est.` : ""}` : "awaiting pricing",
           tone: !s.pricedCount || s.avgMargin >= marginTarget ? "ok" : s.avgMargin >= marginTarget - 5 ? "warn" : "bad",
         },
         {
           label: "Low-margin",
           value: s.pricedCount ? String(s.lowMargin) : "—",
-          note: "dishes under 50%",
+          note: `priced dishes under 50%${s.unpricedCount ? ` · ${s.unpricedCount} unpriced` : ""}`,
           tone: !s.pricedCount ? "ok" : s.lowMargin >= 5 ? "bad" : s.lowMargin >= 1 ? "warn" : "ok",
         },
       ]
