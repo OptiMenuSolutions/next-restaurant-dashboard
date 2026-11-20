@@ -21,22 +21,30 @@ four such observations exist, use the optional onboarding hint, defaulting open.
 
 Holiday answers are per business date, never recurring annual settings. The six
 optional popup holidays are Thanksgiving Day, Christmas Eve, Christmas Day,
-New Year's Day, Easter, and July 4. Offer the popup on a dashboard visit within
-ten calendar days before or on the holiday, using the restaurant business date.
-It is dismissible and is claimed at most once per restaurant, holiday key, and
-year across devices. An interrupted claim may go unseen; it never causes
-repeated or mandatory work.
+New Year's Day, Easter, and July 4. On a dashboard visit, group every eligible
+unseen holiday within ten calendar days before or on its date into one optional
+popup, using the restaurant business date. Show friendly weekday/month/day labels. Each date has
+Open, Closed, and Closing early choices; save any selected subset atomically.
+One Not now dismisses the whole displayed group without saving answers. Dates
+newly entering the window later may form another group. Each listed date is
+claimed at most once per restaurant, holiday key, and year across devices. An
+interrupted claim may go unseen; it never causes repeated or mandatory work.
 
 For an upcoming owner holiday, use its dated answer first, then the same holiday
-last year, then the concept rule's default answer. Last-year complete totals of
-at most two imply closed; totals above two imply open. An incomplete low total
-is insufficient evidence and uses the default. Match the holiday identity and
-calendar date, not a 364-day shift. No answer carries into another year.
+last year only when its weekday was normally open, then the concept rule's
+default answer. To establish that prior weekday as normally open, require all
+four exact same-weekday dates 7, 14, 21, and 28 days before last year's holiday
+to be complete and source-covered, with at least one above two forecastable
+dish units. Missing, incomplete, uncovered, or all-low evidence skips last year's
+result and uses the default. When eligible, last-year complete totals of at most
+two imply closed; totals above two imply open. An incomplete low holiday total
+uses the default. Match the holiday identity and calendar date, not a 364-day
+shift. No answer carries into another year.
 
 A dated Open or Early close answer is an exception to the weekday schedule,
-including a closure inferred from four empty occurrences. An observed open
-last-year holiday is also an evidence-based exception. A default Open rule alone
-does not override an otherwise closed weekday. Early close comes only from a
+including a closure inferred from four empty occurrences. Only that explicit
+dated popup answer may reopen a normally closed weekday; last-year observed
+Open and default Open rules cannot do so. Early close comes only from a
 dated popup answer; without one, reduced expected volume uses the multiplier.
 Overlapping holiday keys remain separate and their ordinary factors multiply.
 
@@ -52,7 +60,7 @@ are stored in internal calendar diagnostics. They are never returned to owners.
 The owner API's `setup_required` means only that optional setup could be offered
 again; it is not a prerequisite for a projection.
 
-Calendar policy revision 2 records these rules. The database derives and saves
+Calendar policy revision 3 records these rules. The database derives and saves
 its own classifications and rejects mismatching worker output. Reads and writes
 retain restaurant scoping, complete history, stale-context fencing, and atomicity.
 Versioned setup, dated answers, and prompt views are append-only except during

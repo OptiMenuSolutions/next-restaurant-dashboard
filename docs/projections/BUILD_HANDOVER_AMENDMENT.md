@@ -11,15 +11,27 @@ It replaces requirements for recurring owner holiday answers or blocking setup.
   No projection requires the owner to answer a question.
 - Keep settings history. Store holiday answers and popup claims by date with
   immutable history and purge support. A popup is optional, dismissible, and
-  claimed once per holiday/year. GET requests do not claim popups.
+  claimed once per holiday/year. Group all eligible unseen dates in the current
+  ten-day window; save any selected subset atomically. One Not now dismisses the
+  displayed group. Use friendly dates. GET requests do not claim popups.
 - Keep owner diagnostics private. An owner-facing setup flag is informational.
 - JavaScript and SQL must use the same policy, including POS-only past nights,
   four complete covered weekday occurrences, date-specific popup precedence,
-  last-year same-holiday evidence, and default fallback.
+  last-year same-holiday evidence only after all four exact prior weekday dates
+  are complete and source-covered with at least one above two units, and default
+  fallback. Only a dated popup can reopen a normally closed upcoming weekday.
 - Optional onboarding setup must save before a timezone exists. Forecasting
   still requires a valid operational timezone and restaurant-local business date.
 - Preserve the independent projection scope: no waste-risk, recommendation,
   financial, uplift, or OptiScore formula integration in this change.
+
+## Deployment follow-up
+
+Existing restaurants without concepts initially report NOT SET in the admin
+monitor. Set their actual concepts through the authenticated admin setup after
+deployment; the next successful monitor check clears the alert. Do not guess
+concepts or bypass monitoring. Forecasts continue with the recorded full-service
+fallback while those optional values are unset.
 
 ## Step 10 orchestration notes
 

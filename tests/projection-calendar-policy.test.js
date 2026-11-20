@@ -72,7 +72,8 @@ test('a dated answer never carries into another year', () => {
 test('same holiday last year precedes the default and differs from shifting by 364 days', () => {
   for (const [units, answer, closed] of [[0, 'open', true], [42, 'closed', false]]) {
     const value = classify({ date: '2026-12-25', holidays: [holiday(), holiday(2025)], rules: [rule(answer)],
-      history: [fact('2025-12-25', units), fact('2025-12-26', 999)] });
+      history: [fact('2025-12-25', units), fact('2025-12-26', 999),
+        ...['2025-12-18', '2025-12-11', '2025-12-04', '2025-11-27'].map(day => fact(day, 42))] });
     assert.equal(value.closed, closed);
     assert.equal(value.resolved_holidays[0].answer_source, 'last_year_pos');
   }

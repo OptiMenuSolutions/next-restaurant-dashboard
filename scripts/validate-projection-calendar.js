@@ -439,7 +439,7 @@ test('incomplete occurrences are excluded and the POS-only past rule retains an 
 
 const promptSQL = (action, date = null, answer = null, revision = null, at = promptAt, actor = OWNER) => `
   set role service_role; select projection_private.holiday_prompt('${REST}','${actor}','${action}',
-    ${date ? `'${date}'` : 'null'},${answer ? `'${answer}'` : 'null'},${revision ?? 'null'},'${at}');`;
+    ${json(action === 'answer' ? [{ business_date: date, answer, expected_revision: revision }] : [])},'${at}');`;
 
 test('a popup is claimed at most once across concurrent requests and reappears for the next year only', async () => {
   const year = Number(context().today.slice(0, 4)) + 1;
@@ -449,10 +449,10 @@ test('a popup is claimed at most once across concurrent requests and reappears f
   assert.ok(replies.every(reply => reply.code === 0));
   const prompts = replies.map(reply => JSON.parse(reply.output.trim()).prompt).filter(Boolean);
   assert.equal(prompts.length, 1);
-  assert.equal(prompts[0].business_date, promptDate);
+  assert.equal(prompts[0].holidays[0].business_date, promptDate);
   assert.equal(JSON.parse(q(promptSQL('claim'))).prompt, null);
   const following = projectionHolidayDates(year + 1).find(row => row.holiday_key === 'thanksgiving_day').holiday_date;
-  assert.equal(JSON.parse(q(promptSQL('claim', null, null, null, `${shiftProjectionDate(following, -9)}T12:00:00Z`))).prompt.business_date, following);
+  assert.equal(JSON.parse(q(promptSQL('claim', null, null, null, `${shiftProjectionDate(following, -9)}T12:00:00Z`))).prompt.holidays[0].business_date, following);
 });
 
 test('source-window coverage gates the four-occurrence rule independently of completeness', async () => {
@@ -472,7 +472,7 @@ test('source-window coverage gates the four-occurrence rule independently of com
 });
 
 test('dated answers append revisions, exact retries are idempotent, stale and foreign writes reject', () => {
-  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'open', 0))).revision, 1);
+  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'open', 0))).responses[0].revision, 1);
   assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'open', 0))).changed, false);
   rejects(promptSQL('answer', promptDate, 'closed', 0), /PT409/);
   rejects(promptSQL('answer', promptDate, 'open', 1, undefined, FOREIGN), /OWNER_REQUIRED/);
@@ -492,7 +492,7 @@ test('dated Open wins over the holiday default; early close is explicit and past
   assert.equal(read.nights[0].closed, false);
   assert.equal(read.nights[0].resolved_holidays[0].answer_source, 'dated_popup');
   assert.equal(read.nights[0].weekday_observations, 4);
-  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'early_close', 1))).revision, 2);
+  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'early_close', 1))).responses[0].revision, 2);
   read = await readProjectionCalendar(database, { restaurantId: REST, from: promptDate, until: promptDate });
   const derived = JSON.parse(q(`select projection_private.derive_calendar_night(${json(read.context)},'${promptDate}');`));
   assert.deepEqual(read.nights[0], derived);
@@ -500,12 +500,14 @@ test('dated Open wins over the holiday default; early close is explicit and past
 });
 
 test('last-year same-holiday data overrides its default without asking the owner', async () => {
+  save(context().revision, config(), '2026-01-01');
   const today = context().today;
   const year = Number(today.slice(0, 4)) + (today.slice(5) > '12-25' ? 1 : 0);
   const date = `${year}-12-25`;
   const previous = `${year - 1}-12-25`;
   q(`insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision)
-    values ('${REST}','${previous}',true,42,'last-year-holiday')
+    select '${REST}',day,true,42,'last-year-holiday' from unnest(array[
+      ${[0, 7, 14, 21, 28].map(days => `'${shiftProjectionDate(previous, -days)}'::date`).join(',')}]) day
     on conflict(restaurant_id,business_date) do update set complete=true,total_units=42,source_revision='last-year-holiday';`);
   let read = await readProjectionCalendar(database, { restaurantId: REST, from: date, until: date });
   assert.equal(read.nights[0].closed, false);
@@ -514,6 +516,81 @@ test('last-year same-holiday data overrides its default without asking the owner
   read = await readProjectionCalendar(database, { restaurantId: REST, from: date, until: date });
   assert.equal(read.nights[0].closed, true);
   assert.deepEqual(read.nights[0], JSON.parse(q(`select projection_private.derive_calendar_night(${json(read.context)},'${date}');`)));
+});
+
+let groupAt, groupDates;
+const groupSQL = (action, responses = [], actor = OWNER) => `set role service_role;
+  select projection_private.holiday_prompt('${REST}','${actor}','${action}',${json(responses)},'${groupAt}');`;
+
+test('one claim groups every eligible holiday, crosses New Year, and dismisses all without answers', () => {
+  const year = Number(context().today.slice(0, 4)) + 1;
+  groupAt = `${year}-12-22T12:00:00Z`;
+  groupDates = [`${year}-12-24`, `${year}-12-25`, `${year + 1}-01-01`];
+  const preview = JSON.parse(q(`begin; ${groupSQL('claim').replace(groupAt, `${year}-12-21T12:00:00Z`)} rollback;`));
+  assert.deepEqual(preview.prompt.holidays.map(row => row.business_date), groupDates.slice(0, 2));
+  const result = JSON.parse(q(groupSQL('claim')));
+  assert.deepEqual(result.prompt.holidays.map(row => row.business_date), groupDates);
+  assert.equal(JSON.parse(q(groupSQL('dismiss'))).changed, false);
+  assert.equal(JSON.parse(q(groupSQL('claim'))).prompt, null);
+  assert.equal(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}'
+    and business_date=any(array[${groupDates.map(day => `'${day}'::date`).join(',')}]);`), '0');
+});
+
+test('a selected subset saves atomically and identical batch retries append nothing', () => {
+  const responses = [{ business_date: groupDates[0], answer: 'open', expected_revision: 0 },
+    { business_date: groupDates[2], answer: 'closed', expected_revision: 0 }];
+  assert.equal(JSON.parse(q(groupSQL('answer', responses))).changed, true);
+  assert.equal(JSON.parse(q(groupSQL('answer', responses))).changed, false);
+  assert.equal(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}'
+    and business_date='${groupDates[1]}';`), '0');
+});
+
+test('a stale later answer rolls back an earlier valid answer and tenant spoofing cannot write', () => {
+  const count = q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`);
+  const responses = [{ business_date: groupDates[1], answer: 'open', expected_revision: 0 },
+    { business_date: groupDates[2], answer: 'open', expected_revision: 0 }];
+  rejects(groupSQL('answer', responses), /PT409/);
+  rejects(groupSQL('answer', responses, FOREIGN), /OWNER_REQUIRED/);
+  assert.equal(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`), count);
+});
+
+test('SQL batch validation rejects duplicates, invalid shapes, unsupported dates and fabricated identities', () => {
+  const valid = { business_date: groupDates[1], answer: 'open', expected_revision: 0 };
+  const count = q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`);
+  for (const responses of [[valid, valid], [], [null], [{ ...valid, actor_id: OWNER }],
+    [{ ...valid, expected_revision: 0.5 }], [{ ...valid, expected_revision: 9007199254740992 }],
+    [{ ...valid, answer: 'maybe' }], [{ ...valid, business_date: groupDates[0].slice(0, 4) + '-12-26' }],
+    [valid, { ...valid, business_date: groupDates[2].slice(0, 4) + '-01-02' }]]) {
+    rejects(groupSQL('answer', responses), /ERROR:/);
+  }
+  assert.equal(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`), count);
+});
+
+test('SQL and JS agree on holiday weekday contamination, four-date coverage and popup-only reopening', async () => {
+  for (const scenario of ['closed_prior_sunday', 'closed_current_sunday', 'genuine_closure', 'missing', 'uncovered', 'older', 'popup']) {
+    const christmas = scenario === 'closed_prior_sunday';
+    const date = christmas ? '2035-12-24' : '2027-07-04';
+    const previous = christmas ? '2034-12-24' : '2026-07-04';
+    const read = await readProjectionCalendar(database, { restaurantId: REST, from: date, until: date });
+    const ctx = structuredClone(read.context);
+    ctx.today = christmas ? '2035-12-01' : '2026-11-20'; ctx.as_of = `${ctx.today}T12:00:00Z`;
+    ctx.rules = ctx.rules.map(row => ({ ...row, effective_at: '2026-01-01T00:00:00Z' }));
+    ctx.history = [0, 7, 14, 21, 28].map(days => ({ business_date: shiftProjectionDate(previous, -days),
+      total_units: !christmas && (days || scenario === 'closed_current_sunday') ? 42 : 0,
+      complete: true, source_covered: true, source_revision: 'fixture' }));
+    if (scenario === 'missing') ctx.history.pop();
+    if (scenario === 'uncovered') ctx.history.at(-1).source_covered = false;
+    if (scenario === 'older') ctx.history.at(-1).business_date = shiftProjectionDate(previous, -35);
+    ctx.holiday_answers = scenario === 'popup' ? [{ restaurant_id: REST, business_date: date, answer: 'open' }] : [];
+    ctx.versions = [{ restaurant_id: REST, revision: 1, effective_from: null, settings: {
+      ...config(), normally_closed_weekdays: ['closed_current_sunday', 'popup'].includes(scenario) ? [7] : [],
+    } }];
+    const jsDB = { rpc: async name => name === 'projection_prepare_calendar' ? { data: null, error: null }
+      : { data: ctx, error: null } };
+    const js = (await readProjectionCalendar(jsDB, { restaurantId: REST, from: date, until: date })).nights[0];
+    assert.equal(js.closed, ['closed_current_sunday', 'genuine_closure'].includes(scenario), scenario);
+    assert.deepEqual(js, JSON.parse(q(`select projection_private.derive_calendar_night(${json(ctx)},'${date}');`)), scenario);
+  }
 });
 
 test('permanent account purge removes and counts calendar versions while global dates remain', () => {
