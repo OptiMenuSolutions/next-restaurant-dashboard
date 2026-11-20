@@ -36,7 +36,7 @@ for (const [days, tier] of [[13, 'needs_baseline'], [14, 'limited_history'], [15
     near(row.history.weeks, days / 7);
     assert.equal(row.history.tier, tier);
     assert.equal(row.history.cold_start, days < 56);
-    assert.equal(row.history.own_seasonality_allowed, days >= 364);
+    assert.equal(row.history.own_seasonality_tier, days >= 364);
     assert.equal(row.status, days < 14 ? 'needs_baseline' : 'ok');
     if (days < 14) assert.equal(row.adjusted_volume, null);
     else {
@@ -55,28 +55,41 @@ test('each history-tier boundary follows overridden versioned settings', () => {
   }
 });
 
-test('minimum_trend_weeks controls the eligible-point threshold, without a separate policy', () => {
-  const data = context(70, { minimum_trend_weeks: 5 });
-  data.history = [7, 14, 21, 28].map((n, i) => fact(shiftProjectionDate(ASOF, -n), 140 - i * 10));
-  let row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.recent.method, 'weighted_mean'); near(row.recent.raw_slope, 0);
-  data.history.push(fact(shiftProjectionDate(ASOF, -35), 100));
-  row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.recent.method, 'weighted_fit'); near(row.recent.raw_slope, 10);
+test('span just below and at four weeks controls the slope with two eligible points', () => {
+  for (const days of [27, 28]) {
+    const data = context(days);
+    data.history = [fact(data.firstDataDate, 0, { closed: true }),
+      fact(shiftProjectionDate(ASOF, -14), 80), fact(shiftProjectionDate(ASOF, -7), 100),
+      fact(shiftProjectionDate(ASOF, -1), 0, { closed: true })];
+    const row = projectRestaurantVolume(data).nights[0];
+    assert.equal(row.window.eligible.length, 2);
+    assert.equal(row.recent.method, days < 28 ? 'weighted_mean' : 'weighted_fit');
+    near(row.recent.raw_slope, days < 28 ? 0 : 20);
+  }
 });
 
-test('an inadequate weekday count still needs baseline after reaching the maximum lookback', () => {
-  const data = context(140, { minimum_weekday_nights: 3, maximum_volume_lookback_weeks: 10 });
-  data.history = [7, 14, 77].map(n => fact(shiftProjectionDate(ASOF, -n)));
+test('window extension seeks the requested count but retains a one-point weighted level at the limit', () => {
+  const data = context(28);
+  data.history = [fact(data.firstDataDate, 0, { closed: true }),
+    fact(shiftProjectionDate(ASOF, -7), 123), fact(shiftProjectionDate(ASOF, -1), 0, { closed: true })];
   const row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.history.needs_baseline, false);
-  assert.equal(row.status, 'needs_baseline'); assert.equal(row.window.weeks, 10);
-  assert.equal(row.adjusted_volume, null);
+  assert.equal(row.status, 'ok'); assert.equal(row.window.weeks, 16);
+  assert.equal(row.recent.method, 'weighted_mean'); near(row.recent.L, 123); near(row.recent.raw_slope, 0);
+});
+
+test('a mature span without any eligible target-weekday observations still needs baseline', () => {
+  const data = context(28);
+  data.history = [fact(data.firstDataDate, 0, { closed: true }),
+    fact(shiftProjectionDate(ASOF, -1), 0, { closed: true })];
+  const row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.history.needs_baseline, false); assert.equal(row.status, 'needs_baseline');
+  assert.equal(row.window.weeks, 16); assert.equal(row.adjusted_volume, null);
 });
 
 test('neutral seasonality retains the configured blend rather than using R alone', () => {
   const data = context(70, { volume_recent_weight: 0.25 });
   data.history = [7, 14, 21, 28].map((n, i) => fact(shiftProjectionDate(ASOF, -n), 140 - i * 10));
+  data.history.push(fact(shiftProjectionDate(ASOF, -35), 0, { closed: true }));
   const row = projectRestaurantVolume(data).nights[0];
   assert.ok(row.recent.R > row.recent.L);
   near(row.seasonal.A, row.recent.L); near(row.seasonal.S, 1);
@@ -85,16 +98,16 @@ test('neutral seasonality retains the configured blend rather than using R alone
   assert.equal(row.seasonal.benchmark.used, true);
 });
 
-test('LY usability requires the configured number of eligible nights', () => {
+test('the configured LY threshold selects the averaging method rather than availability', () => {
   const data = context(420, { minimum_ly_weekday_nights: 5 });
   const end = shiftProjectionDate(ASOF, -371);
   const keep = new Set([0, 7, 14, 21].map(n => shiftProjectionDate(end, -n)));
   data.history = data.history.filter(n => n.business_date > end || keep.has(n.business_date));
   let row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.seasonal.own_ly_available, false); assert.equal(row.seasonal.L_LY, null);
+  assert.equal(row.seasonal.own_ly_available, true); assert.equal(row.seasonal.level_method, 'LY level from average');
   data.history.push(fact(shiftProjectionDate(end, -28)));
   row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.seasonal.own_ly_available, true); near(row.seasonal.L_LY, 100);
+  assert.equal(row.seasonal.own_ly_available, true); assert.equal(row.seasonal.level_method, 'LY fitted endpoint');
 });
 
 test('snapshot maturity uses the last complete POS-covered date, not the clock or latest failed sync', () => {
@@ -121,11 +134,14 @@ test('limited-history workbook component golden preserves cached values and disc
     near(row.history.weeks, fixture.history_weeks);
     assert.equal(row.window.eligible.length, cached.eligible_nights);
     assert.equal(row.history.tier, 'limited_history');
-    if (cached.eligible_nights >= data.resolvedSettings.settings.minimum_weekday_nights) {
+    if (cached.eligible_nights > 0) {
       near(row.recent.L, cached.L); near(row.recent.R, cached.R); near(row.recent.raw_slope, cached.raw_slope);
       near(row.recent.h, cached.h);
+      assert.equal(row.business_date, cached.business_date);
       near(row.base_volume, cached.L);
       near(row.adjusted_volume, cached.L * cached.factor);
+      near(row.factor, cached.factor);
+      if (cached.factor === 0) near(row.adjusted_volume, cached.adjusted);
       assert.notEqual(cached.S, row.seasonal.S); // Cached case uses Census proxy inputs; Step 4 uses neutral.
     } else {
       assert.equal(row.status, row.calendar.closed ? 'closed' : 'needs_baseline');
@@ -134,13 +150,14 @@ test('limited-history workbook component golden preserves cached values and disc
   });
 });
 
-test('the default slope threshold is checked immediately below, at and above four points', () => {
-  for (const count of [3, 4, 5]) {
+test('a mature source span permits slopes with two, three or four eligible points', () => {
+  for (const count of [2, 3, 4]) {
     const data = context(70);
     data.history = Array.from({ length: count }, (_, i) => fact(shiftProjectionDate(ASOF, -7 * (i + 1)), 140 - i * 10));
+    data.history.push(fact(shiftProjectionDate(ASOF, -35), 0, { closed: true }));
     const row = projectRestaurantVolume(data).nights[0];
-    assert.equal(row.recent.method, count < 4 ? 'weighted_mean' : 'weighted_fit');
-    near(row.recent.raw_slope, count < 4 ? 0 : 10);
+    assert.equal(row.recent.method, 'weighted_fit');
+    near(row.recent.raw_slope, 10);
   }
 });
 
@@ -152,7 +169,91 @@ test('the default LY threshold is checked immediately below, at and above four n
     data.history = data.history.filter(n => n.business_date > end || keep.has(n.business_date));
     const row = projectRestaurantVolume(data).nights[0];
     assert.equal(row.seasonal.base_window.eligible.length, count);
-    assert.equal(row.seasonal.own_ly_available, count >= 4);
-    assert.equal(row.seasonal.benchmark.used, count < 4);
+    assert.equal(row.seasonal.own_ly_available, true);
+    assert.equal(row.seasonal.benchmark.used, false);
+    assert.equal(row.seasonal.level_method, count < 4 ? 'LY level from average' : 'LY fitted endpoint');
+  }
+});
+
+test('the first complete source night, not an earlier first-data cutoff, determines maturity', () => {
+  const data = context(28);
+  data.firstDataDate = shiftProjectionDate(ASOF, -365);
+  data.history[0].complete = false;
+  data.history[1].source_covered = false;
+  let row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.history.first_complete_date, shiftProjectionDate(ASOF, -26));
+  near(row.history.weeks, 26 / 7); assert.equal(row.history.tier, 'limited_history');
+  data.history.forEach(n => { n.complete = false; });
+  row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.history.first_complete_date, null); near(row.history.weeks, 0);
+  assert.equal(row.status, 'needs_baseline');
+});
+
+test('the first-data cutoff excludes earlier complete nights from the history span', () => {
+  const data = context(28);
+  data.firstDataDate = shiftProjectionDate(ASOF, -14);
+  const row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.history.first_complete_date, data.firstDataDate); near(row.history.weeks, 2);
+});
+
+test('the own-seasonality tier is a label and never gates usable last-year data', () => {
+  const data = context(420, { own_seasonality_weeks: 1000 });
+  const row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.history.own_seasonality_tier, false);
+  assert.equal(row.history.tier, 'benchmark_seasonality');
+  assert.equal(row.seasonal.own_ly_available, true); assert.equal(row.seasonal.source, 'own_ly');
+});
+
+test('zero last-year level follows the public-benchmark switch without a special neutral flag', () => {
+  for (const enabled of [false, true]) {
+    const data = context(420, { public_benchmarks_enabled: enabled });
+    data.history.filter(n => n.business_date <= shiftProjectionDate(ASOF, -371)).forEach(n => { n.total_units = 0; });
+    const row = projectRestaurantVolume(data).nights[0];
+    assert.equal(row.seasonal.L_LY, 0); assert.equal(row.seasonal.own_ly_available, false);
+    assert.equal(row.seasonal.benchmark.used, enabled);
+    assert.equal(row.seasonal.available, enabled);
+    assert.equal(row.blend.recent, enabled ? 0.5 : 1);
+    assert.equal(Object.hasOwn(row.seasonal, 'zero_denominator_neutral'), false);
+  }
+});
+
+test('a pooled-data switch without pooled input does not fabricate an available benchmark', () => {
+  const data = context(70, { public_benchmarks_enabled: false, pooled_benchmarks_enabled: true });
+  const row = projectRestaurantVolume(data).nights[0];
+  assert.equal(row.seasonal.source, 'recent_only'); assert.equal(row.seasonal.A, null);
+  assert.equal(row.blend.recent, 1);
+});
+
+test('cold-start threshold changes labels without changing volume calculations', () => {
+  const a = projectRestaurantVolume(context(70)).nights[0];
+  const b = projectRestaurantVolume(context(70, { cold_start_weeks: 12 })).nights[0];
+  assert.equal(a.history.cold_start, false); assert.equal(b.history.cold_start, true);
+  near(a.base_volume, b.base_volume); near(a.adjusted_volume, b.adjusted_volume);
+});
+
+test('a fractional minimum-trend span remains a duration rather than a point count', () => {
+  for (const days of [24, 25]) {
+    const data = context(days, { minimum_trend_weeks: 3.5 });
+    data.history = [fact(data.firstDataDate, 0, { closed: true }),
+      fact(shiftProjectionDate(ASOF, -14), 80), fact(shiftProjectionDate(ASOF, -7), 100),
+      fact(shiftProjectionDate(ASOF, -1), 0, { closed: true })];
+    const row = projectRestaurantVolume(data).nights[0];
+    near(row.recent.raw_slope, days < 24.5 ? 0 : 20);
+  }
+});
+
+test('usable own last year remains available when public benchmarks are disabled', () => {
+  const row = projectRestaurantVolume(context(420, { public_benchmarks_enabled: false })).nights[0];
+  assert.equal(row.seasonal.own_ly_available, true);
+  assert.equal(row.seasonal.source, 'own_ly'); assert.equal(row.seasonal.benchmark.used, false);
+  near(row.seasonal.A, 100); near(row.blend.recent, 0.5); near(row.blend.seasonal, 0.5);
+});
+
+test('the neutral public ratio respects census strength and valid seasonal bounds', () => {
+  for (const strength of [0, 0.5, 1]) {
+    const row = projectRestaurantVolume(context(70, { census_strength: strength,
+      seasonal_ratio_min: 1, seasonal_ratio_max: 1 })).nights[0];
+    near(row.seasonal.raw_ratio, 1); near(row.seasonal.S, 1);
+    near(row.seasonal.A, 100); near(row.base_volume, 100);
   }
 });

@@ -38,6 +38,8 @@ function goldenInput() {
     const date = shiftProjectionDate(segment.start, i);
     return fact(date, units, volumeV4.flags[date]);
   }));
+  // Cached first complete source row lies outside the exported fit windows.
+  history.push(fact('2025-01-01', 118, { holiday_keys: ['new_years_day'] }));
   const data = input({ settings: volumeV4.settings, history, asOf: volumeV4.as_of, firstDataDate: volumeV4.first_data_date });
   data.calendar = data.calendar.map((row, i) => ({ ...row,
     closed: volumeV4.expected[i].factor === 0,
@@ -95,19 +97,18 @@ test('the h=2 gap starts at the last eligible weekday, with both damping terms',
   assert.ok(row.window.excluded.some(item => item.reasons.includes('excluded_outlier')));
 });
 
-test('three points use their weighted level; four points enable a fit', () => {
-  const three = first({ history: series([80, 100, 120]) });
-  assert.equal(three.recent.method, 'weighted_mean'); near(three.recent.raw_slope, 0);
-  const w = 0.5 ** (1 / 4);
-  near(three.recent.L, (80 * w ** 2 + 100 * w + 120) / (w ** 2 + w + 1));
-  const four = first({ history: series([60, 80, 100, 120]) });
-  assert.equal(four.recent.method, 'weighted_fit'); near(four.recent.raw_slope, 20);
+test('two eligible points fit a slope when the source span is at least four weeks', () => {
+  const history = series([80, 100]);
+  history.push(fact(shiftProjectionDate(ASOF, -35), 0, { closed: true }));
+  const row = first({ history });
+  assert.equal(row.recent.method, 'weighted_fit'); near(row.recent.raw_slope, 20);
+  near(row.recent.L, 100);
 });
 
 test('the window extends in whole weeks only until the baseline minimum is met', () => {
   const row = first({ history: [fact(shiftProjectionDate(ASOF, -7), 80), fact(shiftProjectionDate(ASOF, -63), 120)] });
   assert.equal(row.status, 'ok'); assert.equal(row.window.weeks, 9); assert.equal(row.window.extended, true);
-  assert.equal(row.window.eligible.length, 2); assert.equal(row.recent.method, 'weighted_mean');
+  assert.equal(row.window.eligible.length, 2); assert.equal(row.recent.method, 'weighted_fit');
 });
 
 test('insufficient history stops at the maximum and displays no invented volume', () => {
@@ -166,19 +167,29 @@ test('LY target holidays are excluded; one usable week is sufficient and no week
   assert.ok(row.seasonal.reasons.includes('insufficient_ly_target'));
 });
 
-test('three LY base nights use the neutral benchmark; four permit own LY', () => {
-  const data = withLY(input());
-  const cutoff = shiftProjectionDate(ASOF, -385);
-  data.history = data.history.filter(n => n.business_date >= cutoff);
-  let row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.seasonal.fit, null); assert.equal(row.seasonal.own_ly_available, false);
-  assert.equal(row.seasonal.benchmark.used, true);
-  data.history.push(fact(shiftProjectionDate(ASOF, -392), 80));
-  row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.seasonal.fit.method, 'weighted_fit'); assert.equal(row.seasonal.own_ly_available, true);
+test('one to three LY base nights use weighted means; four use the fitted endpoint', () => {
+  for (const count of [1, 2, 3, 4]) {
+    const data = withLY(input());
+    const end = shiftProjectionDate(ASOF, -371);
+    const keep = new Set(Array.from({ length: count }, (_, i) => shiftProjectionDate(end, -7 * i)));
+    data.history = data.history.filter(n => n.business_date > end || keep.has(n.business_date));
+    let weightedUnits = 0, totalWeight = 0;
+    for (let i = 0; i < count; i++) {
+      const date = shiftProjectionDate(end, -7 * i);
+      const units = 100 - i * 10;
+      const weight = 0.5 ** (i / data.resolvedSettings.settings.volume_half_life_weeks);
+      data.history.find(n => n.business_date === date).total_units = units;
+      weightedUnits += units * weight; totalWeight += weight;
+    }
+    const row = projectRestaurantVolume(data).nights[0];
+    assert.equal(row.seasonal.own_ly_available, true);
+    assert.equal(row.seasonal.fit.method, count < 4 ? 'weighted_mean' : 'weighted_fit');
+    assert.equal(row.seasonal.level_method, count < 4 ? 'LY level from average' : 'LY fitted endpoint');
+    near(row.seasonal.L_LY, count < 4 ? weightedUnits / totalWeight : 100);
+  }
 });
 
-test('both seasonal bounds are enforced and zero LY levels use a flagged neutral ratio', () => {
+test('both seasonal bounds are enforced and zero LY levels use the benchmark fallback', () => {
   for (const [targetUnits, expected] of [[1000, 1.33], [0, 0.75]]) {
     const data = withLY(input());
     data.history.filter(n => n.business_date >= shiftProjectionDate(ASOF, -371) && n.business_date <= shiftProjectionDate(ASOF, -357))
@@ -187,11 +198,14 @@ test('both seasonal bounds are enforced and zero LY levels use a flagged neutral
   }
   const data = withLY(input(), 0);
   const row = projectRestaurantVolume(data).nights[0];
-  assert.equal(row.seasonal.S, 1); assert.equal(row.seasonal.zero_denominator_neutral, true);
+  assert.equal(row.seasonal.S, 1); assert.equal(row.seasonal.own_ly_available, false);
+  assert.equal(row.seasonal.benchmark.used, true);
+  assert.ok(row.seasonal.reasons.includes('nonpositive_ly_level'));
+  assert.equal(Object.hasOwn(row.seasonal, 'zero_denominator_neutral'), false);
 });
 
 test('volume quantities floor at zero while the raw decline remains signed', () => {
-  const row = first({ history: series([1000, 0, 0, 0]) });
+  const row = first({ history: series([1000, 0, 0, 0, 0]) });
   assert.ok(row.recent.raw_slope < 0); assert.ok(row.recent.raw_level < 0);
   assert.equal(row.recent.L, 0); assert.equal(row.recent.R, 0); assert.equal(row.adjusted_volume, 0);
 });
@@ -311,17 +325,16 @@ test('configured seasonal weights zero and one retain their exact meanings when 
   }
 });
 
-test('a disabled public-data switch still permits a labeled neutral assumption, without fabricating own LY', () => {
-  const data = withLY(input({ settings: { public_benchmarks_enabled: false } }));
-  const cutoff = shiftProjectionDate(ASOF, -371);
-  data.history = data.history.filter(n => n.business_date >= cutoff);
+test('public benchmarks disabled and no usable LY uses R alone', () => {
+  const data = input({ settings: { public_benchmarks_enabled: false }, history: series([80, 90, 100, 110, 120]) });
   const row = projectRestaurantVolume(data).nights[0];
-  assert.ok(row.seasonal.reasons.includes('insufficient_ly_base'));
   assert.equal(row.seasonal.own_ly_available, false);
-  assert.equal(row.seasonal.benchmark.status, 'neutral_placeholder');
-  assert.equal(row.seasonal.benchmark.public_enabled, false);
-  assert.equal(row.seasonal.benchmark.used, true);
-  near(row.base_volume, row.blend.recent * row.recent.R + row.blend.seasonal * row.recent.L);
+  assert.equal(row.seasonal.available, false);
+  assert.equal(row.seasonal.benchmark.status, 'disabled');
+  assert.equal(row.seasonal.benchmark.used, false);
+  assert.equal(row.seasonal.A, null); assert.equal(row.seasonal.S, null);
+  assert.equal(row.blend.recent, 1); assert.equal(row.blend.seasonal, 0);
+  near(row.base_volume, row.recent.R);
 });
 
 test('shared eligibility handles incomplete unavailable units and includes confirmed shifts', () => {
@@ -340,4 +353,10 @@ test('provenance uses the existing registered v4 model and settings identities o
   assert.deepEqual(result.provenance.model_version, MODEL);
   assert.equal(Object.hasOwn(result.provenance, 'volume_policy_version'), false);
   assert.equal(Object.hasOwn(result.nights[0].provenance, 'policy_version_id'), false);
+});
+
+test('the golden snapshot includes its actual first complete source night', () => {
+  const row = projectRestaurantVolume(goldenInput()).nights[0];
+  assert.equal(row.history.first_complete_date, '2025-01-01');
+  near(row.history.weeks, 687 / 7);
 });
