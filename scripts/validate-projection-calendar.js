@@ -63,14 +63,16 @@ function asyncSQL(sql) {
 }
 
 before(async () => {
-  docker(['run', '--detach', '--name', container, '-e', `POSTGRES_PASSWORD=${randomUUID()}`, 'postgres:17']);
+  docker(['run', '--detach', '--name', container, '--read-only',
+    '--tmpfs', '/var/lib/postgresql/data', '--tmpfs', '/var/run/postgresql', '--tmpfs', '/tmp',
+    '-e', `POSTGRES_PASSWORD=${randomUUID()}`, 'postgres:17']);
   started = true;
   let ready = false;
-  for (let n = 0; n < 80; n++) {
+  for (let n = 0; n < 160; n++) {
     try { docker(['exec', container, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']); ready = true; break; }
     catch { await delay(250); }
   }
-  assert.ok(ready, 'Local PostgreSQL did not start');
+  assert.ok(ready, ready ? '' : `Local PostgreSQL did not start: ${docker(['logs', container])}`);
   q(`create role anon; create role authenticated; create role service_role bypassrls;
     create schema auth;
     create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
@@ -95,7 +97,7 @@ before(async () => {
     q(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
   }
 });
-after(() => { if (started) docker(['rm', '--force', container]); });
+after(() => { if (started) docker(['rm', '--force', '--volumes', container]); });
 
 test('calendar storage is server-only, RLS is enabled and version history is immutable', () => {
   for (const role of ['anon', 'authenticated']) {
@@ -239,6 +241,98 @@ test('a newly effective global setting fences an old calendar batch', async () =
     from public.projection_setting_versions where restaurant_id is null
     order by effective_at desc limit 1;`);
   await assert.rejects(applyProjectionCalendarFlags(database, read), error => error.code === 'PT409');
+});
+
+test('December forecasts cross an unpublished sports year; February still requires its date', async () => {
+  const read = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2028-12-28', until: '2029-01-04' });
+  assert.equal(read.nights.length, 8);
+  await assert.rejects(readProjectionCalendar(database,
+    { restaurantId: REST, from: '2029-01-31', until: '2029-02-01' }),
+  error => error.code === 'PROJECTION_CALENDAR_INCOMPLETE');
+});
+
+test('database derivation rejects unconfigured restaurants with a setup-specific code', () => {
+  const ctx = context(DAY, DAY, OTHER);
+  rejects(`set role service_role; select public.projection_apply_calendar_flags(
+    '${OTHER}','${DAY}','${DAY}','${ctx.context_digest}',${json([{ business_date: DAY }])});`, /PROJECTION_CALENDAR_SETUP_REQUIRED/);
+});
+
+test('database derivation also refuses an unpublished February calendar', () => {
+  rejects(`begin;
+    delete from public.projection_holiday_calendar where holiday_key='super_bowl' and holiday_date='2024-02-11';
+    set local role service_role;
+    select public.projection_apply_calendar_flags('${REST}','2024-02-11','2024-02-11',
+      public.projection_calendar_context('${REST}','2024-02-11','2024-02-11')->>'context_digest',
+      '[{"business_date":"2024-02-11"}]'::jsonb);`, /PROJECTION_CALENDAR_INCOMPLETE/);
+  assert.equal(q(`select count(*) from public.projection_holiday_calendar where holiday_key='super_bowl' and holiday_date='2024-02-11';`), '1');
+});
+
+test('real past POS sales override weekly closures and expose a conflict without promoting completeness', async () => {
+  save(context().revision, { ...config(), normally_closed_weekdays: [1] }, '2026-01-01');
+  q(`insert into public.projection_nightly_flags
+    (restaurant_id,business_date,complete,total_units,source_revision)
+    values ('${REST}','2026-11-09',false,42,'pos-proof');`);
+  const read = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2026-11-09', until: '2026-11-09' });
+  assert.equal(read.nights[0].closed, false);
+  await applyProjectionCalendarFlags(database, read);
+  assert.equal(q(`select not closed and not complete and total_units=42
+    and flags#>>'{calendar,closure_conflict,code}'='PROJECTION_CALENDAR_CLOSURE_CONFLICT'
+    from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-09';`), 't');
+  assert.ok(context().closure_conflicts.some(conflict => conflict.business_date === '2026-11-09'));
+});
+
+test('saved closure flags cannot override the database decision that POS proves past service', async () => {
+  q(`update public.projection_nightly_flags set closed=true,
+    flags=jsonb_set(flags,'{calendar,legacy_closed}','true'::jsonb)
+    where restaurant_id='${REST}' and business_date='2026-11-09';`);
+  const read = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2026-11-09', until: '2026-11-09' });
+  assert.equal(read.nights[0].closed, false);
+  await applyProjectionCalendarFlags(database, read);
+  assert.equal(q(`select not closed and flags#>>'{calendar,legacy_closed}'='true'
+    from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-09';`), 't');
+});
+
+test('POS corrections fence old batches and clear conflicts when the evidence is below threshold', async () => {
+  const old = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2026-11-09', until: '2026-11-09' });
+  q(`update public.projection_nightly_flags set total_units=2,source_revision='corrected-pos'
+    where restaurant_id='${REST}' and business_date='2026-11-09';`);
+  await assert.rejects(applyProjectionCalendarFlags(database, old), error => error.code === 'PT409');
+  const fresh = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2026-11-09', until: '2026-11-09' });
+  assert.equal(fresh.nights[0].closed, true);
+  await applyProjectionCalendarFlags(database, fresh);
+  assert.equal(q(`select closed and not complete and flags#>'{calendar,closure_conflict}'='null'::jsonb
+    from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-09';`), 't');
+});
+
+test('past holiday closures with sales become open while holiday identity and source facts remain', async () => {
+  save(context().revision, config(), '2024-01-01');
+  q(`update public.projection_nightly_flags set total_units=42,complete=true,source_revision='christmas-pos'
+    where restaurant_id='${REST}' and business_date='2024-12-25';`);
+  const read = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2024-12-25', until: '2024-12-25' });
+  assert.equal(read.nights[0].closed, false);
+  assert.equal(read.nights[0].default_factor, 1);
+  assert.deepEqual(read.nights[0].holiday_keys, ['christmas_day']);
+  await applyProjectionCalendarFlags(database, read);
+  assert.equal(q(`select complete and total_units=42 and not closed and source_revision='christmas-pos'
+    from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2024-12-25';`), 't');
+});
+
+test('the database independently rejects forged closure, early-close, factor and conflict values', async () => {
+  const read = await readProjectionCalendar(database,
+    { restaurantId: REST, from: '2024-12-24', until: '2024-12-25' });
+  const original = read.nights[0];
+  for (const patch of [{ closed: !original.closed }, { early_close: !original.early_close },
+    { default_factor: 9 }, { regular_service: true }, { closure_conflict: {} }]) {
+    const nights = [{ ...original, ...patch }, read.nights[1]];
+    await assert.rejects(applyProjectionCalendarFlags(database, { ...read, nights }),
+      error => error.code === '22023');
+  }
 });
 
 test('more than ten thousand answer versions are read without a row-limit cutoff', () => {

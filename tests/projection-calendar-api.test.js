@@ -100,4 +100,14 @@ test('unconfigured onboarding answers remain editable through GET', async () => 
   const result = await request({ reply: { data: value, error: null } });
   assert.equal(result.response.statusCode, 200);
   assert.equal(result.response.body.settings.concept_type, null);
+  assert.equal(result.response.body.setup_required, true);
+  assert.equal(result.response.body.setup_code, 'PROJECTION_CALENDAR_SETUP_REQUIRED');
+});
+
+test('GET exposes saved closure conflicts for an owner prompt', async () => {
+  const value = context();
+  value.closure_conflicts = [{ code: 'PROJECTION_CALENDAR_CLOSURE_CONFLICT', business_date: '2026-11-09', total_units: 42 }];
+  const result = await request({ reply: { data: value, error: null } });
+  assert.deepEqual(result.response.body.closure_conflicts, value.closure_conflicts);
+  assert.equal(result.response.body.setup_required, false);
 });

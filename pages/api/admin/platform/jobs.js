@@ -13,6 +13,7 @@ import { fetchAll } from '../../../../lib/admin/fetchAll';
 import { JOBS, JOB_BY_KEY, etTimeOf } from '../../../../lib/admin/jobRun';
 import stripe from '../../../../lib/stripeServer';
 import shift4 from '../../../../lib/pos/providers/shift4';
+import { projectionCalendarScheduleStatus } from '../../../../lib/projections/calendarHealth.js';
 
 const NIGHTS = 14;
 
@@ -76,6 +77,7 @@ const need = (v) => { if (!v) throw new Error('not set'); return v; };
 export async function services() {
   const env = process.env;
   return Promise.all([
+    projectionCalendarScheduleStatus(db),
     timed('Supabase', 'Database, logins and file storage', async () => {
       const { error } = await db.from('restaurants').select('id').limit(1);
       if (error) throw new Error(error.message);

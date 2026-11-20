@@ -29,7 +29,10 @@ export function createProjectionCalendarHandler({ db, verifyOwner } = {}) {
         const current = selectProjectionCalendarVersion(context.versions, restaurantId, context.today);
         return res.status(200).json({ restaurant_id: restaurantId, revision: context.revision,
           today: context.today, timezone: context.timezone, settings: current.settings,
-          effective_from: current.effective_from, holiday_options: PROJECTION_OWNER_HOLIDAYS });
+          effective_from: current.effective_from, holiday_options: PROJECTION_OWNER_HOLIDAYS,
+          setup_required: current.settings?.concept_type == null,
+          setup_code: current.settings?.concept_type == null ? 'PROJECTION_CALENDAR_SETUP_REQUIRED' : null,
+          closure_conflicts: context.closure_conflicts || [] });
       }
       let body;
       let settings;
@@ -55,7 +58,7 @@ export function createProjectionCalendarHandler({ db, verifyOwner } = {}) {
       return res.status(200).json(saved);
     } catch (error) {
       const status = error.code === 'PT409' ? 409 : error.code === '42501' ? 403
-        : ['22023', 'RESTAURANT_TIMEZONE_REQUIRED', 'RESTAURANT_TIMEZONE_INVALID'].includes(error.code) ? 422 : 503;
+        : ['22023', 'PROJECTION_CALENDAR_SETUP_REQUIRED', 'RESTAURANT_TIMEZONE_REQUIRED', 'RESTAURANT_TIMEZONE_INVALID'].includes(error.code) ? 422 : 503;
       return res.status(status).json({ code: error.code || 'PROJECTION_CALENDAR_UNAVAILABLE',
         error: status === 409 ? 'Calendar answers changed. Reload before saving again.'
           : status === 422 ? 'Check the calendar configuration, time zone and effective date.'
