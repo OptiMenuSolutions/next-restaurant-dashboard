@@ -206,6 +206,8 @@ before(async () => {
       public.pos_connections
     to service_role;
 
+    grant insert, update on public.pos_connections to service_role;
+
     create function public.purge_restaurant(target uuid)
     returns void
     language plpgsql security definer
@@ -224,6 +226,21 @@ before(async () => {
       to service_role;
   `);
 
+  // Seed an already connected source before applying either migration.
+  q(`
+    insert into public.restaurants values
+      ('${REST}',null,'America/New_York',null),
+      ('${OTHER}',null,'Asia/Tokyo',null);
+
+    insert into public.pos_connections values
+      ('${CONN}','${REST}','shift4','connected');
+
+    insert into public.pos_connections values
+      ('${R(31)}','${OTHER}','shift4','error'),
+      ('${R(32)}','${OTHER}','square','pending'),
+      ('${R(33)}','${OTHER}','clover','disconnected');
+  `);
+
   for (const file of [
     '20261119222523_projection_foundation.sql',
     '20261120142918_projection_ingestion.sql',
@@ -235,21 +252,10 @@ before(async () => {
   }
 
   q(`
-    insert into public.restaurants values
-      ('${REST}',null,'America/New_York',null),
-      ('${OTHER}',null,'Asia/Tokyo',null);
-
-    insert into public.pos_connections values
-      ('${CONN}','${REST}','shift4','connected');
-
     insert into public.menu_items values
       ('${DISH}','${REST}');
 
     set role service_role;
-
-    insert into public.projection_pos_source_windows
-      (restaurant_id,connection_id,provider,valid_from)
-    values ('${REST}','${CONN}','shift4','2026-01-01');
 
     insert into public.projection_dishes
       (
@@ -274,6 +280,174 @@ before(async () => {
 
 after(() => {
   if (started) docker(['rm', '--force', container]);
+});
+
+test('migration backfills connected sources and leaves other statuses unconfigured', () => {
+  const rows = JSON.parse(q(`select jsonb_agg(to_jsonb(w))
+    from public.projection_pos_source_windows w;`));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].connection_id, CONN);
+  assert.equal(rows[0].valid_from, null);
+  assert.equal(rows[0].valid_until, null);
+});
+
+test('a direct connected insert also opens the first source for legacy installation', () => {
+  q(`begin;
+    insert into public.restaurants values ('${R(42)}',null,'America/New_York',null);
+    set role service_role;
+    insert into public.pos_connections values ('${R(43)}','${R(42)}','shift4','connected');
+    do $$ begin
+      if (select count(*) from public.projection_pos_source_windows
+        where restaurant_id='${R(42)}' and connection_id='${R(43)}'
+          and valid_from is null and valid_until is null) <> 1 then
+        raise exception 'Direct installation did not create its source';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('first install opens history once; repeated connected saves create no extra audit', () => {
+  q(`begin;
+    set role service_role;
+    insert into public.pos_connections values
+      ('${R(40)}','${OTHER}','shift4','pending');
+    do $$ begin
+      if exists (select 1 from public.projection_pos_source_windows
+        where connection_id='${R(40)}') then
+        raise exception 'Pending connection opened a source';
+      end if;
+    end $$;
+    update public.pos_connections set status='connected' where id='${R(40)}';
+    do $$ declare n bigint; begin
+      if (select count(*) from public.projection_pos_source_windows
+        where connection_id='${R(40)}' and valid_from is null
+          and valid_until is null) <> 1 then
+        raise exception 'First install did not open historical coverage';
+      end if;
+      select count(*) into n from public.projection_change_log;
+      update public.pos_connections set status='connected' where id='${R(40)}';
+      if (select count(*) from public.projection_change_log) <> n then
+        raise exception 'Repeated connect wrote another audit';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('sync errors and pending reauthorization preserve source membership', () => {
+  const before = context().context_digest;
+  q(`update public.pos_connections set status='error' where id='${CONN}';`);
+  assert.equal(context().context_digest, before);
+  q(`update public.pos_connections set status='pending' where id='${CONN}';`);
+  assert.equal(context().context_digest, before);
+  q(`update public.pos_connections set status='connected' where id='${CONN}';`);
+  assert.equal(context().context_digest, before);
+});
+
+test('disconnect keeps its business night; retries and same-night reconnects preserve history', () => {
+  q(`begin;
+    set role service_role;
+    update public.pos_connections set status='disconnected' where id='${CONN}';
+    do $$ declare
+      w public.projection_pos_source_windows;
+      day date;
+      ctx jsonb;
+      n bigint;
+    begin
+      select * into strict w from public.projection_pos_source_windows
+      where connection_id='${CONN}';
+      day := (clock_timestamp() at time zone 'America/New_York')::date;
+      ctx := public.projection_ingestion_context('${REST}',day);
+      if clock_timestamp() < (ctx->>'window_from')::timestamptz then
+        day := day - 1;
+      end if;
+      if w.valid_until is distinct from day + 1 then
+        raise exception 'Disconnect did not retain its business night';
+      end if;
+      if jsonb_array_length(public.projection_ingestion_context(
+        '${REST}',day)->'connections') <> 1 then
+        raise exception 'Disconnect night lost its source';
+      end if;
+      if jsonb_array_length(public.projection_ingestion_context(
+        '${REST}',day+1)->'connections') <> 0 then
+        raise exception 'Source remained active after disconnect';
+      end if;
+      select count(*) into n from public.projection_change_log;
+      update public.pos_connections set status='disconnected' where id='${CONN}';
+      if (select count(*) from public.projection_change_log) <> n then
+        raise exception 'Disconnect retry changed history';
+      end if;
+      update public.pos_connections set status='connected' where id='${CONN}';
+      if not exists (select 1 from public.projection_pos_source_windows
+        where id=w.id and valid_until is null)
+        or (select count(*) from public.projection_pos_source_windows
+          where connection_id='${CONN}') <> 1 then
+        raise exception 'Same-night reconnect duplicated source history';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('reconnecting after a gap creates a new window without filling the gap', () => {
+  q(`begin;
+    set role service_role;
+    update public.projection_pos_source_windows
+      set valid_until='2026-01-02' where connection_id='${CONN}';
+    update public.pos_connections set status='disconnected' where id='${CONN}';
+    update public.pos_connections set status='connected' where id='${CONN}';
+    do $$ begin
+      if (select count(*) from public.projection_pos_source_windows
+        where connection_id='${CONN}') <> 2 then
+        raise exception 'Reconnect did not create a new interval';
+      end if;
+      if not exists (select 1 from public.projection_pos_source_windows
+        where connection_id='${CONN}' and valid_until='2026-01-02') then
+        raise exception 'Old interval was overwritten';
+      end if;
+      if jsonb_array_length(public.projection_ingestion_context(
+        '${REST}','2026-01-03')->'connections') <> 0 then
+        raise exception 'Reconnect filled the historical gap';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('a source-window failure rolls back the connection status and its audit', () => {
+  const before = q(`select count(*) from public.projection_change_log;`);
+  q(`create function public.test_source_window_failure()
+    returns trigger language plpgsql as $$ begin
+      raise exception 'Synthetic source-window failure';
+    end $$;
+    create trigger test_source_window_failure
+    before update on public.projection_pos_source_windows
+    for each row execute function public.test_source_window_failure();`);
+  try {
+    rejects(`set role service_role;
+      update public.pos_connections set status='disconnected' where id='${CONN}';`,
+    /Synthetic source-window/);
+    assert.equal(q(`select status from public.pos_connections where id='${CONN}';`), 'connected');
+    assert.equal(q(`select valid_until is null from public.projection_pos_source_windows
+      where connection_id='${CONN}';`), 't');
+    assert.equal(q(`select count(*) from public.projection_change_log;`), before);
+  } finally {
+    q(`drop trigger test_source_window_failure on public.projection_pos_source_windows;
+      drop function public.test_source_window_failure();`);
+  }
+});
+
+test('source dates reject missing timezone and historical connection identities cannot move tenants', () => {
+  q(`update public.restaurants set operational_timezone=null where id='${REST}';`);
+  try {
+    rejects(`set role service_role;
+      update public.pos_connections set status='disconnected' where id='${CONN}';`,
+    /valid operational timezone/);
+    assert.equal(q(`select status from public.pos_connections where id='${CONN}';`), 'connected');
+  } finally {
+    q(`update public.restaurants set operational_timezone='America/New_York' where id='${REST}';`);
+  }
+  rejects(`update public.pos_connections set restaurant_id='${OTHER}' where id='${CONN}';`,
+    /cannot change identity/);
+  assert.equal(q(`select has_function_privilege('service_role',
+    'projection_private.sync_pos_source_window()','execute');`), 'f');
 });
 
 test('ingestion RPCs and source state are server-only', () => {

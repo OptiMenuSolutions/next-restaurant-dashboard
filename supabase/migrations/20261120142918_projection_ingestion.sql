@@ -1148,6 +1148,140 @@ grant execute on function
   projection_private.commit_night(uuid,date,text,bigint,jsonb)
 to service_role;
 
+-- Keep POS installation state and projection source coverage atomic.
+-- The existing install, OAuth, uninstall webhook and reconciliation routes
+-- already write pos_connections; all of them therefore use this trigger.
+create function projection_private.sync_pos_source_window()
+returns trigger
+language plpgsql security definer
+set search_path = ''
+set timezone = 'UTC'
+as $fn$
+declare
+  zone text;
+  at_time timestamptz;
+  local_day date;
+  ctx jsonb;
+  latest public.projection_pos_source_windows;
+begin
+  if tg_op = 'UPDATE' and (
+    new.id,new.restaurant_id,new.provider
+  ) is distinct from (
+    old.id,old.restaurant_id,old.provider
+  ) then
+    if exists (
+      select 1 from public.projection_pos_source_windows w
+      where w.connection_id = old.id
+    ) then
+      raise exception 'A POS connection with source history cannot change identity'
+        using errcode = '23514';
+    end if;
+  end if;
+
+  if new.status not in ('connected','disconnected') or new.status is null then
+    return new;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-ingest:' || new.restaurant_id::text,0
+  ));
+
+  select w.* into latest
+  from public.projection_pos_source_windows w
+  where w.restaurant_id = new.restaurant_id
+    and w.connection_id = new.id
+    and w.provider = new.provider
+  order by w.valid_until desc nulls first,w.id
+  limit 1
+  for update;
+
+  -- Repeated connects and transient sync-error recovery reuse an open window.
+  if latest.id is not null and latest.valid_until is null
+    and new.status = 'connected'
+  then
+    return new;
+  end if;
+
+  -- A repeated disconnect never moves an existing historical boundary.
+  if new.status = 'disconnected'
+    and (latest.id is null or latest.valid_until is not null)
+  then
+    return new;
+  end if;
+
+  -- A restaurant's first source can supply history from before installation.
+  -- Its actual complete data coverage is still required by ingestion.
+  if new.status = 'connected' and not exists (
+    select 1 from public.projection_pos_source_windows w
+    where w.restaurant_id = new.restaurant_id
+  ) then
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider,valid_from)
+    values (new.restaurant_id,new.id,new.provider,null);
+    return new;
+  end if;
+
+  select r.operational_timezone into zone
+  from public.restaurants r
+  where r.id = new.restaurant_id;
+
+  if zone is null or not exists (
+    select 1 from pg_timezone_names where name = zone
+  ) then
+    raise exception 'Configure a valid operational timezone before changing POS source dates'
+      using errcode = '23514';
+  end if;
+
+  at_time := clock_timestamp();
+  local_day := (at_time at time zone zone)::date;
+  ctx := projection_private.ingestion_context(
+    new.restaurant_id,local_day,at_time
+  );
+
+  if at_time < (ctx->>'window_from')::timestamptz then
+    local_day := local_day - 1;
+  end if;
+
+  if new.status = 'disconnected' then
+    -- valid_until is exclusive. Preserve food made on the disconnect night.
+    update public.projection_pos_source_windows
+    set valid_until = local_day + 1
+    where id = latest.id;
+  elsif latest.id is not null and latest.valid_until >= local_day then
+    -- Same-night and adjacent-night reconnects leave no uncovered date.
+    update public.projection_pos_source_windows
+    set valid_until = null
+    where id = latest.id;
+  else
+    -- A real gap stays absent from the connection's historical coverage.
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider,valid_from)
+    values (new.restaurant_id,new.id,new.provider,local_day);
+  end if;
+
+  return new;
+end;
+$fn$;
+
+revoke all on function projection_private.sync_pos_source_window()
+from public, anon, authenticated, service_role;
+
+-- Block connection writes until the backfill and lifecycle trigger are ready.
+lock table public.pos_connections in share row exclusive mode;
+
+insert into public.projection_pos_source_windows
+  (restaurant_id,connection_id,provider,valid_from)
+select c.restaurant_id,c.id,c.provider,null
+from public.pos_connections c
+where c.status = 'connected'
+order by c.restaurant_id,c.id;
+
+create trigger projection_pos_source_lifecycle
+after insert or update of id,restaurant_id,provider,status
+on public.pos_connections
+for each row execute function projection_private.sync_pos_source_window();
+
+
 -- Preserve the existing purge behavior and include the new ingestion tables.
 create or replace function projection_private.purge_account(
   target uuid
