@@ -1,62 +1,51 @@
-# Step 4 volume model amendment — November 20, 2026
+# Step 4 volume implementation clarifications
 
-This step delivers pure JavaScript calculations and tests only. It does not
-connect consumers, schedule jobs, write archives, change customer pages, or
-integrate waste risk or Tonight's recommendations. The applied foundation,
-ingestion and calendar migrations remain frozen. No migration is needed now.
+The implementation uses the existing registered model major 4,
+`approved-workbook-v4`, and its resolved versioned settings. This document does
+not supersede the approved v4 rules. There is no separate volume-policy record,
+new model major, database migration or activation requirement for Step 4.
 
-The approved Step 4 policy keeps the 0.75–1.33 seasonal bounds. Two eligible
-same-weekday observations use a recency-weighted mean; three permit a weighted
-fit. This applies to the current and LY base series. LY seasonality requires
-at least two eligible base observations and two eligible target-window weeks.
-If it is unavailable, use R alone. Benchmark ratios are diagnostic neutral
-placeholders until Step 11; they are never reported as used in a calculation.
-A zero LY denominator uses a flagged neutral ratio, as the handover requires.
+History duration is the inclusive calendar span from the supplied first data
+date to the latest complete, POS-covered date before the as-of business date,
+divided by seven. Source failures do not advance that endpoint. The first data
+date is retained from ingestion/backfill and need not occur in a truncated
+calculation snapshot.
 
-These changes supersede the four-week volume trend tier, the LY averaging
-threshold of four, and the neutral-benchmark blend for missing seasonal evidence.
-Other settings remain unchanged. The existing minimum_trend_weeks and
-minimum_ly_weekday_nights fields are not the Step 4 fit thresholds; the explicit
-volume-policy parameters govern this calculation. No old snapshot is rewritten.
+The settings-based tiers are: below minimum_history_weeks, needs baseline;
+below minimum_trend_weeks, weighted levels without a trend; below
+cold_start_weeks, a cold-start trend; below own_seasonality_weeks, normal trend
+with benchmark seasonality; thereafter, own LY seasonality where usable.
+A slope also requires minimum_trend_weeks eligible same-weekday observations.
+Own LY requires minimum_ly_weekday_nights eligible base observations. The
+centered LY target mean uses the eligible observations present in its configured
+window; an empty window is unavailable.
 
-The new logic revision is volume-points-recent-only-v1 and requires model major
-5. PROJECTION_VOLUME_POLICY_SEED is a reviewed seed, not a runtime default.
-A caller must supply a complete policy version with its own ID, effective date,
-restaurant scope and parameters, together with resolved versioned settings.
-Step 10 must register the new major and persist/load reviewed policy versions
-before activating or archiving this calculation. Nothing in Step 4 registers,
-releases or enables a database model version. Policy identity, full parameters
-and their digest must be retained in the immutable archive trace.
+When own LY is unavailable, the neutral benchmark input is 1.0. Apply the Census
+strength transformation, seasonal bounds, A = L * S and the configured blend
+without changing formulas. The trace identifies this as a used neutral
+placeholder, not measured public data. A disabled public-data switch prevents
+public data use but does not remove this neutral assumption. Step 11 will
+provide real benchmark inputs through the same calculation.
 
-The as-of argument is the restaurant business date already resolved upstream.
-Only earlier dates enter the snapshot. Current history covers [asOf−7w, asOf),
-extending by whole weeks until the baseline minimum is met or the maximum is
-reached. Missing observations never become zero sales. Weights use the preceding
-business date as their age anchor and the versioned volume half-life.
-The fit centers its time axis at the latest eligible night for numerical
-stability; this is algebraically equivalent to using the first data date.
-The raw fitted level is floored at zero before the signed slope cap is applied.
+Current windows cover [asOf - 7 * weeks, asOf), extending in whole weeks only
+until minimum_weekday_nights is met or maximum_volume_lookback_weeks is reached.
+Missing nights never become zero sales. The LY base shifts the selected current
+window and latest eligible endpoint by year_alignment_days. Centering the
+regression time axis at its latest eligible date is algebraically equivalent to
+using the first data date and improves numerical stability. Calculations retain
+full precision.
 
-The LY base uses the chosen current window shifted by year_alignment_days and
-ends at the current latest eligible weekday shifted by that same amount.
-Its fitted endpoint is the latest eligible LY night at or before that endpoint;
-there is no extrapolation across a missing LY endpoint. Target smoothing uses
-the centered same-weekday dates. R uses the capped slope and damped horizon
-from the latest eligible current night. A uses L, never R.
+Calendar factors remain separate from base volumes and are applied once.
+Closed targets return adjusted zero; unavailable open targets return null.
+The shared eligibility rule, target handling and pure JavaScript design remain
+unchanged. No scheduling, archive writes, recommendation or waste-risk consumer
+is connected here. Applied migrations remain frozen.
 
-Calendar snapshots must carry the restaurant ID, configuration revision and
-calendar-context digest alongside each Step 3 night. Step 10 should attach those
-from the verified calendar context rather than accepting client-supplied flags.
-The engine preserves base volume and the supplied factor separately. A closed
-target returns adjusted zero even without a baseline; its counterfactual base
-can remain null. Unavailable open-night volumes remain null for dash display.
-
-The v4 fixture contains 239 source dates and eight cached sets of intermediate
-and final results exported from the approved workbook with SHA-256
-97e91fb3cf46e6b4726cb121f00f8b70f3fcb42eb914059fdf8fa40a6865b882.
-Synthetic workbook rows are treated as POS-covered fixture inputs. Existing
-outlier flags are fixture inputs; Step 8 classification is not implemented here.
-The golden test supplies the workbook's cached calendar factors, including its
-learned Thanksgiving Eve factor, to test multiplication without implementing
-Step 7 learning. Operational callers will supply Step 3 factors until Step 7.
-Original workbook values are never regenerated from the JavaScript engine.
+The original eight-night v4 golden fixture and test are unchanged. A second
+fixture exports the saved results/missing_cf_history.xlsx case: fourteen source
+nights and eight cached calculation rows. That case uses non-neutral Census
+proxy ratios and permits one-observation weekday estimates. Its component
+golden compares cached L and R where minimum_weekday_nights is met; separate
+tests assert the required neutral blend and needs-baseline behavior. It does not
+claim that neutral outputs equal the case's non-neutral cached final volumes.
+No workbook values are regenerated from the JavaScript engine.

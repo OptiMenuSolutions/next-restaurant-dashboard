@@ -1,0 +1,32 @@
+// Cached limited-history example; its Census proxy is NOT the Step 4 neutral input.
+export const volumeV4Limited = {
+  source_case: "results/missing_cf_history.xlsx",
+  workbook_sha256: "fc7851804b5d45b385213a3a3e31bbec5ca630e9f70f86318e5113d7e20dcd6f",
+  as_of: "2026-11-19", first_data_date: "2026-11-05", history_weeks: 2,
+  history: [
+    ["2026-11-05", 242, "pending_review"],
+    ["2026-11-06", 339, "pending_review"],
+    ["2026-11-07", 534, "pending_review"],
+    ["2026-11-08", 293, "kept"],
+    ["2026-11-09", 160, "kept"],
+    ["2026-11-10", 171, "kept"],
+    ["2026-11-11", 210, "kept"],
+    ["2026-11-12", 166, "kept"],
+    ["2026-11-13", 218, "kept"],
+    ["2026-11-14", 321, "kept"],
+    ["2026-11-15", 294, "kept"],
+    ["2026-11-16", 171, "kept"],
+    ["2026-11-17", 185, "kept"],
+    ["2026-11-18", 215, "kept"],
+  ],
+  expected: [
+    {"business_date": "2026-11-19", "eligible_nights": 1, "L": 166, "raw_slope": 0, "h": 1, "R": 166, "S": 1.04, "A": 172.64, "base": 169.32, "factor": 1, "adjusted": 169.32},
+    {"business_date": "2026-11-20", "eligible_nights": 1, "L": 218, "raw_slope": 0, "h": 1, "R": 218, "S": 1.0415, "A": 227.047, "base": 222.5235, "factor": 1, "adjusted": 222.5235},
+    {"business_date": "2026-11-21", "eligible_nights": 1, "L": 321, "raw_slope": 0, "h": 1, "R": 321, "S": 1.043, "A": 334.803, "base": 327.9015, "factor": 1, "adjusted": 327.9015},
+    {"business_date": "2026-11-22", "eligible_nights": 2, "L": 293.543213616863, "raw_slope": 0, "h": 1, "R": 293.543213616863, "S": 1.0445, "A": 306.605886622813, "base": 300.074550119838, "factor": 1, "adjusted": 300.074550119838},
+    {"business_date": "2026-11-23", "eligible_nights": 2, "L": 165.975349785492, "raw_slope": 0, "h": 1, "R": 165.975349785492, "S": 1.046, "A": 173.610215875625, "base": 169.792782830559, "factor": 1, "adjusted": 169.792782830559},
+    {"business_date": "2026-11-24", "eligible_nights": 2, "L": 178.604990636081, "raw_slope": 0, "h": 1, "R": 178.604990636081, "S": 1.0475, "A": 187.088727691295, "base": 182.846859163688, "factor": 1, "adjusted": 182.846859163688},
+    {"business_date": "2026-11-25", "eligible_nights": 2, "L": 212.716068084315, "raw_slope": 0, "h": 1, "R": 212.716068084315, "S": 1.049, "A": 223.139155420446, "base": 217.92761175238, "factor": 1.26666666666667, "adjusted": 276.041641553015},
+    {"business_date": "2026-11-26", "eligible_nights": 1, "L": 166, "raw_slope": 0, "h": 2, "R": 166, "S": 1.0505, "A": 174.383, "base": 170.1915, "factor": 0, "adjusted": 0},
+  ],
+};
