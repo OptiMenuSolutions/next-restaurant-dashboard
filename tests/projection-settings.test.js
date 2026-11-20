@@ -7,6 +7,7 @@ import {
   projectionCalibrationKey,
   projectionSettingsDigest,
   assertProjectionModelRevision,
+  canUseProjectionPooledBenchmarks,
 } from '../lib/projections/settings.js';
 
 const REST = '10000000-0000-4000-8000-000000000001';
@@ -332,4 +333,68 @@ test('formula revisions require a new major and model versions cannot go backwar
     previous,
     { ...previous, model_major: 5, logic_revision: 'v5' }
   ), true);
+});
+
+test('pool participation cannot be enabled or disabled through a restaurant override', () => {
+  for (const value of [true, false]) {
+    assert.throws(() => validateProjectionSettings(
+      { pooled_benchmarks_enabled: value },
+      { partial: true }
+    ), /global-only/);
+
+    assert.throws(() => resolve({
+      restaurantVersion: restaurantVersion({
+        pooled_benchmarks_enabled: value,
+      }),
+    }), /global-only/);
+  }
+});
+
+const poolPermission = () => ({
+  restaurant_id: REST,
+  enabled: true,
+  agreement_permits: true,
+  agreement_version: 'reviewed-v1',
+});
+
+const pooled = extra => canUseProjectionPooledBenchmarks({
+  restaurantId: REST,
+  settings: { ...D, pooled_benchmarks_enabled: true },
+  poolPermission: poolPermission(),
+  ...extra,
+});
+
+test('the global pool switch and agreement permission are both required', () => {
+  assert.equal(pooled(), true);
+  assert.equal(pooled({ settings: D }), false);
+  assert.equal(pooled({ poolPermission: null }), false);
+});
+
+test('revoked, disabled or undocumented pool permission remains unusable', () => {
+  for (const change of [
+    { enabled: false },
+    { agreement_permits: false },
+    { agreement_version: '' },
+  ]) {
+    assert.equal(pooled({
+      poolPermission: {
+        ...poolPermission(),
+        ...change,
+      },
+    }), false);
+  }
+});
+
+test('pool permission cannot be borrowed from another restaurant', () => {
+  assert.throws(() => pooled({
+    poolPermission: {
+      ...poolPermission(),
+      restaurant_id: OTHER,
+    },
+  }), /another tenant/);
+
+  assert.throws(
+    () => pooled({ restaurantId: null }),
+    /restaurant ID/
+  );
 });

@@ -84,6 +84,10 @@ begin
     return false;
   end if;
 
+  if partial and p ? 'pooled_benchmarks_enabled' then
+    return false;
+  end if;
+
   if not partial and
     (select count(*) from jsonb_object_keys(p)) <>
     (select count(*) from jsonb_object_keys(template))
@@ -312,6 +316,21 @@ create table public.projection_pos_item_map (
 create index projection_pos_map_dish_idx
   on public.projection_pos_item_map(restaurant_id, dish_id);
 
+create function projection_private.valid_holiday_keys(keys text[])
+returns boolean language sql immutable set search_path = '' as $fn$
+  select keys is not null
+    and not exists (
+      select 1
+      from unnest(keys) as t(k)
+      where k is null or k !~ '^[a-z][a-z0-9_]*$'
+    )
+    and keys = array(
+      select distinct k collate "C"
+      from unnest(keys) as t(k)
+      order by k collate "C"
+    );
+$fn$;
+
 create table public.projection_nightly_flags (
   restaurant_id uuid not null
     references public.restaurants(id) on delete cascade,
@@ -319,7 +338,8 @@ create table public.projection_nightly_flags (
   complete boolean not null default false,
   closed boolean not null default false,
   early_close boolean not null default false,
-  holiday_keys text[] not null default '{}',
+  holiday_keys text[] not null default '{}'
+    check (projection_private.valid_holiday_keys(holiday_keys)),
   recommendation_flags_complete boolean not null default false,
   total_units numeric check (
     total_units > '-Infinity'::numeric
@@ -561,7 +581,8 @@ create table public.projection_holiday_rule_versions (
     concept_type in ('full_service','bar_pub','quick_service')
   ),
   holiday_key text not null,
-  weekday_group text not null default 'all',
+  weekday_group text not null default 'all'
+    check (weekday_group in ('all','mon_thu','fri_sat','sun')),
   effective_at timestamptz not null,
   default_factor numeric not null check (
     default_factor > 0 and default_factor < 'Infinity'::numeric
@@ -583,16 +604,21 @@ create table public.projection_holiday_observations (
   restaurant_id uuid not null
     references public.restaurants(id) on delete cascade,
   business_date date not null,
-  holiday_keys text[] not null check (cardinality(holiday_keys) > 0),
+  holiday_keys text[] not null check (
+    cardinality(holiday_keys) > 0
+    and projection_private.valid_holiday_keys(holiday_keys)
+  ),
   observed_ratio numeric not null check (
     observed_ratio >= 0 and observed_ratio < 'Infinity'::numeric
   ),
   trace jsonb not null check (jsonb_typeof(trace) = 'object'),
   supersedes_id uuid check (supersedes_id <> id),
   created_at timestamptz not null default now(),
-  unique (restaurant_id, id),
-  foreign key (restaurant_id, supersedes_id)
-    references public.projection_holiday_observations(restaurant_id, id)
+  unique (restaurant_id, business_date, id),
+  foreign key (restaurant_id, business_date, supersedes_id)
+    references public.projection_holiday_observations(
+      restaurant_id, business_date, id
+    )
 );
 
 create index projection_holiday_observation_idx
@@ -600,10 +626,17 @@ create index projection_holiday_observation_idx
     restaurant_id, business_date, id
   );
 
-create index projection_holiday_supersedes_idx
+create unique index projection_holiday_supersedes_idx
   on public.projection_holiday_observations(
     restaurant_id, supersedes_id
-  );
+  )
+  where supersedes_id is not null;
+
+create unique index projection_holiday_original_idx
+  on public.projection_holiday_observations(
+    restaurant_id, business_date
+  )
+  where supersedes_id is null;
 
 create table public.projection_launch_history (
   id uuid primary key default gen_random_uuid(),
@@ -623,11 +656,13 @@ create table public.projection_launch_history (
   trace jsonb not null check (jsonb_typeof(trace) = 'object'),
   supersedes_id uuid check (supersedes_id <> id),
   created_at timestamptz not null default now(),
-  unique (restaurant_id, id),
+  unique (restaurant_id, dish_id, launch_date, id),
   foreign key (restaurant_id, dish_id)
     references public.projection_dishes(restaurant_id, id),
-  foreign key (restaurant_id, supersedes_id)
-    references public.projection_launch_history(restaurant_id, id),
+  foreign key (restaurant_id, dish_id, launch_date, supersedes_id)
+    references public.projection_launch_history(
+      restaurant_id, dish_id, launch_date, id
+    ),
   check (observed_through >= launch_date)
 );
 
@@ -639,8 +674,37 @@ create index projection_launch_dish_idx
 create index projection_launch_style_idx
   on public.projection_launch_history(style_category);
 
-create index projection_launch_supersedes_idx
-  on public.projection_launch_history(restaurant_id, supersedes_id);
+create unique index projection_launch_supersedes_idx
+  on public.projection_launch_history(restaurant_id, supersedes_id)
+  where supersedes_id is not null;
+
+create unique index projection_launch_original_idx
+  on public.projection_launch_history(
+    restaurant_id, dish_id, launch_date
+  )
+  where supersedes_id is null;
+
+create view public.projection_current_holiday_observations
+with (security_invoker = true) as
+select o.*
+from public.projection_holiday_observations o
+where not exists (
+  select 1
+  from public.projection_holiday_observations c
+  where c.restaurant_id = o.restaurant_id
+    and c.supersedes_id = o.id
+);
+
+create view public.projection_current_launch_history
+with (security_invoker = true) as
+select o.*
+from public.projection_launch_history o
+where not exists (
+  select 1
+  from public.projection_launch_history c
+  where c.restaurant_id = o.restaurant_id
+    and c.supersedes_id = o.id
+);
 
 create table public.projection_benchmark_pulls (
   id uuid primary key default gen_random_uuid(),
@@ -710,13 +774,118 @@ create table public.projection_pooled_totals (
     cohort_key,
     metric,
     period_start,
-    period_end,
-    computed_at
+    period_end
   )
 );
 
 comment on column public.projection_pooled_totals.statistics is
   'Aggregate totals only. Never identifiers, participant lists, menus or per-restaurant values.';
+
+create function projection_private.validate_pooled_period() returns trigger
+language plpgsql set search_path = '' as $fn$
+declare
+  major integer;
+  base jsonb;
+  s jsonb;
+  r record;
+  participants integer := 0;
+  closes_at timestamptz;
+begin
+  new.computed_at := clock_timestamp();
+
+  select model_major into major
+  from public.projection_model_versions
+  where released_at <= new.computed_at
+  order by released_at desc, model_major desc
+  limit 1;
+
+  perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-settings:' || major::text, 0
+  ));
+
+  new.computed_at := clock_timestamp();
+
+  select settings into base
+  from public.projection_setting_versions
+  where restaurant_id is null
+    and model_major = major
+    and effective_at <= new.computed_at
+  order by effective_at desc
+  limit 1;
+
+  if base is null
+    or not (base->>'pooled_benchmarks_enabled')::boolean
+  then
+    raise exception 'Pooled benchmarks are globally disabled'
+      using errcode = '23514';
+  end if;
+
+  for r in
+    select m.restaurant_id, a.operational_timezone
+    from public.projection_pool_memberships m
+    join public.projection_pool_permissions p using (restaurant_id)
+    join public.restaurants a on a.id = m.restaurant_id
+    where m.cohort_key = new.cohort_key
+      and m.eligible
+      and p.enabled
+      and p.agreement_permits
+      and a.deactivated_at is null
+    order by m.restaurant_id
+  loop
+    participants := participants + 1;
+
+    if r.operational_timezone is null
+      or not exists (
+        select 1
+        from pg_timezone_names
+        where name = r.operational_timezone
+      )
+    then
+      raise exception
+        'Valid operational timezone required for pooled participant %',
+        r.restaurant_id
+        using errcode = '23514';
+    end if;
+
+    select base || coalesce((
+      select settings
+      from public.projection_setting_versions
+      where restaurant_id = r.restaurant_id
+        and model_major = major
+        and effective_at <= new.computed_at
+      order by effective_at desc
+      limit 1
+    ), '{}'::jsonb) into s;
+
+    closes_at := (
+      (new.period_end + 1)::timestamp
+      + make_interval(mins =>
+        (s->>'business_day_cutoff_minutes')::integer
+        + (s->>'sync_buffer_minutes')::integer
+      )
+    ) at time zone r.operational_timezone;
+
+    if new.computed_at < closes_at then
+      raise exception
+        'Pooled period is not closed for restaurant %',
+        r.restaurant_id
+        using errcode = '23514';
+    end if;
+  end loop;
+
+  if participants < 5 then
+    raise exception
+      'Pooled totals require at least 5 eligible restaurants'
+      using errcode = '23514';
+  end if;
+
+  return new;
+end;
+$fn$;
+
+create trigger projection_pool_period_validate
+before insert on public.projection_pooled_totals
+for each row execute function projection_private.validate_pooled_period();
 
 create table public.projection_benchmark_ratios (
   id uuid primary key default gen_random_uuid(),
@@ -898,10 +1067,23 @@ $fn$;
 create function projection_private.validate_version() returns trigger
 language plpgsql set search_path = '' as $fn$
 declare
-  base jsonb;
   template jsonb;
   k text;
+  bad record;
+  problem text;
 begin
+  perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-settings:' || new.model_major::text, 0
+  ));
+
+  if not projection_private.check_settings(
+    new.settings,
+    new.restaurant_id is not null
+  ) then
+    raise exception 'Projection settings violate check constraint'
+      using errcode = '23514';
+  end if;
+
   select settings_template into strict template
   from public.projection_model_versions
   where model_major = new.model_major;
@@ -919,21 +1101,71 @@ begin
           'Changed global major defaults require a new model version';
       end if;
     end loop;
-  else
-    select settings into base
+  elsif not exists (
+    select 1
     from public.projection_setting_versions
     where restaurant_id is null
       and model_major = new.model_major
       and effective_at <= new.effective_at
-    order by effective_at desc
-    limit 1;
+  ) then
+    raise exception
+      'Restaurant override has no valid effective global context';
+  end if;
 
-    if base is null
-      or not projection_private.check_settings(base || new.settings)
-    then
-      raise exception
-        'Restaurant override has no valid effective global context';
-    end if;
+  -- Validate every affected overlap, including scheduled future versions.
+  -- A latest override replaces its predecessor only from its effective date.
+  with versions as (
+    select id, restaurant_id, effective_at, settings
+    from public.projection_setting_versions
+    where model_major = new.model_major
+
+    union all
+
+    select new.id, new.restaurant_id, new.effective_at, new.settings
+  ), globals as (
+    select *,
+      lead(effective_at, 1, 'infinity'::timestamptz)
+        over (order by effective_at) as until_at
+    from versions
+    where restaurant_id is null
+  ), overrides as (
+    select *,
+      lead(effective_at, 1, 'infinity'::timestamptz)
+        over (
+          partition by restaurant_id
+          order by effective_at
+        ) as until_at
+    from versions
+    where restaurant_id is not null
+  )
+  select
+    o.restaurant_id,
+    g.settings || o.settings as merged
+  into bad
+  from globals g
+  join overrides o
+    on g.effective_at < o.until_at
+    and o.effective_at < g.until_at
+  where (g.id = new.id or o.id = new.id)
+    and not projection_private.check_settings(g.settings || o.settings)
+  order by
+    o.restaurant_id,
+    greatest(g.effective_at, o.effective_at)
+  limit 1;
+
+  if found then
+    problem := case
+      when (bad.merged->>'volume_half_width_near')::numeric >
+        (bad.merged->>'volume_half_width_far')::numeric
+      then 'volume_half_width_near exceeds volume_half_width_far'
+      else 'combined values violate projection settings constraints'
+    end;
+
+    raise exception
+      'Invalid merged settings for restaurant %: %',
+      bad.restaurant_id,
+      problem
+      using errcode = '23514', detail = bad.merged::text;
   end if;
 
   return new;
@@ -951,37 +1183,43 @@ declare
   o public.projection_setting_versions;
   s jsonb;
 begin
-  select * into strict g
+  perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-settings:' || new.model_major::text, 0
+  ));
+
+  -- Issuance is the actual database save time, after any settings writer.
+  new.issued_at := clock_timestamp();
+
+  select * into g
   from public.projection_setting_versions
-  where id = new.global_version_id;
+  where restaurant_id is null
+    and model_major = new.model_major
+    and effective_at <= new.issued_at
+  order by effective_at desc
+  limit 1;
 
-  if g.restaurant_id is not null
-    or g.model_major <> new.model_major
-    or g.effective_at > new.issued_at
-  then
-    raise exception 'Archive global settings context is invalid';
+  if g.id is null or new.global_version_id is distinct from g.id then
+    raise exception 'Archive global settings context is invalid: latest effective version required'
+      using errcode = '23514';
   end if;
 
-  s := g.settings;
+  select * into o
+  from public.projection_setting_versions
+  where restaurant_id = new.restaurant_id
+    and model_major = new.model_major
+    and effective_at <= new.issued_at
+  order by effective_at desc
+  limit 1;
 
-  if new.restaurant_version_id is not null then
-    select * into strict o
-    from public.projection_setting_versions
-    where id = new.restaurant_version_id;
-
-    if o.restaurant_id is distinct from new.restaurant_id
-      or o.model_major <> new.model_major
-      or o.effective_at > new.issued_at
-    then
-      raise exception 'Archive override context is invalid';
-    end if;
-
-    s := s || o.settings;
+  if new.restaurant_version_id is distinct from o.id then
+    raise exception 'Archive override context is invalid: latest effective override required'
+      using errcode = '23514';
   end if;
+
+  s := g.settings || coalesce(o.settings, '{}'::jsonb);
 
   if s <> new.settings_snapshot then
-    raise exception
-      'Archive settings snapshot does not match its versions';
+    raise exception 'Archive settings snapshot does not match its versions';
   end if;
 
   if new.calibration_key <>
@@ -1298,6 +1536,7 @@ revoke all on all functions in schema projection_private
 
 grant execute on function
   projection_private.settings_template(),
+  projection_private.valid_holiday_keys(text[]),
   projection_private.check_settings(jsonb, boolean),
   projection_private.is_account_purge(uuid),
   projection_private.calibration_key(integer, jsonb),
@@ -1306,12 +1545,16 @@ to service_role;
 
 revoke all on
   public.projection_available_pooled_totals,
-  public.projection_available_benchmark_ratios
+  public.projection_available_benchmark_ratios,
+  public.projection_current_holiday_observations,
+  public.projection_current_launch_history
 from public, anon, authenticated;
 
 grant select on
   public.projection_available_pooled_totals,
-  public.projection_available_benchmark_ratios
+  public.projection_available_benchmark_ratios,
+  public.projection_current_holiday_observations,
+  public.projection_current_launch_history
 to service_role;
 
 notify pgrst, 'reload schema';

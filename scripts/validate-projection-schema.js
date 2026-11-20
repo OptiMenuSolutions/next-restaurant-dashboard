@@ -1,12 +1,13 @@
 import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   PROJECTION_DEFAULTS,
   projectionSettingsDigest,
+  projectionCalibrationKey,
 } from '../lib/projections/settings.js';
 
 // Run explicitly: npx tsx --test scripts/validate-projection-schema.js
@@ -418,6 +419,17 @@ test('purge entry points and the secret salt are unavailable to frontend roles',
 
 test('pooled values require five participants and hide immediately after a purge', () => {
   q(`
+    insert into public.projection_setting_versions
+      (model_major,effective_at,settings)
+    select
+      4,
+      clock_timestamp(),
+      settings || '{"pooled_benchmarks_enabled":true}'
+    from public.projection_setting_versions
+    where restaurant_id is null
+    order by effective_at desc
+    limit 1;
+
     insert into public.projection_pool_cohorts
     values ('test','full_service','NJ',null);
 
@@ -472,6 +484,564 @@ test('pooled values require five participants and hide immediately after a purge
   assert.equal(q(`
     select count(*) from public.projection_pooled_totals;
   `), '1');
+});
+
+test('holiday observations have one original and a single correction chain', () => {
+  const insert = (id, supersedes = 'null', day = '2026-02-14') => `
+    insert into public.projection_holiday_observations
+      (
+        id,restaurant_id,business_date,holiday_keys,
+        observed_ratio,trace,supersedes_id
+      )
+    values (
+      '${R(id)}','${R(1)}','${day}',
+      '{super_bowl,valentines_day}',1,'{}',${supersedes}
+    );
+  `;
+
+  q(insert(500));
+  rejects(insert(501), /duplicate key/);
+
+  q(insert(502, `'${R(500)}'`));
+  rejects(insert(503, `'${R(500)}'`), /duplicate key/);
+
+  rejects(
+    insert(504, `'${R(502)}'`, '2026-02-15'),
+    /foreign key/
+  );
+
+  q(insert(505, `'${R(502)}'`));
+
+  assert.equal(q(`
+    set role service_role;
+    select id
+    from public.projection_current_holiday_observations
+    where restaurant_id='${R(1)}';
+  `), R(505));
+});
+
+test('launches cannot be duplicated and corrections cannot branch or change launch identity', () => {
+  q(`
+    insert into public.projection_style_categories
+    values ('review','Review','{}');
+  `);
+
+  const insert = (
+    id,
+    supersedes = 'null',
+    launch = '2026-09-01'
+  ) => `
+    insert into public.projection_launch_history
+      (
+        id,restaurant_id,dish_id,style_category,launch_date,
+        observed_through,existing_dishes,first_four_week_share,
+        launch_index,trace,supersedes_id
+      )
+    values (
+      '${R(id)}','${R(1)}','${DISH}','review','${launch}',
+      '2026-10-01',2,0.2,0.6,'{}',${supersedes}
+    );
+  `;
+
+  q(insert(510));
+  rejects(insert(511), /duplicate key/);
+
+  q(insert(512, `'${R(510)}'`));
+  rejects(insert(513, `'${R(510)}'`), /duplicate key/);
+
+  rejects(
+    insert(514, `'${R(512)}'`, '2026-09-02'),
+    /foreign key/
+  );
+
+  q(insert(515, `'${R(512)}'`));
+
+  assert.equal(q(`
+    set role service_role;
+    select id
+    from public.projection_current_launch_history
+    where restaurant_id='${R(1)}';
+  `), R(515));
+});
+
+test('holiday arrays reject unsorted, duplicate, null and blank keys in both tables', () => {
+  for (const keys of [
+    "'{valentines_day,super_bowl}'",
+    "'{super_bowl,super_bowl}'",
+    "array['']",
+    "array['super_bowl',null]",
+    "array['super bowl']",
+  ]) {
+    rejects(`
+      insert into public.projection_nightly_flags
+        (restaurant_id,business_date,holiday_keys)
+      values ('${R(1)}','2026-03-01',${keys});
+    `, /check constraint/);
+
+    rejects(`
+      insert into public.projection_holiday_observations
+        (
+          restaurant_id,business_date,holiday_keys,
+          observed_ratio,trace
+        )
+      values ('${R(1)}','2026-03-01',${keys},1,'{}');
+    `, /check constraint/);
+  }
+
+  q(`
+    set role service_role;
+    insert into public.projection_nightly_flags
+      (restaurant_id,business_date,holiday_keys)
+    values
+      ('${R(1)}','2026-03-01','{super_bowl,valentines_day}'),
+      ('${R(1)}','2026-03-02','{}');
+  `);
+});
+
+test('holiday rule weekday groups use only the approved identifiers', () => {
+  const insert = group => `
+    insert into public.projection_holiday_rule_versions
+      (
+        concept_type,holiday_key,weekday_group,
+        effective_at,default_factor,default_answer
+      )
+    values (
+      'full_service','valentines_day','${group}',
+      clock_timestamp(),1,'open'
+    );
+  `;
+
+  rejects(insert('mon-thurs'), /check constraint/);
+
+  for (const group of ['all', 'mon_thu', 'fri_sat', 'sun']) {
+    q(insert(group));
+  }
+});
+
+test('restaurant pool switches are rejected by the database too', () => {
+  for (const enabled of [true, false]) {
+    rejects(`
+      insert into public.projection_setting_versions
+        (restaurant_id,model_major,effective_at,settings)
+      values (
+        '${R(1)}',4,clock_timestamp(),
+        '${JSON.stringify({ pooled_benchmarks_enabled: enabled })}'
+      );
+    `, /check constraint/);
+  }
+});
+
+test('global updates validate existing overrides and identify the conflicting values', () => {
+  q(`
+    insert into public.projection_setting_versions
+      (restaurant_id,model_major,effective_at,settings)
+    values (
+      '${R(1)}',4,clock_timestamp(),
+      '{"volume_half_width_near":0.20}'
+    );
+  `);
+
+  rejects(`
+    insert into public.projection_setting_versions
+      (model_major,effective_at,settings)
+    select
+      4,
+      clock_timestamp(),
+      settings || '{"volume_half_width_far":0.18}'
+    from public.projection_setting_versions
+    where restaurant_id is null
+      and effective_at<=clock_timestamp()
+    order by effective_at desc
+    limit 1;
+  `, /volume_half_width_near exceeds volume_half_width_far/);
+
+  q(`
+    insert into public.projection_setting_versions
+      (model_major,effective_at,settings)
+    select
+      4,
+      clock_timestamp(),
+      settings || '{"volume_half_width_far":0.30}'
+    from public.projection_setting_versions
+    where restaurant_id is null
+      and effective_at<=clock_timestamp()
+    order by effective_at desc
+    limit 1;
+  `);
+});
+
+test('scheduled changes cannot create an incompatible future overlap', () => {
+  q(`
+    insert into public.projection_setting_versions
+      (model_major,effective_at,settings)
+    select
+      4,
+      clock_timestamp()+interval '2 days',
+      settings
+    from public.projection_setting_versions
+    where restaurant_id is null
+      and effective_at<=clock_timestamp()
+    order by effective_at desc
+    limit 1;
+  `);
+
+  rejects(`
+    insert into public.projection_setting_versions
+      (restaurant_id,model_major,effective_at,settings)
+    values (
+      '${R(1)}',4,clock_timestamp()+interval '3 days',
+      '{"volume_half_width_near":0.29}'
+    );
+
+    insert into public.projection_setting_versions
+      (model_major,effective_at,settings)
+    select
+      4,
+      clock_timestamp()+interval '4 days',
+      settings || '{"volume_half_width_far":0.28}'
+    from public.projection_setting_versions
+    where restaurant_id is null
+      and effective_at<=clock_timestamp()
+    order by effective_at desc
+    limit 1;
+  `, /volume_half_width_near|Invalid merged/);
+});
+
+function reviewedArchive({
+  globalId = null,
+  overrideId = undefined,
+} = {}) {
+  const g = JSON.parse(q(`
+    select row_to_json(s)
+    from public.projection_setting_versions s
+    where restaurant_id is null
+      and model_major=4
+      ${globalId
+        ? `and id='${globalId}'`
+        : 'and effective_at<=clock_timestamp() order by effective_at desc limit 1'}
+    ;
+  `));
+
+  const raw = q(`
+    select row_to_json(s)
+    from public.projection_setting_versions s
+    where restaurant_id='${R(1)}'
+      and model_major=4
+      and effective_at<=clock_timestamp()
+    order by effective_at desc
+    limit 1;
+  `);
+
+  const o = raw ? JSON.parse(raw) : null;
+  const selected = overrideId === undefined
+    ? o?.id ?? null
+    : overrideId;
+
+  const settings = {
+    ...g.settings,
+    ...(selected ? o?.settings : {}),
+  };
+
+  return `
+    insert into public.projection_forecast_runs
+      (
+        restaurant_id,run_date,model_major,
+        global_version_id,restaurant_version_id,
+        settings_snapshot,settings_digest,calibration_key,
+        source_through,trace
+      )
+    values (
+      '${R(1)}','2026-11-20',4,
+      '${g.id}',${selected ? `'${selected}'` : 'null'},
+      '${JSON.stringify(settings)}',
+      '${projectionSettingsDigest(settings)}',
+      '${projectionCalibrationKey(4, settings)}',
+      '2026-11-19','{}'
+    );
+  `;
+}
+
+test('archives require the latest effective global version and override', () => {
+  const old = q(`
+    select id
+    from public.projection_setting_versions
+    where restaurant_id is null and model_major=4
+    order by effective_at
+    limit 1;
+  `);
+
+  rejects(
+    reviewedArchive({ globalId: old }),
+    /latest effective version/
+  );
+
+  rejects(
+    reviewedArchive({ overrideId: null }),
+    /latest effective override/
+  );
+
+  q(`
+    begin;
+    set role service_role;
+    ${reviewedArchive()}
+    rollback;
+  `);
+});
+
+test('pooled periods are published once, after closing, with valid timezones', () => {
+  q(`
+    insert into public.projection_pool_permissions
+      (
+        restaurant_id,agreement_permits,
+        enabled,agreement_version
+      )
+    values ('${R(1)}',true,true,'reviewed');
+
+    insert into public.projection_pool_cohorts
+    values ('review','full_service','NJ',null);
+
+    insert into public.projection_pool_memberships
+      (restaurant_id,cohort_key,eligible)
+    select id,'review',true
+    from public.restaurants;
+  `);
+
+  const insert = (start, end) => `
+    insert into public.projection_pooled_totals
+      (
+        cohort_key,metric,period_start,period_end,
+        participant_count,statistics
+      )
+    values (
+      'review','volume',${start},${end},5,'{"sum":100}'
+    );
+  `;
+
+  q(insert("'2026-10-01'", "'2026-10-07'"));
+
+  rejects(
+    insert("'2026-10-01'", "'2026-10-07'"),
+    /duplicate key/
+  );
+
+  const today =
+    "(clock_timestamp() at time zone 'America/New_York')::date";
+
+  rejects(insert(today, today), /not closed/);
+
+  q(`
+    update public.restaurants
+    set operational_timezone=null
+    where id='${R(1)}';
+  `);
+
+  try {
+    rejects(
+      insert("'2026-10-08'", "'2026-10-14'"),
+      /timezone required/
+    );
+  } finally {
+    q(`
+      update public.restaurants
+      set operational_timezone='America/New_York'
+      where id='${R(1)}';
+    `);
+  }
+});
+
+function sqlSession() {
+  const child = spawn('docker', [
+    'exec',
+    '-i',
+    container,
+    'psql',
+    '-X',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-qAt',
+    '-U',
+    'postgres',
+  ]);
+
+  let out = '';
+  let error = '';
+  let closed = false;
+
+  child.stdout.on('data', data => {
+    out += data;
+  });
+
+  child.stderr.on('data', data => {
+    error += data;
+  });
+
+  const done = new Promise(resolve => {
+    child.on('close', code => {
+      closed = true;
+      resolve({ code, out, error });
+    });
+
+    child.on('error', failure => {
+      closed = true;
+      resolve({ code: -1, out, error: failure.message });
+    });
+  });
+
+  return {
+    send: sql => child.stdin.write(`${sql}\n`),
+
+    end: () => {
+      if (!child.stdin.writableEnded) child.stdin.end();
+    },
+
+    done,
+
+    async ready() {
+      const until = Date.now() + 5000;
+
+      while (
+        !out.includes('READY') &&
+        !closed &&
+        Date.now() < until
+      ) {
+        await delay(10);
+      }
+
+      assert.ok(
+        out.includes('READY'),
+        error || 'Database writer did not become ready'
+      );
+    },
+  };
+}
+
+async function waiting(name) {
+  const until = Date.now() + 5000;
+
+  while (Date.now() < until) {
+    const count = q(`
+      select count(*)
+      from pg_stat_activity
+      where application_name='${name}'
+        and wait_event='advisory';
+    `);
+
+    if (count === '1') return;
+
+    await delay(20);
+  }
+
+  assert.fail(`Expected ${name} to wait for the settings lock`);
+}
+
+test('a concurrent global update cannot bypass an uncommitted restaurant override', async () => {
+  const a = sqlSession();
+  const b = sqlSession();
+
+  try {
+    a.send(`
+      begin;
+
+      insert into public.projection_setting_versions
+        (restaurant_id,model_major,effective_at,settings)
+      values (
+        '${R(1)}',4,clock_timestamp(),
+        '{"volume_half_width_near":0.25}'
+      );
+
+      select 'READY';
+    `);
+
+    await a.ready();
+
+    b.send(`
+      set application_name='projection-review-global';
+
+      insert into public.projection_setting_versions
+        (model_major,effective_at,settings)
+      select
+        4,
+        clock_timestamp(),
+        settings || '{"volume_half_width_far":0.22}'
+      from public.projection_setting_versions
+      where restaurant_id is null
+        and effective_at<=clock_timestamp()
+      order by effective_at desc
+      limit 1;
+    `);
+
+    b.end();
+
+    await waiting('projection-review-global');
+
+    a.send('commit;');
+    a.end();
+
+    assert.equal((await a.done).code, 0);
+
+    const result = await b.done;
+
+    assert.notEqual(result.code, 0);
+    assert.match(
+      result.error,
+      /volume_half_width_near exceeds volume_half_width_far/
+    );
+  } finally {
+    a.end();
+    b.end();
+    await Promise.all([a.done, b.done]);
+  }
+});
+
+test('a forecast waiting behind a settings writer must retry with the new version', async () => {
+  const sql = reviewedArchive();
+  const a = sqlSession();
+  const b = sqlSession();
+
+  try {
+    a.send(`
+      begin;
+
+      insert into public.projection_setting_versions
+        (model_major,effective_at,settings)
+      select
+        4,
+        clock_timestamp(),
+        settings || '{"bias_threshold":0.12}'
+      from public.projection_setting_versions
+      where restaurant_id is null
+        and effective_at<=clock_timestamp()
+      order by effective_at desc
+      limit 1;
+
+      select 'READY';
+    `);
+
+    await a.ready();
+
+    b.send(`
+      set application_name='projection-review-archive';
+      ${sql}
+    `);
+
+    b.end();
+
+    await waiting('projection-review-archive');
+
+    a.send('commit;');
+    a.end();
+
+    assert.equal((await a.done).code, 0);
+
+    const result = await b.done;
+
+    assert.notEqual(result.code, 0);
+    assert.match(result.error, /latest effective version/);
+  } finally {
+    a.end();
+    b.end();
+    await Promise.all([a.done, b.done]);
+  }
 });
 
 test('a failure in the legacy purge rolls back projection deletes and the purge log', () => {
