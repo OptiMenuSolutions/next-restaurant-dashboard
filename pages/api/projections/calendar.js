@@ -1,9 +1,8 @@
-import { normalizeProjectionCalendarAnswers, PROJECTION_OWNER_HOLIDAYS } from '../../../lib/projections/calendar.js';
-import { projectionCalendarResponse, selectProjectionCalendarVersion } from '../../../lib/projections/calendarStore.js';
+import { normalizeProjectionCalendarAnswers } from '../../../lib/projections/calendar.js';
+import { projectionCalendarResponse } from '../../../lib/projections/calendarStore.js';
 import { shiftProjectionDate } from '../../../lib/projections/businessTime.js';
-import { requireRestaurantTimezone } from '../../../lib/restaurantTime.js';
 
-export function createProjectionCalendarHandler({ db, verifyOwner } = {}) {
+export function createProjectionCalendarHandler({ db, verifyOwner, adminMode = false } = {}) {
   return async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store');
     if (!['GET', 'PUT'].includes(req.method)) {
@@ -11,28 +10,30 @@ export function createProjectionCalendarHandler({ db, verifyOwner } = {}) {
       return res.status(405).json({ error: 'Method not allowed.' });
     }
     try {
-      const services = !db || !verifyOwner ? await import('../../../lib/scannerAuth') : null;
-      const database = db || services.admin;
-      const auth = await (verifyOwner || services.requireOwner)(req);
+      const services = !db || !verifyOwner ? await (adminMode
+        ? import('../../../lib/admin/requireAdmin') : import('../../../lib/scannerAuth')) : null;
+      const database = db || (adminMode ? services.adminDb : services.admin);
+      const auth = await (verifyOwner || (adminMode ? services.requireAdmin : services.requireOwner))(req, res);
+      if (!auth) return;
       if (auth.error) return res.status(auth.status || 401).json({ error: auth.error });
-      if (!auth.restaurant?.id || !auth.user?.id) return res.status(401).json({ error: 'Please sign in again.' });
-      const restaurantId = auth.restaurant.id;
-      if (Object.keys(req.query || {}).length) return res.status(422).json({ error: 'Unexpected calendar query fields.' });
+      if (!auth.user?.id) return res.status(401).json({ error: 'Please sign in again.' });
+      const query = req.query || {};
+      const restaurantId = adminMode ? query.restaurantId : auth.restaurant?.id;
+      if ((adminMode && (Object.keys(query).some(key => key !== 'restaurantId') ||
+        typeof restaurantId !== 'string' || !/^[0-9a-f-]{36}$/i.test(restaurantId))) ||
+        (!adminMode && Object.keys(query).length) || !restaurantId) {
+        return res.status(422).json({ error: 'Unexpected calendar query fields.' });
+      }
       if (req.method === 'GET') {
-        const context = projectionCalendarResponse(await database.rpc('projection_calendar_context', {
-          p_restaurant_id: restaurantId, p_from: null, p_until: null, p_actor_id: auth.user.id,
+        const context = projectionCalendarResponse(await database.rpc('projection_calendar_setup', {
+          p_restaurant_id: restaurantId, p_actor_id: auth.user.id,
         }));
         if (context.restaurant_id !== restaurantId || !Number.isSafeInteger(context.revision) || context.revision < 0) {
           throw new Error('Invalid calendar setup response.');
         }
-        requireRestaurantTimezone(context.timezone);
-        const current = selectProjectionCalendarVersion(context.versions, restaurantId, context.today);
+        const settings = normalizeProjectionCalendarAnswers(context.settings);
         return res.status(200).json({ restaurant_id: restaurantId, revision: context.revision,
-          today: context.today, timezone: context.timezone, settings: current.settings,
-          effective_from: current.effective_from, holiday_options: PROJECTION_OWNER_HOLIDAYS,
-          setup_required: current.settings?.concept_type == null,
-          setup_code: current.settings?.concept_type == null ? 'PROJECTION_CALENDAR_SETUP_REQUIRED' : null,
-          closure_conflicts: context.closure_conflicts || [] });
+          settings, effective_from: context.effective_from, setup_required: settings.concept_type == null });
       }
       let body;
       let settings;
@@ -58,7 +59,7 @@ export function createProjectionCalendarHandler({ db, verifyOwner } = {}) {
       return res.status(200).json(saved);
     } catch (error) {
       const status = error.code === 'PT409' ? 409 : error.code === '42501' ? 403
-        : ['22023', 'PROJECTION_CALENDAR_SETUP_REQUIRED', 'RESTAURANT_TIMEZONE_REQUIRED', 'RESTAURANT_TIMEZONE_INVALID'].includes(error.code) ? 422 : 503;
+        : ['22023', 'RESTAURANT_TIMEZONE_REQUIRED', 'RESTAURANT_TIMEZONE_INVALID'].includes(error.code) ? 422 : 503;
       return res.status(status).json({ code: error.code || 'PROJECTION_CALENDAR_UNAVAILABLE',
         error: status === 409 ? 'Calendar answers changed. Reload before saving again.'
           : status === 422 ? 'Check the calendar configuration, time zone and effective date.'

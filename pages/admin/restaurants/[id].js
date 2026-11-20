@@ -3,6 +3,7 @@
 // links to the fix. Tabs: Overview, Activity, Menu, Invoices, Billing.
 
 import { useCallback, useEffect, useState } from 'react';
+import ProjectionCalendarSettings from '../../../components/admin/ProjectionCalendarSettings';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AdminShell, { Confirm, Dialog } from '../../../components/admin/AdminShell';
@@ -530,6 +531,7 @@ function Overview({
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'flex-start' }}>
       <div style={{ flex: '2 1 600px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <ProjectionCalendarSettings restaurantId={r.id} />
         <Card title="Data">
           <div style={{ display: 'grid', gridTemplateColumns: isPhone ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(150px, 1fr))', gap: 14 }}>
             {stats.map(([k, v, s]) => (

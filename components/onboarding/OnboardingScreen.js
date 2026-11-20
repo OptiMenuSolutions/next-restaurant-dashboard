@@ -33,7 +33,7 @@ const POS_LIST = [
 ];
 
 export default function OnboardingScreen({
-  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, invoiceRows = [], blockNavigation, recipeSetup, recipeBusy,
+  onFinish, onSaveStep, onParseMenu, parsingMenu, onSelectPos, onParseInvoices, parsingInvoices, invoiceRows = [], blockNavigation, recipeSetup, recipeBusy, calendarNotice,
   NavLink = DefaultLink, skipHref = "/client/dashboard", doneHref = "/client/dashboard",
 }) {
   const [step, setStep] = useState(1);
@@ -48,6 +48,7 @@ export default function OnboardingScreen({
   const [addrState, setAddrState] = useState("");
   const [addrZip, setAddrZip] = useState("");
   const [style, setStyle] = useState("");
+  const [normallyClosedWeekdays, setNormallyClosedWeekdays] = useState(null);
   const [cuisine, setCuisine] = useState("");
   const [freezesBeef, setFreezesBeef] = useState(false);
   const [freezesPoultry, setFreezesPoultry] = useState(false);
@@ -103,6 +104,7 @@ export default function OnboardingScreen({
         await onSaveStep?.(1, {
           name,
           style,
+          normallyClosedWeekdays,
           cuisine,
           freezesBeef,
           freezesPoultry,
@@ -134,6 +136,7 @@ export default function OnboardingScreen({
           addrState,
           addrZip,
           style,
+          normallyClosedWeekdays,
           cuisine,
         });
         setDone(true);
@@ -193,6 +196,7 @@ export default function OnboardingScreen({
 
       <div style={{ flex: 1, display: "flex", alignItems: isPhone ? "flex-start" : "center", justifyContent: "center", padding: isPhone ? "16px 12px calc(24px + env(safe-area-inset-bottom))" : "36px 20px" }}>
         <div style={{ width: "100%", maxWidth: step === 6 ? 1100 : 520 }}>
+          {calendarNotice && <p role="status" style={{ fontSize: 12 }}>{calendarNotice}</p>}
 
           {done ? (
             <div style={{ background: "var(--shell)", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "var(--shadow-lg)", padding: isPhone ? "36px 22px" : "44px 36px", textAlign: "center" }}>
@@ -226,12 +230,9 @@ export default function OnboardingScreen({
                       <span style={labelCls}>Style of restaurant</span>
                       <select style={{ ...inputCls, cursor: "pointer" }} value={style} onChange={(e) => setStyle(e.target.value)}>
                         <option value="">Select one</option>
-                        <option value="fine">Fine dining</option>
-                        <option value="casual">Casual dining</option>
-                        <option value="fast-casual">Fast casual</option>
-                        <option value="cafe">Cafe &amp; bakery</option>
-                        <option value="bar">Bar &amp; lounge</option>
-                        <option value="other">Other</option>
+                        <option value="full_service">Full service</option>
+                        <option value="bar_pub">Bar / pub</option>
+                        <option value="quick_service">Quick service</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
@@ -251,6 +252,21 @@ export default function OnboardingScreen({
                       </select>
                     </div>
                   </div>
+
+                  <fieldset style={{ margin: '20px 0 0', border: 0, padding: 0 }}>
+                    <legend style={labelCls}>Which days are you normally closed? (optional)</legend>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
+                        <label key={day} style={{ display: 'flex', alignItems: 'center', gap: 5, minHeight: 44 }}>
+                          <input type="checkbox" checked={(normallyClosedWeekdays || []).includes(index + 1)}
+                            onChange={event => setNormallyClosedWeekdays(previous => event.target.checked
+                              ? [...(previous || []), index + 1] : (previous || []).filter(value => value !== index + 1))} />{day}
+                        </label>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setNormallyClosedWeekdays([])} style={{ background: 'none', border: 0, padding: '8px 0', cursor: 'pointer' }}>Open every day</button>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>You can skip this. Your sales history will update the schedule automatically.</div>
+                  </fieldset>
 
                   <div style={{ marginTop: 20 }}>
                     <span style={labelCls}>Do you freeze any of these before use?</span>

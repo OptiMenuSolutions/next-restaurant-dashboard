@@ -130,34 +130,23 @@ where not exists (
 
 
 create function projection_private.valid_calendar_settings(p jsonb,p_initial boolean default false)
-returns boolean language plpgsql immutable set search_path = '' as $fn$
-declare item jsonb; key text; n numeric;
+returns boolean language plpgsql immutable set search_path='' as $fn$
+declare item jsonb; n numeric;
 begin
   if p is null or jsonb_typeof(p)<>'object'
     or (select array_agg(k order by k) from jsonb_object_keys(p) k)
-      is distinct from array['concept_type','holiday_answers','normally_closed_weekdays']
+      is distinct from array['concept_type','normally_closed_weekdays']
     or not coalesce(p->>'concept_type' in ('full_service','bar_pub','quick_service')
-      or (p_initial and p->'concept_type'='null'::jsonb),false)
-    or jsonb_typeof(p->'normally_closed_weekdays') is distinct from 'array'
-    or jsonb_typeof(p->'holiday_answers') is distinct from 'object'
-  then return false; end if;
+      or p->'concept_type'='null'::jsonb,false)
+    or jsonb_typeof(p->'normally_closed_weekdays') is distinct from 'array' then return false; end if;
   for item in select value from jsonb_array_elements(p->'normally_closed_weekdays') loop
     if jsonb_typeof(item)<>'number' then return false; end if;
     n:=(item#>>'{}')::numeric;
     if n<>trunc(n) or n<1 or n>7 then return false; end if;
   end loop;
-  if p->'normally_closed_weekdays' is distinct from coalesce((
-    select jsonb_agg(d.n order by d.n) from (
-      select distinct (value#>>'{}')::numeric::integer n
-      from jsonb_array_elements(p->'normally_closed_weekdays')
-    ) d
-  ),'[]'::jsonb) then return false; end if;
-  for key,item in select * from jsonb_each(p->'holiday_answers') loop
-    if key not in ('thanksgiving_day','christmas_eve','christmas_day','new_years_day','easter','july_4')
-      or jsonb_typeof(item)<>'string' or item#>>'{}' not in ('open','closed','early_close')
-    then return false; end if;
-  end loop;
-  return true;
+  return p->'normally_closed_weekdays'=coalesce((select jsonb_agg(d.n order by d.n) from (
+    select distinct (value#>>'{}')::numeric::integer n
+    from jsonb_array_elements(p->'normally_closed_weekdays')) d),'[]'::jsonb);
 end;
 $fn$;
 
@@ -189,12 +178,84 @@ select r.id,0,jsonb_build_object(
   'concept_type',c.concept_type,
   'normally_closed_weekdays',coalesce((select jsonb_agg(d order by d) from (
     select distinct unnest(coalesce(c.normally_closed_weekdays,'{}'::smallint[])) d
-  ) days),'[]'::jsonb),
-  'holiday_answers',coalesce(a.holiday_answers,'{}'::jsonb)
+  ) days),'[]'::jsonb)
 ),a.answered_by
 from public.restaurants r
 left join public.projection_restaurant_config c on c.restaurant_id=r.id
 left join public.projection_owner_answers a on a.restaurant_id=r.id;
+
+create table public.projection_holiday_answer_versions (
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  business_date date not null check (isfinite(business_date) and extract(year from business_date) between 1 and 9999),
+  revision bigint not null check (revision>0 and revision<=9007199254740991),
+  answer text not null check (answer in ('open','closed','early_close')),
+  actor_id uuid not null,
+  recorded_at timestamptz not null default clock_timestamp(),
+  primary key(restaurant_id,business_date,revision)
+);
+
+create table public.projection_holiday_prompt_views (
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  holiday_key text not null check (holiday_key in ('thanksgiving_day','christmas_eve','christmas_day','new_years_day','easter','july_4')),
+  business_date date not null check (isfinite(business_date) and extract(year from business_date) between 1 and 9999),
+  holiday_year integer generated always as (extract(year from business_date)::integer) stored,
+  actor_id uuid not null,
+  recorded_at timestamptz not null default clock_timestamp(),
+  primary key(restaurant_id,holiday_key,holiday_year)
+);
+
+do $block$
+declare t text;
+begin
+  foreach t in array array['projection_holiday_answer_versions','projection_holiday_prompt_views'] loop
+    execute format('alter table public.%I enable row level security',t);
+    execute format('revoke all on public.%I from public,anon,authenticated,service_role',t);
+    execute format('grant select on public.%I to service_role',t);
+    execute format('create trigger projection_calendar_immutable before update or delete on public.%I for each row execute function projection_private.immutable_row()',t);
+    execute format('create trigger projection_calendar_no_truncate before truncate on public.%I for each statement execute function projection_private.immutable_row()',t);
+  end loop;
+end;
+$block$;
+
+create function projection_private.calendar_actor(p_restaurant_id uuid,p_actor_id uuid,p_admin boolean default true)
+returns void language plpgsql stable set search_path='' as $fn$
+begin
+  if p_actor_id is null or not exists(select 1 from public.restaurants r
+    where r.id=p_restaurant_id and r.deactivated_at is null and
+      (r.user_id=p_actor_id or (p_admin and exists(select 1 from public.profiles where id=p_actor_id and role='admin')))) then
+    raise exception 'PROJECTION_OWNER_REQUIRED' using errcode='42501'; end if;
+end;
+$fn$;
+
+create function projection_private.calendar_setup(p_restaurant_id uuid,p_actor_id uuid)
+returns jsonb language plpgsql stable set search_path='' as $fn$
+declare v public.projection_calendar_versions; settings jsonb; zone text; today date; ctx jsonb; latest_revision bigint;
+begin
+  perform projection_private.calendar_actor(p_restaurant_id,p_actor_id);
+  select operational_timezone into zone from public.restaurants where id=p_restaurant_id;
+  select max(revision) into latest_revision from public.projection_calendar_versions where restaurant_id=p_restaurant_id;
+  if zone is not null and exists(select 1 from pg_timezone_names where name=zone) then
+    ctx:=projection_private.calendar_context(p_restaurant_id,null,null,statement_timestamp());
+    today:=(ctx->>'today')::date;
+  end if;
+  select * into v from public.projection_calendar_versions where restaurant_id=p_restaurant_id
+    and (today is null or effective_from is null or effective_from<=today)
+    order by case when today is null then revision end desc,effective_from desc nulls last,revision desc limit 1;
+  settings:=v.settings;
+  if settings is null then
+    select jsonb_build_object('concept_type',c.concept_type,
+      'normally_closed_weekdays',coalesce(to_jsonb(c.normally_closed_weekdays),'[]'::jsonb)) into settings
+    from public.restaurants r left join public.projection_restaurant_config c on c.restaurant_id=r.id where r.id=p_restaurant_id;
+  end if;
+  return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',coalesce(latest_revision,0),
+    'settings',settings,'effective_from',v.effective_from,'timezone',zone,'today',today);
+end;
+$fn$;
+
+create function public.projection_calendar_setup(p_restaurant_id uuid,p_actor_id uuid)
+returns jsonb language sql stable security invoker set search_path='' as $fn$
+  select projection_private.calendar_setup(p_restaurant_id,p_actor_id);
+$fn$;
 
 create function projection_private.calendar_context(
   p_restaurant_id uuid,p_from date,p_until date,p_at timestamptz
@@ -239,8 +300,7 @@ begin
       'settings',jsonb_build_object('concept_type',c.concept_type,
         'normally_closed_weekdays',coalesce((select jsonb_agg(d order by d) from (
     select distinct unnest(coalesce(c.normally_closed_weekdays,'{}'::smallint[])) d
-  ) days),'[]'::jsonb),
-        'holiday_answers',coalesce(a.holiday_answers,'{}'::jsonb)))) into versions
+  ) days),'[]'::jsonb)))) into versions
     from public.restaurants r
     left join public.projection_restaurant_config c on c.restaurant_id=r.id
     left join public.projection_owner_answers a on a.restaurant_id=r.id where r.id=p_restaurant_id;
@@ -249,38 +309,31 @@ begin
     'restaurant_id',p_restaurant_id,'timezone',zone,'today',today,
     'from',first_day,'until',last_day,'model_major',major,
     'global_version_id',g.id,'restaurant_version_id',o.id,'settings',s,
-    'closure_conflict_threshold_units',2,'calendar_policy_revision',1,
+    'closure_conflict_threshold_units',2,'calendar_policy_revision',2,
     'revision',coalesce((select max(revision) from public.projection_calendar_versions
       where restaurant_id=p_restaurant_id),0),'versions',versions,
     'holidays',coalesce((select jsonb_agg(to_jsonb(h) order by holiday_date,holiday_key collate "C")
-      from public.projection_holiday_calendar h where holiday_date between first_day and last_day),'[]'::jsonb),
+      from public.projection_holiday_calendar h where holiday_date between make_date(greatest(1,extract(year from first_day)::integer-1),1,1) and last_day),'[]'::jsonb),
     'scheduled_years',coalesce((select jsonb_agg(y order by y) from (
       select extract(year from holiday_date)::integer y from public.projection_holiday_calendar
       where holiday_key='super_bowl' and extract(year from holiday_date)
         between extract(year from first_day) and extract(year from last_day)
     ) years),'[]'::jsonb),
-    'observed_closures',coalesce((select jsonb_agg(jsonb_build_object(
-      'business_date',f.business_date,
-      'closed',coalesce((f.flags#>>'{calendar,legacy_closed}')::boolean,f.closed),
-      'early_close',coalesce((f.flags#>>'{calendar,legacy_early_close}')::boolean,f.early_close)
-    ) order by business_date) from public.projection_nightly_flags f
-    where restaurant_id=p_restaurant_id and business_date between first_day and last_day
-      and (coalesce((f.flags#>>'{calendar,legacy_closed}')::boolean,f.closed)
-        or coalesce((f.flags#>>'{calendar,legacy_early_close}')::boolean,f.early_close))),'[]'::jsonb),
-    'sales_evidence',coalesce((select jsonb_agg(jsonb_build_object(
-      'business_date',f.business_date,'total_units',f.total_units,
-      'complete',f.complete,'source_revision',f.source_revision
-    ) order by business_date) from public.projection_nightly_flags f
-    where restaurant_id=p_restaurant_id and business_date between first_day and last_day
-      and f.total_units>=0 and f.source_revision is not null),'[]'::jsonb),
+    'history',coalesce((select jsonb_agg(jsonb_build_object('business_date',f.business_date,'total_units',f.total_units,
+      'complete',f.complete,'source_revision',f.source_revision,'source_covered',exists(
+        select 1 from public.projection_pos_source_windows w where w.restaurant_id=p_restaurant_id
+          and (w.valid_from is null or w.valid_from<=f.business_date) and (w.valid_until is null or f.business_date<w.valid_until))) order by business_date)
+      from public.projection_nightly_flags f where restaurant_id=p_restaurant_id and business_date<today
+        and total_units>=0 and source_revision is not null),'[]'::jsonb),
+    'holiday_answers',coalesce((select jsonb_agg(to_jsonb(a) order by business_date) from (
+      select distinct on (business_date) * from public.projection_holiday_answer_versions
+      where restaurant_id=p_restaurant_id and business_date between first_day and last_day and recorded_at<=p_at
+      order by business_date,revision desc) a),'[]'::jsonb),
     'rules',coalesce((select jsonb_agg(to_jsonb(h) order by id)
       from public.projection_holiday_rule_versions h
       where (restaurant_id is null or restaurant_id=p_restaurant_id) and effective_at<=p_at),'[]'::jsonb)
   );
   return value||jsonb_build_object('as_of',p_at,
-    'closure_conflicts',coalesce((select jsonb_agg(f.flags#>'{calendar,closure_conflict}' order by business_date desc)
-      from public.projection_nightly_flags f where restaurant_id=p_restaurant_id and business_date<today
-        and jsonb_typeof(f.flags#>'{calendar,closure_conflict}')='object'),'[]'::jsonb),
     'context_digest',encode(sha256(convert_to(value::text,'UTF8')),'hex'));
 end;
 $fn$;
@@ -290,75 +343,50 @@ create function public.projection_calendar_context(
 )
 returns jsonb language plpgsql stable security invoker set search_path = '' as $fn$
 begin
-  if p_actor_id is not null and not exists (
-    select 1 from public.restaurants where id=p_restaurant_id and user_id=p_actor_id
-  ) then raise exception 'PROJECTION_OWNER_REQUIRED' using errcode='42501'; end if;
+  if p_actor_id is not null then perform projection_private.calendar_actor(p_restaurant_id,p_actor_id); end if;
   return projection_private.calendar_context(p_restaurant_id,p_from,p_until,statement_timestamp());
 end;
 $fn$;
 
-create function projection_private.save_calendar_answers(
-  p_restaurant_id uuid,p_actor_id uuid,p_expected_revision bigint,
-  p_settings jsonb,p_effective_from date
-)
+create function projection_private.save_calendar_answers(p_restaurant_id uuid,p_actor_id uuid,p_expected_revision bigint,p_settings jsonb,p_effective_from date)
 returns jsonb language plpgsql security definer set search_path='' set timezone='UTC' as $fn$
-declare ctx jsonb; latest public.projection_calendar_versions;
-  chosen public.projection_calendar_versions; next_revision bigint; start_date date; baseline_actor uuid;
+declare latest public.projection_calendar_versions; chosen public.projection_calendar_versions; baseline jsonb; zone text; start_date date; rev bigint;
 begin
   perform pg_advisory_xact_lock(hashtextextended('optimenu:projection-ingest:'||p_restaurant_id::text,0));
-  perform 1 from public.restaurants where id=p_restaurant_id and user_id=p_actor_id
-    and deactivated_at is null for key share;
-  if not found or p_actor_id is null then
-    raise exception 'PROJECTION_OWNER_REQUIRED' using errcode='42501'; end if;
-  if p_expected_revision is null or p_expected_revision<0
-    or not projection_private.valid_calendar_settings(p_settings,false) then
+  perform projection_private.calendar_actor(p_restaurant_id,p_actor_id);
+  perform 1 from public.restaurants where id=p_restaurant_id for key share;
+  if p_expected_revision is null or p_expected_revision<0 or not projection_private.valid_calendar_settings(p_settings) then
     raise exception 'PROJECTION_INVALID_OWNER_ANSWERS' using errcode='22023'; end if;
-  ctx:=projection_private.calendar_context(p_restaurant_id,null,null,clock_timestamp());
-  insert into public.projection_calendar_versions(restaurant_id,revision,settings,actor_id)
-  select p_restaurant_id,0,v->'settings',(v->>'actor_id')::uuid
-  from jsonb_array_elements(ctx->'versions') v where (v->>'revision')::bigint=0
-  on conflict(restaurant_id,revision) do nothing;
-  select * into strict latest from public.projection_calendar_versions
-  where restaurant_id=p_restaurant_id order by revision desc limit 1;
-  if p_effective_from is null and p_expected_revision<=latest.revision and latest.settings=p_settings then
-    return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',latest.revision,
-      'changed',false,'effective_from',latest.effective_from);
-  end if;
-  start_date:=coalesce(p_effective_from,(ctx->>'today')::date);
-  if latest.revision=0 and latest.actor_id is null and p_effective_from is null then
-    start_date:=null;
-  end if;
-  if start_date>(ctx->>'today')::date then
-    raise exception 'PROJECTION_INVALID_EFFECTIVE_DATE' using errcode='22023'; end if;
+  baseline:=projection_private.calendar_setup(p_restaurant_id,p_actor_id);
+  insert into public.projection_calendar_versions(restaurant_id,revision,settings)
+    values(p_restaurant_id,0,baseline->'settings') on conflict(restaurant_id,revision) do nothing;
+  select * into strict latest from public.projection_calendar_versions where restaurant_id=p_restaurant_id order by revision desc limit 1;
   if p_expected_revision<=latest.revision and latest.settings=p_settings
-    and latest.effective_from is not distinct from start_date then
-    return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',latest.revision,
-      'changed',false,'effective_from',start_date);
+    and (p_effective_from is null or latest.effective_from is not distinct from p_effective_from) then
+    return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',latest.revision,'changed',false,'effective_from',latest.effective_from); end if;
+  if p_expected_revision<>latest.revision then raise exception 'PROJECTION_CALENDAR_CONFLICT' using errcode='PT409'; end if;
+  if p_effective_from is not null and baseline->>'today' is null then
+    raise exception 'PROJECTION_INVALID_EFFECTIVE_DATE' using errcode='22023'; end if;
+  zone:=baseline->>'timezone';
+  start_date:=p_effective_from;
+  if start_date is null and (zone is null or not exists(select 1 from pg_timezone_names where name=zone)) then
+    select max(effective_from) into start_date from public.projection_calendar_versions where restaurant_id=p_restaurant_id; end if;
+  if start_date is null and latest.revision>0 and zone is not null and exists(select 1 from pg_timezone_names where name=zone) then
+    start_date:=(baseline->>'today')::date;
   end if;
-  if p_expected_revision<>latest.revision then
-    raise exception 'PROJECTION_CALENDAR_CONFLICT' using errcode='PT409'; end if;
-  next_revision:=latest.revision+1;
-  insert into public.projection_calendar_versions
-    (restaurant_id,revision,effective_from,settings,actor_id)
-  values(p_restaurant_id,next_revision,start_date,p_settings,p_actor_id);
-  select * into strict chosen from public.projection_calendar_versions
-  where restaurant_id=p_restaurant_id and (effective_from is null or effective_from<=(ctx->>'today')::date)
-  order by effective_from desc nulls last,revision desc limit 1;
+  if start_date is not null and (not isfinite(start_date) or extract(year from start_date) not between 1 and 9999
+    or (zone is not null and exists(select 1 from pg_timezone_names where name=zone) and start_date>(baseline->>'today')::date)) then
+    raise exception 'PROJECTION_INVALID_EFFECTIVE_DATE' using errcode='22023'; end if;
+  rev:=latest.revision+1;
+  insert into public.projection_calendar_versions(restaurant_id,revision,effective_from,settings,actor_id)
+    values(p_restaurant_id,rev,start_date,p_settings,p_actor_id);
+  select * into chosen from public.projection_calendar_versions where restaurant_id=p_restaurant_id
+    and (baseline->>'today' is null or effective_from is null or effective_from<=(baseline->>'today')::date)
+    order by case when baseline->>'today' is null then revision end desc,effective_from desc nulls last,revision desc limit 1;
   insert into public.projection_restaurant_config(restaurant_id,concept_type,normally_closed_weekdays)
-  values(p_restaurant_id,chosen.settings->>'concept_type',array(
-    select value::smallint from jsonb_array_elements_text(chosen.settings->'normally_closed_weekdays')))
-  on conflict(restaurant_id) do update set concept_type=excluded.concept_type,
-    normally_closed_weekdays=excluded.normally_closed_weekdays,updated_at=clock_timestamp()
-  where (projection_restaurant_config.concept_type,projection_restaurant_config.normally_closed_weekdays)
-    is distinct from (excluded.concept_type,excluded.normally_closed_weekdays);
-  insert into public.projection_owner_answers(restaurant_id,holiday_answers,answered_by)
-  values(p_restaurant_id,chosen.settings->'holiday_answers',chosen.actor_id)
-  on conflict(restaurant_id) do update set holiday_answers=excluded.holiday_answers,
-    answered_by=excluded.answered_by,updated_at=clock_timestamp()
-  where (projection_owner_answers.holiday_answers,projection_owner_answers.answered_by)
-    is distinct from (excluded.holiday_answers,excluded.answered_by);
-  return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',next_revision,
-    'changed',true,'effective_from',start_date);
+    values(p_restaurant_id,chosen.settings->>'concept_type',array(select value::smallint from jsonb_array_elements_text(chosen.settings->'normally_closed_weekdays')))
+    on conflict(restaurant_id) do update set concept_type=excluded.concept_type,normally_closed_weekdays=excluded.normally_closed_weekdays,updated_at=clock_timestamp();
+  return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',rev,'changed',true,'effective_from',start_date);
 end;
 $fn$;
 
@@ -371,67 +399,148 @@ returns jsonb language sql security invoker set search_path='' as $fn$
 $fn$;
 
 
+create function projection_private.holiday_prompt(p_restaurant_id uuid,p_actor_id uuid,p_action text,p_business_date date,p_answer text,p_expected_revision bigint,p_at timestamptz)
+returns jsonb language plpgsql security definer set search_path='' set timezone='UTC' as $fn$
+declare ctx jsonb; day date; key text; latest public.projection_holiday_answer_versions; rev bigint; zone text;
+begin
+  perform projection_private.calendar_actor(p_restaurant_id,p_actor_id,false);
+  if p_action not in ('claim','answer','dismiss') or p_action is null then raise exception 'Invalid prompt action' using errcode='22023'; end if;
+  select operational_timezone into zone from public.restaurants where id=p_restaurant_id;
+  if zone is null or not exists(select 1 from pg_timezone_names where name=zone) then
+    if p_action='claim' then return jsonb_build_object('restaurant_id',p_restaurant_id,'prompt',null); end if;
+    raise exception 'Projection timezone is unavailable' using errcode='22023'; end if;
+  ctx:=projection_private.calendar_context(p_restaurant_id,null,null,p_at);
+  day:=(ctx->>'today')::date;
+  perform projection_private.prepare_calendar(day,day+10);
+  perform pg_advisory_xact_lock(hashtextextended('optimenu:projection-ingest:'||p_restaurant_id::text,0));
+  perform projection_private.calendar_actor(p_restaurant_id,p_actor_id,false);
+  ctx:=projection_private.calendar_context(p_restaurant_id,null,null,p_at);
+  day:=(ctx->>'today')::date;
+  if p_action='claim' then
+    select h.holiday_date,h.holiday_key into day,key from public.projection_holiday_calendar h
+    where h.holiday_date between (ctx->>'today')::date and (ctx->>'today')::date+10
+      and h.holiday_key in ('thanksgiving_day','christmas_eve','christmas_day','new_years_day','easter','july_4')
+      and not exists(select 1 from public.projection_holiday_prompt_views v
+        where v.restaurant_id=p_restaurant_id and v.holiday_key=h.holiday_key and v.holiday_year=extract(year from h.holiday_date))
+    order by h.holiday_date,h.holiday_key collate "C" limit 1;
+    if day is null then return jsonb_build_object('restaurant_id',p_restaurant_id,'prompt',null); end if;
+  else
+    if p_business_date is null or p_business_date<day or p_business_date>day+10 then
+      raise exception 'Holiday response must be for an upcoming prompt date' using errcode='22023'; end if;
+    day:=p_business_date;
+    select h.holiday_key into key from public.projection_holiday_calendar h where holiday_date=day
+      and holiday_key in ('thanksgiving_day','christmas_eve','christmas_day','new_years_day','easter','july_4') limit 1;
+    if key is null then raise exception 'Not a supported owner holiday' using errcode='22023'; end if;
+  end if;
+  insert into public.projection_holiday_prompt_views(restaurant_id,holiday_key,business_date,actor_id)
+    values(p_restaurant_id,key,day,p_actor_id) on conflict do nothing;
+  select * into latest from public.projection_holiday_answer_versions
+    where restaurant_id=p_restaurant_id and business_date=day order by revision desc limit 1;
+  rev:=coalesce(latest.revision,0);
+  if p_action='answer' then
+    if p_answer not in ('open','closed','early_close') or p_answer is null or p_expected_revision is null or p_expected_revision<0 then
+      raise exception 'Invalid dated holiday answer' using errcode='22023'; end if;
+    if p_expected_revision<=rev and latest.answer=p_answer then
+      return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',rev,'changed',false); end if;
+    if p_expected_revision<>rev then raise exception 'PROJECTION_CALENDAR_CONFLICT' using errcode='PT409'; end if;
+    rev:=rev+1;
+    insert into public.projection_holiday_answer_versions(restaurant_id,business_date,revision,answer,actor_id)
+      values(p_restaurant_id,day,rev,p_answer,p_actor_id);
+  end if;
+  return jsonb_build_object('restaurant_id',p_restaurant_id,'revision',rev,'changed',p_action='answer',
+    'prompt',case when p_action='claim' then jsonb_build_object('business_date',day,'holiday_key',key,'revision',rev) else null end);
+end;
+$fn$;
+
+create function public.projection_holiday_prompt(p_restaurant_id uuid,p_actor_id uuid,p_action text,p_business_date date default null,p_answer text default null,p_expected_revision bigint default null)
+returns jsonb language sql security invoker set search_path='' as $fn$
+  select projection_private.holiday_prompt(p_restaurant_id,p_actor_id,p_action,p_business_date,p_answer,p_expected_revision,clock_timestamp());
+$fn$;
+
+create function public.projection_calendar_missing_concepts()
+returns jsonb language sql stable security invoker set search_path='' as $fn$
+  select jsonb_build_object('count',count(*),'names',coalesce(jsonb_agg(name order by name),'[]'::jsonb))
+  from public.restaurants r left join public.projection_restaurant_config c on c.restaurant_id=r.id
+  where r.deactivated_at is null and r.id<>'00000000-0000-0000-0000-000000000001'::uuid and c.concept_type is null;
+$fn$;
+
 -- Authoritative derivation from the locked, tenant-scoped database context.
 create function projection_private.derive_calendar_night(ctx jsonb,day date)
 returns jsonb language plpgsql stable set search_path='' as $fn$
-declare
-  configuration jsonb; item jsonb; rule jsonb; observed jsonb; evidence jsonb;
-  keys text[]; resolved jsonb:='[]'; key text; answer text; concept text;
+declare configuration jsonb; rule jsonb; actual jsonb; prior jsonb; popup jsonb;
+  keys text[]; resolved jsonb:='[]'; key text; answer text; source text; concept text; prior_day date;
   weekday integer:=extract(isodow from day)::integer; weekday_group text;
-  planned_closed boolean; closed_flag boolean; early_flag boolean:=false;
-  factor numeric:=1; units numeric; conflict jsonb:='null';
+  weekday_closed boolean; weekday_source text; observation_count integer;
+  holiday_closed boolean:=false; holiday_open boolean:=false; planned_closed boolean;
+  planned_early boolean:=false; closed_flag boolean; early_flag boolean; past boolean:=day<(ctx->>'today')::date;
+  factor numeric:=1; threshold numeric:=(ctx->>'closure_conflict_threshold_units')::numeric;
+  diagnostic jsonb:='null'; owner_closed boolean;
 begin
-  select v into configuration from jsonb_array_elements(ctx->'versions') v
-  where v->>'effective_from' is null or (v->>'effective_from')::date<=day
-  order by (v->>'effective_from')::date desc nulls last,(v->>'revision')::bigint desc limit 1;
-  concept:=configuration#>>'{settings,concept_type}';
-  if concept is null then
-    raise exception 'PROJECTION_CALENDAR_SETUP_REQUIRED' using errcode='P0001'; end if;
   if extract(month from day)=2 and not (ctx->'scheduled_years') @> to_jsonb(array[extract(year from day)::integer]) then
     raise exception 'PROJECTION_CALENDAR_INCOMPLETE' using errcode='P0001'; end if;
-  if not projection_private.valid_calendar_settings(configuration->'settings',false) then
-    raise exception 'PROJECTION_INVALID_OWNER_ANSWERS' using errcode='22023'; end if;
+  select v into configuration from jsonb_array_elements(ctx->'versions') v
+    where v->>'effective_from' is null or (v->>'effective_from')::date<=day
+    order by (v->>'effective_from')::date desc nulls last,(v->>'revision')::bigint desc limit 1;
+  if not projection_private.valid_calendar_settings(configuration->'settings') then
+    raise exception 'PROJECTION_INVALID_CALENDAR_SETTINGS' using errcode='22023'; end if;
+  concept:=coalesce(configuration#>>'{settings,concept_type}','full_service');
   weekday_group:=case when weekday<=4 then 'mon_thu' when weekday<=6 then 'fri_sat' else 'sun' end;
-  planned_closed:=(configuration#>'{settings,normally_closed_weekdays}') @> to_jsonb(array[weekday]);
+  select count(*),coalesce(bool_and((v->>'total_units')::numeric<=threshold),false)
+    into observation_count,weekday_closed from (
+      select v from jsonb_array_elements(ctx->'history') v
+      where (v->>'complete')::boolean and (v->>'source_covered')::boolean
+        and (v->>'business_date')::date<(ctx->>'today')::date
+        and extract(isodow from (v->>'business_date')::date)=weekday
+      order by (v->>'business_date')::date desc limit 4) four;
+  weekday_source:=case when observation_count=4 then 'pos_last_four' else 'optional_onboarding' end;
+  if observation_count<4 then
+    weekday_closed:=(configuration#>'{settings,normally_closed_weekdays}') @> to_jsonb(array[weekday]); end if;
+  select v into popup from jsonb_array_elements(ctx->'holiday_answers') v where (v->>'business_date')::date=day;
   keys:=array(select h->>'holiday_key' from jsonb_array_elements(ctx->'holidays') h
     where (h->>'holiday_date')::date=day order by (h->>'holiday_key') collate "C");
   foreach key in array keys loop
     select r into rule from jsonb_array_elements(ctx->'rules') r
-    where r->>'holiday_key'=key and r->>'concept_type'=concept
-      and r->>'weekday_group' in ('all',weekday_group)
-      and (r->>'effective_at')::timestamptz<=(ctx->>'as_of')::timestamptz
-    order by (r->>'restaurant_id' is not null) desc,
-      (r->>'weekday_group'=weekday_group) desc,(r->>'effective_at')::timestamptz desc limit 1;
+      where r->>'holiday_key'=key and r->>'concept_type'=concept and r->>'weekday_group' in ('all',weekday_group)
+        and (r->>'effective_at')::timestamptz<=(ctx->>'as_of')::timestamptz
+      order by (r->>'restaurant_id' is not null) desc,(r->>'weekday_group'=weekday_group) desc,
+        (r->>'effective_at')::timestamptz desc limit 1;
     if rule is null then raise exception 'PROJECTION_CALENDAR_RULE_REQUIRED' using errcode='22023'; end if;
-    answer:=coalesce(configuration#>>array['settings','holiday_answers',key],rule->>'default_answer');
+    answer:=case when rule->>'default_answer'='closed' then 'closed' else 'open' end;
+    source:='default_rule';
+    if key in ('thanksgiving_day','christmas_eve','christmas_day','new_years_day','easter','july_4') then
+      select (h->>'holiday_date')::date into prior_day from jsonb_array_elements(ctx->'holidays') h
+        where h->>'holiday_key'=key and extract(year from (h->>'holiday_date')::date)=extract(year from day)-1;
+      select v into prior from jsonb_array_elements(ctx->'history') v where (v->>'business_date')::date=prior_day;
+      if (prior->>'complete')::boolean and (prior->>'total_units')::numeric<=threshold then
+        answer:='closed'; source:='last_year_pos';
+      elsif (prior->>'total_units')::numeric>threshold then answer:='open'; source:='last_year_pos'; end if;
+      if popup is not null then answer:=popup->>'answer'; source:='dated_popup'; end if;
+    end if;
     factor:=factor*(rule->>'default_factor')::numeric;
-    planned_closed:=planned_closed or answer='closed';
-    early_flag:=early_flag or answer='early_close';
-    resolved:=resolved||jsonb_build_array(jsonb_build_object('holiday_key',key,
-      'rule_id',rule->>'id','answer',answer,'default_factor',rule->'default_factor'));
+    holiday_closed:=holiday_closed or answer='closed';
+    holiday_open:=holiday_open or (answer<>'closed' and source in ('dated_popup','last_year_pos'));
+    planned_early:=planned_early or (answer='early_close' and source='dated_popup');
+    resolved:=resolved||jsonb_build_array(jsonb_build_object('holiday_key',key,'rule_id',rule->>'id',
+      'answer',answer,'answer_source',source,'default_factor',rule->'default_factor'));
   end loop;
-  select v into observed from jsonb_array_elements(ctx->'observed_closures') v
-    where (v->>'business_date')::date=day;
-  select v into evidence from jsonb_array_elements(ctx->'sales_evidence') v
-    where (v->>'business_date')::date=day;
-  units:=(evidence->>'total_units')::numeric;
-  closed_flag:=planned_closed or coalesce((observed->>'closed')::boolean,false);
-  if closed_flag and day<(ctx->>'today')::date
-    and units>(ctx->>'closure_conflict_threshold_units')::numeric then
-    conflict:=jsonb_build_object('code','PROJECTION_CALENDAR_CLOSURE_CONFLICT',
-      'business_date',day,'total_units',units,
-      'threshold_units',(ctx->>'closure_conflict_threshold_units')::numeric,
-      'planned_closed',planned_closed,'recorded_closed',coalesce((observed->>'closed')::boolean,false),
-      'message','Your calendar says closed, but '||day::text||' had '||units::double precision::text||' dishes sold.');
-    closed_flag:=false;
-  end if;
-  early_flag:=not closed_flag and (early_flag or coalesce((observed->>'early_close')::boolean,false));
-  return jsonb_build_object('business_date',day,'weekday',weekday,'holiday_keys',keys,
-    'closed',closed_flag,'early_close',early_flag,
+  planned_closed:=holiday_closed or (weekday_closed and not holiday_open);
+  planned_early:=not planned_closed and planned_early;
+  select v into actual from jsonb_array_elements(ctx->'history') v where (v->>'business_date')::date=day;
+  closed_flag:=case when past then coalesce((actual->>'complete')::boolean,false)
+    and coalesce((actual->>'total_units')::numeric<=threshold,false) else planned_closed end;
+  early_flag:=not past and planned_early;
+  owner_closed:=case when popup is not null then popup->>'answer'='closed'
+    when (configuration#>'{settings,normally_closed_weekdays}') @> to_jsonb(array[weekday]) then true else null end;
+  if past and (actual->>'complete')::boolean and owner_closed is not null and owner_closed<>closed_flag then
+    diagnostic:=jsonb_build_object('code','PROJECTION_CALENDAR_ANSWER_DISAGREEMENT',
+      'owner_closed',owner_closed,'actual_closed',closed_flag,'total_units',actual->'total_units'); end if;
+  return jsonb_build_object('business_date',day,'weekday',weekday,'holiday_keys',keys,'closed',closed_flag,'early_close',early_flag,
     'regular_service',not closed_flag and not early_flag and cardinality(keys)=0,
-    'default_factor',case when closed_flag then 0 when early_flag then (ctx#>>'{settings,early_close_factor}')::numeric else factor end,
-    'resolved_holidays',resolved,'configuration_revision',(configuration->>'revision')::bigint,
-    'closure_conflict',conflict);
+    'default_factor',case when closed_flag then 0 when past then 1 when early_flag then (ctx#>>'{settings,early_close_factor}')::numeric else factor end,
+    'resolved_holidays',resolved,'concept_type',concept,'concept_fallback',configuration#>>'{settings,concept_type}' is null,
+    'weekday_source',weekday_source,'weekday_observations',observation_count,
+    'classification_source',case when not past then 'planned' when (actual->>'complete')::boolean then 'complete_pos' else 'incomplete_pos' end,
+    'internal_diagnostic',diagnostic,'configuration_revision',(configuration->>'revision')::bigint);
 end;
 $fn$;
 
@@ -479,17 +588,7 @@ begin
     if day is null or day<p_from or day>least(p_until,(ctx->>'today')::date) then
       raise exception 'PROJECTION_INVALID_CALENDAR_FLAGS' using errcode='22023'; end if;
     expected:=projection_private.derive_calendar_night(ctx,day);
-    if row->'closed' is distinct from expected->'closed'
-      or row->'early_close' is distinct from expected->'early_close'
-      or row->'holiday_keys' is distinct from expected->'holiday_keys'
-      or row->'weekday' is distinct from expected->'weekday'
-      or row->'regular_service' is distinct from expected->'regular_service'
-      or row->'configuration_revision' is distinct from expected->'configuration_revision'
-      or row->'resolved_holidays' is distinct from expected->'resolved_holidays'
-      or (case when jsonb_typeof(row->'closure_conflict')='object' then (row->'closure_conflict')-'message'
-        else row->'closure_conflict' end) is distinct from
-        (case when jsonb_typeof(expected->'closure_conflict')='object' then (expected->'closure_conflict')-'message'
-        else expected->'closure_conflict' end)
+    if (row-'default_factor') is distinct from (expected-'default_factor')
       or jsonb_typeof(row->'default_factor') is distinct from 'number'
     then raise exception 'PROJECTION_INVALID_CALENDAR_FLAGS' using errcode='22023'; end if;
     if (row->>'default_factor')::numeric<0
@@ -515,7 +614,12 @@ begin
           'legacy_early_close',coalesce((projection_nightly_flags.flags#>>'{calendar,legacy_early_close}')::boolean,
             projection_nightly_flags.early_close))),
       updated_at=clock_timestamp()
-    where projection_nightly_flags.flags#>>'{calendar,context_digest}' is distinct from p_context_digest;
+    where projection_nightly_flags.flags#>>'{calendar,context_digest}' is distinct from p_context_digest
+      or projection_nightly_flags.closed is distinct from excluded.closed
+      or projection_nightly_flags.early_close is distinct from excluded.early_close
+      or projection_nightly_flags.holiday_keys is distinct from excluded.holiday_keys
+      or (projection_nightly_flags.flags->'calendar')-array['context_digest','legacy_closed','legacy_early_close']
+        is distinct from (excluded.flags->'calendar')-array['context_digest','legacy_closed','legacy_early_close'];
     get diagnostics n=row_count;
     changed_count:=changed_count+n;
   end loop;
@@ -571,6 +675,8 @@ begin
   values (pg_backend_pid(),txid_current(),target);
 
   foreach t in array array[
+    'projection_holiday_prompt_views',
+    'projection_holiday_answer_versions',
     'projection_calendar_versions',
     'projection_ingestion_policy_versions',
     'projection_pos_source_repairs',
@@ -633,6 +739,24 @@ begin
     and transaction_id = txid_current();
 end;
 $fn$;
+
+revoke all on function
+  projection_private.calendar_actor(uuid,uuid,boolean),
+  projection_private.calendar_setup(uuid,uuid),
+  projection_private.holiday_prompt(uuid,uuid,text,date,text,bigint,timestamptz),
+  public.projection_calendar_setup(uuid,uuid),
+  public.projection_holiday_prompt(uuid,uuid,text,date,text,bigint),
+  public.projection_calendar_missing_concepts()
+from public,anon,authenticated,service_role;
+
+grant execute on function
+  projection_private.calendar_actor(uuid,uuid,boolean),
+  projection_private.calendar_setup(uuid,uuid),
+  projection_private.holiday_prompt(uuid,uuid,text,date,text,bigint,timestamptz),
+  public.projection_calendar_setup(uuid,uuid),
+  public.projection_holiday_prompt(uuid,uuid,text,date,text,bigint),
+  public.projection_calendar_missing_concepts()
+to service_role;
 
 revoke all on function
   projection_private.nth_calendar_weekday(integer,integer,integer,integer),

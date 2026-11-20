@@ -5,7 +5,6 @@ import {
   projectionCalendarWeekday,
   normalizeProjectionCalendarAnswers,
   classifyProjectionCalendarNight,
-  reconcileProjectionCalendarSales,
 } from '../lib/projections/calendar.js';
 import { PROJECTION_DEFAULTS } from '../lib/projections/settings.js';
 import { readProjectionCalendar, applyProjectionCalendarFlags, selectProjectionCalendarVersion }
@@ -14,7 +13,7 @@ import { readProjectionCalendar, applyProjectionCalendarFlags, selectProjectionC
 const REST = '10000000-0000-4000-8000-000000000001';
 const OTHER = '10000000-0000-4000-8000-000000000002';
 const AS_OF = '2026-11-20T12:00:00Z';
-const settings = () => ({ concept_type: 'full_service', normally_closed_weekdays: [], holiday_answers: {} });
+const settings = () => ({ concept_type: 'full_service', normally_closed_weekdays: [] });
 const config = () => ({ restaurant_id: REST, settings: settings() });
 const rule = (key, factor, extra = {}) => ({ id: `${key}-global`,
   restaurant_id: null, concept_type: 'full_service', holiday_key: key,
@@ -27,7 +26,7 @@ const classify = (options = {}) => classifyProjectionCalendarNight({
     { holiday_date: '2027-02-14', holiday_key: 'valentines_day' },
   ],
   rules: [rule('super_bowl', 0.8), rule('valentines_day', 1.2)],
-  asOf: AS_OF, earlyCloseFactor: 0.6, ...options,
+  asOf: AS_OF, earlyCloseFactor: 0.6, today: '2026-11-20', history: [], holidayAnswers: [], thresholdUnits: 2, ...options,
 });
 
 test('all fixed and computed holidays agree with the v4 dates for five calendar years', () => {
@@ -81,12 +80,12 @@ test('wrong-year, unknown and duplicate scheduled holidays are rejected', () => 
   ]) assert.throws(() => projectionHolidayDates(2027, rows));
 });
 
-test('owner answers accept exactly the three concepts and six recurring holidays', () => {
+test('optional setup accepts three concepts and closed weekdays, with no recurring holiday answers', () => {
   for (const concept of ['full_service', 'bar_pub', 'quick_service']) {
     const normalized = normalizeProjectionCalendarAnswers({ ...settings(), concept_type: concept,
-      normally_closed_weekdays: [7, 1], holiday_answers: { christmas_eve: 'early_close', july_4: 'closed' } });
+      normally_closed_weekdays: [7, 1] });
     assert.deepEqual(normalized.normally_closed_weekdays, [1, 7]);
-    assert.ok(Object.isFrozen(normalized.holiday_answers));
+    assert.ok(Object.isFrozen(normalized));
   }
   for (const bad of [
     { ...settings(), concept_type: 'fine_dining' },
@@ -118,25 +117,23 @@ test('normal weekday closure wins over holiday defaults', () => {
   assert.equal(value.default_factor, 0);
 });
 
-test('an owner Open answer replaces a default holiday closure', () => {
-  const configuration = config();
-  configuration.settings.holiday_answers.christmas_day = 'open';
-  const value = classify({ date: '2026-12-25', configuration,
+test('a dated Open answer replaces the default holiday closure', () => {
+  const value = classify({ date: '2026-12-25',
+    holidayAnswers: [{ restaurant_id: REST, business_date: '2026-12-25', answer: 'open' }],
     holidays: [{ holiday_date: '2026-12-25', holiday_key: 'christmas_day' }],
     rules: [rule('christmas_day', 1, { default_answer: 'closed' })] });
   assert.equal(value.closed, false);
   assert.equal(value.default_factor, 1);
 });
 
-test('early close uses its own factor and a Closed answer still overrides it', () => {
+test('dated early close is an exception to a weekly closure and uses its own factor', () => {
   const configuration = config();
-  configuration.settings.holiday_answers.easter = 'early_close';
-  const options = { date: '2027-03-28', configuration,
-    holidays: [{ holiday_date: '2027-03-28', holiday_key: 'easter' }], rules: [rule('easter', 1.8)] };
-  assert.equal(classify(options).default_factor, 0.6);
   configuration.settings.normally_closed_weekdays = [7];
-  assert.equal(classify(options).default_factor, 0);
-  assert.equal(classify(options).early_close, false);
+  const value = classify({ date: '2027-03-28', configuration,
+    holidayAnswers: [{ restaurant_id: REST, business_date: '2027-03-28', answer: 'early_close' }],
+    holidays: [{ holiday_date: '2027-03-28', holiday_key: 'easter' }], rules: [rule('easter', 1.8)] });
+  assert.equal(value.default_factor, 0.6);
+  assert.equal(value.early_close, true);
 });
 
 test('Valentine weekday-specific rules override the all-weekday global rule', () => {
@@ -190,7 +187,7 @@ test('dated answer selection preserves later snapshots after a historical correc
 function calendarDatabase(mutate = value => value) {
   const context = mutate({ restaurant_id: REST, revision: 0, from: '2026-11-19', until: '2026-11-20',
     today: '2026-11-20', timezone: 'America/New_York', as_of: AS_OF, context_digest: 'a'.repeat(64),
-    settings: { ...PROJECTION_DEFAULTS }, scheduled_years: [2026], holidays: [], rules: [], observed_closures: [], sales_evidence: [], closure_conflict_threshold_units: 2,
+    settings: { ...PROJECTION_DEFAULTS }, scheduled_years: [2026], holidays: [], rules: [], history: [], holiday_answers: [], closure_conflict_threshold_units: 2,
     versions: [{ ...config(), revision: 0, effective_from: null }] });
   const calls = [];
   return { calls, context, db: { rpc: async (name, args) => {
@@ -201,7 +198,7 @@ function calendarDatabase(mutate = value => value) {
 
 test('calendar reads keep historical ranges and observed closures together', async () => {
   const f = calendarDatabase(value => ({ ...value,
-    observed_closures: [{ business_date: '2026-11-19', closed: true, early_close: false }] }));
+    history: [{ business_date: '2026-11-19', total_units: 0, complete: true, source_revision: 'pos', source_covered: true }] }));
   const read = await readProjectionCalendar(f.db, { restaurantId: REST, from: f.context.from, until: f.context.until });
   assert.equal(read.nights.length, 2);
   assert.equal(read.nights[0].closed, true);
@@ -215,7 +212,7 @@ test('missing calendar context and inconsistent local dates fail visibly', async
     value => ({ ...value, timezone: null }),
     value => ({ ...value, today: '2026-11-21' }),
     value => ({ ...value, scheduled_years: undefined }),
-    value => ({ ...value, observed_closures: undefined }),
+    value => ({ ...value, history: undefined }),
   ]) {
     const f = calendarDatabase(mutate);
     await assert.rejects(readProjectionCalendar(f.db, { restaurantId: REST, from: '2026-11-19', until: '2026-11-20' }));
@@ -261,54 +258,47 @@ test('missing sports dates block February only, including a partial February ran
   }
 });
 
-test('missing setup has a distinct projection code and survives a database response', async () => {
+test('missing optional setup uses full service without blocking a forecast', async () => {
   const configuration = config();
   configuration.settings.concept_type = null;
-  assert.throws(() => classify({ configuration }), error => error.code === 'PROJECTION_CALENDAR_SETUP_REQUIRED');
-  const fixture = calendarDatabase(value => ({ ...value,
+  const value = classify({ configuration });
+  assert.equal(value.concept_type, 'full_service');
+  assert.equal(value.concept_fallback, true);
+  assert.ok(Math.abs(value.default_factor - 0.96) < 1e-12);
+  const fixture = calendarDatabase(context => ({ ...context,
     versions: [{ ...configuration, revision: 0, effective_from: null }] }));
-  await assert.rejects(readProjectionCalendar(fixture.db, { restaurantId: REST,
-    from: fixture.context.from, until: fixture.context.until }),
-  error => error.code === 'PROJECTION_CALENDAR_SETUP_REQUIRED');
-  await assert.rejects(readProjectionCalendar({ rpc: async name => name === 'projection_prepare_calendar'
-    ? { data: null, error: null } : { data: null,
-      error: { code: 'P0001', message: 'PROJECTION_CALENDAR_SETUP_REQUIRED' } } },
-  { restaurantId: REST, from: '2026-11-19', until: '2026-11-20' }),
-  error => error.code === 'PROJECTION_CALENDAR_SETUP_REQUIRED');
+  assert.equal((await readProjectionCalendar(fixture.db, { restaurantId: REST,
+    from: fixture.context.from, until: fixture.context.until })).nights.length, 2);
 });
 
-test('past POS activity overrides a planned closure above the threshold without changing completeness', async () => {
+test('an incomplete past night stays open and incomplete regardless of optional closures', async () => {
   const fixture = calendarDatabase(value => ({ ...value, from: '2026-11-09', until: '2026-11-09',
     versions: [{ restaurant_id: REST, revision: 1, effective_from: null,
       settings: { ...settings(), normally_closed_weekdays: [1] } }],
-    sales_evidence: [{ business_date: '2026-11-09', total_units: 42, complete: false, source_revision: 'pos-42' }] }));
+    history: [{ business_date: '2026-11-09', total_units: 42, complete: false, source_revision: 'pos-42', source_covered: true }] }));
   const read = await readProjectionCalendar(fixture.db, { restaurantId: REST,
     from: fixture.context.from, until: fixture.context.until });
   assert.equal(read.nights[0].closed, false);
-  assert.equal(read.nights[0].default_factor, 1);
-  assert.equal(read.nights[0].closure_conflict.total_units, 42);
-  assert.match(read.nights[0].closure_conflict.message, /2026-11-09 had 42 dishes sold/);
+  assert.equal(read.nights[0].classification_source, 'incomplete_pos');
   assert.equal(Object.hasOwn(read.nights[0], 'complete'), false);
 });
 
-test('tiny totals and unfinished business dates do not override planned closures', () => {
-  const configuration = config();
-  configuration.settings.normally_closed_weekdays = [7];
-  const planned = classify({ configuration });
-  for (const [units, today, closed] of [[0, '2027-02-15', true], [2, '2027-02-15', true],
-    [2.01, '2027-02-15', false], [42, '2027-02-14', true], [42, '2027-02-13', true]]) {
-    const night = reconcileProjectionCalendarSales(planned, null, { total_units: units }, today, 0.6, 2);
-    assert.equal(night.closed, closed);
-    if (!closed) assert.ok(Math.abs(night.default_factor - 0.96) < 1e-12);
+test('only complete past POS totals determine whether a past night is closed', () => {
+  for (const [units, complete, closed] of [[0, true, true], [2, true, true], [2.01, true, false], [0, false, false]]) {
+    const value = classify({ today: '2027-02-15', history: [{ business_date: '2027-02-14',
+      total_units: units, complete, source_covered: true, source_revision: 'pos' }] });
+    assert.equal(value.closed, closed);
+    assert.equal(value.early_close, false);
+    assert.equal(value.default_factor, closed ? 0 : 1);
   }
 });
 
 test('foreign, duplicate and malformed POS evidence fails visibly', async () => {
-  const good = { business_date: '2026-11-19', total_units: 42, complete: true, source_revision: 'pos' };
+  const good = { business_date: '2026-11-19', total_units: 42, complete: true, source_revision: 'pos', source_covered: true };
   for (const rows of [[{ ...good, restaurant_id: OTHER }], [good, good],
     [{ ...good, total_units: -1 }], [{ ...good, total_units: '42' }],
     [{ ...good, source_revision: null }], [{ ...good, business_date: '2026-11-21' }]]) {
-    const fixture = calendarDatabase(value => ({ ...value, sales_evidence: rows }));
+    const fixture = calendarDatabase(value => ({ ...value, history: rows }));
     await assert.rejects(readProjectionCalendar(fixture.db,
       { restaurantId: REST, from: fixture.context.from, until: fixture.context.until }));
   }

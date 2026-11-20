@@ -14,6 +14,7 @@ import LeaveGuardModal from "../../components/LeaveGuardModal";
 import { useLeaveGuard } from "../../lib/useLeaveGuard";
 import { mutate } from "swr";
 import { saveShippingAddress } from "../../lib/saveShippingAddress";
+import { saveOptionalProjectionSetup } from "../../lib/projections/calendarClient.js";
 
 /**
  * pages/client/onboarding.js — data container.
@@ -29,8 +30,7 @@ import { saveShippingAddress } from "../../lib/saveShippingAddress";
  * per the real design (this is also where the address field moved to —
  * step 2, "Pass tag", not step 1 — since it's specifically for shipping the
  * NFC tag).
- * `style` is still dropped — no column exists for it either; same situation
- * as address was, just not asked about yet.
+ * Optional concept and closed weekdays are saved through the owner calendar API.
  *
  * Now also enforces that a subscription exists before allowing onboarding
  * at all (this page had no guard whatsoever before) — obviously doesn't
@@ -40,6 +40,7 @@ import { saveShippingAddress } from "../../lib/saveShippingAddress";
 export default function OnboardingPage() {
   const router = useRouter();
   const [restaurantId, setRestaurantId] = useState(null);
+  const [calendarNotice, setCalendarNotice] = useState("");
   const [duplicateModal, setDuplicateModal] = useState(null);
   const [menuParsing, setMenuParsing] = useState(false);
   const [menuParseError, setMenuParseError] = useState("");
@@ -144,6 +145,12 @@ export default function OnboardingPage() {
       freezes_bakery: !!data.freezesBakery,
     }).eq("id", restaurantId);
     if (error) throw error;
+    try {
+      await saveOptionalProjectionSetup(supabase, data);
+      setCalendarNotice("");
+    } catch {
+      setCalendarNotice("Your restaurant was saved. Optional calendar preferences could not be saved; you can continue.");
+    }
   };
 
   const finishOnboarding = async ({ name, addrLine1, addrCity, addrState, addrZip, style, cuisine }) => {
@@ -197,6 +204,7 @@ export default function OnboardingPage() {
         NavLink={Link}
         onFinish={finishOnboarding}
         onSaveStep={saveOnboardingStep}
+        calendarNotice={calendarNotice}
         skipHref="/client/dashboard?justOnboarded=true"
         doneHref="/client/dashboard?justOnboarded=true"
         onParseMenu={parseMenuAndWaitForReview}

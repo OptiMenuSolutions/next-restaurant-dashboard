@@ -4,7 +4,8 @@ import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { projectionHolidayDates } from '../lib/projections/calendar.js';
+import { projectionHolidayDates, projectionCalendarWeekday } from '../lib/projections/calendar.js';
+import { shiftProjectionDate } from '../lib/projections/businessTime.js';
 import { readProjectionCalendar, applyProjectionCalendarFlags } from '../lib/projections/calendarStore.js';
 
 // Disposable local PostgreSQL only. No environment file or remote DB is loaded.
@@ -21,8 +22,7 @@ const docker = (a, options = {}) => execFileSync('docker', a, {
 const q = sql => docker(args, { input: sql }).trim();
 const json = value => `'${JSON.stringify(value).replaceAll("'", "''")}'::jsonb`;
 const rejects = (sql, pattern) => assert.throws(() => q(sql), e => pattern.test(e.stderr || e.message));
-const config = () => ({ concept_type: 'full_service', normally_closed_weekdays: [],
-  holiday_answers: { christmas_eve: 'early_close', christmas_day: 'closed' } });
+const config = () => ({ concept_type: 'full_service', normally_closed_weekdays: [] });
 const saveSQL = (revision, settings = config(), effective = null, actor = OWNER) => `
   set role service_role;
   select public.projection_save_calendar_answers('${REST}','${actor}',${revision},${json(settings)},
@@ -78,7 +78,10 @@ before(async () => {
     create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
     grant usage on schema public,auth to service_role;
     grant execute on function auth.uid() to service_role;
-    create table public.restaurants(id uuid primary key,user_id uuid,operational_timezone text,deactivated_at timestamptz);
+    create table public.restaurants(id uuid primary key,user_id uuid,operational_timezone text,deactivated_at timestamptz,name text default 'Fixture');
+    create table public.profiles(id uuid primary key,role text);
+    insert into public.profiles values ('${OWNER}','client'),('${FOREIGN}','client'),('${R(103)}','admin');
+    grant select on public.profiles to service_role;
     create table public.menu_items(id uuid primary key,restaurant_id uuid references public.restaurants on delete cascade);
     create table public.pos_connections(id uuid primary key,restaurant_id uuid references public.restaurants on delete cascade,
       provider text,status text,shift4_timezone text);
@@ -90,7 +93,7 @@ before(async () => {
     end $$;
     revoke all on function public.purge_restaurant(uuid) from public;
     grant execute on function public.purge_restaurant(uuid) to service_role;
-    insert into public.restaurants values
+    insert into public.restaurants(id,user_id,operational_timezone,deactivated_at) values
       ('${REST}','${OWNER}','America/New_York',null),('${OTHER}','${FOREIGN}','Asia/Tokyo',null);`);
   for (const file of ['20261119222523_projection_foundation.sql', '20261120142918_projection_ingestion.sql',
     '20261120171521_projection_calendar.sql']) {
@@ -133,10 +136,14 @@ test('initial owner answers cover backfilled history and identical retries write
   assert.equal(context('2024-12-24').versions.at(-1).revision, 1);
 });
 
-test('the overlap keeps both holidays and its raw default factor is 0.96', async () => {
-  const read = await readProjectionCalendar(database, { restaurantId: REST, from: '2027-02-14', until: '2027-02-14' });
-  assert.deepEqual(read.nights[0].holiday_keys, ['super_bowl', 'valentines_day']);
-  assert.ok(Math.abs(read.nights[0].default_factor - 0.96) < 1e-12);
+test('the overlap keeps both holidays and its raw default factor is 0.96', () => {
+  q(`select public.projection_prepare_calendar('2027-02-14','2027-02-14');`);
+  const ctx = context('2027-02-14');
+  // A calculation fixture has an explicit business date; production clocks are untouched.
+  const night = JSON.parse(q(`select projection_private.derive_calendar_night(
+    ${json({ ...ctx, today: '2026-11-20' })},'2027-02-14');`));
+  assert.deepEqual(night.holiday_keys, ['super_bowl', 'valentines_day']);
+  assert.ok(Math.abs(night.default_factor - 0.96) < 1e-12);
 });
 
 test('an owner can read and save only their own restaurant and malformed answers reject atomically', () => {
@@ -189,7 +196,7 @@ test('stale contexts and partial calendar batches reject without saved changes',
   const read = await readProjectionCalendar(database, { restaurantId: REST, from: '2026-01-02', until: '2026-01-03' });
   const args = { ...read, nights: read.nights.slice(0, 1) };
   await assert.rejects(applyProjectionCalendarFlags(database, args), error => error.code === '22023');
-  save(3, { ...config(), holiday_answers: { christmas_day: 'open' } }, '2024-01-01');
+  save(3, { ...config(), normally_closed_weekdays: [2] }, '2024-01-01');
   await assert.rejects(applyProjectionCalendarFlags(database, read), error => error.code === 'PT409');
   assert.equal(q(`select count(*) from public.projection_nightly_flags
     where restaurant_id='${REST}' and business_date between '2026-01-02' and '2026-01-03';`), '0');
@@ -252,10 +259,10 @@ test('December forecasts cross an unpublished sports year; February still requir
   error => error.code === 'PROJECTION_CALENDAR_INCOMPLETE');
 });
 
-test('database derivation rejects unconfigured restaurants with a setup-specific code', () => {
-  const ctx = context(DAY, DAY, OTHER);
-  rejects(`set role service_role; select public.projection_apply_calendar_flags(
-    '${OTHER}','${DAY}','${DAY}','${ctx.context_digest}',${json([{ business_date: DAY }])});`, /PROJECTION_CALENDAR_SETUP_REQUIRED/);
+test('database derivation uses full service when optional setup is missing', async () => {
+  const read = await readProjectionCalendar(database, { restaurantId: OTHER, from: DAY, until: DAY });
+  assert.equal(read.nights[0].concept_fallback, true);
+  await applyProjectionCalendarFlags(database, read);
 });
 
 test('database derivation also refuses an unpublished February calendar', () => {
@@ -278,9 +285,8 @@ test('real past POS sales override weekly closures and expose a conflict without
   assert.equal(read.nights[0].closed, false);
   await applyProjectionCalendarFlags(database, read);
   assert.equal(q(`select not closed and not complete and total_units=42
-    and flags#>>'{calendar,closure_conflict,code}'='PROJECTION_CALENDAR_CLOSURE_CONFLICT'
     from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-09';`), 't');
-  assert.ok(context().closure_conflicts.some(conflict => conflict.business_date === '2026-11-09'));
+  assert.equal(Object.hasOwn(context(), 'closure_conflicts'), false);
 });
 
 test('saved closure flags cannot override the database decision that POS proves past service', async () => {
@@ -303,9 +309,9 @@ test('POS corrections fence old batches and clear conflicts when the evidence is
   await assert.rejects(applyProjectionCalendarFlags(database, old), error => error.code === 'PT409');
   const fresh = await readProjectionCalendar(database,
     { restaurantId: REST, from: '2026-11-09', until: '2026-11-09' });
-  assert.equal(fresh.nights[0].closed, true);
+  assert.equal(fresh.nights[0].closed, false);
   await applyProjectionCalendarFlags(database, fresh);
-  assert.equal(q(`select closed and not complete and flags#>'{calendar,closure_conflict}'='null'::jsonb
+  assert.equal(q(`select not closed and not complete and flags#>>'{calendar,classification_source}'='incomplete_pos'
     from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-09';`), 't');
 });
 
@@ -372,10 +378,151 @@ test('owner saves and native timezone updates finish without a row-lock cycle', 
   q(`update public.restaurants set operational_timezone='America/New_York' where id='${REST}';`);
 });
 
+test('optional setup saves before a timezone exists and administrators can edit the concept', () => {
+  q(`update public.restaurants set operational_timezone=null where id='${REST}';`);
+  const expected = contextRevision();
+  try {
+    assert.equal(save(expected, { ...config(), concept_type: 'bar_pub' }).changed, true);
+    const setup = JSON.parse(q(`set role service_role; select public.projection_calendar_setup('${REST}','${OWNER}');`));
+    assert.equal(setup.settings.concept_type, 'bar_pub');
+    assert.equal(setup.timezone, null);
+    rejects(`set role service_role; select public.projection_calendar_setup('${REST}','${FOREIGN}');`, /OWNER_REQUIRED/);
+    assert.equal(save(setup.revision, { ...config(), concept_type: 'quick_service' }, null, R(103)).changed, true);
+  } finally { q(`update public.restaurants set operational_timezone='America/New_York' where id='${REST}';`); }
+  save(context().revision, config());
+});
+
+function contextRevision() {
+  return Number(q(`select coalesce(max(revision),0) from public.projection_calendar_versions where restaurant_id='${REST}';`));
+}
+
+let nextMonday;
+let fourMondays;
+let promptDate;
+let promptAt;
+test('four complete source-covered empty weekdays close future service; sales override the optional answer', async () => {
+  const today = context().today;
+  nextMonday = shiftProjectionDate(today, (1 - projectionCalendarWeekday(today) + 7) % 7);
+  fourMondays = [1, 2, 3, 4].map(weeks => shiftProjectionDate(nextMonday, -7 * weeks));
+  q(`insert into public.pos_connections(id,restaurant_id,provider,status,shift4_timezone)
+    values ('${R(400)}','${REST}','fixture','connected','America/New_York');
+    insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision)
+    select '${REST}',day,true,0,'weekday-proof' from unnest(array[${fourMondays.map(day => `'${day}'::date`).join(',')}]) day
+    on conflict(restaurant_id,business_date) do update set complete=true,total_units=0,source_revision='weekday-proof';`);
+  let read = await readProjectionCalendar(database, { restaurantId: REST, from: nextMonday, until: nextMonday });
+  assert.equal(read.nights[0].closed, true);
+  assert.equal(read.nights[0].weekday_source, 'pos_last_four');
+  q(`update public.projection_nightly_flags set total_units=42 where restaurant_id='${REST}' and business_date='${fourMondays[1]}';`);
+  save(context().revision, { ...config(), normally_closed_weekdays: [1] });
+  read = await readProjectionCalendar(database, { restaurantId: REST, from: nextMonday, until: nextMonday });
+  assert.equal(read.nights[0].closed, false);
+  const ctx = context(nextMonday);
+  const derived = JSON.parse(q(`select projection_private.derive_calendar_night(${json({ ...ctx, as_of: ctx.as_of })},'${nextMonday}');`));
+  assert.deepEqual(read.nights[0], derived);
+});
+
+test('incomplete occurrences are excluded and the POS-only past rule retains an admin-only disagreement', async () => {
+  q(`update public.projection_nightly_flags set complete=false where restaurant_id='${REST}' and business_date='${fourMondays[0]}';`);
+  const next = await readProjectionCalendar(database, { restaurantId: REST, from: nextMonday, until: nextMonday });
+  assert.equal(next.nights[0].weekday_source, 'optional_onboarding');
+  assert.equal(next.nights[0].closed, true);
+  const past = await readProjectionCalendar(database, { restaurantId: REST, from: fourMondays[1], until: fourMondays[1] });
+  assert.equal(past.nights[0].closed, false);
+  // Use an explicit dated correction so the historical optional schedule is known.
+  save(context().revision, { ...config(), normally_closed_weekdays: [1] }, fourMondays[1]);
+  const corrected = await readProjectionCalendar(database, { restaurantId: REST, from: fourMondays[1], until: fourMondays[1] });
+  assert.equal(corrected.nights[0].internal_diagnostic.owner_closed, true);
+  await applyProjectionCalendarFlags(database, corrected);
+  assert.equal(q(`select not closed and complete and total_units=42 and flags#>>'{calendar,internal_diagnostic,code}'='PROJECTION_CALENDAR_ANSWER_DISAGREEMENT'
+    from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='${fourMondays[1]}';`), 't');
+});
+
+const promptSQL = (action, date = null, answer = null, revision = null, at = promptAt, actor = OWNER) => `
+  set role service_role; select projection_private.holiday_prompt('${REST}','${actor}','${action}',
+    ${date ? `'${date}'` : 'null'},${answer ? `'${answer}'` : 'null'},${revision ?? 'null'},'${at}');`;
+
+test('a popup is claimed at most once across concurrent requests and reappears for the next year only', async () => {
+  const year = Number(context().today.slice(0, 4)) + 1;
+  promptDate = projectionHolidayDates(year).find(row => row.holiday_key === 'thanksgiving_day').holiday_date;
+  promptAt = `${shiftProjectionDate(promptDate, -9)}T12:00:00Z`;
+  const replies = await Promise.all([asyncSQL(promptSQL('claim')), asyncSQL(promptSQL('claim'))]);
+  assert.ok(replies.every(reply => reply.code === 0));
+  const prompts = replies.map(reply => JSON.parse(reply.output.trim()).prompt).filter(Boolean);
+  assert.equal(prompts.length, 1);
+  assert.equal(prompts[0].business_date, promptDate);
+  assert.equal(JSON.parse(q(promptSQL('claim'))).prompt, null);
+  const following = projectionHolidayDates(year + 1).find(row => row.holiday_key === 'thanksgiving_day').holiday_date;
+  assert.equal(JSON.parse(q(promptSQL('claim', null, null, null, `${shiftProjectionDate(following, -9)}T12:00:00Z`))).prompt.business_date, following);
+});
+
+test('source-window coverage gates the four-occurrence rule independently of completeness', async () => {
+  const today = context().today;
+  const nextTuesday = shiftProjectionDate(today, (2 - projectionCalendarWeekday(today) + 7) % 7);
+  const days = [1, 2, 3, 4].map(weeks => shiftProjectionDate(nextTuesday, -7 * weeks));
+  q(`insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision)
+    select '${REST}',day,true,0,'coverage-proof' from unnest(array[${days.map(day => `'${day}'::date`).join(',')}]) day
+    on conflict(restaurant_id,business_date) do update set complete=true,total_units=0,source_revision='coverage-proof';
+    update public.projection_pos_source_windows set valid_from='${days[2]}' where restaurant_id='${REST}';`);
+  try {
+    const read = await readProjectionCalendar(database, { restaurantId: REST, from: nextTuesday, until: nextTuesday });
+    assert.equal(read.nights[0].weekday_observations, 3);
+    assert.equal(read.nights[0].weekday_source, 'optional_onboarding');
+    assert.deepEqual(read.nights[0], JSON.parse(q(`select projection_private.derive_calendar_night(${json(read.context)},'${nextTuesday}');`)));
+  } finally { q(`update public.projection_pos_source_windows set valid_from=null where restaurant_id='${REST}';`); }
+});
+
+test('dated answers append revisions, exact retries are idempotent, stale and foreign writes reject', () => {
+  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'open', 0))).revision, 1);
+  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'open', 0))).changed, false);
+  rejects(promptSQL('answer', promptDate, 'closed', 0), /PT409/);
+  rejects(promptSQL('answer', promptDate, 'open', 1, undefined, FOREIGN), /OWNER_REQUIRED/);
+  rejects(`update public.projection_holiday_answer_versions set answer='closed';`, /append-only/);
+  rejects(`set role authenticated; select public.projection_holiday_prompt('${REST}','${OWNER}','claim');`, /permission denied/);
+});
+
+test('dated Open wins over the holiday default; early close is explicit and past dates ignore it', async () => {
+  const today = context().today;
+  const weekday = projectionCalendarWeekday(promptDate);
+  const next = shiftProjectionDate(today, (weekday - projectionCalendarWeekday(today) + 7) % 7);
+  const days = [1, 2, 3, 4].map(weeks => shiftProjectionDate(next, -7 * weeks));
+  q(`insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision)
+    select '${REST}',day,true,0,'closed-thursday' from unnest(array[${days.map(day => `'${day}'::date`).join(',')}]) day
+    on conflict(restaurant_id,business_date) do update set complete=true,total_units=0,source_revision='closed-thursday';`);
+  let read = await readProjectionCalendar(database, { restaurantId: REST, from: promptDate, until: promptDate });
+  assert.equal(read.nights[0].closed, false);
+  assert.equal(read.nights[0].resolved_holidays[0].answer_source, 'dated_popup');
+  assert.equal(read.nights[0].weekday_observations, 4);
+  assert.equal(JSON.parse(q(promptSQL('answer', promptDate, 'early_close', 1))).revision, 2);
+  read = await readProjectionCalendar(database, { restaurantId: REST, from: promptDate, until: promptDate });
+  const derived = JSON.parse(q(`select projection_private.derive_calendar_night(${json(read.context)},'${promptDate}');`));
+  assert.deepEqual(read.nights[0], derived);
+  assert.equal(read.nights[0].early_close, true);
+});
+
+test('last-year same-holiday data overrides its default without asking the owner', async () => {
+  const today = context().today;
+  const year = Number(today.slice(0, 4)) + (today.slice(5) > '12-25' ? 1 : 0);
+  const date = `${year}-12-25`;
+  const previous = `${year - 1}-12-25`;
+  q(`insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision)
+    values ('${REST}','${previous}',true,42,'last-year-holiday')
+    on conflict(restaurant_id,business_date) do update set complete=true,total_units=42,source_revision='last-year-holiday';`);
+  let read = await readProjectionCalendar(database, { restaurantId: REST, from: date, until: date });
+  assert.equal(read.nights[0].closed, false);
+  assert.equal(read.nights[0].resolved_holidays[0].answer_source, 'last_year_pos');
+  q(`update public.projection_nightly_flags set total_units=0 where restaurant_id='${REST}' and business_date='${previous}';`);
+  read = await readProjectionCalendar(database, { restaurantId: REST, from: date, until: date });
+  assert.equal(read.nights[0].closed, true);
+  assert.deepEqual(read.nights[0], JSON.parse(q(`select projection_private.derive_calendar_night(${json(read.context)},'${date}');`)));
+});
+
 test('permanent account purge removes and counts calendar versions while global dates remain', () => {
   const count = q(`select count(*) from public.projection_calendar_versions where restaurant_id='${REST}';`);
+  assert.notEqual(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`), '0');
   q(`set role service_role; select public.purge_restaurant('${REST}');`);
   assert.equal(q(`select count(*) from public.projection_calendar_versions where restaurant_id='${REST}';`), '0');
+  assert.equal(q(`select count(*) from public.projection_holiday_answer_versions where restaurant_id='${REST}';`), '0');
+  assert.equal(q(`select count(*) from public.projection_holiday_prompt_views where restaurant_id='${REST}';`), '0');
   assert.equal(q(`select deleted_rows->>'projection_calendar_versions' from public.projection_account_purge_log;`), count);
   assert.equal(q(`select count(*) from public.projection_calendar_versions where restaurant_id='${OTHER}';`), '1');
   assert.equal(q(`select count(*) from public.projection_holiday_calendar where holiday_date='2027-02-14';`), '2');

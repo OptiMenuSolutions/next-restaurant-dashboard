@@ -10,6 +10,7 @@ import { saveWasteConfirmationResponse } from "../../lib/saveWasteConfirmationRe
 import { useWeekInReview } from "../../lib/useWeekInReview";
 import PassDashboard from "../../components/dashboard/PassDashboard";
 import WasteConfirmationModal from "../../components/dashboard/WasteConfirmationModal";
+import ProjectionHolidayPrompt from "../../components/dashboard/ProjectionHolidayPrompt";
 import TourOverlay from "../../components/TourOverlay";
 import { useTour } from "../../lib/useTour";
 import { fetchSampleData, SAMPLE_AI_RECOMMENDATIONS } from "../../lib/seedSampleData";
@@ -839,6 +840,9 @@ export default function DashboardPage() {
           onAskLater={snoozeWasteConfirmations}
         />
       )}
+
+      <ProjectionHolidayPrompt restaurantId={restaurantId} today={today}
+        enabled={!tourActive && !tour.active && !showTourPrompt && pendingConfirmations.length === 0} />
 
       {tour.active && <TourOverlay tour={tour} />}
 
