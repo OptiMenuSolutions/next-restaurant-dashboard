@@ -39,8 +39,26 @@ create table public.projection_pos_source_windows (
   provider text not null check (btrim(provider) <> ''),
   valid_from date,
   valid_until date,
+  lifecycle_context jsonb not null default '{}'::jsonb
+    check (jsonb_typeof(lifecycle_context) = 'object'),
   check (valid_until is null or valid_from is null or valid_until > valid_from)
 );
+
+-- Best-effort repair state for unexpected lifecycle maintenance failures.
+create table public.projection_pos_source_repairs (
+  restaurant_id uuid not null
+    references public.restaurants(id) on delete cascade,
+  connection_id uuid not null,
+  observed_status text,
+  error_code text not null,
+  last_failure_at timestamptz not null default clock_timestamp(),
+  primary key (restaurant_id,connection_id)
+);
+
+alter table public.projection_pos_source_repairs enable row level security;
+revoke all on public.projection_pos_source_repairs
+from public, anon, authenticated, service_role;
+grant select on public.projection_pos_source_repairs to service_role;
 
 create index projection_source_window_restaurant_connection
   on public.projection_pos_source_windows(restaurant_id,connection_id);
@@ -1148,9 +1166,111 @@ grant execute on function
   projection_private.commit_night(uuid,date,text,bigint,jsonb)
 to service_role;
 
--- Keep POS installation state and projection source coverage atomic.
--- The existing install, OAuth, uninstall webhook and reconciliation routes
--- already write pos_connections; all of them therefore use this trigger.
+-- Maintain projection source coverage alongside existing POS lifecycle writes.
+-- Projection maintenance failures must never reject a POS connection change.
+-- POS lifecycle dates must not depend on ingestion readiness or active status.
+create function projection_private.pos_source_clock(
+  p_restaurant_id uuid,
+  p_shift4_timezone text,
+  p_at timestamptz
+)
+returns jsonb
+language plpgsql stable
+set search_path = ''
+set timezone = 'UTC'
+as $fn$
+declare
+  zone text;
+  zone_source text := 'operational_timezone';
+  cutoff integer := 240;
+  cutoff_source text := 'default';
+  major integer;
+  base jsonb;
+  override_value jsonb;
+  local_day date;
+  lookup_error text;
+  candidate numeric;
+begin
+  select r.operational_timezone into zone
+  from public.restaurants r where r.id = p_restaurant_id;
+
+  if zone is null or not exists (
+    select 1 from pg_timezone_names where name = zone
+  ) then
+    zone := p_shift4_timezone;
+    zone_source := 'shift4_timezone';
+  end if;
+
+  if zone is null or not exists (
+    select 1 from pg_timezone_names where name = zone
+  ) then
+    zone := 'America/New_York';
+    zone_source := 'default';
+  end if;
+
+  begin
+    select model_major into major
+    from public.projection_model_versions
+    where released_at <= p_at
+    order by released_at desc,model_major desc limit 1;
+
+    select settings->'business_day_cutoff_minutes' into base
+    from public.projection_setting_versions
+    where restaurant_id is null and model_major = major
+      and effective_at <= p_at
+    order by effective_at desc limit 1;
+
+    select settings->'business_day_cutoff_minutes' into override_value
+    from public.projection_setting_versions
+    where restaurant_id = p_restaurant_id and model_major = major
+      and effective_at <= p_at
+    order by effective_at desc limit 1;
+
+    if jsonb_typeof(base) = 'number' then
+      candidate := (base#>>'{}')::numeric;
+      if candidate >= 0 and candidate < 1440 and candidate = trunc(candidate) then
+        cutoff := candidate::integer;
+        cutoff_source := 'global_settings';
+      end if;
+    end if;
+
+    if jsonb_typeof(override_value) = 'number' then
+      candidate := (override_value#>>'{}')::numeric;
+      if candidate >= 0 and candidate < 1440 and candidate = trunc(candidate) then
+        cutoff := candidate::integer;
+        cutoff_source := 'restaurant_settings';
+      end if;
+    end if;
+  exception when others then
+    cutoff := 240;
+    cutoff_source := 'default';
+    lookup_error := sqlstate;
+  end;
+
+  local_day := (p_at at time zone zone)::date;
+  if p_at < projection_private.business_boundary(local_day,zone,cutoff) then
+    local_day := local_day - 1;
+  end if;
+
+  return jsonb_build_object(
+    'observed_at',p_at,
+    'business_date',local_day,
+    'timezone',zone,
+    'timezone_source',zone_source,
+    'cutoff_minutes',cutoff,
+    'cutoff_source',cutoff_source,
+    'fallback_used',zone_source <> 'operational_timezone'
+      or cutoff_source = 'default',
+    'settings_lookup_error',lookup_error
+  );
+end;
+$fn$;
+
+revoke all on function
+  projection_private.pos_source_clock(uuid,text,timestamptz)
+from public, anon, authenticated, service_role;
+
+
 create function projection_private.sync_pos_source_window()
 returns trigger
 language plpgsql security definer
@@ -1158,106 +1278,107 @@ set search_path = ''
 set timezone = 'UTC'
 as $fn$
 declare
-  zone text;
-  at_time timestamptz;
   local_day date;
-  ctx jsonb;
+  timing jsonb;
   latest public.projection_pos_source_windows;
+  failure_code text;
 begin
-  if tg_op = 'UPDATE' and (
-    new.id,new.restaurant_id,new.provider
-  ) is distinct from (
-    old.id,old.restaurant_id,old.provider
-  ) then
-    if exists (
-      select 1 from public.projection_pos_source_windows w
-      where w.connection_id = old.id
-    ) then
-      raise exception 'A POS connection with source history cannot change identity'
-        using errcode = '23514';
-    end if;
-  end if;
+  begin
+    <<maintain_window>>
+    begin
+      if tg_op = 'UPDATE' and (
+        new.id,new.restaurant_id,new.provider
+      ) is distinct from (
+        old.id,old.restaurant_id,old.provider
+      ) and exists (
+        select 1 from public.projection_pos_source_windows w
+        where w.restaurant_id = old.restaurant_id
+          and w.connection_id = old.id
+      ) then
+        raise exception 'Source history requires identity reconciliation'
+          using errcode = '23514';
+      end if;
 
-  if new.status not in ('connected','disconnected') or new.status is null then
-    return new;
-  end if;
+      if new.status not in ('connected','disconnected') or new.status is null then
+        return new;
+      end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(
-    'optimenu:projection-ingest:' || new.restaurant_id::text,0
-  ));
+      perform pg_advisory_xact_lock(hashtextextended(
+        'optimenu:projection-ingest:' || new.restaurant_id::text,0
+      ));
 
-  select w.* into latest
-  from public.projection_pos_source_windows w
-  where w.restaurant_id = new.restaurant_id
-    and w.connection_id = new.id
-    and w.provider = new.provider
-  order by w.valid_until desc nulls first,w.id
-  limit 1
-  for update;
+      select w.* into latest
+      from public.projection_pos_source_windows w
+      where w.restaurant_id = new.restaurant_id
+        and w.connection_id = new.id
+        and w.provider = new.provider
+      order by w.valid_until desc nulls first,w.id
+      limit 1 for update;
 
-  -- Repeated connects and transient sync-error recovery reuse an open window.
-  if latest.id is not null and latest.valid_until is null
-    and new.status = 'connected'
-  then
-    return new;
-  end if;
+      if latest.id is not null and latest.valid_until is null
+        and new.status = 'connected'
+      then
+        exit maintain_window;
+      end if;
 
-  -- A repeated disconnect never moves an existing historical boundary.
-  if new.status = 'disconnected'
-    and (latest.id is null or latest.valid_until is not null)
-  then
-    return new;
-  end if;
+      if new.status = 'disconnected'
+        and (latest.id is null or latest.valid_until is not null)
+      then
+        exit maintain_window;
+      end if;
 
-  -- A restaurant's first source can supply history from before installation.
-  -- Its actual complete data coverage is still required by ingestion.
-  if new.status = 'connected' and not exists (
-    select 1 from public.projection_pos_source_windows w
-    where w.restaurant_id = new.restaurant_id
-  ) then
-    insert into public.projection_pos_source_windows
-      (restaurant_id,connection_id,provider,valid_from)
-    values (new.restaurant_id,new.id,new.provider,null);
-    return new;
-  end if;
+      if new.status = 'connected' and not exists (
+        select 1 from public.projection_pos_source_windows w
+        where w.restaurant_id = new.restaurant_id
+      ) then
+        insert into public.projection_pos_source_windows
+          (restaurant_id,connection_id,provider,valid_from,lifecycle_context)
+        values (new.restaurant_id,new.id,new.provider,null,
+          jsonb_build_object('operation','initial_connect'));
+        exit maintain_window;
+      end if;
 
-  select r.operational_timezone into zone
-  from public.restaurants r
-  where r.id = new.restaurant_id;
+      timing := projection_private.pos_source_clock(
+        new.restaurant_id,
+        to_jsonb(new)->>'shift4_timezone',
+        clock_timestamp()
+      );
+      local_day := (timing->>'business_date')::date;
+      timing := timing || jsonb_build_object('operation',new.status);
 
-  if zone is null or not exists (
-    select 1 from pg_timezone_names where name = zone
-  ) then
-    raise exception 'Configure a valid operational timezone before changing POS source dates'
-      using errcode = '23514';
-  end if;
+      if new.status = 'disconnected' then
+        update public.projection_pos_source_windows
+        set valid_until = local_day + 1,lifecycle_context = timing
+        where id = latest.id;
+      elsif latest.id is not null and latest.valid_until >= local_day then
+        update public.projection_pos_source_windows
+        set valid_until = null,lifecycle_context = timing
+        where id = latest.id;
+      else
+        insert into public.projection_pos_source_windows
+          (restaurant_id,connection_id,provider,valid_from,lifecycle_context)
+        values (new.restaurant_id,new.id,new.provider,local_day,timing);
+      end if;
+    end maintain_window;
 
-  at_time := clock_timestamp();
-  local_day := (at_time at time zone zone)::date;
-  ctx := projection_private.ingestion_context(
-    new.restaurant_id,local_day,at_time
-  );
-
-  if at_time < (ctx->>'window_from')::timestamptz then
-    local_day := local_day - 1;
-  end if;
-
-  if new.status = 'disconnected' then
-    -- valid_until is exclusive. Preserve food made on the disconnect night.
-    update public.projection_pos_source_windows
-    set valid_until = local_day + 1
-    where id = latest.id;
-  elsif latest.id is not null and latest.valid_until >= local_day then
-    -- Same-night and adjacent-night reconnects leave no uncovered date.
-    update public.projection_pos_source_windows
-    set valid_until = null
-    where id = latest.id;
-  else
-    -- A real gap stays absent from the connection's historical coverage.
-    insert into public.projection_pos_source_windows
-      (restaurant_id,connection_id,provider,valid_from)
-    values (new.restaurant_id,new.id,new.provider,local_day);
-  end if;
+    delete from public.projection_pos_source_repairs
+    where restaurant_id = new.restaurant_id and connection_id = new.id;
+  exception when others then
+    -- This subtransaction rolls back projection writes, never the POS change.
+    failure_code := sqlstate;
+    begin
+      insert into public.projection_pos_source_repairs
+        (restaurant_id,connection_id,observed_status,error_code)
+      values (new.restaurant_id,new.id,new.status,failure_code)
+      on conflict (restaurant_id,connection_id) do update set
+        observed_status = excluded.observed_status,
+        error_code = excluded.error_code,
+        last_failure_at = clock_timestamp();
+    exception when others then
+      raise warning 'Projection source repair could not be recorded (%)',sqlstate;
+    end;
+    raise warning 'Projection source maintenance deferred (%)',failure_code;
+  end;
 
   return new;
 end;
@@ -1324,6 +1445,7 @@ begin
 
   foreach t in array array[
     'projection_ingestion_policy_versions',
+    'projection_pos_source_repairs',
     'projection_pos_source_windows',
     'projection_ingestion_state',
     'projection_dish_availability',

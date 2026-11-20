@@ -197,7 +197,8 @@ before(async () => {
       restaurant_id uuid
         references public.restaurants on delete cascade,
       provider text,
-      status text
+      status text,
+      shift4_timezone text
     );
 
     grant select on
@@ -411,7 +412,7 @@ test('reconnecting after a gap creates a new window without filling the gap', ()
     rollback;`);
 });
 
-test('a source-window failure rolls back the connection status and its audit', () => {
+test('a window failure preserves the POS change and a same-status retry repairs it', () => {
   const before = q(`select count(*) from public.projection_change_log;`);
   q(`create function public.test_source_window_failure()
     returns trigger language plpgsql as $$ begin
@@ -421,33 +422,167 @@ test('a source-window failure rolls back the connection status and its audit', (
     before update on public.projection_pos_source_windows
     for each row execute function public.test_source_window_failure();`);
   try {
-    rejects(`set role service_role;
-      update public.pos_connections set status='disconnected' where id='${CONN}';`,
-    /Synthetic source-window/);
-    assert.equal(q(`select status from public.pos_connections where id='${CONN}';`), 'connected');
+    q(`set role service_role;
+      update public.pos_connections set status='disconnected' where id='${CONN}';`);
+    assert.equal(q(`select status from public.pos_connections where id='${CONN}';`), 'disconnected');
     assert.equal(q(`select valid_until is null from public.projection_pos_source_windows
       where connection_id='${CONN}';`), 't');
+    assert.equal(q(`select error_code from public.projection_pos_source_repairs
+      where restaurant_id='${REST}' and connection_id='${CONN}';`), 'P0001');
     assert.equal(q(`select count(*) from public.projection_change_log;`), before);
   } finally {
     q(`drop trigger test_source_window_failure on public.projection_pos_source_windows;
       drop function public.test_source_window_failure();`);
   }
+  q(`set role service_role;
+    update public.pos_connections set status='disconnected' where id='${CONN}';`);
+  assert.equal(q(`select count(*) from public.projection_pos_source_repairs
+    where restaurant_id='${REST}';`), '0');
+  q(`set role service_role;
+    update public.pos_connections set status='connected' where id='${CONN}';`);
 });
 
-test('source dates reject missing timezone and historical connection identities cannot move tenants', () => {
-  q(`update public.restaurants set operational_timezone=null where id='${REST}';`);
-  try {
-    rejects(`set role service_role;
-      update public.pos_connections set status='disconnected' where id='${CONN}';`,
-    /valid operational timezone/);
-    assert.equal(q(`select status from public.pos_connections where id='${CONN}';`), 'connected');
-  } finally {
-    q(`update public.restaurants set operational_timezone='America/New_York' where id='${REST}';`);
+test('a deactivated restaurant can still disconnect its POS', () => {
+  q(`begin;
+    update public.restaurants set deactivated_at=clock_timestamp() where id='${REST}';
+    set role service_role;
+    update public.pos_connections set status='disconnected' where id='${CONN}';
+    do $$ begin
+      if (select status from public.pos_connections where id='${CONN}') <> 'disconnected'
+        or not exists (select 1 from public.projection_pos_source_windows
+          where connection_id='${CONN}' and valid_until is not null) then
+        raise exception 'Inactive restaurant could not disconnect';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('missing or invalid operational zones use Shift4 then the documented default and audit it', () => {
+  for (const [operational, shift4, expected, source] of [
+    [null, 'Asia/Tokyo', 'Asia/Tokyo', 'shift4_timezone'],
+    ['Not/AZone', 'Europe/London', 'Europe/London', 'shift4_timezone'],
+    [null, null, 'America/New_York', 'default'],
+    ['Not/AZone', 'Also/Invalid', 'America/New_York', 'default'],
+  ]) {
+    const literal = value => value == null ? 'null' : `'${value}'`;
+    q(`begin;
+      update public.restaurants set operational_timezone=${literal(operational)} where id='${REST}';
+      set role service_role;
+      update public.pos_connections set status='disconnected',
+        shift4_timezone=${literal(shift4)} where id='${CONN}';
+      do $$ begin
+        if not exists (select 1 from public.projection_change_log
+          where restaurant_id='${REST}' and table_name='projection_pos_source_windows'
+            and replacement_row#>>'{lifecycle_context,timezone}'='${expected}'
+            and replacement_row#>>'{lifecycle_context,timezone_source}'='${source}'
+            and replacement_row#>>'{lifecycle_context,fallback_used}'='true') then
+          raise exception 'Timezone fallback was not audited';
+        end if;
+        begin
+          perform public.projection_ingestion_context('${REST}','${DAY}');
+          raise exception 'Ingestion silently accepted an invalid timezone';
+        exception when others then
+          if sqlerrm not like '%valid operational timezone%' then raise; end if;
+        end;
+      end $$;
+      rollback;`);
   }
-  rejects(`update public.pos_connections set restaurant_id='${OTHER}' where id='${CONN}';`,
-    /cannot change identity/);
+});
+
+test('source maintenance never calls the full ingestion context', () => {
+  q(`begin;
+    create or replace function projection_private.ingestion_context(
+      p_restaurant_id uuid,p_business_date date,p_at timestamptz)
+    returns jsonb language plpgsql as $$ begin
+      raise exception 'Ingestion context must not be called';
+    end $$;
+    set role service_role;
+    update public.pos_connections set status='disconnected' where id='${CONN}';
+    do $$ begin
+      if not exists (select 1 from public.projection_pos_source_windows
+        where connection_id='${CONN}' and valid_until is not null) then
+        raise exception 'Lifecycle still depends on ingestion context';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('missing settings or ingestion policy do not prevent a disconnect', () => {
+  for (const table of ['projection_setting_versions', 'projection_ingestion_policy_versions']) {
+    q(`begin;
+      alter table public.${table} disable trigger all;
+      delete from public.${table};
+      set role service_role;
+      update public.pos_connections set status='disconnected' where id='${CONN}';
+      do $$ begin
+        if not exists (select 1 from public.projection_pos_source_windows
+          where connection_id='${CONN}' and valid_until is not null) then
+          raise exception 'Missing projection configuration blocked disconnect';
+        end if;
+      end $$;
+      rollback;`);
+  }
+});
+
+test('effective cutoff overrides and DST disambiguation are used without full settings validation', () => {
+  q(`begin;
+    insert into public.projection_setting_versions
+      (restaurant_id,model_major,effective_at,settings)
+    values ('${REST}',4,clock_timestamp(),'{"business_day_cutoff_minutes":90.0}');
+    do $$ declare timing jsonb; begin
+      timing := projection_private.pos_source_clock(
+        '${REST}','Asia/Tokyo','2027-11-07T05:45:00Z');
+      if timing->>'business_date' <> '2027-11-06'
+        or timing->>'timezone_source' <> 'operational_timezone'
+        or timing->>'cutoff_source' <> 'restaurant_settings' then
+        raise exception 'First repeated cutoff was used';
+      end if;
+      timing := projection_private.pos_source_clock(
+        '${REST}',null,'2027-11-07T06:30:00Z');
+      if timing->>'business_date' <> '2027-11-07' then
+        raise exception 'Second repeated cutoff was not used';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('a repair-record failure also cannot roll back the POS change', () => {
+  q(`begin;
+    create function public.test_projection_write_failure()
+    returns trigger language plpgsql as $$ begin raise exception 'Synthetic failure'; end $$;
+    create trigger test_window_write_failure before update
+    on public.projection_pos_source_windows
+    for each row execute function public.test_projection_write_failure();
+    create trigger test_repair_write_failure before insert
+    on public.projection_pos_source_repairs
+    for each row execute function public.test_projection_write_failure();
+    set role service_role;
+    update public.pos_connections set status='disconnected' where id='${CONN}';
+    do $$ begin
+      if (select status from public.pos_connections where id='${CONN}') <> 'disconnected' then
+        raise exception 'Projection failures blocked the POS change';
+      end if;
+    end $$;
+    rollback;`);
+});
+
+test('identity reconciliation is deferred without copying history to another tenant', () => {
+  q(`begin;
+    update public.pos_connections set restaurant_id='${OTHER}' where id='${CONN}';
+    do $$ begin
+      if exists (select 1 from public.projection_pos_source_windows
+        where connection_id='${CONN}' and restaurant_id<>'${REST}')
+        or not exists (select 1 from public.projection_pos_source_repairs
+          where restaurant_id='${OTHER}' and connection_id='${CONN}') then
+        raise exception 'Identity change moved source history';
+      end if;
+    end $$;
+    rollback;`);
+  for (const role of ['anon', 'authenticated']) {
+    rejects(`set role ${role}; select * from public.projection_pos_source_repairs;`, /permission denied/);
+  }
   assert.equal(q(`select has_function_privilege('service_role',
-    'projection_private.sync_pos_source_window()','execute');`), 'f');
+    'projection_private.pos_source_clock(uuid,text,timestamptz)','execute');`), 'f');
 });
 
 test('ingestion RPCs and source state are server-only', () => {
@@ -475,10 +610,11 @@ test('ingestion RPCs and source state are server-only', () => {
       'projection_dish_availability',
       'projection_ingestion_state',
       'projection_ingestion_policy_versions',
-      'projection_pos_source_windows'
+      'projection_pos_source_windows',
+      'projection_pos_source_repairs'
     )
     and relrowsecurity;
-  `), '4');
+  `), '5');
 });
 
 test('database and JavaScript agree on DST boundaries and the approved custom-cutoff policy', () => {
@@ -1123,6 +1259,7 @@ test('account purge removes availability, ingestion state and facts and records 
     where deleted_rows->>'projection_ingestion_state'='1'
       and deleted_rows->>'projection_dish_availability'='2'
       and deleted_rows->>'projection_pos_source_windows'='2'
+      and deleted_rows->>'projection_pos_source_repairs'='0'
       and deleted_rows->>'projection_ingestion_policy_versions'='1';
   `), '1');
 
