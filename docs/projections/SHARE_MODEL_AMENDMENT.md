@@ -44,8 +44,9 @@ Weekday mix uses clean selected-window evidence and weekday_mix_prior_nights.
 Share trend uses the supplied per-dish weekly trend from workbook Inputs K,
 multiplied by the target-to-last-complete horizon, exactly as Dish Model P does.
 A blank trend is zero. Both optional paths remain off by default. The workbook's
-optional owner-prior branch is retained under the existing owner_estimates_enabled
-and minimum_history_weeks settings; it never overrides unavailable Step 4 volume.
+owner-prior math remains for compatibility, but owner_estimates_enabled stays
+false. Projections take no owner input. Do not build any flow to populate
+owner_prior_weight.
 
 The snapshot supplies the three style codes, raw scoped dishes and facts, raw
 launch-history versions, an explicit-offset snapshotAt, and the verified Step 4
@@ -59,19 +60,30 @@ All arrays must be complete. Preserve explicit zero facts and source revisions.
 Supplemental dish snapshot attributes are last_season_removed_date,
 owner_prior_weight and share_trend_per_week. These are not new database columns.
 Step 10 must obtain the previous season endpoint from explicit availability
-history and supply any optional owner weights or reviewed trends. Missing prior
-season evidence falls through to the next prior source; missing optional weights
-or trends are zero, matching blank workbook cells. Current projection_dishes
-fields, projection_nightly_dish_facts recommended/sold_out columns and raw
-projection_launch_history supply the other fields. Flag population is later work;
+history and supply any reviewed trends. It must not request or populate owner
+weights. Missing prior season evidence falls through to the next prior source;
+missing compatibility weights or trends are zero, matching blank workbook cells.
+Current projection_dishes fields, the recommended/sold_out columns of
+projection_nightly_dish_facts, and raw projection_launch_history supply the other
+fields. Flag population is later work;
 there is no Tonight's recommendations integration here.
 
-Normalize exactly as the workbook does. Never add an equal-share fallback or
-remove the new-dish cap to force conservation. An all-new category can leave
-unallocated demand under that cap. If a Step 4 ok night cannot satisfy both share
-checks, raise PROJECTION_SHARE_BASELINE_REQUIRED instead of returning partial
-quantities. Closed nights remain zero and unavailable-volume nights remain null,
-with check availability disclosed. Inactive dishes are always zero.
+Approved amendment to v4: apply maximum_new_dish_share only when an active
+existing dish has a positive normalized share in the category. Otherwise, for an
+active category, set the new-dish total to 1 and allocate each new dish its
+proposed share divided by the sum of proposals. Record
+cap_skipped_no_existing: true in the category trace and cap_applied: false on
+the dishes. Existing dishes with zero shares do not prevent this exception.
+Do not invent equal shares when the proposal sum is zero.
+
+Share checks never throw for the whole run. An active category that still cannot
+allocate receives status needs_baseline and a reason. Its active dish quantities
+and overall shares are null; healthy categories retain their calculated outputs.
+The affected night receives status needs_baseline, preserves the Step 4 status
+in volume_status, lists the category reason, and reports checks.conserved false.
+Other nights are evaluated independently. Closed nights remain closed with zero
+quantities; unavailable-volume nights remain null. Inactive dishes are always
+zero. The trace and check sums retain the attempted allocation for review.
 
 The golden fixture is a lossless compressed export of cached workbook inputs and
 all requested Category E-O, Baseline E-P and Dish Model E-W values: 24, 10 and 80

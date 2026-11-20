@@ -178,6 +178,7 @@ for (const index of [0.5, 2]) test(`a launch with n=0 uses its prior and the ${i
   assert.equal(row.n, 0); assert.equal(row.lambda, 0); assert.equal(row.O, 0);
   near(row.P, index / 2); near(row.proposed_share, index / 2);
   assert.equal(row.cap_applied, index === 2);
+  assert.equal(row.category.trace.cap_skipped_no_existing, false);
   near(row.within_category_share, Math.min(0.5, index / 2));
 });
 
@@ -328,9 +329,92 @@ test('a missing explicit zero still fails when the source total would otherwise 
   assert.throws(() => output(data), /Missing dish fact/);
 });
 
-test('unallocatable all-new categories fail visibly instead of silently changing the workbook cap', () => {
+test('an all-new category allocates its full share and records the approved cap exception', () => {
   const data = context(); data.dishes[0].is_new = true; data.dishes[0].launch_date = ASOF;
-  assert.throws(() => output(data), error => error.code === 'PROJECTION_SHARE_BASELINE_REQUIRED');
+  const result = output(data);
+  for (const night of result.nights) {
+    const row = night.dishes.find(d => d.dish_id === data.dishes[0].id);
+    assert.equal(night.status, 'ok'); assert.equal(night.checks.conserved, true);
+    assert.equal(row.category.trace.cap_skipped_no_existing, true);
+    assert.equal(row.cap_applied, false); near(row.capped_new_total, 1);
+    near(row.within_category_share, 1); near(row.expected_units, 10);
+  }
+});
+
+test('multiple all-new dishes receive proportional proposals rather than capped or equal shares', () => {
+  const data = golden();
+  for (const index of [0, 1, 5]) data.dishes[index].removed_date = ASOF;
+  const night = output(data).nights[2];
+  const group = night.dishes.filter(d => d.active && d.style_category === styles[0]);
+  assert.equal(group.length, 2); assert.ok(group.every(d => d.is_new));
+  assert.notEqual(group[0].proposed_share, group[1].proposed_share);
+  const proposed = group.reduce((total, row) => total + row.proposed_share, 0);
+  for (const row of group) {
+    near(row.within_category_share, row.proposed_share / proposed);
+    assert.equal(row.category.trace.cap_skipped_no_existing, true);
+    assert.equal(row.cap_applied, false);
+  }
+  near(group.reduce((total, row) => total + row.within_category_share, 0), 1);
+  assert.equal(night.status, 'ok'); assert.equal(night.checks.conserved, true);
+});
+
+test('existing dishes with zero shares do not prevent the new dishes from filling the category', () => {
+  const data = context({ settings: { default_launch_index: 0.5 }, menu: [...styles.map((s, i) => dish(i, s)),
+    dish(3, styles[0], { is_new: true, launch_date: ASOF })] });
+  data.dishFacts.filter(f => f.dish_id === data.dishes[0].id).forEach(f => { f.sold_out = true; });
+  const night = output(data).nights[0];
+  const added = night.dishes.find(d => d.dish_id === data.dishes[3].id);
+  const existing = night.dishes.find(d => d.dish_id === data.dishes[0].id);
+  near(existing.normalized_existing_share, 0); near(existing.within_category_share, 0);
+  near(added.proposed_share, 0.25); near(added.within_category_share, 1); near(added.expected_units, 10);
+  assert.equal(added.category.trace.cap_skipped_no_existing, true);
+  assert.equal(added.category.status, 'ok'); assert.equal(night.status, 'ok');
+});
+
+test('an unallocatable category marks only its affected nights and preserves healthy categories', () => {
+  const boundary = shiftProjectionDate(ASOF, 3);
+  const data = context({ menu: [dish(0, styles[0]), dish(3, styles[0], { removed_date: boundary }),
+    dish(1, styles[1]), dish(2, styles[2])] });
+  data.dishFacts.filter(f => f.dish_id === data.dishes[0].id).forEach(f => { f.units = 0; });
+  recount(data);
+  const result = output(data);
+  for (let i = 0; i < result.nights.length; i++) {
+    const night = result.nights[i], category = night.categories.find(c => c.style_category === styles[0]);
+    assert.equal(night.volume_status, 'ok');
+    assert.equal(night.status, i < 3 ? 'ok' : 'needs_baseline');
+    assert.equal(night.checks.conserved, i < 3);
+    assert.equal(category.status, i < 3 ? 'ok' : 'needs_baseline');
+    assert.equal(category.reason, i < 3 ? null : 'no_positive_dish_share');
+    for (const row of night.dishes.filter(d => d.style_category !== styles[0])) {
+      assert.equal(row.status, 'ok'); near(row.expected_units, 10);
+    }
+    if (i >= 3) {
+      const missing = night.dishes.find(d => d.dish_id === data.dishes[0].id);
+      const removed = night.dishes.find(d => d.dish_id === data.dishes[1].id);
+      assert.equal(missing.status, 'needs_baseline'); assert.equal(missing.expected_units, null);
+      assert.equal(missing.overall_share, null); assert.equal(removed.expected_units, 0);
+      assert.ok(night.reasons.some(r => r.code === category.reason && r.style_category === styles[0]));
+    }
+  }
+});
+
+test('missing category evidence returns unavailable checks without failing the run', () => {
+  const result = output(context({ days: 0 }));
+  for (const night of result.nights) {
+    assert.equal(night.status, 'needs_baseline'); assert.equal(night.checks.conserved, false);
+    assert.ok(night.reasons.some(r => r.code === 'category_shares_not_conserved'));
+    night.categories.forEach(c => { assert.equal(c.status, 'needs_baseline'); assert.equal(c.reason, 'category_share_unavailable'); });
+    night.dishes.forEach(d => assert.equal(d.expected_units, null));
+  }
+});
+
+test('owner estimates remain off and supplied compatibility weights do not affect projections', () => {
+  assert.equal(PROJECTION_DEFAULTS.owner_estimates_enabled, false);
+  const data = context({ days: 7 });
+  data.dishes.forEach((d, i) => { d.owner_prior_weight = i === 0 ? 100 : 1; });
+  const row = output(data).nights[0];
+  row.categories.forEach(c => { near(c.share, 1 / 3); assert.equal(c.trace.owner_prior_used, false); });
+  row.dishes.forEach(d => { assert.equal(d.baseline.owner_prior_used, false); assert.equal(d.expected_units, null); });
 });
 
 test('future observations cannot change the result or its digest', () => {
