@@ -1,5 +1,87 @@
 begin;
 
+alter table public.projection_pos_item_map
+  alter column dish_id drop not null,
+  add column excluded boolean not null default false,
+  add constraint projection_mapping_destination_check check (
+    (excluded and dish_id is null)
+    or (not excluded and dish_id is not null)
+  );
+
+alter table public.projection_pooled_totals
+  add constraint projection_pooled_monday_sunday_check check (
+    extract(isodow from period_start) = 1
+    and period_end = period_start + 6
+  );
+
+-- Separate from immutable v4 model settings. Every change is a new version.
+create table public.projection_ingestion_policy_versions (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid references public.restaurants(id) on delete cascade,
+  effective_at timestamptz not null,
+  maximum_unmapped_share numeric not null
+    check (maximum_unmapped_share >= 0 and maximum_unmapped_share <= 1),
+  created_at timestamptz not null default clock_timestamp(),
+  unique nulls not distinct (restaurant_id,effective_at)
+);
+
+insert into public.projection_ingestion_policy_versions
+  (effective_at,maximum_unmapped_share)
+values ('2026-01-01T00:00:00Z',0.05);
+
+-- Explicit business-date coverage, independent of authentication health.
+-- No connection FK: history survives removal of an old POS credential row.
+create table public.projection_pos_source_windows (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null
+    references public.restaurants(id) on delete cascade,
+  connection_id uuid not null,
+  provider text not null check (btrim(provider) <> ''),
+  valid_from date,
+  valid_until date,
+  check (valid_until is null or valid_from is null or valid_until > valid_from)
+);
+
+create index projection_source_window_restaurant_connection
+  on public.projection_pos_source_windows(restaurant_id,connection_id);
+
+alter table public.projection_ingestion_policy_versions enable row level security;
+alter table public.projection_pos_source_windows enable row level security;
+
+revoke all on public.projection_ingestion_policy_versions,
+  public.projection_pos_source_windows
+from public, anon, authenticated, service_role;
+
+grant select, insert on public.projection_ingestion_policy_versions
+to service_role;
+grant select, insert, update on public.projection_pos_source_windows
+to service_role;
+
+create trigger projection_policy_immutable
+before update or delete on public.projection_ingestion_policy_versions
+for each row execute function projection_private.immutable_row();
+
+create trigger projection_policy_no_truncate
+before truncate on public.projection_ingestion_policy_versions
+for each statement execute function projection_private.immutable_row();
+
+create function projection_private.lock_ingestion_policy()
+returns trigger language plpgsql set search_path = '' as $fn$
+begin
+  perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-ingestion-policy',0
+  ));
+  return new;
+end;
+$fn$;
+
+create trigger projection_policy_lock
+before insert on public.projection_ingestion_policy_versions
+for each row execute function projection_private.lock_ingestion_policy();
+
+revoke all on function projection_private.lock_ingestion_policy()
+from public, anon, authenticated, service_role;
+
 create table public.projection_dish_availability (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null
@@ -112,11 +194,52 @@ begin
     end if;
   end if;
 
+  if tg_table_name = 'projection_pos_source_windows'
+    and tg_op <> 'DELETE'
+  then
+    if tg_op = 'UPDATE' and (
+      new.restaurant_id,new.connection_id,new.provider
+    ) is distinct from (
+      old.restaurant_id,old.connection_id,old.provider
+    ) then
+      raise exception 'Source window identity cannot change';
+    end if;
+
+    if tg_op = 'INSERT' and not exists (
+      select 1 from public.pos_connections c
+      where c.id = new.connection_id
+        and c.restaurant_id = new.restaurant_id
+        and c.provider = new.provider
+    ) then
+      raise exception 'Source connection belongs to another restaurant or provider'
+        using errcode = '23514';
+    end if;
+
+    if exists (
+      select 1 from public.projection_pos_source_windows w
+      where w.restaurant_id = new.restaurant_id
+        and w.connection_id = new.connection_id
+        and w.id <> new.id
+        and daterange(w.valid_from,w.valid_until,'[)')
+          && daterange(new.valid_from,new.valid_until,'[)')
+    ) then
+      raise exception 'POS source windows overlap' using errcode = '23514';
+    end if;
+  end if;
+
   if tg_op = 'DELETE' then return old; end if;
 
   return new;
 end;
 $fn$;
+
+create trigger projection_source_window_lock
+before insert or update or delete on public.projection_pos_source_windows
+for each row execute function projection_private.lock_ingestion_context();
+
+create trigger projection_source_window_audit
+after insert or update on public.projection_pos_source_windows
+for each row execute function projection_private.log_change();
 
 create trigger projection_availability_lock
 before insert or update or delete
@@ -314,6 +437,7 @@ begin
       using errcode = '23514';
   end if;
 
+  new.participant_count := participants;
   return new;
 end;
 $fn$;
@@ -334,6 +458,8 @@ declare
   g jsonb;
   o jsonb;
   value jsonb;
+  policy jsonb;
+  override_policy jsonb;
 begin
   if p_business_date is null or p_at is null then
     raise exception 'Business date and timestamp are required';
@@ -394,7 +520,29 @@ begin
     raise exception 'Effective projection settings are invalid';
   end if;
 
+  select jsonb_build_object(
+    'global_version_id',id,
+    'restaurant_version_id',null,
+    'maximum_unmapped_share',maximum_unmapped_share
+  ) into policy
+  from public.projection_ingestion_policy_versions
+  where restaurant_id is null and effective_at <= p_at
+  order by effective_at desc limit 1;
+
+  select jsonb_build_object(
+    'restaurant_version_id',id,
+    'maximum_unmapped_share',maximum_unmapped_share
+  ) into override_policy
+  from public.projection_ingestion_policy_versions
+  where restaurant_id = p_restaurant_id and effective_at <= p_at
+  order by effective_at desc limit 1;
+
+  if policy is null then
+    raise exception 'Effective ingestion policy is missing';
+  end if;
+
   value := jsonb_build_object(
+    'ingestion_policy',policy || coalesce(override_policy,'{}'::jsonb),
     'restaurant_id',p_restaurant_id,
     'business_date',p_business_date,
     'timezone',zone,
@@ -456,21 +604,32 @@ begin
     'connections',coalesce((
       select jsonb_agg(
         jsonb_build_object(
-          'id',id,
-          'restaurant_id',restaurant_id,
-          'provider',provider,
-          'status',status
+          'id',w.connection_id,
+          'restaurant_id',w.restaurant_id,
+          'provider',w.provider
         )
-        order by id
+        order by w.connection_id
       )
-      from public.pos_connections
-      where restaurant_id = p_restaurant_id
+      from public.projection_pos_source_windows w
+      where w.restaurant_id = p_restaurant_id
+        and (w.valid_from is null or w.valid_from <= p_business_date)
+        and (w.valid_until is null or p_business_date < w.valid_until)
     ),'[]'::jsonb)
   );
 
   return value || jsonb_build_object(
     'context_digest',
       encode(sha256(convert_to(value::text,'UTF8')),'hex'),
+    'connection_health',coalesce((
+      select jsonb_object_agg(w.connection_id::text,coalesce(c.status,'unavailable'))
+      from public.projection_pos_source_windows w
+      left join public.pos_connections c
+        on c.id = w.connection_id and c.restaurant_id = w.restaurant_id
+        and c.provider = w.provider
+      where w.restaurant_id = p_restaurant_id
+        and (w.valid_from is null or w.valid_from <= p_business_date)
+        and (w.valid_until is null or p_business_date < w.valid_until)
+    ),'{}'::jsonb),
     'state',(
       select to_jsonb(s)
       from public.projection_ingestion_state s
@@ -522,6 +681,9 @@ declare
   complete boolean;
   fact_revision text;
   expected_complete boolean;
+  saved_complete boolean;
+  unresolved numeric;
+  maximum_share numeric;
 begin
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' then
     raise exception 'Invalid ingestion payload';
@@ -556,6 +718,10 @@ begin
   ) into ctx;
 
   perform pg_advisory_xact_lock(hashtextextended(
+    'optimenu:projection-ingestion-policy',0
+  ));
+
+  perform pg_advisory_xact_lock(hashtextextended(
     'optimenu:projection-settings:' || (ctx->>'model_major'),
     0
   ));
@@ -583,6 +749,10 @@ begin
     and business_date = p_business_date
   for update;
 
+  select f.complete into saved_complete
+  from public.projection_nightly_flags f
+  where f.restaurant_id = p_restaurant_id and f.business_date = p_business_date;
+
   payload_hash := encode(sha256(convert_to(
     (p_payload - 'observed_at' - 'changed_at')::text ||
       p_context_digest,
@@ -597,7 +767,10 @@ begin
       'restaurant_id',p_restaurant_id,
       'business_date',p_business_date,
       'generation',prior.generation,
-      'unchanged',true
+      'unchanged',true,
+      'complete',coalesce(saved_complete,false),
+      'preserved_complete',mode = 'failure' and coalesce(saved_complete,false),
+      'recheck_failed',mode = 'failure'
     );
   end if;
 
@@ -635,14 +808,22 @@ begin
       jsonb_build_object(
         'ingestion',
         jsonb_build_object(
-          'error_code',p_payload->>'error_code'
+          'recheck_failed',true,
+          'last_recheck_error',jsonb_build_object(
+            'error_code',p_payload->>'error_code',
+            'observed_at',observed
+          )
         )
       )
     )
     on conflict (restaurant_id,business_date)
     do update set
-      complete = false,
-      flags = projection_nightly_flags.flags || excluded.flags,
+      complete = projection_nightly_flags.complete,
+      flags = projection_nightly_flags.flags || jsonb_build_object(
+        'ingestion',
+        coalesce(projection_nightly_flags.flags->'ingestion','{}'::jsonb)
+          || (excluded.flags->'ingestion')
+      ),
       updated_at = clock_timestamp();
 
     changed := coalesce(prior.changed_at,observed);
@@ -693,8 +874,24 @@ begin
       else observed
     end;
 
+    unresolved := (p_payload#>>'{diagnostics,unmapped_units}')::numeric
+      + (p_payload#>>'{diagnostics,outside_menu_units}')::numeric;
+    maximum_share := (ctx#>>'{ingestion_policy,maximum_unmapped_share}')::numeric;
+
+    if unresolved is null or unresolved < 0
+      or unresolved in ('NaN'::numeric,'Infinity'::numeric)
+      or (p_payload#>>'{diagnostics,unmapped_units}')::numeric < 0
+      or (p_payload#>>'{diagnostics,outside_menu_units}')::numeric < 0
+      or (p_payload#>>'{diagnostics,open_lines}')::integer < 0
+      or (p_payload#>>'{diagnostics,mapping_needed}')::boolean
+        is distinct from (unresolved > (total + unresolved) * maximum_share)
+    then
+      raise exception 'Mapping quality evidence does not reconcile'
+        using errcode = '23514';
+    end if;
+
     expected_complete :=
-      (p_payload#>>'{diagnostics,open_lines}')::integer = 0
+      unresolved <= (total + unresolved) * maximum_share
       and not exists (
         select 1
         from jsonb_to_recordset(p_payload->'facts')
@@ -703,7 +900,10 @@ begin
       )
       and observed >= (ctx->>'window_to')::timestamptz
       and (
-        (p_payload#>>'{diagnostics,daily_closeout}')::boolean
+        (
+          (p_payload#>>'{diagnostics,daily_closeout}')::boolean
+          and (p_payload#>>'{diagnostics,open_lines}')::integer = 0
+        )
         or observed >= greatest(
           changed,
           (ctx->>'window_to')::timestamptz
@@ -868,7 +1068,8 @@ begin
       then p_payload->>'transaction_digest'
       else prior.transaction_digest
     end,
-    p_context_digest,
+    case when mode = 'success' then p_context_digest
+      else coalesce(prior.context_digest,p_context_digest) end,
     payload_hash,
     changed,
     observed
@@ -899,7 +1100,13 @@ begin
     'restaurant_id',p_restaurant_id,
     'business_date',p_business_date,
     'generation',generation,
-    'unchanged',false
+    'unchanged',false,
+    'complete',case when mode = 'failure' then coalesce(saved_complete,false)
+      else complete end,
+    'preserved_complete',mode = 'failure' and coalesce(saved_complete,false),
+    'recheck_failed',mode = 'failure',
+    'needs_reingestion',mode = 'failure'
+      and prior.context_digest is distinct from p_context_digest
   );
 end;
 $fn$;
@@ -982,6 +1189,8 @@ begin
   values (pg_backend_pid(),txid_current(),target);
 
   foreach t in array array[
+    'projection_ingestion_policy_versions',
+    'projection_pos_source_windows',
     'projection_ingestion_state',
     'projection_dish_availability',
     'projection_forecast_dishes',

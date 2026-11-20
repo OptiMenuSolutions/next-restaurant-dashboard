@@ -33,6 +33,7 @@ export function ingestionFixture() {
     business_date: DAY,
     timezone: ZONE,
     settings: { ...PROJECTION_DEFAULTS },
+    ingestion_policy: { maximum_unmapped_share: 0.05 },
     context_digest: 'a'.repeat(64),
     state: null,
     connections: [{
@@ -219,7 +220,7 @@ test('normal sales, comps, refunds and voids reconcile without counting modifier
     },
   ];
 
-  assert.equal(f.run().total_units, '7');
+  assert.equal(f.run().total_units, '10');
   assert.equal(f.run().complete, true);
 });
 
@@ -368,7 +369,7 @@ test('unmapped and nonforecastable items are excluded and unmapped IDs are logge
   assert.equal(f.run().diagnostics.unmapped_items.length, 1);
 });
 
-test('future events are excluded; negative net quantities and open checks are incomplete', () => {
+test('future events are excluded; refunds have zero demand and open checks await quiet proof', () => {
   const f = ingestionFixture();
   const line = f.snapshot.sources[0].tickets[0].lines[0];
 
@@ -382,7 +383,8 @@ test('future events are excluded; negative net quantities and open checks are in
   assert.equal(f.run().diagnostics.future_lines_excluded, 1);
 
   line.kind = 'refund';
-  assert.equal(f.run().complete, false);
+  assert.equal(f.run().total_units, '0');
+  assert.equal(f.run().complete, true);
 
   line.kind = 'sale';
   f.snapshot.sources[0].tickets[0].state = 'open';
@@ -651,7 +653,7 @@ test('read failures are recorded as unavailable and rethrown, without sending ze
       return {
         data: name === 'projection_ingestion_context'
           ? f.context
-          : { generation: 1 },
+          : { restaurant_id: REST, business_date: DAY, generation: 1 },
         error: null,
       };
     },
@@ -720,4 +722,162 @@ test('an ingestion conflict is returned for retry without marking a healthy nigh
     'projection_ingestion_context',
     'projection_commit_night',
   ]);
+});
+
+test('a stable unpaid ticket finalizes after quiet without losing its food units', () => {
+  const f = ingestionFixture();
+  f.snapshot.sources[0].tickets[0].state = 'open';
+  const first = f.run();
+  assert.equal(first.total_units, '2');
+  assert.equal(first.complete, false);
+  f.context.state = {
+    transaction_digest: first.transaction_digest,
+    changed_at: AT,
+  };
+  f.snapshot.observed_at = '2026-11-20T12:00:00Z';
+  const final = buildProjectionNight(f.context, f.snapshot, f.snapshot.observed_at);
+  assert.equal(final.complete, true);
+  assert.equal(final.total_units, '2');
+  assert.deepEqual(final.diagnostics.open_tickets, [{
+    connection_id: CONN, ticket_id: 'check-1', finalized: true,
+  }]);
+});
+
+test('empty open tickets require no identity or date and do not reset the digest', () => {
+  const f = ingestionFixture();
+  const before = f.run();
+  f.snapshot.sources[0].tickets.push({ state: 'open', lines: [] });
+  assert.equal(f.run().transaction_digest, before.transaction_digest);
+  assert.equal(f.run().complete, true);
+  const adapted = shift4ProjectionSnapshot({
+    restaurantId: REST, connectionId: CONN, complete: true, observedAt: AT,
+    records: { tickets: [{ ticket_type: 'open', raw: { ticketItems: [] } }] },
+  });
+  assert.deepEqual(adapted.sources[0].tickets, []);
+});
+
+test('a refund-only night has zero demand; a late refund still changes the digest', () => {
+  const f = ingestionFixture();
+  const before = f.run();
+  const line = f.snapshot.sources[0].tickets[0].lines[0];
+  f.snapshot.sources[0].tickets[0].lines.push({ ...line, id: 'refund', kind: 'refund', quantity: -99 });
+  assert.equal(f.run().total_units, '2');
+  assert.notEqual(f.run().transaction_digest, before.transaction_digest);
+  f.snapshot.sources[0].tickets[0].lines = [{ ...line, kind: 'refund', quantity: 99 }];
+  assert.equal(f.run().total_units, '0');
+  assert.equal(f.run().complete, true);
+});
+
+test('missing item references are unresolved diagnostics rather than source failures', () => {
+  for (const item_id of [undefined, null, '', '   ']) {
+    const f = ingestionFixture();
+    f.snapshot.sources[0].tickets[0].lines[0].item_id = item_id;
+    const night = f.run();
+    assert.equal(night.complete, false);
+    assert.equal(night.diagnostics.status, 'mapping_needed');
+    assert.equal(night.diagnostics.unmapped_items[0].label, 'no item reference');
+    assert.equal(night.diagnostics.unmapped_units, '2');
+  }
+});
+
+test('explicit exclusions are separate from unresolved food and do not dilute its quality ratio', () => {
+  const f = ingestionFixture();
+  const line = f.snapshot.sources[0].tickets[0].lines[0];
+  f.context.mappings.push({
+    ...f.context.mappings[0], id: R(50), external_item_id: 'drink',
+    dish_id: null, excluded: true,
+  });
+  f.snapshot.sources[0].tickets[0].lines.push(
+    { ...line, id: 'excluded', item_id: 'drink', quantity: 1000 },
+    { ...line, id: 'unknown', item_id: 'food', quantity: 1 }
+  );
+  const night = f.run();
+  assert.equal(night.total_units, '2');
+  assert.equal(night.diagnostics.excluded_units, '1000');
+  assert.equal(night.diagnostics.excluded_items.length, 1);
+  assert.equal(night.diagnostics.unmapped_items.length, 1);
+  assert.equal(night.complete, false);
+});
+
+test('the exact five-percent boundary is allowed and any excess needs mapping', () => {
+  const f = ingestionFixture();
+  const line = f.snapshot.sources[0].tickets[0].lines[0];
+  line.quantity = '0.19';
+  const missing = { ...line, id: 'unknown', item_id: null, quantity: '0.01' };
+  f.snapshot.sources[0].tickets[0].lines.push(missing);
+  assert.equal(f.run().complete, true);
+  missing.quantity = '0.010000000000000001';
+  assert.equal(f.run().complete, false);
+  assert.equal(f.run().facts[0].units, '0.19');
+  f.context.ingestion_policy.maximum_unmapped_share = 0.1;
+  assert.equal(f.run().complete, true);
+});
+
+test('out-of-menu sales are diagnostic units; the remaining valid facts are saved', () => {
+  const f = ingestionFixture();
+  f.context.dishes.push({ ...f.context.dishes[0], id: R(51), removed_date: DAY });
+  f.context.mappings.push({
+    ...f.context.mappings[0], id: R(52), external_item_id: 'removed', dish_id: R(51),
+  });
+  f.snapshot.sources[0].tickets[0].lines.push({
+    ...f.snapshot.sources[0].tickets[0].lines[0], id: 'removed-sale',
+    item_id: 'removed', quantity: '0.1',
+  });
+  assert.equal(f.run().total_units, '2');
+  assert.equal(f.run().diagnostics.outside_menu_units, '0.1');
+  assert.equal(f.run().complete, true);
+});
+
+test('source health does not negate a complete receipt, but absent coverage still fails', () => {
+  const f = ingestionFixture();
+  f.context.connections[0].status = 'error';
+  assert.equal(f.run().complete, true);
+  f.context.connections[0].status = 'disconnected';
+  assert.equal(f.run().complete, true);
+  f.snapshot.sources[0].complete = false;
+  assert.throws(f.run, /coverage/);
+});
+
+test('missing or invalid ingestion policy is never silently defaulted', () => {
+  for (const value of [undefined, null, NaN, Infinity, -0.01, 1.01, '0.05']) {
+    const f = ingestionFixture();
+    f.context.ingestion_policy.maximum_unmapped_share = value;
+    assert.throws(f.run, error => error.code === 'PROJECTION_CONTEXT_INVALID');
+  }
+});
+
+test('a preserved confirmed night returns a warning and retains its projection error code', async () => {
+  const f = ingestionFixture();
+  let recorded;
+  const db = { rpc: async (name, args) => {
+    if (name === 'projection_ingestion_context') return { data: f.context };
+    recorded = args.p_payload;
+    return { data: {
+      restaurant_id: REST, business_date: DAY, generation: 2,
+      complete: true, preserved_complete: true, recheck_failed: true,
+    } };
+  } };
+  const saved = await ingestProjectionNight(db, {
+    restaurantId: REST, businessDate: DAY,
+    readSource: async () => {
+      const error = new Error('Menu history is missing');
+      error.code = 'PROJECTION_MENU_HISTORY_REQUIRED';
+      throw error;
+    },
+  });
+  assert.equal(saved.recheck_failed, true);
+  assert.equal(recorded.error_code, 'PROJECTION_MENU_HISTORY_REQUIRED');
+  assert.equal(recorded.facts, undefined);
+});
+
+test('missing-reference combo components preserve an order-independent digest', () => {
+  const f = ingestionFixture();
+  const line = f.snapshot.sources[0].tickets[0].lines[0];
+  line.components = [
+    { item_id: null, quantity: 1 },
+    { item_id: 'chicken', quantity: 2 },
+  ];
+  const before = f.run().transaction_digest;
+  line.components.reverse();
+  assert.equal(f.run().transaction_digest, before);
 });

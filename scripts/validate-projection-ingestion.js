@@ -247,6 +247,10 @@ before(async () => {
 
     set role service_role;
 
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider,valid_from)
+    values ('${REST}','${CONN}','shift4','2026-01-01');
+
     insert into public.projection_dishes
       (
         id,restaurant_id,menu_item_id,
@@ -295,10 +299,12 @@ test('ingestion RPCs and source state are server-only', () => {
     from pg_class
     where relname in (
       'projection_dish_availability',
-      'projection_ingestion_state'
+      'projection_ingestion_state',
+      'projection_ingestion_policy_versions',
+      'projection_pos_source_windows'
     )
     and relrowsecurity;
-  `), '2');
+  `), '4');
 });
 
 test('database and JavaScript agree on DST boundaries and the approved custom-cutoff policy', () => {
@@ -519,7 +525,7 @@ test('foreign facts and mismatched totals reject atomically', () => {
   assert.equal(context().state.generation, before);
 });
 
-test('source failure keeps saved facts while marking the night unavailable', () => {
+test('source failure preserves a confirmed night and its counts with a recheck warning', () => {
   const ctx = context();
 
   commit({
@@ -541,7 +547,13 @@ test('source failure keeps saved facts while marking the night unavailable', () 
     select complete
     from public.projection_nightly_flags
     where restaurant_id='${REST}';
-  `), 'f');
+  `), 't');
+
+  assert.equal(q(`
+    select flags#>>'{ingestion,last_recheck_error,error_code}'
+    from public.projection_nightly_flags
+    where restaurant_id='${REST}';
+  `), 'PROJECTION_SOURCE_UNAVAILABLE');
 });
 
 test('a real retry completes the night and preserves calendar and recommendation metadata', () => {
@@ -568,6 +580,7 @@ test('a real retry completes the night and preserves calendar and recommendation
       and early_close
       and recommendation_flags_complete
       and holiday_keys='{thanksgiving}'
+      and not (flags->'ingestion' ? 'last_recheck_error')
     from public.projection_nightly_flags
     where restaurant_id='${REST}';
   `), 't');
@@ -741,6 +754,177 @@ test('the scalar context RPC includes more than ten thousand mappings without ro
   assert.equal(context().mappings.length, 10002);
 });
 
+test('source windows scope historical membership independently of POS health', () => {
+  const before = context();
+  q(`
+    update public.pos_connections set status='error' where id='${CONN}';
+    insert into public.pos_connections values ('${R(30)}','${REST}','square','disconnected');
+    set role service_role;
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider,valid_from)
+    values ('${REST}','${R(30)}','square','2027-01-01');
+  `);
+  assert.equal(context().connections.length, 1);
+  assert.equal(context().context_digest, before.context_digest);
+  assert.equal(context().connection_health[CONN], 'error');
+  assert.equal(prepare(snapshot('2026-11-20T13:01:00Z', 10)).payload.complete, true);
+  const future = JSON.parse(q(`
+    set role service_role;
+    select public.projection_ingestion_context('${REST}','2027-01-01');
+  `));
+  assert.equal(future.connections.length, 2);
+  rejects(`
+    set role service_role;
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider)
+    values ('${OTHER}','${CONN}','shift4');
+  `, /another restaurant/);
+  rejects(`
+    set role service_role;
+    insert into public.projection_pos_source_windows
+      (restaurant_id,connection_id,provider)
+    values ('${REST}','${CONN}','shift4');
+  `, /overlap/);
+  q(`update public.pos_connections set status='connected' where id='${CONN}';`);
+});
+
+test('open food counts finalize after quiet; empty open tickets cannot postpone it', () => {
+  const first = snapshot('2026-11-20T14:00:00Z', 12);
+  first.sources[0].tickets[0].state = 'open';
+  assert.equal(commit(prepare(first)).complete, false);
+  const second = structuredClone(first);
+  second.observed_at = '2026-11-20T15:00:00Z';
+  second.sources[0].tickets.push({ state: 'open', lines: [] });
+  assert.equal(commit(prepare(second)).complete, true);
+  assert.equal(q(`select units from public.projection_nightly_dish_facts
+    where restaurant_id='${REST}';`), '12');
+});
+
+test('the database enforces the exact mapping boundary and retains known partial facts', () => {
+  const source = snapshot('2026-11-20T15:01:00Z', '0.19');
+  const line = source.sources[0].tickets[0].lines[0];
+  source.sources[0].tickets[0].lines.push({
+    ...line, id: 'unknown', item_id: null, quantity: '0.01',
+  });
+  assert.equal(commit(prepare(source)).complete, true);
+  source.observed_at = '2026-11-20T15:02:00Z';
+  source.sources[0].tickets[0].lines[1].quantity = '0.010000000000000001';
+  const receipt = prepare(source);
+  const forged = structuredClone(receipt);
+  forged.payload.complete = true;
+  rejects(command(forged), /Completeness evidence/);
+  assert.equal(commit(receipt).complete, false);
+  assert.equal(q(`select units from public.projection_nightly_dish_facts
+    where restaurant_id='${REST}';`), '0.19');
+});
+
+test('excluded mappings require no dish, while another tenants dish still rejects', () => {
+  q(`set role service_role;
+    insert into public.projection_pos_item_map
+      (restaurant_id,pos_system,external_item_id,dish_id,excluded,valid_from)
+    values ('${REST}','shift4','drink',null,true,'2026-01-01');`);
+  rejects(`set role service_role;
+    insert into public.projection_pos_item_map
+      (restaurant_id,pos_system,external_item_id,dish_id,excluded,valid_from)
+    values ('${REST}','shift4','bad-exclusion','${DISH}',true,'2026-01-01');`, /check constraint/);
+  rejects(`set role service_role;
+    insert into public.projection_pos_item_map
+      (restaurant_id,pos_system,external_item_id,dish_id,valid_from)
+    values ('${OTHER}','shift4','foreign','${DISH}','2026-01-01');`, /foreign key/);
+  const source = snapshot('2026-11-20T15:03:00Z', 2);
+  const line = source.sources[0].tickets[0].lines[0];
+  source.sources[0].tickets[0].lines.push(
+    { ...line, id: 'drink', item_id: 'drink', quantity: 999 },
+    { ...line, id: 'refund', kind: 'refund', quantity: -99 }
+  );
+  assert.equal(commit(prepare(source)).complete, true);
+  assert.equal(q(`select total_units from public.projection_nightly_flags
+    where restaurant_id='${REST}';`), '2');
+});
+
+test('an unconfirmed failed read stays incomplete without creating zero dish facts', () => {
+  const previous = '2026-11-18';
+  const ctx = JSON.parse(q(`set role service_role;
+    select public.projection_ingestion_context('${REST}','${previous}');`));
+  const output = q(`begin;
+    set role service_role;
+    select public.projection_commit_night('${REST}','${previous}',
+      '${ctx.context_digest}',0,${json({ mode: 'failure', observed_at: '2026-11-20T15:04:00Z', error_code: 'PROJECTION_MENU_HISTORY_REQUIRED' })});
+    select not complete and total_units is null
+      and flags#>>'{ingestion,last_recheck_error,error_code}'='PROJECTION_MENU_HISTORY_REQUIRED'
+    from public.projection_nightly_flags
+    where restaurant_id='${REST}' and business_date='${previous}';
+    rollback;`);
+  assert.equal(output.split('\n').at(-1), 't');
+});
+
+test('ingestion policy versions are tenant-scoped, immutable and fence stale writes', () => {
+  const stale = prepare(snapshot('2026-11-20T15:05:00Z', 2));
+  const originalSettings = JSON.stringify(stale.ctx.settings);
+  q(`set role service_role;
+    insert into public.projection_ingestion_policy_versions
+      (restaurant_id,effective_at,maximum_unmapped_share)
+    values ('${OTHER}','2026-01-01T00:00:00Z',0.2);`);
+  assert.equal(context().context_digest, stale.ctx.context_digest);
+  q(`set role service_role;
+    insert into public.projection_ingestion_policy_versions
+      (restaurant_id,effective_at,maximum_unmapped_share)
+    values ('${REST}','2026-01-01T00:00:00Z',0.1);`);
+  assert.equal(context().ingestion_policy.maximum_unmapped_share, 0.1);
+  assert.equal(JSON.stringify(context().settings), originalSettings);
+  rejects(command(stale), /context changed/);
+  rejects(`set role service_role;
+    update public.projection_ingestion_policy_versions set maximum_unmapped_share=0.3;`, /permission denied/);
+  rejects(`update public.projection_ingestion_policy_versions
+    set maximum_unmapped_share=0.3;`, /append-only/);
+  rejects(`set role service_role;
+    insert into public.projection_ingestion_policy_versions
+      (restaurant_id,effective_at,maximum_unmapped_share)
+    values ('${REST}','2026-02-01T00:00:00Z',1.01);`, /check constraint/);
+  for (const table of ['projection_pos_source_windows', 'projection_ingestion_policy_versions']) {
+    rejects(`set role authenticated; select * from public.${table};`, /permission denied/);
+  }
+});
+
+test('pooled periods are Monday to Sunday and participant counts are computed', () => {
+  q(`begin;
+    insert into public.projection_setting_versions(model_major,effective_at,settings)
+    select model_major,clock_timestamp()-interval '1 second',
+      settings || '{"pooled_benchmarks_enabled":true}'::jsonb
+    from public.projection_setting_versions where restaurant_id is null
+    order by effective_at desc limit 1;
+    insert into public.projection_pool_cohorts
+      (cohort_key,concept_type,region_code)
+    values ('review-test','full_service','NJ');
+    insert into public.restaurants
+    select ('20000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid,
+      null,'America/New_York',null from generate_series(1,5) n;
+    insert into public.projection_pool_permissions
+      (restaurant_id,enabled,agreement_permits,agreement_version)
+    select id,true,true,'test' from public.restaurants where id::text like '20000000-%';
+    insert into public.projection_pool_memberships
+      (restaurant_id,cohort_key,eligible)
+    select restaurant_id,'review-test',true
+    from public.projection_pool_permissions where agreement_version='test';
+    insert into public.projection_pooled_totals
+      (cohort_key,metric,period_start,period_end,participant_count,statistics)
+    values ('review-test','volume','2026-11-02','2026-11-08',999,'{}');
+    do $$ begin
+      if (select participant_count from public.projection_pooled_totals
+        where cohort_key='review-test') <> 5 then
+        raise exception 'Count was not derived';
+      end if;
+      begin
+        insert into public.projection_pooled_totals
+          (cohort_key,metric,period_start,period_end,participant_count,statistics)
+        values ('review-test','bad','2026-11-01','2026-11-07',5,'{}');
+        raise exception 'Sunday period accepted';
+      exception when check_violation then null;
+      end;
+    end $$;
+    rollback;`);
+});
+
 test('account purge removes availability, ingestion state and facts and records the new table counts', () => {
   q(`
     set role service_role;
@@ -763,7 +947,9 @@ test('account purge removes availability, ingestion state and facts and records 
     select count(*)
     from public.projection_account_purge_log
     where deleted_rows->>'projection_ingestion_state'='1'
-      and deleted_rows->>'projection_dish_availability'='2';
+      and deleted_rows->>'projection_dish_availability'='2'
+      and deleted_rows->>'projection_pos_source_windows'='2'
+      and deleted_rows->>'projection_ingestion_policy_versions'='1';
   `), '1');
 
   assert.equal(q(`
