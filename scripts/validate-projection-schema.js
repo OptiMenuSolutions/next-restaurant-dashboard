@@ -2,13 +2,16 @@ import test, { before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import {
-  PROJECTION_DEFAULTS,
-  projectionSettingsDigest,
-  projectionCalibrationKey,
-} from '../lib/projections/settings.js';
+import { PROJECTION_DEFAULTS } from '../lib/projections/settings.js';
+
+// This harness loads only the immutable foundation migration, before Step 6.
+const FOUNDATION_DEFAULTS = Object.fromEntries(Object.entries(PROJECTION_DEFAULTS)
+  .filter(([key]) => key !== 'minimum_return_gap_days'));
+const foundationDigest = settings => createHash('sha256').update(JSON.stringify(
+  Object.fromEntries(Object.keys(settings).sort().map(key => [key, settings[key]]))
+)).digest('hex');
 
 // Run explicitly: npx tsx --test scripts/validate-projection-schema.js
 // Disposable local PostgreSQL only. No application environment files are read.
@@ -61,7 +64,7 @@ function archive({
     (id,restaurant_id,run_date,model_major,global_version_id,restaurant_version_id,
      settings_snapshot,settings_digest,calibration_key,source_through,trace)
     select '${id}','${R(1)}','2026-11-19',4,id,${override},settings,
-      '${projectionSettingsDigest(PROJECTION_DEFAULTS)}','${key}','2026-11-18','{}'
+      '${foundationDigest(FOUNDATION_DEFAULTS)}','${key}','2026-11-18','{}'
     from public.projection_setting_versions
     where restaurant_id is null and effective_at <= now()
     order by effective_at desc limit 1;`;
@@ -73,6 +76,10 @@ before(async () => {
     '--detach',
     '--name',
     container,
+    '--read-only',
+    '--tmpfs', '/var/lib/postgresql/data',
+    '--tmpfs', '/var/run/postgresql',
+    '--tmpfs', '/tmp',
     '-e',
     `POSTGRES_PASSWORD=${randomUUID()}`,
     'postgres:17',
@@ -195,7 +202,7 @@ test('seeded settings are disabled, complete and internally valid', () => {
     select settings
     from public.projection_setting_versions
     where restaurant_id is null;
-  `)), PROJECTION_DEFAULTS);
+  `)), FOUNDATION_DEFAULTS);
 
   assert.equal(q(`
     select calibration_key
@@ -754,8 +761,8 @@ function reviewedArchive({
       '${R(1)}','2026-11-20',4,
       '${g.id}',${selected ? `'${selected}'` : 'null'},
       '${JSON.stringify(settings)}',
-      '${projectionSettingsDigest(settings)}',
-      '${projectionCalibrationKey(4, settings)}',
+      '${foundationDigest(settings)}',
+      '4|a=0.5|b=0.5|phi=0.8|vh=4|sh=4',
       '2026-11-19','{}'
     );
   `;
