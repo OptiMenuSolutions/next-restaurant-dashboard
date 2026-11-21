@@ -14,6 +14,7 @@ import { JOBS, JOB_BY_KEY, etTimeOf } from '../../../../lib/admin/jobRun';
 import stripe from '../../../../lib/stripeServer';
 import shift4 from '../../../../lib/pos/providers/shift4';
 import { projectionCalendarScheduleStatus, projectionCalendarConceptStatus } from '../../../../lib/projections/calendarHealth.js';
+import { projectionMenuRepairStatus } from '../../../../lib/projections/lifecycleHealth.js';
 
 const NIGHTS = 14;
 
@@ -79,6 +80,7 @@ export async function services() {
   return Promise.all([
     projectionCalendarScheduleStatus(db),
     projectionCalendarConceptStatus(db),
+    projectionMenuRepairStatus(db),
     timed('Supabase', 'Database, logins and file storage', async () => {
       const { error } = await db.from('restaurants').select('id').limit(1);
       if (error) throw new Error(error.message);

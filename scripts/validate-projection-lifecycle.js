@@ -117,6 +117,35 @@ test('an injected tracking failure saves the menu edit and every queued transiti
   assert.equal(result.repaired,3);assert.equal(result.pending,0);
   assert.equal(q(`select count(*) from public.projection_dish_availability where dish_id='${id(13)}'`),'2');
 });
+test('an initial dish archived before the first data date gets an empty window without a repair',()=>{
+  q(`insert into public.menu_items(id,restaurant_id,created_at) values('${id(14)}','${OTHER}',clock_timestamp()-interval '140 days');
+    update public.menu_items set archived_at=clock_timestamp()-interval '110 days' where id='${id(14)}';`);
+  assert.equal(q(`select valid_from=valid_until and lifecycle_context->>'no_usable_availability'='true'
+    from public.projection_dish_availability where dish_id='${id(14)}'`),'t');
+  assert.equal(q(`select count(*) from public.projection_menu_repairs where menu_item_id='${id(14)}'`),'0');
+});
+test('replay continues past a stuck dish and preserves ordered events, age and attempt counts',async()=>{
+  q(`create function public.fail_review_fixture() returns trigger language plpgsql as $$begin
+      if new.dish_id in ('${id(15)}','${id(16)}') then raise exception 'review window failure';end if;return new;end$$;
+    create trigger review_failure before insert on public.projection_dish_availability for each row execute function public.fail_review_fixture();
+    insert into public.menu_items(id,restaurant_id,created_at) values('${id(15)}','${OTHER}',clock_timestamp()-interval '40 days'),
+      ('${id(16)}','${OTHER}',clock_timestamp()-interval '20 days');
+    update public.menu_items set archived_at=clock_timestamp()-interval '10 days' where id='${id(15)}';
+    update public.projection_menu_repairs set first_failure_at=clock_timestamp()-interval '25 hours' where menu_item_id='${id(15)}';
+    create or replace function public.fail_review_fixture() returns trigger language plpgsql as $$begin
+      if new.dish_id='${id(15)}' then raise exception 'still stuck';end if;return new;end$$;`);
+  const result=JSON.parse(q(`set role service_role;select public.projection_repair_menu('${OTHER}');`));
+  assert.equal(result.repaired,1);assert.equal(result.pending,2);
+  assert.equal(q(`select bool_and(attempt_count=2 and length(error_message)>0 and first_failure_at<clock_timestamp()-interval '24 hours')
+    from public.projection_menu_repairs where menu_item_id='${id(15)}'`),'t');
+  const ctx=context(snapshot(),DAY,OTHER);assert.equal(ctx.menu_repairs.length,2);
+  const partial=await readProjectionLifecycle(db,{restaurantId:OTHER,asOf:DAY,snapshotAt:snapshot()});
+  assert.equal(partial.dishes.find(d=>d.id===id(15)).lifecycle_unavailable,true);
+  assert.equal(partial.dishes.find(d=>d.id===id(16)).lifecycle_unavailable,undefined);
+  q('drop trigger review_failure on public.projection_dish_availability;');
+  const retry=JSON.parse(q(`set role service_role;select public.projection_repair_menu('${OTHER}');`));
+  assert.equal(retry.repaired,2);assert.equal(retry.pending,0);
+});
 test('a missing timezone and a deactivated restaurant never block menu edits',()=>{
   q(`update public.restaurants set operational_timezone=null,deactivated_at=clock_timestamp() where id='${OTHER}';
     update public.menu_items set archived_at=clock_timestamp() where id='${id(11)}';`);
@@ -201,6 +230,58 @@ test('prior mapped POS sales create an inferred existing origin without a new la
   const result=await storeProjectionLaunches(db,inferred);assert.equal(result.origin_corrections,1);
   assert.equal((await storeProjectionLaunches(db,inferred)).retry,true);
   assert.equal(q(`select valid_from='${DAY}'::date-30 and is_initial from public.projection_dish_availability where dish_id='${id(23)}'`),'t');
+});
+test('prior sales return one earliest eligible date per post-onboarding dish',()=>{
+  q(`insert into public.pos_ticket_lines values('${id(42)}','${id(40)}','${REST}','old-button','sale',3,false,('${DAY}'::date-30)+time '15:30'),
+    ('${id(43)}','${id(40)}','${REST}','old-button','sale',40,false,('${DAY}'::date-20)+time '15:00'),
+    ('${id(44)}','${id(40)}','${REST}','old-button','sale',100,false,('${DAY}'::date-5)+time '15:00'),
+    ('${id(45)}','${id(40)}','${REST}','old-button','refund',200,false,('${DAY}'::date-60)+time '15:00');
+    insert into public.pos_ticket_lines(id,ticket_id,restaurant_id,item_ref,line_type,quantity,is_non_sales_revenue,added_at)
+      select gen_random_uuid(),'${id(40)}','${REST}','old-button','sale',1,false,('${DAY}'::date-30)+time '16:00' from generate_series(1,10001);
+    insert into public.projection_pos_item_map(restaurant_id,pos_system,external_item_id,dish_id,valid_from)
+      values('${REST}','shift4','initial-button','${id(20)}','${DAY}'::date-100);
+    insert into public.pos_ticket_lines values('${id(46)}','${id(40)}','${REST}','initial-button','sale',200,false,('${DAY}'::date-60)+time '15:00');`);
+  const rows=context().prior_sales;assert.equal(rows.length,1);assert.equal(rows[0].dish_id,id(23));
+  assert.equal(rows[0].units,10006);assert.equal(rows[0].business_date,q(`select ('${DAY}'::date-30)::text;`));
+});
+test('the scoped clock matches the source clock across an effective cutoff change',()=>{
+  q(`insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings)
+      values('${REST}',4,(('${DAY}'::date+2)::timestamp at time zone 'America/New_York'),'{"business_day_cutoff_minutes":360}');
+    insert into public.menu_items(id,restaurant_id,created_at) values('${id(24)}','${REST}',
+      (('${DAY}'::date+4)+time '12:00') at time zone 'America/New_York');
+    insert into public.projection_pos_item_map(restaurant_id,pos_system,external_item_id,dish_id,valid_from)
+      values('${REST}','shift4','cutoff-button','${id(24)}','${DAY}'::date-100);
+    insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision) values
+      ('${REST}','${DAY}'::date+2,true,2,'cutoff-before'),('${REST}','${DAY}'::date+3,true,2,'cutoff-after');
+    insert into public.pos_ticket_lines values('${id(47)}','${id(40)}','${REST}','cutoff-button','sale',2,false,
+      (('${DAY}'::date+3)+time '05:00') at time zone 'America/New_York');`);
+  const later=q(`select ('${DAY}'::date+5)::text;`);
+  const row=context(`${later}T12:00:00Z`,later).prior_sales.find(r=>r.dish_id===id(24));assert.ok(row);
+  const expected=q(`select projection_private.pos_source_clock('${REST}',null,
+    (('${DAY}'::date+3)+time '05:00') at time zone 'America/New_York')->>'business_date';`);
+  assert.equal(row.business_date,expected);assert.equal(row.business_date,q(`select ('${DAY}'::date+2)::text;`));
+});
+test('scoped sales match both DST transitions and ticket timestamp fallback',()=>{
+  const rid=id(4);
+  q(`update public.restaurants set onboarding_completed_at='2026-01-01T00:00:00Z' where id='${rid}';
+    insert into public.projection_restaurant_config(restaurant_id,first_data_date) values('${rid}','2026-03-01');
+    insert into public.pos_connections values('${id(60)}','${rid}','shift4','connected','America/New_York');
+    insert into public.menu_items(id,restaurant_id,created_at) values('${id(50)}','${rid}','2026-11-10T12:00:00Z'),
+      ('${id(51)}','${rid}','2026-11-10T12:00:00Z');
+    insert into public.projection_pos_item_map(restaurant_id,pos_system,external_item_id,dish_id,valid_from) values
+      ('${rid}','shift4','spring','${id(50)}','2026-03-01'),('${rid}','shift4','fall','${id(51)}','2026-03-01');
+    insert into public.projection_nightly_flags(restaurant_id,business_date,complete,total_units,source_revision) values
+      ('${rid}','2026-03-07',true,2,'spring'),('${rid}','2026-10-31',true,2,'fall');
+    insert into public.pos_tickets values('${id(70)}','${rid}','shift4','closed','2026-03-08T06:00:00Z','2026-03-08T06:30:00Z'),
+      ('${id(71)}','${rid}','shift4','closed','2026-11-01T05:00:00Z','2026-11-01T07:00:00Z');
+    insert into public.pos_ticket_lines values('${id(72)}','${id(70)}','${rid}','spring','sale',1,false,null),
+      ('${id(73)}','${id(70)}','${rid}','spring','sale',1,false,'2026-03-08T07:30:00Z'),
+      ('${id(74)}','${id(71)}','${rid}','fall','sale',1,false,'2026-11-01T05:30:00Z'),
+      ('${id(75)}','${id(71)}','${rid}','fall','sale',1,false,'2026-11-01T06:30:00Z');`);
+  const rows=context(snapshot(),DAY,rid).prior_sales;assert.equal(rows.length,2);
+  assert.equal(rows.find(r=>r.dish_id===id(50)).business_date,'2026-03-07');
+  assert.equal(rows.find(r=>r.dish_id===id(51)).business_date,'2026-10-31');
+  rows.forEach(r=>assert.equal(r.units,2));
 });
 test('POS mapping changes retain the projection dish and its launch versions',()=>{
   q(`insert into public.projection_pos_item_map(restaurant_id,pos_system,external_item_id,dish_id,valid_from)

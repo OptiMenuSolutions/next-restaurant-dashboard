@@ -7,8 +7,9 @@ Model major 4 and the five-key v4 calibration identity are unchanged.
 `minimum_return_gap_days` is a positive safe integer, approved at 28 days.
 The migration appends a complete global settings version containing this key.
 It does not rewrite old settings versions or the registered model template.
-SQL continues to validate historical versions against their original shape;
-Step 6 runtime resolution requires an effective complete extended version.
+SQL and the general JavaScript settings validator retain the original shape of
+older versions. Steps 4 and 5 can resolve those versions without adding this key.
+Step 6 alone requires an effective version that explicitly contains it.
 Do not substitute today's setting into a historical settings snapshot.
 
 ## Initial menu and identity
@@ -43,8 +44,9 @@ are unchanged. Owner estimates remain disabled.
 
 The first four weeks mean launch through launch+27 inclusive. All open nights
 must be complete and POS-covered, and the window must end before as_of.
-Removal inside it skips learning. Shared eligibility plus dish recommendation
-and sold-out flags selects clean nights; null flags remain clean but disclosed.
+An episode ending inside it skips learning. Short gaps within an episode exclude
+off-menu nights as unavailable and learning continues from its available nights.
+Shared eligibility plus dish recommendation and sold-out flags selects clean nights; null flags remain clean but disclosed.
 The unweighted dish/category unit ratio times (existing non-new dishes+1) is
 stored without clamping. Simultaneous launches are not existing dishes.
 
@@ -58,14 +60,26 @@ a snapshot timestamp does not reconstruct past mutable POS/fact rows.
 ## Tracking, repairs and later orchestration
 
 The nonblocking menu trigger preserves primary menu edits and queues failed
-transitions. Repair replay is explicit and tenant-scoped. Business-clock fallback
-is audited for tracking; normal context reads still require a valid operational
+transitions. Repair replay is explicit and tenant-scoped. It continues past a
+failure while preserving order within each dish. Pending repairs quarantine only
+their dishes and categories; other categories continue. Original failure times
+and attempt counts, error codes and error messages are retained. The existing
+service monitor alerts on repairs older than 24 hours using its existing consecutive-check and recovery flow.
+Business-clock fallback is audited for tracking; normal context reads still require a valid operational
 timezone. The migration backfills known menus and extends account purge.
 New dish identities start forecastable=false with no invented category.
 
 Step 10 must replay repairs, re-ingest nights affected by mappings or corrected
-availability, then reload lifecycle context before producing shares. An inferred
-origin correction defers launch learning until that re-ingestion. Callers pass
-plan.dishes, plan.availability and plan.launch_history to Step 5. Nightly
+availability, then reload lifecycle context before producing shares. Missing or
+stale facts and reconciliation differences put each affected launch in pending
+with facts_require_reingestion and its dates; they do not throw away the run.
+Callers pass plan.dishes, plan.availability and plan.launch_history to Step 5. Nightly
 scheduling, setup/category classification, waste risk and recommendations are
 outside Step 6. No financial or inventory formulas change.
+
+Prior-sales inference returns one aggregated earliest eligible sale date per
+post-onboarding dish, before its added business date. Effective clock segments
+reuse Step 2's boundary function, including settings transitions and DST, without
+calling the clock for every POS line. Category totals retain measured facts while
+a repair is pending; unreconciled nights are excluded from share evidence rather
+than filled with invented units. Other share formulas and golden tests stay unchanged.

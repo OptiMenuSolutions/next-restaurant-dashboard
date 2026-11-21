@@ -64,9 +64,11 @@ create table public.projection_menu_events(
 create table public.projection_menu_repairs(
   id uuid primary key, restaurant_id uuid not null references public.restaurants(id) on delete cascade,
   menu_item_id uuid not null, observed_at timestamptz not null, operation text not null,
-  source_row jsonb not null, error_code text not null, last_failure_at timestamptz not null default clock_timestamp()
+  source_row jsonb not null, error_code text not null, error_message text not null default '', last_failure_at timestamptz not null default clock_timestamp(),
+  first_failure_at timestamptz not null default clock_timestamp(), attempt_count integer not null default 1 check(attempt_count>=1)
 );
 create index projection_menu_repair_order on public.projection_menu_repairs(restaurant_id,observed_at,id);
+create index projection_menu_repair_age on public.projection_menu_repairs(first_failure_at);
 create index projection_menu_events_item on public.projection_menu_events(restaurant_id,menu_item_id,observed_at);
 alter table public.projection_menu_events enable row level security;
 alter table public.projection_menu_repairs enable row level security;
@@ -116,7 +118,16 @@ begin
     insert into public.projection_dish_availability(restaurant_id,dish_id,valid_from,valid_until,is_initial,lifecycle_context)
       values(e.restaurant_id,d.id,start_day,end_day,initial_menu,event_timing||jsonb_build_object('operation',e.operation,'event_id',e.id));
   elsif e.operation='archive' then
-    if w.valid_from is not null and day<w.valid_from then raise exception 'Archive precedes availability'; end if;
+    if w.valid_from is not null and day<w.valid_from then
+      if not ((w.is_initial or initial_menu) and (select count(*) from public.projection_dish_availability
+        where restaurant_id=e.restaurant_id and dish_id=d.id)=1) then raise exception 'Archive precedes availability'; end if;
+      delete from public.projection_dish_availability where id=w.id;
+      insert into public.projection_dish_availability(id,restaurant_id,dish_id,valid_from,valid_until,is_initial,lifecycle_context)
+        values(w.id,w.restaurant_id,w.dish_id,day,day,true,w.lifecycle_context||event_timing||
+          jsonb_build_object('event_id',e.id,'no_usable_availability',true));
+      update public.projection_menu_events set timing=event_timing,applied=true where id=e.id;
+      return;
+    end if;
     update public.projection_dish_availability set valid_until=day,lifecycle_context=w.lifecycle_context||event_timing||jsonb_build_object('event_id',e.id)
       where id=w.id;
   elsif e.operation='unarchive' and w.valid_until is not null then
@@ -146,8 +157,8 @@ begin
   exception when others then
     failure:=sqlstate;
     begin
-      insert into public.projection_menu_repairs(id,restaurant_id,menu_item_id,observed_at,operation,source_row,error_code)
-        values(event_id,new.restaurant_id,new.id,moment,operation,payload,failure);
+      insert into public.projection_menu_repairs(id,restaurant_id,menu_item_id,observed_at,operation,source_row,error_code,error_message)
+        values(event_id,new.restaurant_id,new.id,moment,operation,payload,failure,sqlerrm);
     exception when others then raise warning 'Projection menu repair could not be recorded (%)',sqlstate; end;
     raise warning 'Projection menu event deferred (%)',failure;
   end;
@@ -160,6 +171,12 @@ declare r public.projection_menu_repairs; fixed integer:=0;
 begin
   perform pg_advisory_xact_lock(hashtextextended('optimenu:projection-ingest:'||p_restaurant_id::text,0));
   for r in select * from public.projection_menu_repairs where restaurant_id=p_restaurant_id order by observed_at,id for update loop
+    if exists(select 1 from public.projection_menu_repairs earlier where earlier.restaurant_id=p_restaurant_id
+      and earlier.menu_item_id=r.menu_item_id and (earlier.observed_at,earlier.id)<(r.observed_at,r.id)) then
+      update public.projection_menu_repairs set error_code='PROJECTION_MENU_REPAIR_DEPENDENCY',
+        error_message='Earlier menu event remains pending',last_failure_at=clock_timestamp(),attempt_count=attempt_count+1 where id=r.id;
+      continue;
+    end if;
     begin
       insert into public.projection_menu_events values(r.id,r.restaurant_id,r.menu_item_id,r.observed_at,r.operation,r.source_row,'{}',false)
         on conflict(id) do nothing;
@@ -167,8 +184,8 @@ begin
       delete from public.projection_menu_repairs where id=r.id;
       fixed:=fixed+1;
     exception when others then
-      update public.projection_menu_repairs set error_code=sqlstate,last_failure_at=clock_timestamp() where id=r.id;
-      exit;
+      update public.projection_menu_repairs set error_code=sqlstate,error_message=sqlerrm,last_failure_at=clock_timestamp(),attempt_count=attempt_count+1 where id=r.id;
+      continue;
     end;
   end loop;
   return jsonb_build_object('repaired',fixed,'pending',(select count(*) from public.projection_menu_repairs where restaurant_id=p_restaurant_id));
@@ -198,13 +215,60 @@ begin
       insert into public.projection_menu_events values(e,r.restaurant_id,r.id,r.created_at,'backfill',payload,'{}',false);
       perform projection_private.apply_menu_event(e);
     exception when others then
-      insert into public.projection_menu_repairs(id,restaurant_id,menu_item_id,observed_at,operation,source_row,error_code)
-        values(e,r.restaurant_id,r.id,r.created_at,'backfill',payload,sqlstate);
+      insert into public.projection_menu_repairs(id,restaurant_id,menu_item_id,observed_at,operation,source_row,error_code,error_message)
+        values(e,r.restaurant_id,r.id,r.created_at,'backfill',payload,sqlstate,sqlerrm);
     end;
   end loop;
 end $b$;
 create trigger projection_menu_lifecycle after insert or update of archived_at on public.menu_items
   for each row execute function projection_private.capture_menu_event();
+
+-- Evaluate clock settings once per effective segment, never once per ticket line.
+create function projection_private.lifecycle_prior_sales(p_restaurant_id uuid,p_as_of date,p_snapshot_at timestamptz)
+returns jsonb language sql stable set search_path='' set timezone='UTC' as $f$
+  with eligible as materialized (
+    select n.business_date from public.projection_nightly_flags n
+    left join public.projection_restaurant_config c on c.restaurant_id=n.restaurant_id
+    where n.restaurant_id=p_restaurant_id and n.business_date<p_as_of
+      and (c.first_data_date is null or n.business_date>=c.first_data_date)
+      and n.complete and not n.closed and not n.early_close and cardinality(n.holiday_keys)=0
+      and n.outlier_status in ('unchecked','normal','kept','confirmed_shift')
+      and exists(select 1 from public.projection_pos_source_windows w where w.restaurant_id=p_restaurant_id
+        and (w.valid_from is null or w.valid_from<=n.business_date) and (w.valid_until is null or n.business_date<w.valid_until))
+  ), bounds as (
+    select (min(business_date)::timestamp at time zone 'UTC')-interval '2 days' lower_at from eligible
+  ), changes as (
+    select lower_at change_at from bounds where lower_at is not null
+    union select released_at from public.projection_model_versions,bounds where released_at>lower_at and released_at<=p_snapshot_at
+    union select effective_at from public.projection_setting_versions,bounds
+      where (restaurant_id is null or restaurant_id=p_restaurant_id) and effective_at>lower_at and effective_at<=p_snapshot_at
+  ), segments as materialized (
+    select change_at,lead(change_at,1,p_snapshot_at) over(order by change_at) until_at,
+      projection_private.pos_source_clock(p_restaurant_id,null,change_at) timing from changes
+  ), windows as materialized (
+    select e.business_date,greatest(s.change_at,projection_private.business_boundary(e.business_date,s.timing->>'timezone',(s.timing->>'cutoff_minutes')::integer)) start_at,
+      least(s.until_at,projection_private.business_boundary(e.business_date+1,s.timing->>'timezone',(s.timing->>'cutoff_minutes')::integer)) end_at
+    from eligible e cross join segments s
+  ), additions as materialized (
+    select d.id,(projection_private.pos_source_clock(p_restaurant_id,null,m.created_at)->>'business_date')::date added_date
+    from public.projection_dishes d join public.menu_items m on m.id=d.menu_item_id and m.restaurant_id=d.restaurant_id
+    join public.restaurants r on r.id=d.restaurant_id
+    where d.restaurant_id=p_restaurant_id and r.onboarding_completed_at is not null
+      and m.created_at>r.onboarding_completed_at and m.created_at<=p_snapshot_at
+  ), first_sales as (
+    select distinct on(d.id) d.id,w.business_date,sum(l.quantity) units,min(m.external_item_id) external_item_id
+    from additions d join public.projection_pos_item_map m on m.restaurant_id=p_restaurant_id and m.dish_id=d.id
+    join public.pos_ticket_lines l on l.restaurant_id=p_restaurant_id and l.item_ref=m.external_item_id
+    join public.pos_tickets t on t.id=l.ticket_id and t.restaurant_id=p_restaurant_id and t.pos_system=m.pos_system
+    join windows w on w.business_date<d.added_date and w.start_at<w.end_at
+      and coalesce(l.added_at,t.closed_at,t.opened_at)>=w.start_at and coalesce(l.added_at,t.closed_at,t.opened_at)<w.end_at
+      and m.valid_from<=w.business_date and (m.valid_until is null or w.business_date<m.valid_until)
+    where l.quantity>0 and coalesce(l.line_type,'sale') in ('sale','comp')
+      and coalesce(t.ticket_type,'closed')<>'void' and not coalesce(l.is_non_sales_revenue,false)
+    group by d.id,w.business_date order by d.id,w.business_date
+  ) select coalesce(jsonb_agg(jsonb_build_object('restaurant_id',p_restaurant_id,'dish_id',id,
+    'business_date',business_date,'units',units,'external_item_id',external_item_id) order by id),'[]') from first_sales;
+$f$;
 
 create function projection_private.lifecycle_context(p_restaurant_id uuid,p_as_of date,p_snapshot_at timestamptz)
 returns jsonb language plpgsql stable set search_path='' set timezone='UTC' as $f$
@@ -215,7 +279,6 @@ begin
   if p_as_of is null or p_snapshot_at is null then raise exception 'Explicit date and snapshot time are required'; end if;
   if r.operational_timezone is null or not exists(select 1 from pg_timezone_names where name=r.operational_timezone) then
     raise exception 'Configure a valid operational timezone'; end if;
-  if exists(select 1 from public.projection_menu_repairs where restaurant_id=p_restaurant_id) then raise exception 'Menu availability repairs are pending'; end if;
   select * into strict model from public.projection_model_versions where model_major=4;
   select * into strict g from public.projection_setting_versions where restaurant_id is null and model_major=4
     and effective_at<=p_snapshot_at order by effective_at desc limit 1;
@@ -227,12 +290,16 @@ begin
   select first_data_date into first_day from public.projection_restaurant_config where restaurant_id=p_restaurant_id;
   result:=jsonb_build_object('restaurant_id',p_restaurant_id,'as_of',p_as_of,'snapshot_at',p_snapshot_at,
     'restaurant',jsonb_build_object('id',r.id,'onboarding_completed_at',r.onboarding_completed_at,'first_data_date',first_day),
+    'menu_repairs',coalesce((select jsonb_agg(to_jsonb(repair)||jsonb_build_object('dish_id',coalesce(d.id,repair.menu_item_id)) order by repair.observed_at,repair.id)
+      from public.projection_menu_repairs repair left join public.projection_dishes d on d.restaurant_id=repair.restaurant_id and d.menu_item_id=repair.menu_item_id
+      where repair.restaurant_id=p_restaurant_id),'[]'),
     'global_version',jsonb_build_object('id',g.id,'restaurant_id',null,'model_major',g.model_major,'effective_at',g.effective_at,'settings',g.settings),
     'restaurant_version',case when o.id is null then null else jsonb_build_object('id',o.id,'restaurant_id',o.restaurant_id,'model_major',o.model_major,'effective_at',o.effective_at,'settings',o.settings) end,
-    'dishes',coalesce((select jsonb_agg(to_jsonb(d)||jsonb_build_object('menu_created_at',m.created_at,'added_business_date',
-      (projection_private.pos_source_clock(p_restaurant_id,null,m.created_at)->>'business_date')::date) order by d.id)
-      from public.projection_dishes d join public.menu_items m on m.id=d.menu_item_id and m.restaurant_id=d.restaurant_id
-      where d.restaurant_id=p_restaurant_id and m.created_at<=p_snapshot_at),'[]'),
+    'dishes',coalesce((select jsonb_agg(coalesce(to_jsonb(d),jsonb_build_object('id',m.id,'restaurant_id',m.restaurant_id,
+      'menu_item_id',m.id,'forecastable',false,'style_category',null))||jsonb_build_object('menu_created_at',m.created_at,'added_business_date',
+      (projection_private.pos_source_clock(p_restaurant_id,null,m.created_at)->>'business_date')::date) order by m.id)
+      from public.menu_items m left join public.projection_dishes d on m.id=d.menu_item_id and m.restaurant_id=d.restaurant_id
+      where m.restaurant_id=p_restaurant_id and m.created_at<=p_snapshot_at),'[]'),
     'availability',coalesce((select jsonb_agg(to_jsonb(a) order by a.id) from public.projection_dish_availability a
       join public.projection_dishes d on d.id=a.dish_id and d.restaurant_id=a.restaurant_id
       join public.menu_items m on m.id=d.menu_item_id and m.restaurant_id=d.restaurant_id
@@ -244,17 +311,7 @@ begin
     'dish_facts',coalesce((select jsonb_agg(to_jsonb(f) order by f.business_date,f.dish_id) from public.projection_nightly_dish_facts f
       where f.restaurant_id=p_restaurant_id and f.business_date<p_as_of),'[]'),
     'launch_history',coalesce((select jsonb_agg(to_jsonb(h) order by h.id) from public.projection_launch_history h where h.restaurant_id=p_restaurant_id),'[]'),
-    'prior_sales',coalesce((select jsonb_agg(v order by v->>'business_date',v->>'dish_id') from (
-      select distinct jsonb_build_object('restaurant_id',p_restaurant_id,'dish_id',m.dish_id,'business_date',h.business_date,
-        'units',l.quantity,'external_item_id',m.external_item_id) v
-      from public.projection_pos_item_map m join public.pos_tickets t on t.restaurant_id=m.restaurant_id and t.pos_system=m.pos_system
-      join public.pos_ticket_lines l on l.ticket_id=t.id and l.restaurant_id=m.restaurant_id and l.item_ref=m.external_item_id
-      cross join lateral(select (projection_private.pos_source_clock(p_restaurant_id,null,coalesce(l.added_at,t.closed_at,t.opened_at))->>'business_date')::date business_date) h
-      where m.restaurant_id=p_restaurant_id and m.dish_id is not null and l.quantity>0
-        and coalesce(l.line_type,'sale') in ('sale','comp') and coalesce(t.ticket_type,'closed')<>'void'
-        and not coalesce(l.is_non_sales_revenue,false) and h.business_date<p_as_of
-        and m.valid_from<=h.business_date and (m.valid_until is null or h.business_date<m.valid_until)
-    ) values_read),'[]'));
+    'prior_sales',projection_private.lifecycle_prior_sales(p_restaurant_id,p_as_of,p_snapshot_at));
   return result||jsonb_build_object('context_digest',encode(sha256(convert_to((result-'launch_history')::text,'UTF8')),'hex'));
 end $f$;
 create function public.projection_lifecycle_context(p_restaurant_id uuid,p_as_of date,p_snapshot_at timestamptz)
@@ -330,7 +387,8 @@ begin
   execute definition;
 end $b$;
 revoke all on function projection_private.apply_menu_event(uuid),projection_private.capture_menu_event(),
-  projection_private.guard_lifecycle_category(),projection_private.lifecycle_context(uuid,date,timestamptz)
+  projection_private.guard_lifecycle_category(),projection_private.lifecycle_prior_sales(uuid,date,timestamptz),
+  projection_private.lifecycle_context(uuid,date,timestamptz)
   from public,anon,authenticated,service_role;
 revoke all on function public.projection_repair_menu(uuid),public.projection_lifecycle_context(uuid,date,timestamptz),
   public.projection_store_launches(uuid,date,timestamptz,text,jsonb) from public,anon,authenticated;
