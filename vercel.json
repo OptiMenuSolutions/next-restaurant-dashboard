@@ -9,6 +9,18 @@
     "pages/api/ai-recommendations.js": {
       "maxDuration": 60
     },
+    "pages/api/queues/projection-nightly.js": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "projection-nightly",
+          "retryAfterSeconds": 600,
+          "maxDeliveries": 5,
+          "maxConcurrency": 3
+        }
+      ]
+    },
     "pages/api/queues/invoice-delivery-calculations.js": {
       "maxDuration": 300,
       "experimentalTriggers": [
@@ -23,6 +35,10 @@
     }
   },
   "crons": [
+    {
+      "path": "/api/cron/run-projections",
+      "schedule": "*/15 * * * *"
+    },
     {
       "path": "/api/cron/generate-recommendations",
       "schedule": "0 11 * * *"
