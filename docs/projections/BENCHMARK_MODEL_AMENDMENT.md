@@ -1,9 +1,13 @@
 Step 11 adds benchmark inputs to model major 4 without changing its
 calibration key, base formulas, holiday priors, ranges or eligibility.
 
-Seasonal source order is usable own LY, permitted pooled ratio without
-damping, public proxy with versioned damping, then explicit neutral or
-recent-only fallback. Apply the seasonal bounds after source selection.
+Seasonal source order is usable own LY, strictly positive permitted pooled
+ratio without damping, then a usable public proxy with versioned damping.
+Before any benchmark is published, volume retains the neutral 1.0 placeholder.
+After publication, an unavailable volume ratio uses R alone and records the
+reason. Categories retain their neutral 1.0 fallback. Census applies at every
+forecastable history tier; there is no separate eight-week benchmark minimum.
+Apply the seasonal bounds after source selection.
 Launch order remains returning season, own launch mean, pooled contributor
 mean, then default. There is no pooled holiday prior.
 
@@ -52,8 +56,15 @@ Historical snapshots cannot read future vintages or approvals.
 Counterfactuals rebuild their run-free R baseline with the original
 day-of archive's public vintage and aggregate pool inputs.
 
-Keep previously applied migrations frozen. Review and apply the new
-Step 11 migration separately. Add FRED_API_KEY to server environments,
-redeploy, build a candidate, review all eight weeks and approve the first
-version. This does not enable restaurant projections or pooling, and
-does not connect projections to waste risk or recommendation selection.
+Keep previously applied migrations frozen. Review and apply the pending
+Step 11 migration separately. Add FRED_API_KEY to server environments and
+redeploy. The first candidate needs at least one completed backfill:
+
+1. Enable projections for one restaurant using the Step 10 rollout control.
+2. Let that restaurant's initial history backfill finish.
+3. Build the candidate at /admin/projections/benchmarks.
+4. Review the eight-week preview, including unavailable restaurants.
+5. Approve the first benchmark version.
+
+Pooling remains separately controlled and off by default. This does not
+connect projections to waste risk or recommendation selection.

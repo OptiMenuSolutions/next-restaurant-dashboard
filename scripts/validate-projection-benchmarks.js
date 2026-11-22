@@ -265,7 +265,7 @@ test('new settings version leaves the old calibration identity intact', () => {
     select jsonb_agg(settings order by effective_at desc)
     from public.projection_setting_versions where restaurant_id is null;
   `));
-  assert.equal(versions[0].minimum_benchmark_history_weeks, 8);
+  assert.equal(Object.hasOwn(versions[0], 'minimum_benchmark_history_weeks'), false);
   assert.equal(versions[0].minimum_trends_terms, 2);
   assert.equal(
     versions[1].volume_recent_weight,

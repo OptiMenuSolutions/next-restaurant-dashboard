@@ -19,18 +19,8 @@ create or replace function projection_private.check_settings(
 ) returns boolean
 language sql immutable set search_path='' as $f$
   select projection_private.check_settings_before_benchmarks(
-    p-'minimum_benchmark_history_weeks'-'minimum_trends_terms',
+    p-'minimum_trends_terms',
     partial
-  )
-  and (
-    not p?'minimum_benchmark_history_weeks'
-    or coalesce(
-      jsonb_typeof(p->'minimum_benchmark_history_weeks')='number'
-      and (p->>'minimum_benchmark_history_weeks')::numeric between 8 and 520
-      and trunc((p->>'minimum_benchmark_history_weeks')::numeric)
-        =(p->>'minimum_benchmark_history_weeks')::numeric,
-      false
-    )
   )
   and (
     not p?'minimum_trends_terms'
@@ -48,7 +38,7 @@ insert into public.projection_setting_versions(
   restaurant_id,model_major,effective_at,settings
 )
 select null,4,greatest(clock_timestamp(),effective_at+interval '1 microsecond'),
-  settings||'{"minimum_benchmark_history_weeks":8,"minimum_trends_terms":2}'
+  settings||'{"minimum_trends_terms":2}'
 from public.projection_setting_versions
 where restaurant_id is null and model_major=4
 order by effective_at desc limit 1;
@@ -520,9 +510,7 @@ begin
     rid,day,at_time
   )-'context_digest';
 
-  if r#>'{timing,settings}'?'minimum_benchmark_history_weeks'
-    and r#>'{timing,settings}'?'minimum_trends_terms'
-  then
+  if r#>'{timing,settings}'?'minimum_trends_terms' then
     r:=r||jsonb_build_object(
       'benchmarks',projection_private.benchmark_context(rid,day,at_time)
     );

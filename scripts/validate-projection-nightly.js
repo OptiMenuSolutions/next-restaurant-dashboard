@@ -208,6 +208,7 @@ before(async () => {
   for (const suffix of [
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
+    'benchmarks',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);
@@ -264,7 +265,7 @@ after(() => {
 test('new settings append a global version; old versions and calibration keys remain valid', () => {
   assert.equal(q(`
     select count(*) from public.projection_setting_versions where restaurant_id is null;
-  `), '3');
+  `), '4');
 
   assert.equal(q(`
     select bool_and(projection_private.check_settings(settings,restaurant_id is not null))

@@ -141,7 +141,7 @@ export default function Benchmarks() {
                               .filter(day => day.reason !== 'closed_weekday')
                               .every(day => day.applies)
                               ? 'Yes'
-                              : 'Waiting for 8 weeks'}
+                              : 'Needs baseline'}
                           </td>
                         </tr>
                       ))}

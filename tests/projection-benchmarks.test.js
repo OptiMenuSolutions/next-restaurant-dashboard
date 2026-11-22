@@ -263,14 +263,13 @@ test('dictionary or filter changes invalidate a pinned pull', () => {
 
 test('new settings are versioned, bounded, and optional in historical versions', () => {
   const old = { ...PROJECTION_DEFAULTS };
-  delete old.minimum_benchmark_history_weeks;
   delete old.minimum_trends_terms;
   assert.equal(validateProjectionSettings(old).minimum_trends_terms, undefined);
   assert.throws(() => validateProjectionSettings({
     ...PROJECTION_DEFAULTS, minimum_trends_terms: 1,
   }));
   assert.throws(() => validateProjectionSettings({
-    ...PROJECTION_DEFAULTS, minimum_benchmark_history_weeks: 7,
+    ...PROJECTION_DEFAULTS, minimum_trends_terms: 5,
   }));
 });
 
@@ -443,7 +442,7 @@ function integrationInput(overrides = {}) {
   };
 }
 
-function integrationSnapshot(input, contextExtra = {}) {
+function integrationSnapshot(input, contextExtra = {}, amendContext = () => {}) {
   const volume = projectRestaurantVolume(input);
   const shares = projectDishShares({ ...input, volume });
   const sales = Array.from({ length: 10 }, (_, i) => {
@@ -473,6 +472,7 @@ function integrationSnapshot(input, contextExtra = {}) {
     },
     ...contextExtra,
   };
+  amendContext(context);
   return buildBenchmarkSnapshot({
     context, volume, shares,
     settings: input.resolvedSettings.settings,
@@ -504,52 +504,142 @@ test('Census snapshot is reused by volume and share verification and changes A, 
 });
 
 test('pooling wins over Census and takes full strength in volume and category allocation', () => {
-  const input = integrationInput({ pooled_benchmarks_enabled: true });
-  const pooled = Array.from({ length: 8 }, (_, i) => [
-    {
-      target_date: shift(input.asOf, i), metric: 'volume',
-      ratio: 1.2, contributors: 5, cohort_level: 'state',
-    },
-    {
-      target_date: shift(input.asOf, i), metric: 'category:Comfort/Heavy',
-      ratio: 1.3, contributors: 5, cohort_level: 'national',
-    },
-  ]).flat();
-  const volume = projectRestaurantVolume({
-    ...input,
-    benchmarkSnapshot: integrationSnapshot(input, { pooled }),
-  });
-  assert.equal(volume.nights[0].seasonal.S, 1.2);
-  const shares = projectDishShares({ ...input, volume });
-  assert.equal(
-    shares.nights[0].categories.find(
-      category => category.style_category === 'Comfort/Heavy'
-    ).capped_ratio,
-    1.3
-  );
+  for (const days of [21, 70]) {
+    const input = withHistoryDays(integrationInput({ pooled_benchmarks_enabled: true }), days);
+    const pooled = Array.from({ length: 8 }, (_, i) => [
+      {
+        target_date: shift(input.asOf, i), metric: 'volume',
+        ratio: 1.2, contributors: 5, cohort_level: 'state',
+      },
+      {
+        target_date: shift(input.asOf, i), metric: 'category:Comfort/Heavy',
+        ratio: 1.3, contributors: 5, cohort_level: 'national',
+      },
+    ]).flat();
+    const volume = projectRestaurantVolume({
+      ...input,
+      benchmarkSnapshot: integrationSnapshot(input, { pooled }),
+    });
+    assert.equal(volume.nights[0].seasonal.S, 1.2);
+    const shares = projectDishShares({ ...input, volume });
+    assert.equal(
+      shares.nights[0].categories.find(
+        category => category.style_category === 'Comfort/Heavy'
+      ).capped_ratio,
+      1.3
+    );
+  }
 });
 
-test('missing approval and short own history remain neutral and never enable candidate values', () => {
-  const input = integrationInput();
-  const absent = integrationSnapshot(input, {
-    release: null, status: 'awaiting_first_approval',
-  });
-  assert.equal(absent.values[0].census.ratio, null);
-  assert.equal(projectRestaurantVolume({
-    ...input, benchmarkSnapshot: absent,
-  }).nights[0].seasonal.S, 1);
-
-  const short = {
+function withHistoryDays(input, days) {
+  return {
     ...input,
-    history: input.history.slice(-35),
+    history: input.history.slice(-days),
     dishFacts: input.dishFacts.filter(
-      fact => fact.business_date >= shift(input.asOf, -35)
+      fact => fact.business_date >= shift(input.asOf, -days)
     ),
   };
-  assert.equal(
-    integrationSnapshot(short).values[0].census.reason,
-    'below_eight_week_minimum'
-  );
+}
+
+function growingInput() {
+  const input = integrationInput();
+  input.history = input.history.map((night, i) => ({
+    ...night,
+    total_units: 100 + 2 * i,
+  }));
+  const units = new Map(input.history.map(n => [n.business_date, n.total_units]));
+  input.dishFacts = input.dishFacts.map(fact => ({
+    ...fact,
+    units: fact.units * units.get(fact.business_date) / 100,
+  }));
+  return input;
+}
+
+test('before first approval, volume retains the neutral 1.0 blend', () => {
+  const input = growingInput();
+  const snapshot = integrationSnapshot(input, {
+    release: null,
+    status: 'awaiting_first_approval',
+  });
+  const night = projectRestaurantVolume({
+    ...input, benchmarkSnapshot: snapshot,
+  }).nights[0];
+  assert.equal(snapshot.values[0].census.reason, 'no_approved_version');
+  assert.equal(night.seasonal.source, 'neutral_benchmark');
+  assert.equal(night.seasonal.S, 1);
+  assert.ok(night.recent.R > night.recent.L);
+  const weight = input.resolvedSettings.settings.volume_recent_weight;
+  near(night.base_volume, weight * night.recent.R + (1 - weight) * night.recent.L);
+});
+
+test('published Census applies below eight weeks without bypassing the existing baseline minimum', () => {
+  for (const days of [21, 35, 55, 56]) {
+    const input = withHistoryDays(integrationInput(), days);
+    const snapshot = integrationSnapshot(input);
+    const night = projectRestaurantVolume({
+      ...input, benchmarkSnapshot: snapshot,
+    }).nights[0];
+    assert.equal(night.status, 'ok');
+    assert.equal(night.seasonal.source, 'public_proxy');
+    assert.ok(snapshot.values[0].census.ratio > 0);
+    near(night.seasonal.S, Math.max(0.75, Math.min(1.33,
+      1 + input.resolvedSettings.settings.census_strength *
+        (snapshot.values[0].census.ratio - 1))));
+  }
+  const input = withHistoryDays(integrationInput(), 7);
+  const night = projectRestaurantVolume({
+    ...input, benchmarkSnapshot: integrationSnapshot(input),
+  }).nights[0];
+  assert.equal(night.status, 'needs_baseline');
+  assert.equal(night.base_volume, null);
+});
+
+test('unavailable Census after approval uses R alone and preserves the reason while categories stay neutral', () => {
+  const cases = [
+    {
+      reason: 'missing_or_nonpositive_week',
+      amend(context) {
+        context.release.census.cpi = context.release.census.cpi.filter(
+          row => row.date !== '2025-02-01'
+        );
+      },
+    },
+    {
+      reason: 'missing_or_nonpositive_week',
+      amend(context) {
+        context.release.census.cpi.find(row => row.date === '2025-02-01').value = null;
+      },
+    },
+    {
+      reason: 'invalid_census_observations',
+      amend(context) {
+        context.release.census.cpi.find(row => row.date === '2025-02-01').value = 0;
+      },
+    },
+    {
+      reason: 'weekday_levels_unavailable',
+      amend(context) {
+        context.closed_weekdays = [1, 2, 3, 4, 5, 6, 7];
+      },
+    },
+  ];
+  for (const example of cases) {
+    const input = growingInput();
+    const snapshot = integrationSnapshot(input, {}, example.amend);
+    const volume = projectRestaurantVolume({ ...input, benchmarkSnapshot: snapshot });
+    const night = volume.nights[0];
+    assert.ok(night.recent.R > night.recent.L);
+    assert.equal(night.seasonal.source, 'recent_only');
+    assert.equal(night.seasonal.benchmark.reason, example.reason);
+    assert.equal(night.seasonal.available, false);
+    assert.equal(night.seasonal.S, null);
+    assert.equal(night.seasonal.A, null);
+    assert.equal(night.blend.recent, 1);
+    assert.equal(night.blend.seasonal, 0);
+    near(night.base_volume, night.recent.R);
+    const shares = projectDishShares({ ...input, volume });
+    assert.ok(shares.nights[0].categories.every(category => category.capped_ratio === 1));
+  }
 });
 
 test('a mismatched R baseline is rejected even when the benchmark envelope digest is valid', () => {
@@ -733,4 +823,19 @@ test('zero observed category demand is usable pooled evidence; it is not a missi
     rows.find(row => row.metric === 'category:Comfort/Heavy').ratio,
     0
   );
+});
+
+test('only strictly positive pooled ratios qualify for seasonal selection', () => {
+  for (const ratio of [0, -1, NaN, Infinity]) {
+    const input = {
+      own: null, pooled: { ratio }, proxy: { ratio: 1.2 },
+      publicEnabled: true, strength: 0.5, min: 0.75, max: 1.33,
+    };
+    const selected = selectBenchmarkSource(input);
+    assert.equal(selected.source, 'public_proxy');
+    near(selected.S, 1.1);
+    assert.equal(selectBenchmarkSource({
+      ...input, proxy: { ratio: null, reason: 'missing_or_nonpositive_week' },
+    }).S, null);
+  }
 });
