@@ -83,3 +83,45 @@ Only after each remaining SQL file actually succeeds:
 
     npx supabase migration repair --remote="$OPTIMENU_PRODUCTION_DATABASE_URL" --status applied --yes 20261121171724
     npx supabase migration repair --remote="$OPTIMENU_PRODUCTION_DATABASE_URL" --status applied --yes 20261122152757
+
+
+## Step 10 review corrections
+
+Apply 20261122184115_projection_nightly_review.sql after 20261122152757.
+Do not rerun an already-applied migration. Both are required before rollout.
+
+There are no projection triggers on pos_tickets or pos_ticket_lines. Regular
+runs re-read the last seven nights directly from Shift4. Automatic detection of
+older POS-only corrections is deferred; a privileged maintenance operation can
+queue a known affected date in projection_dirty_nights.
+
+History changes queue only affected ranges. Range-only edits preserve dates
+common to old and new ranges. No-op updates do nothing. Calendar versions queue
+from effective_from, and holiday answers queue one date. Calendar-only changes
+neither invalidate source coverage nor request a Shift4 read.
+
+Each invocation has a 180-second work budget, leaving 120 seconds below the
+platform limit. Successful source reads survive checkpoints. Requests accept
+cancellation and have a 20-second per-request timeout. Repairs re-read only
+outstanding source work. Expensive stages are checked before execution.
+
+When a source retry or quiet wait would reach the last 30 minutes before the
+publish deadline, publish using older complete history. Exclusions apply only
+to the fenced job's snapshot; saved complete nights and facts remain intact.
+The archive discloses source_through, last_complete_date, source_exclusions and
+source_cutoff_status. Setup and technical failures still require recovery.
+
+Dish confidence uses that dish's status, range method and clean-night count.
+The latest reader reports pending before publication, stale after a miss/failure,
+and disabled when rollout is turned off. Disabling mid-run publishes nothing.
+
+Before enabling the first restaurant, run the read-only busy-night pagination
+check with its existing server environment:
+
+    node --env-file=.env.local scripts/check-shift4-projection-pagination.mjs RESTAURANT_UUID YYYY-MM-DD
+
+It prints page counts and completion metadata, never raw tickets or credentials.
+Declared totals must reconcile. A full page without a usable completion signal
+fails. Exit code 2 means totals or multi-page traversal still need verification;
+do not enable based on that result. No live response has been certified by unit
+or disposable database tests.

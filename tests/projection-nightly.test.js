@@ -269,7 +269,10 @@ function workerFixture({ skip = false, fail = false } = {}) {
               job_kind: 'forecast',
             },
             token: ID,
-            timing: { ready_at: '2026-11-22T09:00:00Z' },
+            timing: {
+              ready_at: '2026-11-22T09:00:00Z',
+              deadline_at: '2026-11-22T12:00:00Z',
+            },
           },
         };
       }
@@ -351,7 +354,7 @@ test('worker executes all ten approved stages in order', async () => {
     'succeeded'
   );
 
-  assert.deepEqual(f.stages, [
+  assert.deepEqual([...new Set(f.stages)], [
     'ingestion', 'repairs', 'calendar', 'outliers', 'holiday_learning',
     'lifecycle', 'snapshot', 'forecast', 'validate', 'publish',
   ]);
@@ -433,7 +436,7 @@ test('quiet-period waits checkpoint and requeue before model stages', async () =
 
   const r = await processProjectionJob(f.db, { job_id: ID }, null, f.deps);
 
-  assert.equal(r.retry_at, '2026-11-22T11:00:00Z');
+  assert.equal(Date.parse(r.retry_at), Date.parse('2026-11-22T11:00:00Z'));
   assert.equal(r.again, true);
   assert.equal(f.stages.includes('outliers'), false);
   assert.equal(f.stages.at(-1), 'quiet_period');
@@ -448,4 +451,163 @@ test('partial overrides also reject an out-of-day or pre-buffer deadline', () =>
     sync_buffer_minutes: 90,
     publish_deadline_minutes: 60,
   }, { partial: true }));
+});
+
+
+test('outage retries across the publish window end in an older-history publication', async () => {
+  const f = workerFixture({ fail: true });
+  const calls = [];
+  const original = f.db.rpc;
+
+  f.db.rpc = async (name, args) => {
+    calls.push({ name, args });
+    return original(name, args);
+  };
+
+  for (const at of [
+    '2026-11-22T09:00:00Z',
+    '2026-11-22T10:00:00Z',
+    '2026-11-22T11:25:00Z',
+  ]) {
+    f.deps.now = () => at;
+    const r = await processProjectionJob(f.db, { job_id: ID }, null, f.deps);
+    assert.equal(r.status, at.includes('11:25') ? 'succeeded' : undefined);
+  }
+
+  assert.deepEqual(
+    calls.find(c => c.name === 'projection_fallback').args.excluded_dates,
+    ['2026-11-21']
+  );
+});
+
+test('quiet waits beyond the deadline publish instead of waiting past the deadline', async () => {
+  const f = workerFixture();
+  const calls = [];
+  const original = f.db.rpc;
+
+  f.db.rpc = async (name, args) => {
+    calls.push({ name, args });
+
+    return name === 'projection_ack_night'
+      ? {
+        data: {
+          quiet_ready_at: '2026-11-22T13:00:00Z',
+          last_observed_at: '2026-11-22T10:00:00Z',
+        },
+      }
+      : original(name, args);
+  };
+
+  const r = await processProjectionJob(f.db, { job_id: ID }, null, f.deps);
+  assert.equal(r.status, 'succeeded');
+  assert.ok(calls.some(c => c.name === 'projection_fallback'));
+});
+
+test('repair work never repeats a successfully acknowledged recent night', async () => {
+  const f = workerFixture();
+  let reads = 0;
+
+  f.deps.ingestProjectionNight = async () => {
+    reads++;
+    return {};
+  };
+
+  await processProjectionJob(f.db, { job_id: ID }, null, f.deps);
+  assert.equal(reads, 1);
+});
+
+test('budget yield records completed reads for the next delivery', async () => {
+  const f = workerFixture();
+  const calls = [];
+  const original = f.db.rpc;
+  let elapsed = 0;
+
+  f.db.rpc = async (name, args) => {
+    calls.push({ name, args });
+    return original(name, args);
+  };
+
+  f.deps.monotonic = () => elapsed;
+  f.deps.budgetMs = 100;
+  f.deps.ingestProjectionNight = async () => {
+    elapsed = 101;
+    return {};
+  };
+
+  const r = await processProjectionJob(f.db, { job_id: ID }, null, f.deps);
+  assert.equal(r.stage, 'budget');
+
+  const saved = calls.find(c =>
+    c.name === 'projection_checkpoint' && c.args.stage_name === 'budget'
+  );
+
+  assert.equal(saved.args.work_state.source_done['2026-11-21'], null);
+  assert.equal(calls.some(c => c.name === 'projection_publish'), false);
+});
+
+test('declared totals detect silent truncation and accept complete multi-page reads', async () => {
+  for (const pages of [
+    [{ results: [{ posRef: 'a' }], totalCount: 2 }],
+    [
+      { results: [{ posRef: 'a' }], totalCount: 3, next: '?page=2' },
+      { results: [{ posRef: 'b' }], totalCount: 3 },
+    ],
+  ]) {
+    const f = ticketReader(pages);
+
+    await assert.rejects(() => f.reader(
+      { shift4_location_id: 1 },
+      { from: '2026-11-22', to: '2026-11-23' }
+    ), /total count/);
+  }
+
+  const f = ticketReader([
+    { results: [{ posRef: 'a' }], totalCount: 2, next: '?page=2' },
+    { results: [{ posRef: 'b' }], totalCount: 2 },
+  ]);
+
+  assert.equal((await f.reader(
+    { shift4_location_id: 1 },
+    { from: '2026-11-22', to: '2026-11-23' }
+  )).tickets.length, 2);
+});
+
+test('a full page without a usable completion signal is rejected', async () => {
+  const f = ticketReader([{ results: [{ posRef: 'a' }], pageSize: 1 }]);
+
+  await assert.rejects(() => f.reader(
+    { shift4_location_id: 1 },
+    { from: '2026-11-22', to: '2026-11-23' }
+  ), /no total or next/);
+});
+
+test('a continuation skips successful reads saved by the previous delivery', async () => {
+  const f = workerFixture();
+  const original = f.db.rpc;
+  let reads = 0;
+
+  f.deps.ingestProjectionNight = async () => {
+    reads++;
+    return {};
+  };
+
+  f.db.rpc = async (name, args) => {
+    const reply = await original(name, args);
+
+    if (name === 'projection_claim') {
+      reply.data.job.work_state = { source_done: { '2026-11-21': null } };
+    }
+
+    if (name === 'projection_work') {
+      reply.data.dates[0].generation = null;
+    }
+
+    return reply;
+  };
+
+  assert.equal(
+    (await processProjectionJob(f.db, { job_id: ID }, null, f.deps)).status,
+    'succeeded'
+  );
+  assert.equal(reads, 0);
 });

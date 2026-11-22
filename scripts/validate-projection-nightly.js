@@ -49,7 +49,11 @@ const db = {
     try {
       const text = q(`set role service_role;
         select public.${name}(${Object.entries(args)
-          .map(([key, value]) => `${key}=>${literal(value)}`).join(',')});`);
+          .map(([key, value]) =>
+            `${key}=>${key === 'excluded_dates'
+              ? `array[${value.map(literal).join(',')}]::date[]`
+              : literal(value)}`
+          ).join(',')});`);
 
       return { data: text ? JSON.parse(text) : null, error: null };
     } catch (e) {
@@ -203,7 +207,7 @@ before(async () => {
 
   for (const suffix of [
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
-    'holiday_learning', 'outlier_runs', 'nightly_runs',
+    'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);
@@ -301,11 +305,15 @@ test('frontend RPC access and direct archive insertion are blocked', () => {
 
 test('disabled restaurants are skipped and enabled restaurants get an incomplete backfill gate', async () => {
   assert.deepEqual((await rpc('projection_dispatch')).jobs, []);
+  assert.equal((await rpc('projection_latest', { rid: REST })).status, 'disabled');
 
   await rpc('projection_enable', { rid: REST, turn_on: true, actor: ADMIN });
 
   const dispatched = await rpc('projection_dispatch');
   assert.equal(dispatched.jobs.length, 1);
+  const pending = await rpc('projection_latest', { rid: REST });
+  assert.equal(pending.status, 'pending');
+  assert.equal(pending.stale, false);
 
   assert.equal(q(`
     select backfill_complete from public.projection_run_state where restaurant_id='${REST}';
@@ -506,6 +514,315 @@ test('an expired lease can be reclaimed while the old token cannot checkpoint', 
   });
 });
 
+test('POS bulk rewrites stay fast even when projection clock/queue helpers fail', () => {
+  const ms = Number(q(`begin;
+    set local statement_timeout='2s';
+
+    create or replace function projection_private.pos_source_clock(
+      p_restaurant_id uuid,p_shift4_timezone text,p_at timestamptz
+    ) returns jsonb language plpgsql as $bulk$
+    begin raise exception 'Synthetic projection clock failure'; end
+    $bulk$;
+
+    create or replace function projection_private.dirty(rid uuid,day date,why text)
+    returns void language plpgsql as $bulk$
+    begin raise exception 'Synthetic projection queue failure'; end
+    $bulk$;
+
+    create temp table perf(started timestamptz);
+    insert into perf values(clock_timestamp());
+
+    insert into public.pos_ticket_lines(
+      id,ticket_id,restaurant_id,item_ref,line_type,quantity,added_at
+    )
+    select gen_random_uuid(),'${id(900)}','${REST}','p0','sale',1,clock_timestamp()
+      from generate_series(1,2000);
+
+    delete from public.pos_ticket_lines where ticket_id='${id(900)}';
+
+    insert into public.pos_ticket_lines(
+      id,ticket_id,restaurant_id,item_ref,line_type,quantity,added_at
+    )
+    select gen_random_uuid(),'${id(900)}','${REST}','p0','sale',1,clock_timestamp()
+      from generate_series(1,2000);
+
+    select extract(epoch from clock_timestamp()-started)*1000 from perf;
+    rollback;
+  `));
+
+  console.info(`Bulk POS rewrite: ${ms.toFixed(1)} ms`);
+  assert.ok(ms < 1500, `Bulk rewrite took ${ms}ms`);
+
+  assert.equal(q(`
+    select count(*) from pg_trigger where not tgisinternal
+      and tgname in ('projection_pos_lines_dirty','projection_pos_tickets_dirty');
+  `), '0');
+});
+
+test('a narrow mapping change preserves the rest of a long forecast history', () => {
+  q(`
+    insert into public.projection_nightly_flags(restaurant_id,business_date,complete)
+    select '${REST}',d::date,false
+    from generate_series(
+      '${shiftProjectionDate(DAY, -400)}'::date,
+      '${shiftProjectionDate(DAY, -36)}'::date,
+      interval '1 day'
+    ) d;
+  `);
+
+  const before = buildProjectionRun(JSON.parse(q(`
+    select projection_private.run_inputs('${REST}','${DAY}',clock_timestamp());
+  `)));
+
+  try {
+    const dish = q(`
+      select id from public.projection_dishes
+      where restaurant_id='${REST}' order by id limit 1;
+    `);
+
+    q(`
+      insert into public.projection_pos_item_map(
+        restaurant_id,pos_system,external_item_id,dish_id,valid_from,valid_until
+      )
+      values(
+        '${REST}','shift4','narrow-test','${dish}',
+        '${shiftProjectionDate(DAY, -10)}','${shiftProjectionDate(DAY, -8)}'
+      );
+    `);
+
+    assert.equal(q(`
+      select count(*) from public.projection_dirty_nights where restaurant_id='${REST}';
+    `), '2');
+
+    assert.equal(q(`
+      select projection_private.source_covered('${REST}','${shiftProjectionDate(DAY, -1)}');
+    `), 't');
+
+    q(`
+      update public.projection_pos_item_map set dish_id=dish_id
+      where restaurant_id='${REST}' and external_item_id='narrow-test';
+    `);
+
+    assert.equal(q(`
+      select max(generation) from public.projection_dirty_nights
+      where restaurant_id='${REST}';
+    `), '1');
+
+    const after = buildProjectionRun(JSON.parse(q(`
+      select projection_private.run_inputs('${REST}','${DAY}',clock_timestamp());
+    `)));
+
+    assert.equal(after.nights[0].expected, before.nights[0].expected);
+  } finally {
+    q(`
+      delete from public.projection_pos_item_map
+        where restaurant_id='${REST}' and external_item_id='narrow-test';
+      delete from public.projection_dirty_nights where restaurant_id='${REST}';
+      delete from public.projection_nightly_flags where restaurant_id='${REST}'
+        and business_date<'${shiftProjectionDate(DAY, -35)}';
+    `);
+  }
+});
+
+test('calendar versions and holiday answers queue only calendar work without hiding source history', () => {
+  assert.equal(q(`begin;
+    insert into public.projection_nightly_flags(restaurant_id,business_date)
+      values('${REST}','${shiftProjectionDate(DAY, -10)}') on conflict do nothing;
+
+    insert into public.projection_holiday_answer_versions(
+      restaurant_id,business_date,revision,answer,actor_id
+    )
+    values('${REST}','${shiftProjectionDate(DAY, -10)}',1,'open','${ADMIN}');
+
+    select count(*)=1 and bool_and(not requires_source)
+      from public.projection_dirty_nights where restaurant_id='${REST}';
+    rollback;
+  `), 't');
+
+  assert.equal(q(`begin;
+    insert into public.projection_nightly_flags(restaurant_id,business_date)
+    select '${REST}',d::date
+    from generate_series(
+      '${shiftProjectionDate(DAY, -2)}'::date,'${DAY}'::date,interval '1 day'
+    ) d on conflict do nothing;
+
+    insert into public.projection_run_state(
+      restaurant_id,backfill_from,backfill_until,cursor_date
+    )
+    values(
+      '${REST}','${shiftProjectionDate(DAY, -35)}',
+      '${shiftProjectionDate(DAY, -1)}','${shiftProjectionDate(DAY, -35)}'
+    ) on conflict do nothing;
+
+    insert into public.projection_calendar_versions(
+      restaurant_id,revision,effective_from,settings,actor_id
+    )
+    values(
+      '${REST}',1,'${shiftProjectionDate(DAY, -2)}',
+      projection_private.calendar_context(
+        '${REST}','${DAY}','${DAY}',clock_timestamp()
+      )->'versions'->0->'settings',
+      '${ADMIN}'
+    );
+
+    insert into public.projection_jobs(
+      id,restaurant_id,business_date,model_major,job_kind
+    )
+    values('${id(901)}','${REST}','${DAY}',4,'maintenance');
+
+    insert into public.projection_job_leases
+    values('${REST}','${id(901)}','${id(902)}',clock_timestamp()+interval '7 minutes');
+
+    select count(*)=(
+      select count(*) from public.projection_nightly_flags f
+      where f.restaurant_id='${REST}'
+        and f.business_date>='${shiftProjectionDate(DAY, -2)}'
+    )
+    and bool_and(not requires_source)
+    and bool_and(projection_private.source_covered(restaurant_id,business_date))
+    and jsonb_array_length(
+      public.projection_work('${id(901)}','${id(902)}')->'dates'
+    )=0
+    from public.projection_dirty_nights where restaurant_id='${REST}';
+    rollback;
+  `), 't');
+
+  assert.equal(q(`begin;
+    update public.projection_pos_source_windows
+      set valid_until='${shiftProjectionDate(DAY, 1)}'
+      where restaurant_id='${REST}';
+    select count(*) from public.projection_dirty_nights where restaurant_id='${REST}';
+    rollback;
+  `), '0');
+});
+
+test('archived dish confidence retains dish-specific evidence and range labels', () => {
+  assert.equal(q(`
+    select bool_and(d.confidence<>n.confidence and d.confidence like '%clean nights%')
+    from public.projection_forecast_dishes d
+    join public.projection_forecast_nights n using(restaurant_id,run_id,target_date)
+    where d.restaurant_id='${REST}';
+  `), 't');
+});
+
+test('a source outage publishes an older complete cutoff without changing saved completeness', async () => {
+  const t = JSON.parse(q(`
+    select projection_private.run_timing('${REST}',clock_timestamp());
+  `));
+  const elapsed = Math.floor((Date.now() - Date.parse(t.starts_at)) / 60000);
+
+  q(`
+    insert into public.projection_setting_versions(
+      restaurant_id,model_major,effective_at,settings
+    )
+    values('${REST}',4,clock_timestamp(),jsonb_build_object(
+      'business_day_cutoff_minutes',${cutoff},
+      'sync_buffer_minutes',0,
+      'publish_deadline_minutes',${elapsed + 15}
+    ));
+  `);
+
+  const forced = await rpc('projection_force', {
+    rid: REST,
+    request_id: id(211),
+    actor: ADMIN,
+  });
+
+  const r = await processProjectionJob(db, { job_id: forced.job_id }, async () => {
+    throw Object.assign(new Error('Synthetic Shift4 outage'), {
+      code: 'PROJECTION_SOURCE_UNAVAILABLE',
+      kind: 'source',
+    });
+  }, { onError: e => console.error(e) });
+
+  assert.equal(r.status, 'succeeded', JSON.stringify(r));
+
+  assert.equal(q(`
+    select source_through from public.projection_forecast_runs where id='${r.run_id}';
+  `), shiftProjectionDate(DAY, -2));
+
+  assert.equal(q(`
+    select complete from public.projection_nightly_flags
+    where restaurant_id='${REST}' and business_date='${shiftProjectionDate(DAY, -1)}';
+  `), 't');
+
+  assert.equal(q(`
+    select trace->>'source_cutoff_status'
+    from public.projection_forecast_runs where id='${r.run_id}';
+  `), 'older_complete_history');
+});
+
+test('a quiet wait beyond the deadline publishes the older complete cutoff', async () => {
+  const forced = await rpc('projection_force', {
+    rid: REST,
+    request_id: id(212),
+    actor: ADMIN,
+  });
+
+  const wrapped = {
+    ...db,
+    rpc: async (name, args) => {
+      const reply = await db.rpc(name, args);
+
+      if (
+        name === 'projection_ack_night' &&
+        args.day === shiftProjectionDate(DAY, -1) &&
+        reply.data
+      ) {
+        reply.data.quiet_ready_at = new Date(Date.now() + 86400000).toISOString();
+      }
+
+      return reply;
+    },
+  };
+
+  const r = await processProjectionJob(
+    wrapped,
+    { job_id: forced.job_id },
+    source,
+    { onError: e => console.error(e) }
+  );
+
+  assert.equal(r.status, 'succeeded', JSON.stringify(r));
+  assert.equal(q(`
+    select source_through from public.projection_forecast_runs where id='${r.run_id}';
+  `), shiftProjectionDate(DAY, -2));
+});
+
+test('disabling a restaurant mid-run records disabled and publishes nothing', async () => {
+  const forced = await rpc('projection_force', {
+    rid: REST,
+    request_id: id(213),
+    actor: ADMIN,
+  });
+  const claim = await rpc('projection_claim', { jid: forced.job_id });
+  const snapshot = await rpc('projection_snapshot', {
+    jid: forced.job_id,
+    tok: claim.token,
+  });
+
+  const nextPlan = buildProjectionRun(snapshot);
+  const count = countRuns();
+
+  await rpc('projection_enable', { rid: REST, turn_on: false, actor: ADMIN });
+
+  try {
+    const r = await rpc('projection_publish', {
+      jid: forced.job_id,
+      tok: claim.token,
+      snapshot_at: snapshot.snapshot_at,
+      source_digest: snapshot.context_digest,
+      plan: nextPlan,
+    });
+
+    assert.equal(r.status, 'disabled');
+    assert.equal(countRuns(), count);
+    assert.equal((await rpc('projection_latest', { rid: REST })).status, 'disabled');
+  } finally {
+    await rpc('projection_enable', { rid: REST, turn_on: true, actor: ADMIN });
+  }
+});
+
 test('late day-of jobs and an outage spanning a business day are missed without backdated forecasts', async () => {
   const yesterday = shiftProjectionDate(DAY, -1);
 
@@ -652,7 +969,7 @@ test('late forced reruns reject and the archive trigger checks the actual issuan
     from (select projection_private.run_timing('${REST}',clock_timestamp()) t) v;
   `, /PUBLISH_DEADLINE/);
 
-  assert.equal(countRuns(), 2);
+  assert.equal(countRuns(), 4);
 });
 
 test('purge removes jobs, leases, state and dirty nights, and preserves the other restaurant', () => {
