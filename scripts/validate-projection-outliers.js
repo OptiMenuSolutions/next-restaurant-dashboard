@@ -97,6 +97,9 @@ test('new outlier RPCs and direct final-decision writes are restricted to their 
     rejects(`set role ${role};select public.projection_store_outliers('${REST}','${DAY}',now(),'x','{}');`,/permission denied/);
   }
   rejects('set role service_role;insert into public.projection_run_decisions default values;',/permission denied/);
+  rejects('set role service_role;insert into public.projection_run_decision_reviews default values;',/permission denied/);
+  rejects('set role anon;select * from public.projection_current_run_decision_reviews;',/permission denied/);
+  assert.equal(q(`select relrowsecurity from pg_class where oid='public.projection_run_decision_reviews'::regclass;`),'t');
   rejects(`set role service_role;update public.projection_nightly_flags set outlier_status='active_run' where restaurant_id='${REST}';`,/projection_store_outliers|permission denied/);
   rejects(`update public.projection_nightly_flags set outlier_status='active_run' where restaurant_id='${REST}';`,/projection_store_outliers/);
 });
@@ -127,11 +130,22 @@ test('a fresh ingestion generation invalidates review and fences an older write 
   const fresh=await read();assert.equal(fresh.saved_decision_rechecks,1);
   assert.deepEqual(fresh.saved_reviews[0].diagnostics,[]);
   assert.equal(fresh.nights.find(n=>n.business_date==='2026-11-08').ingestion_generation,'1');
+  const saved=await storeProjectionOutliers(db,fresh);assert.equal(saved.reviews_saved,1);
+  assert.equal((await storeProjectionOutliers(db,fresh)).reviews_saved,0);
+  const cached=await read();assert.equal(cached.saved_decision_rechecks,0);assert.deepEqual(cached.saved_reviews[0].diagnostics,[]);
+  assert.equal(q(`select count(*) from public.projection_current_run_decision_reviews where restaurant_id='${REST}';`),'1');
 });
 test('a corrected candidate retains the saved final decision and records disagreement',async()=>{
   q(`update public.projection_nightly_flags set total_units=10,source_revision='corrected' where restaurant_id='${REST}' and business_date='2026-11-05';`);
   const fresh=await read();assert.ok(fresh.saved_reviews[0].diagnostics.includes('saved_decision_retained_candidate_differs'));
-  assert.equal((await storeProjectionOutliers(db,fresh)).saved,0);
+  const saved=await storeProjectionOutliers(db,fresh);assert.equal(saved.saved,0);assert.equal(saved.reviews_saved,1);
+  const cached=await read();assert.equal(cached.saved_decision_rechecks,0);
+  assert.deepEqual(cached.saved_reviews[0].diagnostics,['saved_decision_retained_candidate_differs']);
+  assert.equal((await storeProjectionOutliers(db,cached)).reviews_saved,0);
+  const stored=JSON.parse(q(`select flags->'outliers'->'saved_reviews'->0 from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-05';`));
+  assert.deepEqual(stored.diagnostics,['saved_decision_retained_candidate_differs']);
+  assert.equal(stored.candidate_status,cached.saved_reviews[0].candidate_summary.status);
+  assert.equal(q(`select count(*) from public.projection_current_run_decision_reviews where restaurant_id='${REST}';`),'1');
   assert.equal(q(`select outlier_status from public.projection_nightly_flags where restaurant_id='${REST}' and business_date='2026-11-05';`),'one_off_event');
   assert.equal(q(`select count(*) from public.projection_run_decisions where restaurant_id='${REST}';`),'1');
 });
@@ -140,7 +154,9 @@ test('a changed source rejects a stale plan and a foreign later flag rolls back 
   await assert.rejects(()=>storeProjectionOutliers(db,old),/source changed/);
   const bad=structuredClone(await read());bad.nights.at(-1).restaurant_id=OTHER;
   const before=q(`select md5(string_agg(flags::text,'|' order by business_date)) from public.projection_nightly_flags where restaurant_id='${REST}';`);
+  const reviewCount=q(`select count(*) from public.projection_run_decision_reviews;`);
   await assert.rejects(()=>storeProjectionOutliers(db,bad),/Unrelated/);
+  assert.equal(q(`select count(*) from public.projection_run_decision_reviews;`),reviewCount);
   assert.equal(q(`select md5(string_agg(flags::text,'|' order by business_date)) from public.projection_nightly_flags where restaurant_id='${REST}';`),before);
 });
 test('the membership primary key and append-only guards preserve permanent decisions',async()=>{
@@ -148,9 +164,31 @@ test('the membership primary key and append-only guards preserve permanent decis
   bad.candidates[0].trace.inputs_digest='a'.repeat(64);
   await assert.rejects(()=>storeProjectionOutliers(db,bad),/membership conflicts/);
   rejects(`update public.projection_run_decisions set decision='confirmed_shift' where restaurant_id='${REST}';`,/append.only|immutable/i);
+  rejects(`update public.projection_run_decision_reviews set outcome='matches' where restaurant_id='${REST}';`,/append.only/i);
+  rejects(`delete from public.projection_run_decision_reviews where restaurant_id='${REST}';`,/append.only/i);
   rejects(`insert into public.projection_run_decision_nights select * from public.projection_run_decision_nights where restaurant_id='${REST}';`,/duplicate key/);
 });
+test('a new stored settings version does not recheck a saved source review',async()=>{
+  const pending=await read();await storeProjectionOutliers(db,pending);
+  const before=await read();assert.equal(before.saved_decision_rechecks,0);
+  q(`insert into public.projection_setting_versions(id,model_major,effective_at,settings)
+    select '${id(61000)}',model_major,clock_timestamp(),settings||'{"base_window_weeks":9}'::jsonb
+      from public.projection_setting_versions where id='${before.global_version_id}';`);
+  const after=await read();assert.notEqual(after.global_version_id,before.global_version_id);
+  assert.equal(after.saved_decision_rechecks,0);
+  assert.equal(after.saved_reviews[0].evidence_digest,before.saved_reviews[0].evidence_digest);
+});
+test('review roots and parents cannot branch or cross restaurants',()=>{
+  rejects(`insert into public.projection_run_decision_reviews(restaurant_id,decision_id,evidence_digest,outcome,candidate_summary)
+    select restaurant_id,decision_id,evidence_digest,outcome,candidate_summary from public.projection_run_decision_reviews
+      where restaurant_id='${REST}' and supersedes_id is null;`,/duplicate key/);
+  rejects(`insert into public.projection_run_decision_reviews(restaurant_id,decision_id,evidence_digest,outcome,candidate_summary)
+    select '${OTHER}',decision_id,evidence_digest,outcome,candidate_summary from public.projection_run_decision_reviews
+      where restaurant_id='${REST}' and supersedes_id is null;`,/foreign key/);
+  assert.equal(q(`select count(*) from public.projection_current_run_decision_reviews where restaurant_id='${REST}';`),'1');
+});
 test('parallel writers serialize one active replay and an unchanged retry',async()=>{
+  q(`update public.projection_nightly_flags set total_units=12 where restaurant_id='${REST}' and business_date='2026-11-05';`);
   const p=await read(),sql=`set role service_role;select public.projection_store_outliers('${REST}','${DAY}','${p.snapshot_at}',
     '${p.source_context_digest}',${json(p)});`;
   const execute=()=>new Promise((resolve,reject)=>{
@@ -160,13 +198,20 @@ test('parallel writers serialize one active replay and an unchanged retry',async
   });
   const results=await Promise.all([execute(),execute()]);assert.equal(results.filter(r=>r.flags_changed>0).length,1);
   assert.equal(results.filter(r=>r.retry).length,1);assert.ok(results.every(r=>r.saved===0));
+  assert.equal(results.reduce((n,r)=>n+r.reviews_saved,0),1);assert.equal((await read()).saved_decision_rechecks,0);
+  const stale=structuredClone(p);stale.saved_reviews[0].evidence_digest='e'.repeat(64);
+  await assert.rejects(()=>storeProjectionOutliers(db,stale),/Decision review changed/);
 });
 test('a historical write cannot overwrite a newer saved replay',async()=>{
   const p=await read(),older={...p,as_of:'2026-11-18'};
   await assert.rejects(()=>storeProjectionOutliers(db,older),/source changed|newer outlier/);
 });
 test('account purge deletes both decision tables while preserving another tenant',()=>{
+  const count=q(`select count(*) from public.projection_run_decision_reviews where restaurant_id='${REST}';`);
+  assert.ok(Number(count)>0);
   q(`set role service_role;select public.purge_restaurant('${REST}');`);
+  assert.equal(q(`select count(*) from public.projection_run_decision_reviews where restaurant_id='${REST}';`),'0');
+  assert.equal(q(`select deleted_rows->>'projection_run_decision_reviews' from public.projection_account_purge_log order by purged_at desc limit 1;`),count);
   assert.equal(q(`select count(*) from public.projection_run_decisions where restaurant_id='${REST}';`),'0');
   assert.equal(q(`select count(*) from public.projection_run_decision_nights where restaurant_id='${REST}';`),'0');
   assert.equal(q(`select count(*) from public.restaurants where id='${OTHER}';`),'1');

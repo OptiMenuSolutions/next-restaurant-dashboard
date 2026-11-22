@@ -296,3 +296,60 @@ test('sixteen unchanged native decisions trigger zero comparison reruns',()=>{
   const result=run(data);assert.equal(result.saved_reviews.length,16);assert.equal(result.saved_decision_rechecks,0);
   assert.ok(result.saved_reviews.every(r=>!r.rechecked&&r.candidate===null&&r.diagnostics.length===0));
 });
+
+function storedReview(result,decision,index=0,parent=null) {
+  const r=result.saved_reviews.find(r=>r.decision_id===decision.id);
+  return {id:id(50000+index),restaurant_id:REST,decision_id:decision.id,evidence_digest:r.evidence_digest,
+    outcome:r.outcome,candidate_summary:structuredClone(r.candidate_summary),supersedes_id:parent,
+    reviewed_at:`2026-11-19T11:${String(index).padStart(2,'0')}:00Z`};
+}
+test('a changed member revision is compared once and its differing diagnostic persists',()=>{
+  const data=input();data.decisions=[save(run(data))];
+  row(data,'2026-11-05').source_revision='changed-once';row(data,'2026-11-05').total_units=10;
+  const first=run(data);assert.equal(first.saved_decision_rechecks,1);assert.equal(first.saved_reviews[0].outcome,'candidate_differs');
+  data.reviews=[storedReview(first,data.decisions[0])];
+  const second=run(data);assert.equal(second.saved_decision_rechecks,0);assert.equal(second.saved_reviews[0].candidate,null);
+  assert.deepEqual(second.saved_reviews[0].diagnostics,['saved_decision_retained_candidate_differs']);
+  assert.deepEqual(second.saved_reviews[0].candidate_summary,first.saved_reviews[0].candidate_summary);
+});
+test('re-ingestion is reviewed once and then a matching outcome is reused',()=>{
+  const data=input();data.decisions=[save(run(data))];row(data,'2026-11-08').ingestion_generation='1';
+  const first=run(data);assert.equal(first.saved_decision_rechecks,1);assert.equal(first.saved_reviews[0].outcome,'matches');
+  data.reviews=[storedReview(first,data.decisions[0])];
+  const second=run(data);assert.equal(second.saved_decision_rechecks,0);assert.deepEqual(second.saved_reviews[0].diagnostics,[]);
+  row(data,'2026-11-08').ingestion_generation='2';assert.equal(run(data).saved_decision_rechecks,1);
+});
+test('new settings and model identity do not invalidate source-only decision evidence',()=>{
+  const data=input();data.decisions=[save(run(data))];
+  data.resolvedSettings=resolveProjectionSettings({restaurantId:REST,at:SNAP,globalVersion:{id:id(2001),restaurant_id:null,
+    model_major:4,effective_at:'2020-01-01T00:00:00Z',settings:{...PROJECTION_DEFAULTS,base_window_weeks:9}}});
+  data.modelVersion={...model,reference_sha256:'b'.repeat(64)};data.firstDataDate='2024-01-01';
+  assert.equal(run(data).saved_decision_rechecks,0);assert.equal(Object.hasOwn(data.decisions[0].trace.review_evidence,'context'),false);
+  row(data,'2026-11-08').ingestion_generation='1';
+  const changed=run(data);assert.equal(changed.saved_decision_rechecks,1);assert.equal(changed.saved_reviews[0].outcome,'matches');
+});
+test('latest review supersedes the earlier comparison point without rewriting it',()=>{
+  const data=input();data.decisions=[save(run(data))];row(data,'2026-11-08').ingestion_generation='1';
+  const first=storedReview(run(data),data.decisions[0]);data.reviews=[first];
+  row(data,'2026-11-08').ingestion_generation='2';const result=run(data);
+  assert.equal(result.saved_reviews[0].expected_review_id,first.id);
+  const second=storedReview(result,data.decisions[0],1,first.id);data.reviews.push(second);
+  const current=run(data);assert.equal(current.saved_decision_rechecks,0);assert.equal(current.saved_reviews[0].expected_review_id,second.id);
+  assert.equal(first.evidence_digest,data.reviews[0].evidence_digest);
+});
+test('future reviews cannot hide a historical evidence change',()=>{
+  const data=input();data.decisions=[save(run(data))];row(data,'2026-11-08').ingestion_generation='1';
+  data.reviews=[{...storedReview(run(data),data.decisions[0]),reviewed_at:'2026-11-20T00:00:00Z'}];
+  assert.equal(run(data).saved_decision_rechecks,1);
+});
+test('foreign, duplicate and branching review histories fail visibly',()=>{
+  const data=input();data.decisions=[save(run(data))];row(data,'2026-11-08').ingestion_generation='1';
+  const first=storedReview(run(data),data.decisions[0]);
+  for(const kind of ['foreign','duplicate','branch']){
+    data.reviews=[structuredClone(first)];
+    if(kind==='foreign')data.reviews[0].restaurant_id=OTHER;
+    if(kind==='duplicate')data.reviews.push({...first,id:id(55000)});
+    if(kind==='branch')data.reviews.push(...[1,2].map(i=>({...first,id:id(55000+i),supersedes_id:first.id})));
+    assert.throws(()=>run(data));
+  }
+});

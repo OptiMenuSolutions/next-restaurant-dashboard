@@ -55,15 +55,26 @@ block. Conflicting membership is excluded with duplicate_final_decisions; the
 membership primary key prevents storing such conflicts. If corrected data gives
 a different candidate, retain the original and expose
 saved_decision_retained_candidate_differs, including in saved flag diagnostics.
-A saved trace also records member and post-run source revisions, day-of archive IDs,
-the ingestion generations of all nights in the run-through-test interval, and the
-counterfactual source dependencies. Unchanged evidence skips candidate replay with
-no diagnostic. Changed evidence triggers comparison while preserving the decision.
+A saved trace records source revisions, ingestion generations, archive IDs, units
+and night flags for its members, tests, interval and counterfactual dependencies.
+Settings, model identity and first_data_date stay in the immutable decision trace,
+not in this source-only evidence. Rechecks use that frozen decision context.
+
+projection_run_decision_reviews stores append-only review outcomes and candidate
+summaries. A supersession chain and current view provide one current row per
+decision. Compare the current source digest with the latest visible review, or
+with the original decision evidence if there is no review. Matching digests skip
+replay and retain the cached diagnostic. A new digest triggers one comparison;
+the existing restricted writer appends its outcome under the restaurant lock.
+A successful save establishes the new comparison point. Identical and concurrent
+retries append no duplicate review. reviewed_at limits historical visibility.
+
 Ingestion generations come from projection_ingestion_state, not flag updated_at;
-outlier flag writes therefore do not invalidate this check. Legacy decisions without
-the evidence snapshot are conservatively rechecked. saved_decision_rechecks counts
-actual comparison reruns for verification and internal monitoring.
-Both permanent tables remain covered by the existing account-purge exception.
+outlier flag writes therefore do not invalidate evidence. Legacy decision evidence
+is compared without its old context field; absent evidence is conservatively
+reviewed once. saved_decision_rechecks counts actual candidate comparisons.
+Account purge removes reviews before decision members and decisions and records
+the deleted review count. The immutable decision is never rewritten.
 
 Backtests use decisions with decided_through < asOf and created_at <= snapshotAt.
 They must supply the historical source snapshot: mutable source facts cannot be

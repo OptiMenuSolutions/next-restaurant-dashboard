@@ -1,5 +1,32 @@
 begin;
 
+create table public.projection_run_decision_reviews (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references public.restaurants(id) on delete cascade,
+  decision_id uuid not null,
+  evidence_digest text not null check (evidence_digest ~ '^[a-f0-9]{64}$'),
+  outcome text not null check (outcome in ('matches','candidate_differs')),
+  candidate_summary jsonb not null check (jsonb_typeof(candidate_summary)='object'),
+  reviewed_at timestamptz not null default clock_timestamp(),
+  supersedes_id uuid check (supersedes_id is distinct from id),
+  unique (restaurant_id,decision_id,id),
+  foreign key (restaurant_id,decision_id) references public.projection_run_decisions(restaurant_id,id) on delete cascade,
+  foreign key (restaurant_id,decision_id,supersedes_id)
+    references public.projection_run_decision_reviews(restaurant_id,decision_id,id)
+);
+create unique index projection_review_original on public.projection_run_decision_reviews(restaurant_id,decision_id) where supersedes_id is null;
+create unique index projection_review_successor on public.projection_run_decision_reviews(supersedes_id) where supersedes_id is not null;
+alter table public.projection_run_decision_reviews enable row level security;
+create trigger projection_review_immutable before update or delete on public.projection_run_decision_reviews
+for each row execute function projection_private.immutable_row();
+create trigger projection_review_no_truncate before truncate on public.projection_run_decision_reviews
+for each statement execute function projection_private.immutable_row();
+create view public.projection_current_run_decision_reviews with (security_invoker=true) as
+  select r.* from public.projection_run_decision_reviews r where not exists(
+    select 1 from public.projection_run_decision_reviews child where child.supersedes_id=r.id);
+revoke all on public.projection_run_decision_reviews,public.projection_current_run_decision_reviews from public,anon,authenticated,service_role;
+grant select on public.projection_run_decision_reviews,public.projection_current_run_decision_reviews to service_role;
+
 alter table public.projection_nightly_flags add constraint projection_outlier_status_check check (
   outlier_status in ('unchecked','normal','kept','active_run','confirmed_shift','excluded',
     'isolated_outlier','short_run','provisional','pending_review','one_off_event'));
@@ -25,10 +52,15 @@ begin
       (select jsonb_agg(m.business_date order by m.business_date) from public.projection_run_decision_nights m
         where m.restaurant_id=p_restaurant_id and m.decision_id=d.id)) order by d.id)
       from public.projection_run_decisions d where d.restaurant_id=p_restaurant_id and d.model_major=4
-        and d.decided_through<p_as_of and d.created_at<=p_snapshot_at),'[]'));
+        and d.decided_through<p_as_of and d.created_at<=p_snapshot_at),'[]'),
+    'reviews',coalesce((select jsonb_agg(to_jsonb(r) order by r.reviewed_at,r.id)
+      from public.projection_run_decision_reviews r join public.projection_run_decisions d
+        on d.restaurant_id=r.restaurant_id and d.id=r.decision_id
+      where r.restaurant_id=p_restaurant_id and d.model_major=4 and d.decided_through<p_as_of
+        and d.created_at<=p_snapshot_at and r.reviewed_at<=p_snapshot_at),'[]'));
   -- Own flag/decision writes must not invalidate an identical retry. Locked decisions
   -- are checked again by the writer while holding the same restaurant lock.
-  return result||jsonb_build_object('context_digest',encode(sha256(convert_to((result-'decisions')::text,'UTF8')),'hex'));
+  return result||jsonb_build_object('context_digest',encode(sha256(convert_to((result-'decisions'-'reviews')::text,'UTF8')),'hex'));
 end $f$;
 create function public.projection_outlier_context(p_restaurant_id uuid,p_as_of date,p_snapshot_at timestamptz)
 returns jsonb language sql security definer set search_path='' as $f$
@@ -51,12 +83,14 @@ for each row execute function projection_private.guard_outlier_flags();
 create function public.projection_store_outliers(p_restaurant_id uuid,p_as_of date,p_snapshot_at timestamptz,p_context_digest text,p_plan jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $f$
 declare fresh jsonb; settings jsonb; item jsonb; n jsonb; meta jsonb; existing public.projection_run_decisions; owner public.projection_run_decisions;
-  decision_id uuid; member date; saved integer:=0; changed integer:=0; previous_guard text;
+  decision_id uuid; member date; saved integer:=0; changed integer:=0; reviewed integer:=0; previous_guard text;
+  current_review public.projection_run_decision_reviews;
 begin
   perform pg_advisory_xact_lock(hashtextextended('optimenu:projection-ingest:'||p_restaurant_id::text,0));
   if p_plan->>'restaurant_id' is distinct from p_restaurant_id::text or p_plan->>'as_of' is distinct from p_as_of::text
     or (p_plan->>'snapshot_at')::timestamptz is distinct from p_snapshot_at or jsonb_typeof(p_plan->'nights') is distinct from 'array'
-    or jsonb_typeof(p_plan->'candidates') is distinct from 'array' then raise exception 'Invalid outlier plan'; end if;
+    or jsonb_typeof(p_plan->'candidates') is distinct from 'array'
+    or jsonb_typeof(p_plan->'saved_reviews') is distinct from 'array' then raise exception 'Invalid outlier plan'; end if;
   fresh:=projection_private.outlier_context(p_restaurant_id,p_as_of,p_snapshot_at);
   if fresh->>'context_digest' is distinct from p_context_digest then raise exception 'Outlier source changed; reload and retry' using errcode='PT409'; end if;
   settings:=(fresh->'global_version'->'settings')||coalesce(fresh->'restaurant_version'->'settings','{}'::jsonb);
@@ -123,6 +157,31 @@ begin
     end loop;
     saved:=saved+1;
   end loop;
+  if exists(select 1 from jsonb_array_elements(p_plan->'saved_reviews') r group by r->>'decision_id' having count(*)>1) then
+    raise exception 'Duplicate decision review in batch'; end if;
+  for item in select r from jsonb_array_elements(p_plan->'saved_reviews') r where coalesce((r->>'rechecked')::boolean,false) loop
+    select * into owner from public.projection_run_decisions d where d.restaurant_id=p_restaurant_id
+      and d.id=(item->>'decision_id')::uuid and d.decided_through<p_as_of and d.created_at<=p_snapshot_at;
+    if owner.id is null or coalesce(item->>'evidence_digest','')!~'^[a-f0-9]{64}$'
+      or coalesce(item->>'outcome','') not in ('matches','candidate_differs')
+      or jsonb_typeof(item->'candidate_summary') is distinct from 'object'
+      or item->'members' is distinct from (select jsonb_agg(m.business_date order by m.business_date)
+        from public.projection_run_decision_nights m where m.restaurant_id=p_restaurant_id and m.decision_id=owner.id) then
+      raise exception 'Invalid scoped decision review'; end if;
+    select r.* into current_review from public.projection_current_run_decision_reviews r
+      where r.restaurant_id=p_restaurant_id and r.decision_id=owner.id;
+    if current_review.id is not null and current_review.evidence_digest=item->>'evidence_digest' then
+      if current_review.outcome is distinct from item->>'outcome' or current_review.candidate_summary is distinct from item->'candidate_summary' then
+        raise exception 'A review digest cannot change its result' using errcode='PT409'; end if;
+      continue;
+    end if;
+    if current_review.id is distinct from (item->>'expected_review_id')::uuid then
+      raise exception 'Decision review changed; reload and retry' using errcode='PT409'; end if;
+    insert into public.projection_run_decision_reviews(restaurant_id,decision_id,evidence_digest,outcome,candidate_summary,supersedes_id,reviewed_at)
+      values(p_restaurant_id,owner.id,item->>'evidence_digest',item->>'outcome',item->'candidate_summary',current_review.id,
+        greatest(clock_timestamp(),coalesce(current_review.reviewed_at,'-infinity'::timestamptz)));
+    reviewed:=reviewed+1;
+  end loop;
   previous_guard:=current_setting('optimenu.projection_outliers_write',true);
   perform set_config('optimenu.projection_outliers_write','on',true);
   for n in select * from jsonb_array_elements(p_plan->'nights') loop
@@ -134,7 +193,7 @@ begin
     if owner.id is not null and n->>'outlier_status' is distinct from owner.decision then raise exception 'Saved decision must retain its status' using errcode='PT409'; end if;
     meta:=jsonb_build_object('as_of',p_as_of,'snapshot_at',p_snapshot_at,'inputs_digest',p_plan->>'inputs_digest',
       'diagnostics',n->'diagnostics','forecast_id',n->'forecast_id','ratio',n->'ratio','saved_reviews',
-      coalesce((select jsonb_agg((r-'candidate')||jsonb_build_object('candidate_status',r->'candidate'->'status'))
+      coalesce((select jsonb_agg((r-'candidate')||jsonb_build_object('candidate_status',coalesce(r->'candidate'->'status',r->'candidate_summary'->'status')))
         from jsonb_array_elements(p_plan->'saved_reviews') r where r->'members' ? (n->>'business_date')),'[]'::jsonb));
     update public.projection_nightly_flags set outlier_status=n->>'outlier_status',flags=jsonb_set(flags,'{outliers}',meta),updated_at=clock_timestamp()
       where restaurant_id=p_restaurant_id and business_date=(n->>'business_date')::date
@@ -142,12 +201,20 @@ begin
     if found then changed:=changed+1; end if;
   end loop;
   perform set_config('optimenu.projection_outliers_write',coalesce(previous_guard,''),true);
-  return jsonb_build_object('saved',saved,'flags_changed',changed,'retry',saved=0 and changed=0);
+  return jsonb_build_object('saved',saved,'flags_changed',changed,'reviews_saved',reviewed,'retry',saved=0 and changed=0 and reviewed=0);
 end $f$;
 
-do $b$ begin
+do $b$
+declare definition text;
+begin
+  definition:=pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure);
+  if strpos(definition,'''projection_run_decision_nights'',')=0 then raise exception 'Unexpected account purge definition'; end if;
+  definition:=replace(definition,'''projection_run_decision_nights'',',
+    '''projection_run_decision_reviews'',''projection_run_decision_nights'',');
+  execute definition;
   if strpos(pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure),'projection_run_decisions')=0
-    or strpos(pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure),'projection_run_decision_nights')=0 then
+    or strpos(pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure),'projection_run_decision_nights')=0
+    or strpos(pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure),'projection_run_decision_reviews')=0 then
     raise exception 'Account purge must include decisions and membership'; end if;
 end $b$;
 revoke all on function projection_private.outlier_context(uuid,date,timestamptz),projection_private.guard_outlier_flags() from public,anon,authenticated,service_role;
