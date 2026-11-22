@@ -36,7 +36,8 @@ function archiveInput(major = 4) {
   return { restaurantId: REST, asOf: ASOF, snapshotAt: SNAP, lastCompleteDate: golden.last_complete,
     settings: defaults, calibrationKey: golden.calibration_key, history, dishFacts, archives: [...runs.values()] };
 }
-const stats = (observations = [], settings = defaults) => rangeStatistics(observations, settings);
+const stats = (observations = [], settings = defaults, lastCompleteDate = golden.last_complete) =>
+  rangeStatistics(observations, settings, lastCompleteDate);
 const obs = (date, ratio) => ({ target_date: date, ratio });
 
 for (const mode of ['default', 'empirical']) test(`v4 ${mode} caches: all volume, dish and weekly bias values`, () => {
@@ -50,8 +51,10 @@ for (const mode of ['default', 'empirical']) test(`v4 ${mode} caches: all volume
     const v = volumeRange({ expected: 100, daysAhead: h, historyWeeks: 98, statistics: st, settings: defaults });
     volumes.push(v);
     [st.count, st.span_weeks, st.low_quantile, st.high_quantile, v.lower_ratio, v.upper_ratio, v.e, v.source,
-      st.median, projectionBias(sample, golden.last_complete, defaults).status, st.distinct_weeks]
+      st.median, projectionBias(sample, golden.last_complete, defaults).status]
       .forEach((value, j) => near(value, row[j + 1], `volume ${h} column ${j + 2}`));
+    // The unchanged workbook cache includes a thirteenth, oldest partial bucket.
+    near(st.distinct_weeks, Math.min(row[11], defaults.empirical_lookback_weeks));
   }
   for (let i = 0; i < caches.dishes.length; i++) {
     const row = caches.dishes[i], h = row[0], sample = observations(h, id(10 + i % 10)), st = stats(sample);
@@ -62,8 +65,9 @@ for (const mode of ['default', 'empirical']) test(`v4 ${mode} caches: all volume
       settings: { ...defaults, range_z_override: golden.cached_z } });
     [st.count, st.span_weeks, st.low_quantile, st.high_quantile, result.e, result.new_factor, result.fallback_half_width,
       result.lower, result.upper, result.source, st.median, result.random_half_width,
-      projectionBias(sample, golden.last_complete, defaults).status, st.distinct_weeks]
+      projectionBias(sample, golden.last_complete, defaults).status]
       .forEach((value, j) => near(value, row[j + 3], `dish ${i} column ${j + 4}`));
+    near(st.distinct_weeks, Math.min(row[16], defaults.empirical_lookback_weeks));
   }
   for (const row of caches.bias) {
     const sample = observations(row[1], row[0] === 'VOLUME' ? null : id(9 + Number(row[0].slice(1))));
@@ -104,15 +108,17 @@ test('both volume quantile clamps apply before e is calculated', () => {
 });
 test('two observations, span and distinct weeks are independent calibration gates', () => {
   const s = { ...defaults, minimum_empirical_weeks: 1 };
-  assert.equal(stats([obs('2026-01-01', 1)], s).empirical_available, false);
-  assert.equal(stats([obs('2026-01-01', 1), obs('2026-01-08', 1)], s).empirical_available, true);
+  assert.equal(stats([obs('2026-01-01', 1)], s, '2026-01-08').empirical_available, false);
+  assert.equal(stats([obs('2026-01-01', 1), obs('2026-01-08', 1)], s, '2026-01-08').empirical_available, true);
   // Span: 49 days = 7 weeks; 56 days = 8 weeks, with eight week buckets.
   const span = days => Array.from({ length: days }, (_, i) => obs(shiftProjectionDate('2026-01-05', i), 1));
-  assert.equal(stats(span(49)).empirical_available, false); assert.equal(stats(span(56)).empirical_available, true);
+  const spanStats = count => stats(span(count), defaults, shiftProjectionDate('2026-01-05', count - 1));
+  assert.equal(spanStats(49).empirical_available, false); assert.equal(spanStats(56).empirical_available, true);
   const gaps = [0, 7, 14, 21, 28, 35, 70].map(i => obs(shiftProjectionDate('2026-01-05', i), 1));
-  assert.equal(stats(gaps).distinct_weeks, 7); assert.equal(stats(gaps).empirical_available, false);
-  assert.equal(stats([...gaps, obs('2026-02-16', 1)]).empirical_available, true);
-  assert.equal(stats(span(56).map(r => ({ ...r, ratio: 0 }))).empirical_available, false);
+  assert.equal(stats(gaps, defaults, '2026-03-16').distinct_weeks, 7);
+  assert.equal(stats(gaps, defaults, '2026-03-16').empirical_available, false);
+  assert.equal(stats([...gaps, obs('2026-02-16', 1)], defaults, '2026-03-16').empirical_available, true);
+  assert.equal(stats(span(56).map(r => ({ ...r, ratio: 0 })), defaults, '2026-03-01').empirical_available, false);
 });
 test('new-dish lambda widening and empirical random floor match the equations', () => {
   const st = { empirical_available: true, low_quantile: 1, high_quantile: 1, median: 1 };
@@ -282,4 +288,47 @@ test('stale provenance, model changes and unsupported range values cannot enter 
     d => { d.shares.nights[0].adjusted_volume = 999; }]) {
     const data = structuredClone(pipeline()); change(data); assert.throws(() => projectProjectionRanges(data));
   }
+});
+
+test('a midweek cutoff excludes the oldest partial bucket only from the distinct-week count', () => {
+  const dates = ['2026-08-27', '2026-09-07', '2026-09-21', '2026-10-05',
+    '2026-10-12', '2026-10-26', '2026-11-09', '2026-11-18'];
+  const ratios = [0.8, 0.9, 1, 1.1, 1.2, 0.95, 1.05, 1.15];
+  const rows = dates.map((date, i) => obs(date, ratios[i]));
+  const seven = stats(rows, defaults, '2026-11-18');
+  assert.equal(seven.count, 8); near(seven.span_weeks, 12);
+  assert.equal(seven.distinct_weeks, 7);
+  assert.deepEqual(seven.week_starts, ['2026-09-07', '2026-09-21', '2026-10-05',
+    '2026-10-12', '2026-10-26', '2026-11-09', '2026-11-16']);
+  assert.deepEqual(seven.observations, rows);
+  near(seven.low_quantile, 0.87); near(seven.high_quantile, 1.165); near(seven.median, 1.025);
+  assert.equal(seven.empirical_available, false);
+  assert.deepEqual(seven.reasons, ['too_few_distinct_checked_weeks']);
+  const v = volumeRange({ expected: 100, daysAhead: 1, historyWeeks: 10, statistics: seven, settings: defaults });
+  assert.equal(v.source, 'DEFAULT / COLD START'); near(v.lower, 85); near(v.upper, 115);
+  assert.equal(dishRange({ expected: 10, e: v.e, isNew: false, statistics: seven, settings: defaults }).source, 'POISSON + VOLUME');
+  const eight = stats([...rows, obs('2026-09-14', 1)], defaults, '2026-11-18');
+  assert.equal(eight.distinct_weeks, 8); assert.equal(eight.empirical_available, true);
+  assert.throws(() => rangeStatistics(rows, defaults));
+  assert.equal(rangeStatistics([], defaults, null).distinct_weeks, 0);
+});
+
+test('the range pipeline passes the complete-service cutoff to volume and dish calibration', () => {
+  const data = pipeline(), dates = ['2026-08-27', '2026-09-07', '2026-09-21', '2026-10-05',
+    '2026-10-12', '2026-10-26', '2026-11-09', '2026-11-18'];
+  const archive = (date, i) => ({ id: id(2000 + i), restaurant_id: REST, model_major: 4,
+    calibration_key: data.resolvedSettings.calibration_key, run_date: date,
+    source_through: shiftProjectionDate(date, -1), issued_at: `${date}T06:00:00Z`, supersedes_id: null,
+    nights: [{ target_date: date, days_ahead: 1, availability: 'available', expected: 20,
+      dishes: [10, 11, 12].map(j => ({ dish_id: id(j), expected: 20 / 3 })) }] });
+  data.archives = dates.map(archive);
+  const seven = projectProjectionRanges(data).nights[0];
+  assert.equal(seven.volume.statistics.distinct_weeks, 7);
+  assert.equal(seven.volume.statistics.count, 8); near(seven.volume.statistics.span_weeks, 12);
+  assert.equal(seven.volume.source, 'DEFAULT / COLD START');
+  seven.dishes.forEach(d => { assert.equal(d.statistics.distinct_weeks, 7); assert.equal(d.source, 'POISSON + VOLUME'); });
+  data.archives.push(archive('2026-09-14', 8));
+  const eight = projectProjectionRanges(data).nights[0];
+  assert.equal(eight.volume.statistics.distinct_weeks, 8); assert.equal(eight.volume.source, 'MEDIAN-CENTRED EMPIRICAL');
+  eight.dishes.forEach(d => { assert.equal(d.statistics.distinct_weeks, 8); assert.equal(d.source, 'MEDIAN-CENTRED + RANDOM FLOOR'); });
 });

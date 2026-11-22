@@ -28,6 +28,13 @@ Existing dishes can use their own empirical ratios with the random floor. New
 dishes use the fallback, widened by 1+(maximum-1)*(1-lambda). Independent dish
 endpoints need not sum to the volume endpoints. No intermediate rounding occurs.
 
+Distinct checked weeks count only Monday-start buckets at offsets 0 through
+empirical_lookback_weeks-1 from the week containing lastCompleteDate. An oldest
+partial week outside those buckets still contributes its observations to the
+inclusive date window, span and percentiles. The unchanged workbook fixture's
+legacy thirteen-bucket diagnostic is capped to twelve in its week-count checks;
+all other golden comparisons and the fixture itself are retained.
+
 Bias medians use completed Monday-Sunday weeks preceding the week containing
 the complete-service date, including when that date is Sunday. Only the latest
 configured consecutive weeks decide the status. Any missing median means
