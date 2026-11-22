@@ -113,7 +113,20 @@ test('real context produces the v4 one-off event and saves one permanent decisio
 });
 test('an identical retry changes no decision, membership or nightly flag',async()=>{
   const result=await storeProjectionOutliers(db,plan);assert.equal(result.saved,0);assert.equal(result.flags_changed,0);assert.equal(result.retry,true);
-  assert.equal((await read()).saved_reviews[0].diagnostics.length,0);
+  const unchanged=await read();assert.equal(unchanged.saved_reviews[0].diagnostics.length,0);
+  assert.equal(unchanged.saved_decision_rechecks,0);
+  const evidence=JSON.parse(q(`select trace->'review_evidence' from public.projection_run_decisions where restaurant_id='${REST}';`));
+  assert.equal(evidence.member_nights.length,3);assert.equal(evidence.post_nights.length,3);
+  assert.ok(evidence.member_nights.every(n=>n.source_revision&&n.archive_id));
+});
+test('a fresh ingestion generation invalidates review and fences an older write plan',async()=>{
+  const before=await read();
+  q(`insert into public.projection_ingestion_state(restaurant_id,business_date,generation,context_digest,payload_digest,changed_at,last_observed_at)
+    values('${REST}','2026-11-08',1,repeat('a',64),repeat('b',64),clock_timestamp(),clock_timestamp());`);
+  await assert.rejects(()=>storeProjectionOutliers(db,before),/source changed/);
+  const fresh=await read();assert.equal(fresh.saved_decision_rechecks,1);
+  assert.deepEqual(fresh.saved_reviews[0].diagnostics,[]);
+  assert.equal(fresh.nights.find(n=>n.business_date==='2026-11-08').ingestion_generation,'1');
 });
 test('a corrected candidate retains the saved final decision and records disagreement',async()=>{
   q(`update public.projection_nightly_flags set total_units=10,source_revision='corrected' where restaurant_id='${REST}' and business_date='2026-11-05';`);

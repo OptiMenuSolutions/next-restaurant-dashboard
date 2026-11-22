@@ -13,7 +13,9 @@ begin
     'first_data_date',h->'first_data_date','global_version',h->'global_version','restaurant_version',h->'restaurant_version',
     'model_version',h->'model_version',
     'history',coalesce((select jsonb_agg((v-'updated_at')||jsonb_build_object('outlier_status','unchecked',
-      'flags',(v->'flags')-'outliers') order by v->>'business_date') from jsonb_array_elements(h->'history') v),'[]'),
+      'flags',(v->'flags')-'outliers','ingestion_generation',
+      (select i.generation::text from public.projection_ingestion_state i where i.restaurant_id=p_restaurant_id
+        and i.business_date=(v->>'business_date')::date)) order by v->>'business_date') from jsonb_array_elements(h->'history') v),'[]'),
     'archives',coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'restaurant_id',r.restaurant_id,'run_date',r.run_date,
       'target_date',n.target_date,'issued_at',r.issued_at,'source_through',r.source_through,'model_major',r.model_major,
       'availability',n.availability,'expected',n.expected,'supersedes_id',r.supersedes_id) order by r.id)

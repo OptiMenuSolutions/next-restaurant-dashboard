@@ -231,3 +231,68 @@ test('counterfactual windows anchor to the last complete source night across a d
   assert.equal(c.complete_through,'2026-11-08');assert.equal(c.volume.window.until,'2026-11-08');
   assert.ok(c.source_dates.every(date=>date<'2026-11-10'));
 });
+
+test('unchanged saved evidence triggers zero candidate reruns',()=>{
+  const data=input();data.decisions=[save(run(data))];
+  const result=run(data);assert.equal(result.saved_decision_rechecks,0);
+  assert.equal(result.saved_reviews[0].rechecked,false);assert.equal(result.saved_reviews[0].candidate,null);
+  assert.deepEqual(result.saved_reviews[0].diagnostics,[]);
+  assert.ok(data.decisions[0].trace.review_evidence.member_nights.every(n=>n.source_revision&&n.archive_id));
+  assert.equal(data.decisions[0].trace.review_evidence.post_nights.length,3);
+});
+test('a changed member revision reruns comparison and reports a differing candidate',()=>{
+  const data=input();data.decisions=[save(run(data))];
+  const n=row(data,'2026-11-05');n.source_revision='corrected-member';n.total_units=10;
+  const result=run(data);assert.equal(result.saved_decision_rechecks,1);assert.equal(result.saved_reviews[0].rechecked,true);
+  assert.deepEqual(result.saved_reviews[0].diagnostics,['saved_decision_retained_candidate_differs']);
+  assert.equal(result.nights.find(n=>n.business_date==='2026-11-05').outlier_status,'one_off_event');
+});
+test('post-night revisions and changed day-of archive IDs invalidate the evidence check',()=>{
+  for(const kind of ['post_revision','archive']){
+    const data=input();data.decisions=[save(run(data))];
+    if(kind==='post_revision')row(data,'2026-11-08').source_revision='corrected-post';
+    else{
+      const parent=data.archives.find(a=>a.run_date==='2026-11-05');
+      data.archives.push({...parent,id:id(9901),supersedes_id:parent.id,issued_at:'2026-11-12T06:00:00Z'});
+    }
+    assert.equal(run(data).saved_decision_rechecks,1);
+  }
+});
+test('a fresh ingestion generation reruns comparison without inventing a changed result',()=>{
+  const data=input();row(data,'2026-11-08').ingestion_generation='1';data.decisions=[save(run(data))];
+  row(data,'2026-11-08').ingestion_generation='2';
+  const result=run(data);assert.equal(result.saved_decision_rechecks,1);assert.deepEqual(result.saved_reviews[0].diagnostics,[]);
+});
+test('an intervening untested night is tracked and ordinary flag writes do not invalidate evidence',()=>{
+  const data=input();row(data,'2026-11-06').complete=false;
+  row(data,'2026-11-08').total_units=500;row(data,'2026-11-09').total_units=500;
+  const initial=run(data);assert.ok(initial.candidates.length);
+  data.decisions=[save(initial)];assert.equal(run(data).saved_decision_rechecks,0);
+  data.history.forEach(n=>{n.updated_at='2026-11-18T12:00:00Z';n.flags={outliers:{as_of:DAY}};});
+  assert.equal(run(data).saved_decision_rechecks,0);
+  row(data,'2026-11-06').ingestion_generation='2';assert.equal(run(data).saved_decision_rechecks,1);
+});
+test('changed earlier counterfactual source evidence is rechecked while later history is ignored',()=>{
+  const data=input();data.decisions=[save(run(data))];
+  row(data,'2026-11-18').source_revision='later-service';assert.equal(run(data).saved_decision_rechecks,0);
+  const prior=data.decisions[0].trace.review_evidence.source_nights.find(n=>n.business_date<'2026-11-05');
+  row(data,prior.business_date).source_revision='corrected-baseline';assert.equal(run(data).saved_decision_rechecks,1);
+});
+test('legacy decisions without evidence remain conservatively reviewable',()=>{
+  const data=input();data.decisions=[save(run(data))];delete data.decisions[0].trace.review_evidence;
+  const result=run(data);assert.equal(result.saved_decision_rechecks,1);assert.deepEqual(result.saved_reviews[0].diagnostics,[]);
+});
+test('sixteen unchanged native decisions trigger zero comparison reruns',()=>{
+  const data=input(),start=shiftProjectionDate(DAY,-100);
+  data.history.forEach(n=>Object.assign(n,{total_units:100,complete:true,closed:false,early_close:false,holiday_keys:[]}));
+  data.archives=[];
+  for(let i=0;i<100;i++){
+    const date=shiftProjectionDate(start,i);row(data,date).total_units=i<96&&i%6<3?160:100;
+    data.archives.push({id:id(20000+i),restaurant_id:REST,run_date:date,target_date:date,model_major:4,
+      issued_at:date+'T06:00:00Z',source_through:shiftProjectionDate(date,-1),availability:'available',expected:100,supersedes_id:null});
+  }
+  const baseline=run(data);assert.equal(baseline.candidates.length,16);
+  data.decisions=baseline.candidates.map((candidate,i)=>({id:id(30000+i),restaurant_id:REST,model_major:4,created_at:SNAP,...candidate}));
+  const result=run(data);assert.equal(result.saved_reviews.length,16);assert.equal(result.saved_decision_rechecks,0);
+  assert.ok(result.saved_reviews.every(r=>!r.rechecked&&r.candidate===null&&r.diagnostics.length===0));
+});

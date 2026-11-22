@@ -55,6 +55,14 @@ block. Conflicting membership is excluded with duplicate_final_decisions; the
 membership primary key prevents storing such conflicts. If corrected data gives
 a different candidate, retain the original and expose
 saved_decision_retained_candidate_differs, including in saved flag diagnostics.
+A saved trace also records member and post-run source revisions, day-of archive IDs,
+the ingestion generations of all nights in the run-through-test interval, and the
+counterfactual source dependencies. Unchanged evidence skips candidate replay with
+no diagnostic. Changed evidence triggers comparison while preserving the decision.
+Ingestion generations come from projection_ingestion_state, not flag updated_at;
+outlier flag writes therefore do not invalidate this check. Legacy decisions without
+the evidence snapshot are conservatively rechecked. saved_decision_rechecks counts
+actual comparison reruns for verification and internal monitoring.
 Both permanent tables remain covered by the existing account-purge exception.
 
 Backtests use decisions with decided_through < asOf and created_at <= snapshotAt.
