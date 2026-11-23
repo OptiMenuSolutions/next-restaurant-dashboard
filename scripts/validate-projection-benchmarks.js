@@ -155,7 +155,18 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
+    'snapshot_performance',
   ]) {
+    if (suffix === 'snapshot_performance') {
+      q(`do $copy$ declare d text; begin
+        d:=pg_get_functiondef('projection_private.lifecycle_context_before_nightly(uuid,date,timestamptz)'::regprocedure);
+        execute replace(d,'FUNCTION projection_private.lifecycle_context_before_nightly(',
+          'FUNCTION projection_private.test_lifecycle_context_original(');
+        d:=pg_get_functiondef('projection_private.lifecycle_prior_sales(uuid,date,timestamptz)'::regprocedure);
+        execute replace(d,'FUNCTION projection_private.lifecycle_prior_sales(',
+          'FUNCTION projection_private.test_prior_sales_original(');
+      end $copy$;`);
+    }
     const files = names.filter(
       name => name.endsWith(`_projection_${suffix}.sql`)
     );
@@ -185,6 +196,12 @@ before(async () => {
       restaurant_id,model_major,effective_at,settings
     )
     select id,4,clock_timestamp(),'{"business_day_cutoff_minutes":0}'::jsonb
+    from public.restaurants;
+
+    insert into public.projection_run_state(
+      restaurant_id,backfill_from,backfill_until,cursor_date,phase,backfill_complete
+    )
+    select id,current_date-400,current_date-1,current_date,'complete',true
     from public.restaurants;
 
     insert into public.projection_pool_permissions(
@@ -570,4 +587,130 @@ test('vintage checks use UTC consistently across database session timezones', ()
     from public.projection_benchmark_versions where id='${version}';
     rollback;
   `);
+});
+
+const dateFixture = id(60);
+const dateSnapshot = '2027-11-08T12:00:00Z';
+
+test('batched menu dates preserve historical cutoffs, DST, tenant and snapshot bounds', () => {
+  q(`
+    insert into public.restaurants(id,name,operational_timezone,onboarding_completed_at)
+      values('${dateFixture}','Date fixture','America/New_York','2020-01-01T12:00:00Z');
+    insert into public.projection_restaurant_config(restaurant_id,concept_type,first_data_date)
+      values('${dateFixture}','full_service','2020-01-01');
+    insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings)
+      values('${dateFixture}',4,'2027-01-01T00:00:00Z','{"business_day_cutoff_minutes":150}'),
+        ('${dateFixture}',4,'2027-07-01T00:00:00Z','{"business_day_cutoff_minutes":90}');
+    insert into public.menu_items(id,restaurant_id,name,created_at)
+      select ('30000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+        '${dateFixture}','Date '||n,at_time
+      from unnest(array[
+        '2019-12-31T03:00:00Z','2027-03-14T06:59:59Z',
+        '2027-03-14T07:00:00Z','2027-07-01T00:00:00Z',
+        '2027-11-07T05:45:00Z','2027-11-07T06:29:59Z',
+        '2027-11-07T06:30:00Z','2027-12-01T12:00:00Z'
+      ]::timestamptz[]) with ordinality v(at_time,n);
+  `);
+  assert.equal(q(`
+    select count(*) from projection_private.menu_source_dates('${dateFixture}','${dateSnapshot}') b
+    join public.menu_items m on m.id=b.menu_item_id
+    where b.added_business_date is distinct from
+      (projection_private.pos_source_clock('${dateFixture}',null,m.created_at)->>'business_date')::date;
+  `), '0');
+  assert.equal(q(`select count(*) from projection_private.menu_source_dates('${dateFixture}','${dateSnapshot}');`), '7');
+  assert.equal(q(`
+    select string_agg(b.added_business_date::text,',' order by m.name)
+    from projection_private.menu_source_dates('${dateFixture}','${dateSnapshot}') b
+    join public.menu_items m on m.id=b.menu_item_id
+    where m.name in ('Date 2','Date 3','Date 5','Date 6','Date 7');
+  `), '2027-03-13,2027-03-14,2027-11-06,2027-11-06,2027-11-07');
+  assert.equal(q(`select count(*) from projection_private.menu_source_dates('${id(2)}','${dateSnapshot}') b
+    join public.menu_items m on m.id=b.menu_item_id where m.restaurant_id='${dateFixture}';`), '0');
+});
+
+test('batching preserves the complete lifecycle payload and context digest', () => {
+  assert.equal(q(`
+    select projection_private.lifecycle_context_before_nightly(
+      '${dateFixture}','2027-11-08','${dateSnapshot}'
+    ) = projection_private.test_lifecycle_context_original(
+      '${dateFixture}','2027-11-08','${dateSnapshot}'
+    );
+  `), 't');
+});
+
+test('batched prior-sales inference preserves the earliest eligible positive sale', () => {
+  q(`
+    insert into public.pos_connections(id,restaurant_id,provider,status,shift4_timezone)
+      values('${id(63)}','${dateFixture}','shift4','connected','America/New_York');
+    insert into public.projection_pos_item_map(
+      restaurant_id,pos_system,external_item_id,dish_id,valid_from
+    ) values('${dateFixture}','shift4','prior-food',
+      '30000000-0000-4000-8000-000000000002','2027-03-01');
+    insert into public.projection_nightly_flags(
+      restaurant_id,business_date,complete,total_units,source_revision
+    ) values('${dateFixture}','2027-03-10',true,2,repeat('a',64));
+    insert into public.pos_tickets(id,restaurant_id,pos_system,ticket_type,opened_at,closed_at)
+      values('${id(64)}','${dateFixture}','shift4','closed','2027-03-10T17:00:00Z','2027-03-10T18:00:00Z');
+    insert into public.pos_ticket_lines(id,ticket_id,restaurant_id,item_ref,line_type,quantity,is_non_sales_revenue,added_at)
+      values('${id(65)}','${id(64)}','${dateFixture}','prior-food','sale',2,false,'2027-03-10T17:00:00Z');
+  `);
+  assert.equal(q(`select projection_private.lifecycle_prior_sales(
+    '${dateFixture}','2027-11-08','${dateSnapshot}'
+  )=projection_private.test_prior_sales_original(
+    '${dateFixture}','2027-11-08','${dateSnapshot}'
+  );`), 't');
+  const rows = JSON.parse(q(`select projection_private.lifecycle_prior_sales(
+    '${dateFixture}','2027-11-08','${dateSnapshot}');`));
+  assert.equal(rows[0].business_date, '2027-03-10');
+  assert.equal(rows[0].units, 2);
+});
+
+test('1000 distinct menu timestamps in one policy period use one source clock lookup', () => {
+  const rid = id(61);
+  q(`
+    insert into public.restaurants(id,name,operational_timezone)
+      values('${rid}','Bulk fixture','America/New_York');
+    alter table public.menu_items disable trigger user;
+    insert into public.menu_items(id,restaurant_id,name,created_at)
+      select ('40000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+        '${rid}','Bulk '||n,'2026-01-15T12:00:00Z'::timestamptz+n*interval '1 second'
+      from generate_series(1,1000) n;
+    alter table public.menu_items enable trigger user;
+  `);
+  assert.equal(q(`
+    begin;
+    do $copy$ declare d text; begin
+      d:=pg_get_functiondef('projection_private.pos_source_clock(uuid,text,timestamptz)'::regprocedure);
+      execute replace(d,'FUNCTION projection_private.pos_source_clock(',
+        'FUNCTION projection_private.test_source_clock_original(');
+    end $copy$;
+    create or replace function projection_private.pos_source_clock(
+      p_restaurant_id uuid,p_shift4_timezone text,p_at timestamptz
+    ) returns jsonb language plpgsql stable set search_path='' as $spy$
+    begin
+      perform set_config('optimenu.test_clock_calls',
+        (coalesce(nullif(current_setting('optimenu.test_clock_calls',true),''),'0')::int+1)::text,true);
+      return projection_private.test_source_clock_original(p_restaurant_id,p_shift4_timezone,p_at);
+    end $spy$;
+    select count(*) from projection_private.menu_source_dates('${rid}','2026-02-01T00:00:00Z');
+    select current_setting('optimenu.test_clock_calls');
+    rollback;
+  `), '1000\n1');
+});
+
+test('incomplete backfills return a lightweight unavailable context', () => {
+  const rid = id(62);
+  q(`insert into public.restaurants(id,name,operational_timezone)
+    values('${rid}','Pending fixture','UTC');`);
+  const raw = JSON.parse(q(`set role service_role;
+    select public.projection_benchmark_inputs('${rid}',clock_timestamp());`));
+  assert.equal(raw.restaurant_id, rid);
+  assert.equal(raw.backfill.complete, false);
+  assert.equal(Object.hasOwn(raw, 'lifecycle'), false);
+});
+
+test('the batched reader stays private and future benchmark snapshots remain blocked', () => {
+  rejects(`set role anon;select * from projection_private.menu_source_dates('${dateFixture}',clock_timestamp());`, /permission denied/);
+  rejects(`set role authenticated;select * from projection_private.menu_source_dates('${dateFixture}',clock_timestamp());`, /permission denied/);
+  rejects(`set role service_role;select public.projection_benchmark_inputs('${dateFixture}',clock_timestamp()+interval '1 day');`, /Future benchmark snapshot/);
 });

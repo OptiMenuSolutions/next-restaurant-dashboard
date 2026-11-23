@@ -208,7 +208,7 @@ before(async () => {
   for (const suffix of [
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
-    'benchmarks', 'benchmark_build_fixes',
+    'benchmarks', 'benchmark_build_fixes', 'snapshot_performance',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);
