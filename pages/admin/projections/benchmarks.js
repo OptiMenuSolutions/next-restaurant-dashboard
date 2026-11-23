@@ -60,9 +60,9 @@ export default function Benchmarks() {
     }
   }
 
-  const approvalReady = preview?.preview.some(restaurant =>
+  const approvalReady = !!preview?.version.census_curve_digest && (preview?.preview.some(restaurant =>
     hasUsableEightWeekPreview(restaurant.result)
-  ) ?? false;
+  ) ?? false);
 
   return (
     <AdminShell>
@@ -111,6 +111,11 @@ export default function Benchmarks() {
             <p>
               Version {preview.version.id}.
               Weekdays are Monday through Sunday.
+            </p>
+
+            <p>
+              National Census weights (Mon–Sun):{' '}
+              {preview.version.benchmark_settings?.census_weekday_weights?.join(' / ') || 'legacy restaurant weights — rebuild required'}.
             </p>
 
             {preview.preview.map(restaurant => (

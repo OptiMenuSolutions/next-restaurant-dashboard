@@ -12,13 +12,29 @@ Launch order remains returning season, own launch mean, pooled contributor
 mean, then default. There is no pooled holiday prior.
 
 Census uses FRED MRTSSM722USN and CUUR0000SEFV at an explicit real-time
-vintage. Deflate monthly sales by CPI/100. Normalize using the sum of
-fitted weekday weights across the actual month. Open weekday weights
-average one; closed weekdays are zero. Preserve Step 3's last-four-night
-closure rule. Monthly points use the midpoint between the first and last
-dated observations. Interpolate daily, then average Monday-start weeks.
-Do not bridge missing sales months, multi-month CPI gaps, or extrapolate.
-Align by 364 days and use the exact R-fit recency weights in the denominator.
+vintage. Deflate monthly sales by CPI/100. The v4 weekday-composition
+adjustment removes the national weekday mix from national monthly totals;
+it never uses the receiving restaurant's weekday levels or closed days.
+Benchmark settings version 1 pins census_weekday_weights to
+[1,1,1,1,1,1,1] in Monday-to-Sunday order: divide by calendar days as an
+explicit interim until national weekday evidence supports different weights.
+Changing the vector requires a new benchmark settings version and a new
+benchmark version. The first publication of changed settings requires admin
+review; later monthly versions with identical settings may publish automatically.
+
+Compute the national monthly curve once per benchmark version, before the
+restaurant loop. Store its unrounded points, settings and digest immutably.
+Nightly runs and archived counterfactuals read that pinned curve; they never
+rebuild it from restaurant levels or current settings. Record the national
+weights, curve digest and exact restaurant baseline dates/recency weights
+in forecast traces. Closed-weekday exclusion remains at the forecast and
+preview level, never in the national monthly denominator.
+Monthly points use the midpoint between the first and last calendar days.
+Interpolate daily, then average Monday-start weeks. Do not bridge missing
+sales months, multi-month CPI gaps, or extrapolate. Align by 364 days and
+use the exact R-fit recency weights in the denominator. The old unpublished
+restaurant-weighted candidate stays immutable and cannot be approved;
+rebuild and review a new national-weighted candidate.
 
 CPI normalization revision isolated-log-linear-v1 applies only to newly
 captured CPI pulls carrying that version in query_metadata.cpi_gap_policy.

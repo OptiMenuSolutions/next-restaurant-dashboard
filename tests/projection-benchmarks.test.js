@@ -11,6 +11,7 @@ import {
   verifyBenchmarkSnapshot,
   benchmarkContributions,
 } from '../lib/projections/benchmarks.js';
+import { CENSUS_BENCHMARK_SETTINGS, readCensusCurve } from '../lib/projections/nationalCensus.js';
 import { fetchFredBenchmark } from '../lib/projections/fredBenchmarks.js';
 import { benchmarkFailureMessage } from '../lib/projections/benchmarkFailure.js';
 import { CPI_GAP_POLICY, interpolateCpiMonths } from '../lib/projections/cpiGap.js';
@@ -36,13 +37,10 @@ const months = [1, 2, 3, 4].map(
   n => `2025-${String(n).padStart(2, '0')}-01`
 );
 const monthly = value => months.map(date => ({ date, value }));
-const levels = { 1: 100, 2: 100, 3: 100, 4: 100, 5: 100, 6: 100, 7: 100 };
 
 const curve = extra => censusCurve({
   sales: monthly(3100),
   cpi: monthly(100),
-  weekdayLevels: levels,
-  closedWeekdays: [],
   ...extra,
 });
 
@@ -101,22 +99,21 @@ test('real monthly sales remove CPI inflation and use the calendar day denominat
   near(c.weekly('2025-02-05'), expected);
 });
 
-test('weekday levels normalize over open weekdays; closed days contribute zero', () => {
-  const c = curve({
-    weekdayLevels: { ...levels, 5: 200, 6: 300, 7: 9999 },
-    closedWeekdays: [7],
-  });
-  near(Object.values(c.weights).reduce((a, b) => a + b) / 6, 1);
-  assert.equal(c.weights[7], 0);
-  near(c.weights[6] / c.weights[1], 3);
+test('national weights v1 use all calendar days, including leap February', () => {
+  for (const [date, days] of [['2025-01-01', 31], ['2025-02-01', 28], ['2024-02-01', 29]]) {
+    const c = curve({ sales: [{ date, value: days * 123 }], cpi: [{ date, value: 100 }] });
+    near(c.snapshot.points[0].value, 123);
+    assert.equal(c.snapshot.points[0].denominator, days);
+  }
 });
 
-test('missing open-weekday levels and all-closed calendars fail visibly', () => {
-  assert.throws(() => curve({ weekdayLevels: { 1: 100 } }), /fitted levels/);
-  assert.throws(
-    () => curve({ closedWeekdays: [1, 2, 3, 4, 5, 6, 7] }),
-    /fitted levels/
-  );
+test('national settings reject missing, nonpositive or unversioned changed weights', () => {
+  for (const weights of [[], [1, 1], [1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, NaN],
+    [1, 1, 1, 1, 1, 1, 2]]) {
+    assert.throws(() => curve({ benchmark_settings: {
+      ...CENSUS_BENCHMARK_SETTINGS, census_weekday_weights: weights,
+    } }), /national Census|National Census/);
+  }
 });
 
 test('missing months are not silently bridged or extrapolated', () => {
@@ -479,6 +476,19 @@ function integrationSnapshot(input, contextExtra = {}, amendContext = () => {}) 
     ...contextExtra,
   };
   amendContext(context);
+  if (context.release) {
+    try {
+      const pinned = censusCurve(context.release.census);
+      context.release.census = {
+        benchmark_settings: pinned.benchmark_settings,
+        national_curve: pinned.snapshot,
+        census_curve_digest: pinned.digest,
+      };
+    } catch (error) {
+      if (error.code !== 'PROJECTION_BENCHMARK_INVALID') throw error;
+      context.release.census = {};
+    }
+  }
   return buildBenchmarkSnapshot({
     context, volume, shares,
     settings: input.resolvedSettings.settings,
@@ -506,7 +516,7 @@ test('Census snapshot is reused by volume and share verification and changes A, 
     shares.nights[0].dishes.reduce((n, dish) => n + dish.expected_units, 0),
     volume.nights[0].adjusted_volume
   );
-  assert.ok(Object.isFrozen(snapshot.weekday_weights));
+  assert.ok(Object.isFrozen(snapshot.census_weekday_weights));
 });
 
 test('pooling wins over Census and takes full strength in volume and category allocation', () => {
@@ -617,15 +627,9 @@ test('unavailable Census after approval uses R alone and preserves the reason wh
       },
     },
     {
-      reason: 'invalid_census_observations',
+      reason: 'national_curve_unavailable',
       amend(context) {
         context.release.census.cpi.find(row => row.date === '2025-02-01').value = 0;
-      },
-    },
-    {
-      reason: 'weekday_levels_unavailable',
-      amend(context) {
-        context.closed_weekdays = [1, 2, 3, 4, 5, 6, 7];
       },
     },
   ];
@@ -686,8 +690,6 @@ test('leap-February normalization uses all 29 days before Monday-week interpolat
   const c = censusCurve({
     sales,
     cpi: sales.map(row => ({ ...row, value: 100 })),
-    weekdayLevels: levels,
-    closedWeekdays: [],
   });
   near(c.weekly('2024-02-29'), 100);
 });
@@ -757,6 +759,9 @@ test('outlier counterfactuals use the original pinned Census vintage with the ru
       cpi: sales.map(row => ({ ...row, value: 100 })),
     },
   };
+  const pinned = censusCurve(release.census);
+  release.census = { benchmark_settings: pinned.benchmark_settings,
+    national_curve: pinned.snapshot, census_curve_digest: pinned.digest };
   const archives = Array.from({ length: 6 }, (_, i) => {
     const date = shift(input.asOf, i - 6);
     return {
@@ -846,20 +851,26 @@ test('only strictly positive pooled ratios qualify for seasonal selection', () =
   }
 });
 
-test('known zero weekday levels retain zero weight while positive days normalize', () => {
-  const c = curve({ weekdayLevels: { ...levels, 4: 0 } });
-  assert.equal(c.weights[4], 0);
-  near(Object.values(c.weights).reduce((a, b) => a + b) / 7, 1);
-  assert.ok(c.weekly('2025-02-17') > 0);
+test('two restaurant profiles use the identical pinned national curve', () => {
+  const input = integrationInput();
+  const ordinary = integrationSnapshot(input);
+  const closed = integrationSnapshot(input, { closed_weekdays: [3, 5, 6, 7] });
+  assert.equal(ordinary.census_curve_digest, closed.census_curve_digest);
+  assert.deepEqual(ordinary.census_weekday_weights, [1, 1, 1, 1, 1, 1, 1]);
+  assert.equal(ordinary.values[0].census.ratio, closed.values[0].census.ratio);
+  assert.deepEqual(ordinary.values[0].base, closed.values[0].base);
 });
 
-test('all-zero, negative, missing and non-finite open weekday levels stay unavailable', () => {
-  const zero = Object.fromEntries(Object.keys(levels).map(key => [key, 0]));
-  for (const weekdayLevels of [zero, { ...levels, 4: -1 },
-    { ...levels, 4: undefined }, { ...levels, 4: NaN },
-    { ...levels, 4: Infinity }]) {
-    assert.throws(() => curve({ weekdayLevels }), /fitted levels/);
-  }
+test('pinned national curves replay identically and reject modified points', () => {
+  const built = curve();
+  const replay = readCensusCurve(built.snapshot, built.digest);
+  near(replay.weekly('2025-02-17'), built.weekly('2025-02-17'));
+  const changed = structuredClone(built.snapshot);
+  changed.points[0].value += 1;
+  assert.throws(() => readCensusCurve(changed, built.digest), /digest changed/);
+  const weights = { ...CENSUS_BENCHMARK_SETTINGS, version: 2,
+    census_weekday_weights: [1, 1, 1, 1, 1, 1, 2] };
+  assert.notEqual(curve({ benchmark_settings: weights }).digest, built.digest);
 });
 
 test('benchmark failures expose safe FRED details and database codes', () => {
@@ -948,7 +959,7 @@ test('an unfilled base-window gap builds eight unavailable preview weeks without
   const c = censusCurve({
     sales: dates.map(date => ({ date, value: 30000 })),
     cpi: dates.map((date, i) => ({ date, value: i === 1 || i === 2 ? null : 100 })),
-    weekdayLevels: levels, closedWeekdays: [], cpi_gap_policy: CPI_GAP_POLICY,
+    cpi_gap_policy: CPI_GAP_POLICY,
   });
   const plan = { nights: Array.from({ length: 8 }, (_, i) => ({
     business_date: shift('2026-11-23', i),
@@ -1005,4 +1016,43 @@ test('the CPI gap policy never fills a missing monthly sales observation', () =>
   });
   assert.equal(c.weekly('2025-02-17'), null);
   assert.deepEqual(c.cpi_interpolated, []);
+});
+
+test('Maple-style weekdays cannot create a December composition dip in the national curve', () => {
+  const dates = ['2025-10-01', '2025-11-01', '2025-12-01', '2026-01-01'];
+  const c = censusCurve({
+    sales: dates.map(date => ({ date, value: 3000 })),
+    cpi: dates.map(date => ({ date, value: 100 })),
+  });
+  const november = c.snapshot.points.find(p => p.date === '2025-11-01');
+  const december = c.snapshot.points.find(p => p.date === '2025-12-01');
+  near(december.value / november.value, 30 / 31);
+  assert.ok(december.value / november.value > 0.96);
+  assert.equal(december.denominator, 31);
+});
+
+test('closed weekdays are excluded by the preview while the shared national curve stays intact', () => {
+  const plan = { nights: Array.from({ length: 8 }, (_, i) => ({
+    business_date: shift('2026-11-23', i),
+    trace: { volume: { recent: { nights: [{ business_date: '2026-10-26', weight: 1 }] } } },
+  })) };
+  const weeks = buildCensusPreviewWeeks({
+    start: '2026-11-23', plan, curve: { weekly: () => 100 },
+    settings: PROJECTION_DEFAULTS, closedWeekdays: [3, 5, 6, 7],
+  });
+  assert.deepEqual(weeks[0].days.map(d => d.applies), [true, true, false, true, false, false, false]);
+  assert.equal(weeks[0].days[2].reason, 'closed_weekday');
+});
+
+test('restaurant fitted levels do not enter the pinned curve or its national weights', () => {
+  const input = integrationInput();
+  const before = integrationSnapshot(input);
+  const profile = [60, 150, 105, 60, 45, 60, 60];
+  const multiplier = date => profile[new Date(`${date}T00:00:00Z`).getUTCDay()] / 100;
+  input.history = input.history.map(n => ({ ...n, total_units: n.total_units * multiplier(n.business_date) }));
+  input.dishFacts = input.dishFacts.map(n => ({ ...n, units: n.units * multiplier(n.business_date) }));
+  const after = integrationSnapshot(input, { closed_weekdays: [3, 5, 6, 7] });
+  assert.equal(before.census_curve_digest, after.census_curve_digest);
+  assert.deepEqual(before.census_weekday_weights, after.census_weekday_weights);
+  near(before.values[0].census.ratio, after.values[0].census.ratio);
 });

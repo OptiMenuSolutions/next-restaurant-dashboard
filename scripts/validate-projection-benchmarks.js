@@ -11,6 +11,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { BENCHMARK_DICTIONARY, benchmarkWeek } from '../lib/projections/benchmarks.js';
+import { CENSUS_BENCHMARK_SETTINGS, censusCurve } from '../lib/projections/nationalCensus.js';
 import { shiftProjectionDate } from '../lib/projections/businessTime.js';
 import { projectionVolumeDigest } from '../lib/projections/volumeProvenance.js';
 
@@ -56,6 +57,15 @@ const rejects = (sql, pattern) => assert.throws(
 let started = false;
 let version;
 let preview;
+const national = censusCurve({
+  sales: [{ date: '2025-01-01', value: 3100 }],
+  cpi: [{ date: '2025-01-01', value: 100 }],
+});
+const nationalDoc = {
+  benchmark_settings: CENSUS_BENCHMARK_SETTINGS,
+  census_curve: national.snapshot,
+  census_curve_digest: national.digest,
+};
 
 before(async () => {
   if (localBin) {
@@ -156,7 +166,7 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
-    'snapshot_performance', 'cpi_gap',
+    'snapshot_performance', 'cpi_gap', 'national_census',
   ]) {
     if (suffix === 'snapshot_performance') {
       q(`do $copy$ declare d text; begin
@@ -255,6 +265,7 @@ before(async () => {
   }));
 
   const doc = {
+    ...nationalDoc,
     snapshot_at: now,
     vintage,
     valid_from: vintage,
@@ -559,6 +570,7 @@ test('unnamed accounts can be previewed without changing restaurant records', ()
     where v.id='${version}';
   `));
   const doc = {
+    ...nationalDoc,
     ...seed,
     snapshot_at: new Date().toISOString(),
     dictionary: BENCHMARK_DICTIONARY,
@@ -769,7 +781,7 @@ test('SQL approval permits partial days but rejects an unusable eight-week previ
     join public.projection_benchmark_pulls c on c.id=v.cpi_pull_id where v.id='${version}';`));
   const catalog = JSON.parse(q('select public.projection_benchmark_catalog();'));
   for (const [result, accepted] of [[missing, false], [partial, true]]) {
-    const doc = { ...seed, snapshot_at: new Date().toISOString(),
+    const doc = { ...seed, ...nationalDoc, snapshot_at: new Date().toISOString(),
       dictionary: BENCHMARK_DICTIONARY, dictionary_digest: projectionVolumeDigest(BENCHMARK_DICTIONARY),
       restaurants: catalog.restaurants.map(r => ({ id: r.id, as_of: seed.valid_from,
         source_digest: null, preview: result, contributions: [] })),
@@ -779,5 +791,47 @@ test('SQL approval permits partial days but rejects an unusable eight-week previ
     const approve = `set role service_role;select public.projection_approve_benchmark('${staged.id}','${preview.digest}','${id(99)}');`;
     if (accepted) assert.equal(JSON.parse(q(approve)).published, true);
     else rejects(approve, /No validated eight-week preview/);
+  }
+});
+
+test('national settings and the same immutable curve are pinned for different receivers', () => {
+  const contexts = [2, 3].map(n => JSON.parse(q(`
+    select projection_private.benchmark_context('${id(n)}',current_date,clock_timestamp());
+  `)));
+  assert.deepEqual(contexts[0].release.census.national_curve, contexts[1].release.census.national_curve);
+  assert.deepEqual(contexts[0].release.census.benchmark_settings.census_weekday_weights, [1, 1, 1, 1, 1, 1, 1]);
+  assert.equal(contexts[0].release.census.census_curve_digest, national.digest);
+  rejects(`update public.projection_benchmark_versions set census_curve='{}' where id='${version}';`, /append-only/);
+  rejects('set role authenticated;select projection_private.national_census_metadata(null);', /permission denied/);
+});
+
+test('archives retain their original national weights and curve digest', () => {
+  const row = { restaurant_id: id(2), run_date: new Date().toISOString().slice(0, 10),
+    issued_at: new Date().toISOString(), trace: { provenance: { benchmark_snapshot: {
+      release_id: version, state: 'US-NJ', closed_weekdays: [], status: 'current', values: [],
+    } } },
+  };
+  const archived = JSON.parse(q(`select projection_private.archive_benchmark_context(
+    jsonb_populate_record(null::public.projection_forecast_runs,${lit(row)}));`));
+  assert.equal(archived.release.census.census_curve_digest, national.digest);
+  assert.deepEqual(archived.release.census.national_curve, national.snapshot);
+});
+
+test('legacy candidates remain unchanged and cannot be approved', () => {
+  const legacy = q(`insert into public.projection_benchmark_versions(
+    vintage,valid_from,valid_until,sales_pull_id,cpi_pull_id,dictionary,dictionary_digest)
+    select vintage,valid_from,valid_until,sales_pull_id,cpi_pull_id,dictionary,dictionary_digest
+    from public.projection_benchmark_versions where id='${version}' returning id;`);
+  const read = JSON.parse(q(`select public.projection_benchmark_preview('${legacy}');`));
+  rejects(`set role service_role;select public.projection_approve_benchmark('${legacy}','${read.digest}','${id(99)}');`,
+    /Rebuild this candidate with national Census weights/);
+  assert.equal(q(`select count(*) from public.projection_benchmark_publications where version_id='${legacy}';`), '0');
+});
+
+test('national settings reject short vectors, zero weights and changed v1 weights', () => {
+  for (const weights of [[1, 1], [1, 1, 1, 1, 1, 1, 0], [1, 1, 1, 1, 1, 1, 2]]) {
+    assert.equal(q(`select projection_private.valid_census_settings(${lit({
+      ...CENSUS_BENCHMARK_SETTINGS, census_weekday_weights: weights,
+    })});`), 'f');
   }
 });
