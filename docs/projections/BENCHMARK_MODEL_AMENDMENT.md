@@ -17,8 +17,27 @@ fitted weekday weights across the actual month. Open weekday weights
 average one; closed weekdays are zero. Preserve Step 3's last-four-night
 closure rule. Monthly points use the midpoint between the first and last
 dated observations. Interpolate daily, then average Monday-start weeks.
-Do not bridge missing months or extrapolate. Align by 364 days and use
-the exact R-fit recency weights in the denominator.
+Do not bridge missing sales months, multi-month CPI gaps, or extrapolate.
+Align by 364 days and use the exact R-fit recency weights in the denominator.
+
+CPI normalization revision isolated-log-linear-v1 applies only to newly
+captured CPI pulls carrying that version in query_metadata.cpi_gap_policy.
+An isolated missing CPI month is sqrt(previous published CPI × next published
+CPI), using its exact adjacent calendar months in the same pinned vintage.
+Never chain interpolations or fill two consecutive missing months. Preserve
+the raw FRED payload, including dots; store the derived month/value and
+cpi_interpolated=true in query_metadata.cpi_interpolated and forecast traces.
+Legacy pulls without the marker retain strict gap behavior. Archived runs
+and counterfactuals use their original pull's rule and vintage.
+Changing this normalization rule requires a new rule identifier and a new
+benchmark version. Never rewrite existing pulls or archived forecasts.
+
+Missing preview-day ratios remain null with applies=false and their reason;
+the approval page displays dashes and reasons. After approval those forecast
+days use R alone, as previously approved. A usable eight-week preview has
+seven day entries per week and at least one finite positive applicable ratio
+in each week. Some unavailable days are allowed. At least one restaurant
+must have such a preview before manual or automatic publication.
 
 The first published benchmark requires MFA-verified admin approval at
 /admin/projections/benchmarks. Show eight Monday-start weeks for every

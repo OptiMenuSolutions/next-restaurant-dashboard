@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import AdminShell from '../../../components/admin/AdminShell';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
+import {
+  hasUsableEightWeekPreview,
+  formatBenchmarkNumber,
+  benchmarkWeekAvailability,
+} from '../../../lib/projections/benchmarkPreview.js';
 
 const endpoint = '/api/admin/projections/benchmarks';
 
@@ -54,6 +59,10 @@ export default function Benchmarks() {
       setBusy(false);
     }
   }
+
+  const approvalReady = preview?.preview.some(restaurant =>
+    hasUsableEightWeekPreview(restaurant.result)
+  ) ?? false;
 
   return (
     <AdminShell>
@@ -110,6 +119,13 @@ export default function Benchmarks() {
                   {restaurant.name} · {restaurant.state || 'State missing'}
                 </h2>
 
+                {restaurant.result.cpi_gap_policy && (
+                  <p>
+                    CPI rule: {restaurant.result.cpi_gap_policy}. Interpolated months:{' '}
+                    {(restaurant.result.cpi_interpolated ?? []).map(row => row.date).join(', ') || 'none'}.
+                  </p>
+                )}
+
                 {restaurant.result.status !== 'ok' ? (
                   <p>Unavailable: {restaurant.result.reason}</p>
                 ) : (
@@ -120,6 +136,7 @@ export default function Benchmarks() {
                         <th>Daily raw ratios (Mon–Sun)</th>
                         <th>Daily S (Mon–Sun)</th>
                         <th>Eligible</th>
+                        <th>Unavailable days</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -128,20 +145,22 @@ export default function Benchmarks() {
                           <td>{week.week_start}</td>
                           <td>
                             {week.days.map(day =>
-                              day.ratio.toFixed(4)
+                              formatBenchmarkNumber(day.ratio)
                             ).join(' / ')}
                           </td>
                           <td>
                             {week.days.map(day =>
-                              day.capped_S.toFixed(4)
+                              formatBenchmarkNumber(day.capped_S)
                             ).join(' / ')}
                           </td>
                           <td>
+                            {benchmarkWeekAvailability(week)}
+                          </td>
+                          <td>
                             {week.days
-                              .filter(day => day.reason !== 'closed_weekday')
-                              .every(day => day.applies)
-                              ? 'Yes'
-                              : 'Needs baseline'}
+                              .filter(day => !day.applies && day.reason !== 'closed_weekday')
+                              .map(day => `${day.target_date}: ${day.reason || 'unavailable'}`)
+                              .join('; ') || '—'}
                           </td>
                         </tr>
                       ))}
@@ -151,8 +170,12 @@ export default function Benchmarks() {
               </section>
             ))}
 
+            {!preview.published_at && !approvalReady && (
+              <p>Approval requires at least one restaurant with a usable day in each of its eight preview weeks.</p>
+            )}
+
             <button
-              disabled={busy || !!preview.published_at}
+              disabled={busy || !!preview.published_at || !approvalReady}
               onClick={() => action({
                 action: 'approve',
                 id: preview.version.id,

@@ -13,6 +13,11 @@ import {
 } from '../lib/projections/benchmarks.js';
 import { fetchFredBenchmark } from '../lib/projections/fredBenchmarks.js';
 import { benchmarkFailureMessage } from '../lib/projections/benchmarkFailure.js';
+import { CPI_GAP_POLICY, interpolateCpiMonths } from '../lib/projections/cpiGap.js';
+import { buildCensusPreviewWeeks } from '../lib/projections/benchmarkRefresh.js';
+import {
+  hasUsableEightWeekPreview, formatBenchmarkNumber, benchmarkWeekAvailability,
+} from '../lib/projections/benchmarkPreview.js';
 import {
   PROJECTION_DEFAULTS,
   validateProjectionSettings,
@@ -879,4 +884,125 @@ test('benchmark diagnostics never echo arbitrary URLs, keys or error codes', () 
     assert.equal(message, 'BENCHMARK_REVIEW_FAILED (UNEXPECTED_ERROR)');
     assert.ok(!message.includes('never-print-this'));
   }
+});
+
+test('an isolated CPI gap uses the geometric mean and preserves the raw input', () => {
+  const rows = [
+    { date: '2025-01-01', value: 100 },
+    { date: '2025-02-01', value: null },
+    { date: '2025-03-01', value: 121 },
+  ];
+  const result = interpolateCpiMonths(rows, CPI_GAP_POLICY);
+  near(result.months[1].value, 110);
+  assert.equal(result.interpolated[0].date, '2025-02-01');
+  assert.equal(result.interpolated[0].cpi_interpolated, true);
+  assert.equal(rows[1].value, null);
+});
+
+test('two-month CPI gaps, boundaries and unversioned legacy pulls are not filled', () => {
+  const rows = [
+    { date: '2025-01-01', value: 100 },
+    { date: '2025-02-01', value: null },
+    { date: '2025-03-01', value: null },
+    { date: '2025-04-01', value: 144 },
+  ];
+  assert.deepEqual(interpolateCpiMonths(rows, CPI_GAP_POLICY).interpolated, []);
+  assert.deepEqual(interpolateCpiMonths(rows.slice(1), CPI_GAP_POLICY).interpolated, []);
+  assert.deepEqual(interpolateCpiMonths([rows[0], rows[1], rows[3]]).interpolated, []);
+  assert.throws(() => interpolateCpiMonths(rows, 'future-policy'), /Unknown CPI/);
+});
+
+test('an omitted isolated CPI calendar month is filled without chaining across missing months', () => {
+  const result = interpolateCpiMonths([
+    { date: '2024-01-01', value: 100 },
+    { date: '2024-03-01', value: 121 },
+    { date: '2024-06-01', value: 144 },
+  ], CPI_GAP_POLICY);
+  assert.deepEqual(result.interpolated.map(row => row.date), ['2024-02-01']);
+  near(result.months.find(row => row.date === '2024-02-01').value, 110);
+});
+
+test('FRED CPI dots are annotated in pull metadata while sales dots stay missing', async () => {
+  for (const series of ['CUUR0000SEFV', 'MRTSSM722USN']) {
+    const pull = await fetchFredBenchmark(series, {
+      snapshotAt: '2026-11-22T12:00:00Z', apiKey: 'never-store-me',
+      fetchImpl: async () => fredBody(0, 3, [
+        ['2025-01-01', '100'], ['2025-02-01', '.'], ['2025-03-01', '121'],
+      ]),
+    });
+    assert.equal(pull.payload.observations[1].value, '.');
+    assert.equal(pull.normalized[1].value, null);
+    if (series === 'CUUR0000SEFV') {
+      assert.equal(pull.query_metadata.cpi_gap_policy, CPI_GAP_POLICY);
+      near(pull.query_metadata.cpi_interpolated[0].value, 110);
+      assert.equal(pull.query_metadata.cpi_interpolated[0].cpi_interpolated, true);
+    } else {
+      assert.equal(Object.hasOwn(pull.query_metadata, 'cpi_gap_policy'), false);
+    }
+    assert.ok(!JSON.stringify(pull).includes('never-store-me'));
+  }
+});
+
+test('an unfilled base-window gap builds eight unavailable preview weeks without throwing', () => {
+  const dates = ['2025-09-01', '2025-10-01', '2025-11-01', '2025-12-01', '2026-01-01'];
+  const c = censusCurve({
+    sales: dates.map(date => ({ date, value: 30000 })),
+    cpi: dates.map((date, i) => ({ date, value: i === 1 || i === 2 ? null : 100 })),
+    weekdayLevels: levels, closedWeekdays: [], cpi_gap_policy: CPI_GAP_POLICY,
+  });
+  const plan = { nights: Array.from({ length: 8 }, (_, i) => ({
+    business_date: shift('2026-11-23', i),
+    trace: { volume: { recent: { nights: [{ business_date: '2026-10-26', weight: 1 }] } } },
+  })) };
+  const weeks = buildCensusPreviewWeeks({
+    start: '2026-11-23', plan, curve: c, settings: PROJECTION_DEFAULTS, closedWeekdays: [],
+  });
+  assert.equal(weeks.length, 8);
+  assert.ok(weeks.every(week => week.days.every(day =>
+    day.ratio === null && day.capped_S === null && !day.applies &&
+    day.reason === 'missing_or_nonpositive_week'
+  )));
+  assert.equal(hasUsableEightWeekPreview({ status: 'ok', weeks }), false);
+});
+
+test('partial preview days render as dashes and retain the eight-week approval gate', () => {
+  const result = { status: 'ok', weeks: Array.from({ length: 8 }, () => ({
+    days: Array.from({ length: 7 }, (_, i) => ({
+      ratio: i === 0 ? null : 1, applies: i !== 0,
+      ...(i === 0 ? { reason: 'missing_or_nonpositive_week' } : {}),
+    })),
+  })) };
+  assert.equal(hasUsableEightWeekPreview(result), true);
+  assert.equal(benchmarkWeekAvailability(result.weeks[0]), 'Partial');
+  assert.equal(formatBenchmarkNumber(null), '—');
+  assert.equal(formatBenchmarkNumber(1), '1.0000');
+  result.weeks[0].days.forEach(day => { day.applies = false; });
+  assert.equal(hasUsableEightWeekPreview(result), false);
+});
+
+test('new-rule forecast traces mark interpolation while legacy gap behavior remains pinned', () => {
+  const input = integrationInput();
+  const amend = context => {
+    context.release.census.cpi.find(row => row.date === '2025-02-01').value = null;
+  };
+  const legacy = integrationSnapshot(input, {}, amend);
+  assert.equal(legacy.values[0].census.ratio, null);
+  assert.equal(Object.hasOwn(legacy, 'cpi_gap_policy'), false);
+  const revised = integrationSnapshot(input, {}, context => {
+    amend(context);
+    context.release.census.cpi_gap_policy = CPI_GAP_POLICY;
+  });
+  assert.ok(revised.values[0].census.ratio > 0);
+  assert.equal(revised.cpi_gap_policy, CPI_GAP_POLICY);
+  assert.equal(revised.cpi_interpolated[0].date, '2025-02-01');
+  assert.equal(revised.cpi_interpolated[0].cpi_interpolated, true);
+});
+
+test('the CPI gap policy never fills a missing monthly sales observation', () => {
+  const c = curve({
+    sales: monthly(3100).map((row, i) => ({ ...row, value: i === 1 ? null : row.value })),
+    cpi_gap_policy: CPI_GAP_POLICY,
+  });
+  assert.equal(c.weekly('2025-02-17'), null);
+  assert.deepEqual(c.cpi_interpolated, []);
 });

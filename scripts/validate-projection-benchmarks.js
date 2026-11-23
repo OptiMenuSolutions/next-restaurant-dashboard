@@ -10,7 +10,8 @@ import {
 } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BENCHMARK_DICTIONARY } from '../lib/projections/benchmarks.js';
+import { BENCHMARK_DICTIONARY, benchmarkWeek } from '../lib/projections/benchmarks.js';
+import { shiftProjectionDate } from '../lib/projections/businessTime.js';
 import { projectionVolumeDigest } from '../lib/projections/volumeProvenance.js';
 
 const localBin = process.env.OPTIMENU_LOCAL_PG_BIN;
@@ -155,7 +156,7 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
-    'snapshot_performance',
+    'snapshot_performance', 'cpi_gap',
   ]) {
     if (suffix === 'snapshot_performance') {
       q(`do $copy$ declare d text; begin
@@ -242,9 +243,12 @@ before(async () => {
     source_digest: null,
     preview: {
       status: 'ok',
-      weeks: Array.from({ length: 8 }, () => ({
-        week_start: vintage,
-        days: [],
+      weeks: Array.from({ length: 8 }, (_, week) => ({
+        week_start: shiftProjectionDate(benchmarkWeek(vintage), week * 7),
+        days: Array.from({ length: 7 }, (_, day) => ({
+          target_date: shiftProjectionDate(benchmarkWeek(vintage), week * 7 + day),
+          ratio: 1, capped_S: 1, applies: true,
+        })),
       })),
     },
     contributions: [],
@@ -713,4 +717,67 @@ test('the batched reader stays private and future benchmark snapshots remain blo
   rejects(`set role anon;select * from projection_private.menu_source_dates('${dateFixture}',clock_timestamp());`, /permission denied/);
   rejects(`set role authenticated;select * from projection_private.menu_source_dates('${dateFixture}',clock_timestamp());`, /permission denied/);
   rejects(`set role service_role;select public.projection_benchmark_inputs('${dateFixture}',clock_timestamp()+interval '1 day');`, /Future benchmark snapshot/);
+});
+
+test('CPI rule metadata is pinned in live and archived contexts without changing legacy pulls', () => {
+  const seed = JSON.parse(q(`select to_jsonb(v) from public.projection_benchmark_versions v where id='${version}';`));
+  const payload = { observations: [
+    ['2025-01-01', '100'], ['2025-02-01', '.'], ['2025-03-01', '121'],
+  ].map(([date, value]) => ({ date, value, realtime_start: seed.vintage, realtime_end: seed.vintage })) };
+  const cpiId = q(`
+    insert into public.projection_benchmark_pulls(provider,query_metadata,payload,payload_sha256)
+    select provider,query_metadata||'{"cpi_gap_policy":"isolated-log-linear-v1","cpi_interpolated":[{"date":"2025-02-01","value":110,"cpi_interpolated":true}]}',
+      ${lit(payload)},'${projectionVolumeDigest(payload)}' from public.projection_benchmark_pulls where id='${seed.cpi_pull_id}'
+    returning id;
+  `);
+  const releaseId = q(`
+    insert into public.projection_benchmark_versions(vintage,valid_from,valid_until,sales_pull_id,cpi_pull_id,dictionary,dictionary_digest)
+    select vintage,valid_from,valid_until,sales_pull_id,'${cpiId}',dictionary,dictionary_digest
+    from public.projection_benchmark_versions where id='${version}' returning id;
+  `);
+  q(`insert into public.projection_benchmark_publications(version_id,actor_id) values('${releaseId}','${id(99)}');`);
+  const current = JSON.parse(q(`select projection_private.benchmark_context('${id(2)}','${seed.valid_from}',clock_timestamp());`));
+  assert.equal(current.release.census.cpi_gap_policy, 'isolated-log-linear-v1');
+  assert.equal(current.release.census.cpi_interpolated[0].cpi_interpolated, true);
+  for (const [release, marked] of [[releaseId, true], [version, false]]) {
+    const row = {
+      restaurant_id: id(2), run_date: seed.valid_from, issued_at: new Date().toISOString(),
+      trace: { provenance: { benchmark_snapshot: {
+        release_id: release, state: 'US-NJ', closed_weekdays: [], status: 'current', values: [],
+      } } },
+    };
+    const archived = JSON.parse(q(`select projection_private.archive_benchmark_context(
+      jsonb_populate_record(null::public.projection_forecast_runs,${lit(row)}));`));
+    assert.equal(Object.hasOwn(archived.release.census, 'cpi_gap_policy'), marked);
+  }
+});
+
+test('SQL approval permits partial days but rejects an unusable eight-week preview', () => {
+  const full = JSON.parse(q(`select result from public.projection_benchmark_previews where version_id='${version}' limit 1;`));
+  const partial = structuredClone(full);
+  for (const week of partial.weeks) {
+    Object.assign(week.days[0], { ratio: null, capped_S: null, applies: false, reason: 'missing_or_nonpositive_week' });
+  }
+  assert.equal(q(`select projection_private.usable_benchmark_preview(${lit(partial)});`), 't');
+  const missing = structuredClone(partial);
+  missing.weeks[0].days.forEach(day => { day.ratio = null; day.applies = false; });
+  assert.equal(q(`select projection_private.usable_benchmark_preview(${lit(missing)});`), 'f');
+  const seed = JSON.parse(q(`select jsonb_build_object('vintage',v.vintage,'valid_from',v.valid_from,
+    'pulls',jsonb_build_array(to_jsonb(s),to_jsonb(c)))
+    from public.projection_benchmark_versions v
+    join public.projection_benchmark_pulls s on s.id=v.sales_pull_id
+    join public.projection_benchmark_pulls c on c.id=v.cpi_pull_id where v.id='${version}';`));
+  const catalog = JSON.parse(q('select public.projection_benchmark_catalog();'));
+  for (const [result, accepted] of [[missing, false], [partial, true]]) {
+    const doc = { ...seed, snapshot_at: new Date().toISOString(),
+      dictionary: BENCHMARK_DICTIONARY, dictionary_digest: projectionVolumeDigest(BENCHMARK_DICTIONARY),
+      restaurants: catalog.restaurants.map(r => ({ id: r.id, as_of: seed.valid_from,
+        source_digest: null, preview: result, contributions: [] })),
+    };
+    const staged = JSON.parse(q(`set role service_role;select public.projection_stage_benchmark(${lit(doc)});`));
+    const preview = JSON.parse(q(`select public.projection_benchmark_preview('${staged.id}');`));
+    const approve = `set role service_role;select public.projection_approve_benchmark('${staged.id}','${preview.digest}','${id(99)}');`;
+    if (accepted) assert.equal(JSON.parse(q(approve)).published, true);
+    else rejects(approve, /No validated eight-week preview/);
+  }
 });
