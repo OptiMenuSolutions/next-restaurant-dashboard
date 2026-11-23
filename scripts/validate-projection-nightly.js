@@ -208,7 +208,7 @@ before(async () => {
   for (const suffix of [
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
-    'benchmarks',
+    'benchmarks', 'benchmark_build_fixes',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);
@@ -222,8 +222,10 @@ before(async () => {
   q(`
     insert into public.profiles values('${ADMIN}','admin');
     insert into public.restaurants values
-      ('${REST}','${ADMIN}','UTC',null,clock_timestamp()-interval '35 days','Fixture'),
-      ('${OTHER}',null,'UTC',null,clock_timestamp()-interval '35 days','Other');
+      ('${REST}','${ADMIN}','UTC',null,
+        ((clock_timestamp() at time zone 'UTC')::date-35)+time '12:00' at time zone 'UTC','Fixture'),
+      ('${OTHER}',null,'UTC',null,
+        ((clock_timestamp() at time zone 'UTC')::date-35)+time '12:00' at time zone 'UTC','Other');
 
     insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings)
     values('${REST}',4,clock_timestamp(),

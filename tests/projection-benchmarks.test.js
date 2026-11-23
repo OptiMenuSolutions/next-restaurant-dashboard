@@ -12,6 +12,7 @@ import {
   benchmarkContributions,
 } from '../lib/projections/benchmarks.js';
 import { fetchFredBenchmark } from '../lib/projections/fredBenchmarks.js';
+import { benchmarkFailureMessage } from '../lib/projections/benchmarkFailure.js';
 import {
   PROJECTION_DEFAULTS,
   validateProjectionSettings,
@@ -837,5 +838,45 @@ test('only strictly positive pooled ratios qualify for seasonal selection', () =
     assert.equal(selectBenchmarkSource({
       ...input, proxy: { ratio: null, reason: 'missing_or_nonpositive_week' },
     }).S, null);
+  }
+});
+
+test('known zero weekday levels retain zero weight while positive days normalize', () => {
+  const c = curve({ weekdayLevels: { ...levels, 4: 0 } });
+  assert.equal(c.weights[4], 0);
+  near(Object.values(c.weights).reduce((a, b) => a + b) / 7, 1);
+  assert.ok(c.weekly('2025-02-17') > 0);
+});
+
+test('all-zero, negative, missing and non-finite open weekday levels stay unavailable', () => {
+  const zero = Object.fromEntries(Object.keys(levels).map(key => [key, 0]));
+  for (const weekdayLevels of [zero, { ...levels, 4: -1 },
+    { ...levels, 4: undefined }, { ...levels, 4: NaN },
+    { ...levels, 4: Infinity }]) {
+    assert.throws(() => curve({ weekdayLevels }), /fitted levels/);
+  }
+});
+
+test('benchmark failures expose safe FRED details and database codes', () => {
+  assert.equal(benchmarkFailureMessage({
+    code: 'PROJECTION_BENCHMARK_INVALID', message: 'FRED HTTP 400.',
+  }), 'BENCHMARK_REVIEW_FAILED (PROJECTION_BENCHMARK_INVALID): FRED HTTP 400.');
+  assert.equal(benchmarkFailureMessage({ code: '23502', message: 'database details' }),
+    'BENCHMARK_REVIEW_FAILED (23502)');
+  assert.match(benchmarkFailureMessage({
+    code: 'PROJECTION_BENCHMARK_INVALID',
+    message: 'A server FRED key and an approved series are required.',
+  }), /server FRED key/);
+});
+
+test('benchmark diagnostics never echo arbitrary URLs, keys or error codes', () => {
+  for (const error of [
+    Error('https://example.test?api_key=never-print-this'),
+    { code: 'never-print-this', message: 'never-print-this' },
+    null,
+  ]) {
+    const message = benchmarkFailureMessage(error);
+    assert.equal(message, 'BENCHMARK_REVIEW_FAILED (UNEXPECTED_ERROR)');
+    assert.ok(!message.includes('never-print-this'));
   }
 });

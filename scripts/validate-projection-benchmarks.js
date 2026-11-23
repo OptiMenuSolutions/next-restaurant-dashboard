@@ -40,6 +40,7 @@ const q = sql => execFileSync(
     encoding: 'utf8',
     timeout: 60000,
     stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PGOPTIONS: '-c timezone=UTC' },
   }
 ).trim();
 
@@ -153,7 +154,7 @@ before(async () => {
   for (const suffix of [
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
-    'nightly_review', 'benchmarks',
+    'nightly_review', 'benchmarks', 'benchmark_build_fixes',
   ]) {
     const files = names.filter(
       name => name.endsWith(`_projection_${suffix}.sql`)
@@ -179,6 +180,12 @@ before(async () => {
       restaurant_id,concept_type,first_data_date
     )
     select id,'full_service',current_date-400 from public.restaurants;
+
+    insert into public.projection_setting_versions(
+      restaurant_id,model_major,effective_at,settings
+    )
+    select id,4,clock_timestamp(),'{"business_day_cutoff_minutes":0}'::jsonb
+    from public.restaurants;
 
     insert into public.projection_pool_permissions(
       restaurant_id,enabled,agreement_permits,agreement_version
@@ -513,4 +520,54 @@ test('counterfactual archive context keeps the original release after a newer pu
     );
   `));
   assert.equal(context.release.id, version);
+});
+
+test('unnamed accounts can be previewed without changing restaurant records', () => {
+  const restaurantId = id(50);
+  q(`insert into public.restaurants(id,name) values('${restaurantId}',null);`);
+  const catalog = JSON.parse(q('select public.projection_benchmark_catalog();'));
+  assert.equal(catalog.restaurants.find(r => r.id === restaurantId).name, 'Unnamed restaurant');
+
+  const seed = JSON.parse(q(`
+    select jsonb_build_object(
+      'vintage',v.vintage,'valid_from',v.valid_from,
+      'pulls',jsonb_build_array(to_jsonb(s),to_jsonb(c))
+    ) from public.projection_benchmark_versions v
+    join public.projection_benchmark_pulls s on s.id=v.sales_pull_id
+    join public.projection_benchmark_pulls c on c.id=v.cpi_pull_id
+    where v.id='${version}';
+  `));
+  const doc = {
+    ...seed,
+    snapshot_at: new Date().toISOString(),
+    dictionary: BENCHMARK_DICTIONARY,
+    dictionary_digest: projectionVolumeDigest(BENCHMARK_DICTIONARY),
+    restaurants: [{
+      id: restaurantId,
+      as_of: seed.valid_from,
+      source_digest: null,
+      preview: { status: 'unavailable', reason: 'BACKFILL_PENDING', weeks: [] },
+      contributions: [],
+    }],
+  };
+  const staged = JSON.parse(q(`set role service_role;
+    select public.projection_stage_benchmark(${lit(doc)});`));
+  const result = JSON.parse(q(`select public.projection_benchmark_preview('${staged.id}');`));
+  assert.equal(result.preview[0].name, 'Unnamed restaurant');
+  assert.equal(q(`select name is null from public.restaurants where id='${restaurantId}';`), 't');
+  q(`update public.restaurants set deactivated_at=clock_timestamp() where id='${restaurantId}';`);
+});
+
+test('vintage checks use UTC consistently across database session timezones', () => {
+  q(`
+    begin;
+    set local timezone='America/New_York';
+    insert into public.projection_benchmark_versions(
+      created_at,vintage,valid_from,valid_until,sales_pull_id,cpi_pull_id,
+      dictionary,dictionary_digest
+    ) select '2026-01-01T00:30:00Z','2026-01-01','2026-01-01','2026-01-15',
+      sales_pull_id,cpi_pull_id,dictionary,dictionary_digest
+    from public.projection_benchmark_versions where id='${version}';
+    rollback;
+  `);
 });

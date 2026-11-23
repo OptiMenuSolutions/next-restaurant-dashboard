@@ -4,6 +4,7 @@ import {
 } from '../../../../lib/admin/requireAdmin.js';
 import { projectionRPC } from '../../../../lib/projections/nightlyWorker.js';
 import { refreshProjectionBenchmarks } from '../../../../lib/projections/benchmarkRefresh.js';
+import { benchmarkFailureMessage } from '../../../../lib/projections/benchmarkFailure.js';
 
 export const config = { maxDuration: 300 };
 
@@ -49,7 +50,9 @@ export default async function handler(req, res) {
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
-  } catch {
-    return res.status(503).json({ error: 'BENCHMARK_REVIEW_FAILED' });
+  } catch (error) {
+    const message = benchmarkFailureMessage(error);
+    console.error('[projection-benchmarks]', message);
+    return res.status(503).json({ error: message });
   }
 }
