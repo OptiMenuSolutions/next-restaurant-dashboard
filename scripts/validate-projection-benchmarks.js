@@ -166,8 +166,15 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
-    'snapshot_performance', 'cpi_gap', 'national_census',
+    'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache',
   ]) {
+    if (suffix === 'timezone_cache') {
+      q(`do $copy$ declare d text; begin
+        d:=pg_get_functiondef('projection_private.pos_source_clock(uuid,text,timestamptz)'::regprocedure);
+        execute replace(d,'FUNCTION projection_private.pos_source_clock(',
+          'FUNCTION projection_private.test_source_clock_before_cache(');
+      end $copy$;`);
+    }
     if (suffix === 'snapshot_performance') {
       q(`do $copy$ declare d text; begin
         d:=pg_get_functiondef('projection_private.lifecycle_context_before_nightly(uuid,date,timestamptz)'::regprocedure);
@@ -835,3 +842,6 @@ test('national settings reject short vectors, zero weights and changed v1 weight
     })});`), 'f');
   }
 });
+
+
+export { q as projectionTestSQL };
