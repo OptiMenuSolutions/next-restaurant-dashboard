@@ -1,4 +1,6 @@
 import test from 'node:test';
+import { reassessProjectedWasteRisk as reassess } from '../lib/wasteRiskReassessment.js';
+import { PROJECTION_DEFAULTS, resolveProjectionSettings } from '../lib/projections/settings.js';
 import assert from 'node:assert/strict';
 import { assessProjectedWasteRisk as assess } from '../lib/wasteRiskProjection.js';
 import { shiftProjectionDate as shift } from '../lib/projections/businessTime.js';
@@ -26,6 +28,9 @@ function input(extra = {}) {
   const f = extra.forecast === undefined ? run() : extra.forecast;
   return { restaurantId: REST, assessmentDate: MON, assessedAt: `${MON}T12:00:00Z`,
     timeZone: 'America/New_York', cutoffMinutes: 240, inventoryCutoff: shift(MON, -1),
+    resolvedSettings: resolveProjectionSettings({ restaurantId: REST, at: `${MON}T12:00:00Z`,
+      globalVersion: { id: id(90), restaurant_id: null, model_major: 4,
+        effective_at: '2020-01-01T00:00:00Z', settings: { ...PROJECTION_DEFAULTS } } }),
     inventoryComplete: true, ingredients: [ingredient()], batches: [batch(20, 30, '2026-11-25')],
     forecast: f, recipes: f ? recipeRows(f) : [], ...extra };
 }
@@ -189,8 +194,8 @@ test('an unrelated unavailable dish does not redistribute its share to this ingr
     { dish_id: DISH, active: true, status: 'ok', share: 0.6 },
     { dish_id: id(4), active: true, status: 'needs_baseline', share: null },
   ];
-  const recipes = recipeRows(f, 0.25); recipes.push({ ...structuredClone(recipes[0]), dish_id: id(4), portions: [] });
-  const r = assess(input({ forecast: f, recipes, batches: [batch(20, 20, MON)] }));
+  const recipes = recipeRows(f, 0.25); recipes.push({ ...structuredClone(recipes[0]), dish_id: id(4), portions: [{ ingredient_id: id(5), quantity: 1, unit: 'lb' }] });
+  const r = assess(input({ forecast: f, recipes, ingredients: [ingredient(), ingredient({ id: id(5), name: 'Rice' })], batches: [batch(20, 20, MON)] }));
   close(r.demand_trace[0].quantity, 12);
 });
 
@@ -325,4 +330,137 @@ test('a partial saved freeze cannot substitute a newer forecast inside its origi
   const r = assess(next(first, [batch(20, 25, '2026-11-25')], { frozen: state, forecast: newer, recipes: recipeRows(newer) }));
   assert.equal(risk(r, 20).reason, 'frozen_coverage_missing'); assert.equal(risk(r, 20).risk_qty, null);
   assert.equal(r.new_demands.length, 0);
+});
+
+function withUncovered(share) {
+  const f = run(MON, [20]);
+  f.nights[0].dishes[0].share = 1 - share;
+  f.nights[0].dishes.push({ dish_id: id(4), active: true, status: 'ok', share });
+  return input({ forecast: f, batches: [batch(20, 30, MON)] });
+}
+
+test('an uncovered zero-share dish never blocks or contributes uncovered share', () => {
+  const r = assess(withUncovered(0));
+  assert.equal(risk(r, 20).risk_qty, 10); assert.equal(risk(r, 20).may_be_overstated, false);
+});
+
+test('recipe coverage below or at the versioned limit computes with a pinned disclosure', () => {
+  for (const share of [0.05, 0.10]) {
+    const r = assess(withUncovered(share));
+    close(risk(r, 20).remaining_allowance, 20 * (1-share));
+    assert.equal(risk(r, 20).may_be_overstated, true);
+    assert.equal(r.frozen.demands[0].basis.uncovered_share, share);
+    assert.equal(r.frozen.demands[0].basis.recipe_coverage_limit, 0.10);
+    assert.equal(risk(r, 20).recipe_coverage[0].uncovered_dishes[0].dish_id, id(4));
+  }
+});
+
+test('coverage above the limit or an unknown uncovered share stays unavailable', () => {
+  const i = withUncovered(0.11);
+  assert.equal(risk(assess(i), 20).reason, 'recipe_coverage_incomplete');
+  i.forecast.nights[0].dishes[1].share = null;
+  assert.equal(risk(assess(i), 20).risk_qty, null);
+});
+
+test('a lower later coverage limit does not rewrite an already frozen night', () => {
+  const first = assess(withUncovered(0.08));
+  const i = withUncovered(0.08); i.frozen = first.frozen;
+  i.resolvedSettings = resolveProjectionSettings({ restaurantId: REST, at: `${MON}T12:00:00Z`,
+    globalVersion: { id: id(91), restaurant_id: null, model_major: 4, effective_at: '2020-01-01T00:00:00Z',
+      settings: { ...PROJECTION_DEFAULTS, waste_recipe_uncovered_share_max: 0.01 } } });
+  const r = assess(i);
+  assert.equal(risk(r, 20).status, 'ok'); assert.equal(risk(r, 20).recipe_coverage[0].limit, 0.10);
+});
+
+test('floating-point residuals do not become permanent freezes or visible risk', () => {
+  const r = assess(input({ forecast: run(MON, [0.3]), batches: [batch(20, 0.1+0.2, MON)] }));
+  assert.equal(risk(r, 20).risk_qty, 0); assert.equal(r.visible_items.length, 0);
+  assert.equal(r.new_cases.length, 0); assert.equal(r.new_demands.length, 0);
+  const large = assess(input({ forecast: run(MON, [1e9-0.5]), batches: [batch(20, 1e9, MON)] }));
+  assert.equal(large.visible_items.length, 0);
+});
+
+test('overdue actual FIFO can shift risk to a newer lot while allowance stops at use-by', () => {
+  const first = assess(input({ batches: [batch(20,10,MON),batch(21,20,'2026-11-25')] }));
+  const tuesday = assess(next(first,[batch(20,2,MON),batch(21,20,'2026-11-25')]));
+  assert.equal(risk(tuesday,20).status,'overdue'); assert.equal(risk(tuesday,20).remaining_allowance,0);
+  assert.equal(risk(tuesday,21).risk_qty,4);
+  // Tuesday's eight units of actual consumption use two overdue units first,
+  // then six from the newer lot. No disposal has yet been confirmed.
+  const wednesday = assess(input({ assessmentDate:'2026-11-25',assessedAt:'2026-11-25T12:00:00Z',
+    inventoryCutoff:'2026-11-24',forecast:null,recipes:[],frozen:tuesday.frozen,
+    batches:[batch(20,0,MON),batch(21,14,'2026-11-25')] }));
+  assert.equal(risk(wednesday,21).risk_qty,6);
+  assert.equal(tuesday.visible_items.reduce((s,r)=>s+r.risk_qty,0),6);
+  assert.equal(wednesday.visible_items.reduce((s,r)=>s+r.risk_qty,0),6);
+});
+
+const correction = (reason, extra = {}) => ({ id: id(95), restaurant_id: REST, actor_id: id(96),
+  reason, source_event_id: 'fixture-event', batch_ids: [id(20)], ingredient_ids: [ING],
+  business_dates: ['2026-11-24'], dish_ids: [DISH], ...extra });
+
+test('count and disposal corrections retain the fixed demand and cap/release allowance', () => {
+  const first = assess(input({ forecast: run(MON, [0,20]),
+    batches: [batch(20,12,'2026-11-24'),batch(21,24,'2026-11-24')] }));
+  for (const [reason, qty, expected] of [['physical_count',6,10],['confirmed_disposal',0,4]]) {
+    const r = reassess(next(first,[batch(20,qty,'2026-11-24'),batch(21,24,'2026-11-24')]), correction(reason));
+    assert.deepEqual(r.frozen.demands,first.frozen.demands);
+    assert.equal(risk(r,21).risk_qty,expected);
+  }
+});
+
+test('an authorized shelf-life extension freezes only newly covered nights', () => {
+  const first = assess(input({batches:[batch(20,30,MON)]}));
+  const fresh = run('2026-11-24',[10,12],id(11));
+  const r = reassess(next(first,[batch(20,30,'2026-11-25')],{forecast:fresh,recipes:recipeRows(fresh)}),correction('storage_or_shelf_life'));
+  assert.deepEqual(r.frozen.demands[0],first.frozen.demands[0]);
+  assert.deepEqual(r.new_demands.map(d=>d.quantity),[10,12]);
+  assert.equal(r.frozen.cases[0].first_positive_date,MON);
+  assert.equal(r.frozen.cases[0].coverage_through,'2026-11-25');
+  assert.doesNotThrow(()=>assess(next(r,[batch(20,30,'2026-11-25')])));
+});
+
+test('invoice date and shortened shelf life preserve original demand ownership', () => {
+  const first=assess(input());
+  const r=reassess(next(first,[batch(20,30,'2026-11-24',{received_date:'2026-11-19'})]),correction('invoice_quantity_or_date'));
+  assert.deepEqual(r.frozen.demands,first.frozen.demands);
+  assert.equal(r.frozen.cases[0].use_by_date,'2026-11-24');
+  assert.equal(r.frozen.cases[0].coverage_through,'2026-11-25');
+  assert.doesNotThrow(()=>assess(next(r,[batch(20,30,'2026-11-24',{received_date:'2026-11-19'})])));
+});
+
+test('a newly confirmed closure zeroes only its scoped night through an explicit correction', () => {
+  const first=assess(input());
+  const r=reassess(next(first,[batch(20,30,'2026-11-25')]),correction('confirmed_closure'));
+  assert.deepEqual(r.frozen.demands.map(d=>d.quantity),[8,0,8]);
+  assert.equal(r.frozen.demands[1].last_correction_id,id(95));
+  assert.equal(r.frozen.demands[1].basis.run_id,first.frozen.demands[1].basis.run_id);
+});
+
+test('dish removal changes only that dish contribution without rebalancing other shares', () => {
+  const f=run();f.nights.forEach(n=>{n.dishes[0].share=0.5;n.dishes.push({...n.dishes[0],dish_id:id(4)});});
+  const recipes=recipeRows(f);recipes.push(...recipeRows(f,2).map(r=>({...r,dish_id:id(4)})));
+  const first=assess(input({forecast:f,recipes,batches:[batch(20,50,'2026-11-25')]}));
+  const r=reassess(next(first,[batch(20,50,'2026-11-25')]),correction('dish_removal'));
+  assert.equal(r.frozen.demands[1].quantity,8);
+  assert.equal(r.frozen.demands[1].basis.contributions[0].share,0.5);
+  assert.equal(r.frozen.demands[0].quantity,12);
+});
+
+test('unapproved reset reasons and elapsed-night corrections reject', () => {
+  const first=assess(input());const i=next(first,[batch(20,30,'2026-11-25')]);
+  assert.throws(()=>reassess(i,correction('new_forecast')),/scope/);
+  assert.throws(()=>reassess(i,correction('confirmed_closure',{business_dates:[MON]})),/Elapsed/);
+  assert.throws(()=>reassess(next(first,[batch(20,30,'2026-11-24')]),correction('physical_count')),/cannot change/);
+});
+
+test('an authorized extension may finish freezing later when its missing forecast arrives', () => {
+  const first=assess(input({batches:[batch(20,30,MON)]}));
+  const pending=reassess(next(first,[batch(20,30,'2026-11-25')]),correction('storage_or_shelf_life'));
+  assert.equal(pending.items[0].status,'unavailable');
+  const fresh=run('2026-11-24',[10,12],id(11));
+  const ready=assess(next(pending,[batch(20,30,'2026-11-25')],{assessedAt:'2026-11-24T13:00:00Z',forecast:fresh,recipes:recipeRows(fresh)}));
+  assert.equal(ready.items[0].status,'ok');
+  assert.equal(ready.new_demands.length,2);
+  assert.doesNotThrow(()=>assess(next(ready,[batch(20,30,'2026-11-25')],{assessedAt:'2026-11-24T13:00:00Z'})));
 });

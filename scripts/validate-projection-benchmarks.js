@@ -846,3 +846,4 @@ test('national settings reject short vectors, zero weights and changed v1 weight
 
 
 export { q as projectionTestSQL };
+export const projectionTestConnection = () => ({ localBin, localPsql, localDir, container });

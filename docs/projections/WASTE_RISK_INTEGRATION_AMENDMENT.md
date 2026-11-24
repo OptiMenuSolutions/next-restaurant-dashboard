@@ -1,137 +1,146 @@
-Waste-risk projection integration — Stage 1
+Waste-risk projection integration — Stages 1 and 2
 
-Scope
-
-This stage adds a pure calculation module and acceptance tests. It has no
-network, database, scheduler, environment-variable or implicit clock reads.
-No existing caller uses it yet. Physical inventory, waste snapshots, client
-cards, recommendations, financial metrics and OptiScore retain their meaning.
-Persistence, authorized corrections, job integration and UI activation follow
-in later stages.
-
-Demand and freezing
+The calculation and service-only persistence layer are implemented. Nothing
+calls them from a scheduler, client dashboard, inventory write, recommendation,
+financial metric or OptiScore flow yet. Those integrations remain later stages.
 
 For ingredient i on business night D:
   demand(i,D) = archived night low × sum(archived overall dish share ×
                                          converted standard-recipe portion).
-Do not sum dish lower bounds, damp this result again, or renormalize partial
-category shares. Closed nights contribute zero. An unavailable forecast for
-any active dish using i makes i's estimate unavailable for that night.
+Never sum dish lower bounds or renormalize the remaining shares. Closed nights
+contribute zero. Use by D includes D's service, ending at the next business
+boundary (normally 4 a.m. local).
 
-The first positive batch case fixes the ingredient/night demand for every
-batch of that ingredient. Fixed values, night lows, shares, portions and
-conversion evidence are returned as records with integrity digests.
-Newly covered nights use the provided latest valid archived forecast.
-A later freeze never replaces a fixed night, including after the original
-batch is depleted or hidden. Cases record the initial inventory cutoff.
-A missing frozen record inside a saved case's coverage is unavailable,
-never filled from a newer forecast.
+Recipe coverage
 
-Digests are deterministic integrity checks, not authorization. The later
-service-only persistence writer must verify provenance and atomically resolve
-concurrent first freezes under the restaurant lock. No caller may supply an
-arbitrary forecast or replace saved state on behalf of a restaurant owner.
+Ignore dishes with archived share zero. Credit demand from complete linked
+recipes. Record every uncovered dish and its archived share on each night.
+Within the versioned waste_recipe_uncovered_share_max (initially 0.10), compute
+from the covered recipes and disclose “may be overstated”: missing recipes
+understate expected use and overstate risk. Above the limit, or when an
+uncovered dish's share is unknown, return recipe_coverage_incomplete. A known
+recipe using the ingredient with an unavailable forecast still makes that
+ingredient unavailable. An unrelated dish with a complete recipe does not.
+Freeze coverage, the limit and the settings identity with the demand evidence.
+Historical settings without the new key remain readable by the projection
+engine; new waste assessments explicitly require a stored version with it.
 
-FIFO and expiry
+Freezing and exact values
 
-One ingredient-wide FIFO pass allocates each night's demand once. Delivery
-business date then stable batch ID determine order. Every competing batch is
-included, including batches outside the card's display window. A batch receives
-no allowance after its own use-by business date. Use by D includes D's service,
-ending at the next business boundary (normally 4 a.m. local).
+Freeze only when quantity − allowance > 1e-9 × max(1, quantity). The same
+comparison controls visibility. Smaller residuals produce risk zero and never
+create a permanent case.
 
-Allocations are capped at remaining stock. Depletion, disposal and downward
-corrections release unused future capacity to later batches. Elapsed nights
-are removed first, so their fulfilled or expired allowance is never released
-again. Actual inventory remains authoritative and is not mutated by this model.
-Expiry alone does not record disposal. Overdue stock has no future allowance.
+The first positive batch fixes one demand per ingredient/night for all batches.
+Later freezes cannot replace it. Newly covered nights use the latest valid
+archive. Batch cases retain first-positive identity and coverage; each demand
+retains an independent copy of its original owning case. Missing records inside
+saved coverage are unavailable, never replaced by a newer forecast.
 
-Cutoffs and archived runs
+JSONB stores quantities, lows, shares, portions, conversion evidence and digests
+without decimal rounding or numeric(p,s) casts. A database round trip must
+preserve JS double values exactly, including quantity === night_low ×
+weighted_portion. Typed UUID/date columns are indexes and scope checks, not
+rounded copies of the calculation. Digests check integrity, not authorization.
 
-Inputs require explicit assessment time, operational timezone, configured
-cutoff and the latest complete inventory business date. Only allowance nights
-after the inventory cutoff are used, through each batch's use-by date.
-The current inventory cutoff is independent of the archived run's historical
-source_through. Store both, plus run ID, issued_at, run date and age. Output
-also lists the original sources actually used by frozen demand nights.
+FIFO, cutoffs and overdue stock
 
-A missed forecast may use remaining dates from the latest published archive.
-Missing tail dates are unavailable, never extrapolated. Existing fixed demand
-continues to work without a new forecast. A newer forecast trained beyond the
-inventory cutoff cannot supply provisional demand for that assessment.
+One ingredient-wide FIFO pass uses received business date then stable source
+batch ID. Include competing stock outside the card window. A batch can receive
+allowance only on/before its own use-by. Cap allowance at remaining stock;
+release unused future capacity FIFO after depletion, counts or disposal. Remove
+elapsed allowance nights first, so a shortfall is never counted on two batches.
+
+Actual inventory keeps consuming an older overdue batch until disposal is
+confirmed. Forecast allowance stops at use-by. Example: Monday A has 10 lb
+(use-by Monday), B has 20 lb (use-by Wednesday), with demand 8 lb/night. After
+Monday consumes 8, Tuesday starts with A 2 overdue and B 20; B's risk is 4.
+Tuesday's 8 actual lb consume A 2 and B 6. Wednesday B has 14 with allowance 8:
+B's risk rises to 6, while A's 2 lb overdue risk disappears. Combined risk stays
+6. Confirming actual disposal removes stock through the existing inventory
+flow; this layer never records disposal or changes physical stock itself.
+
+Assess daily using inventory through the latest completed business date. Use
+only allowance nights after that cutoff. Separately retain each archive's run
+ID, issued_at, source_through and age. A missed forecast can use remaining dates
+in the latest publication; missing tail dates remain unavailable. Existing
+freezes work without a new forecast. Never use calendar sale_date as a substitute
+for inventory business dates. Modifier-aware actual use versus standard-recipe
+allowance remains a known gap.
+
+Persistence and controlled corrections
+
+waste_projection_state fences concurrent writes with a restaurant version.
+waste_projection_assessments stores immutable normalized inputs/results.
+waste_projection_demands and waste_projection_cases retain append-only version
+chains. waste_projection_corrections records the actor, database authorization
+time, allowlisted reason, source-event reference and explicit affected scope.
+All five tables have RLS and no frontend/direct service writes. Only restricted
+service-role RPCs can read or commit. Account purge is the delete-only exception
+and includes these tables in the existing hashed purge log and row counts.
+
+prepareWasteRiskAssessment reads stored settings and frozen state and calculates
+an envelope; commitWasteRiskAssessment atomically stores it. Keep the same
+request UUID/envelope for transport retries. PT409 means reload and recalculate;
+never submit the rejected state as an override. Concurrent first freezes are
+serialized by the restaurant advisory lock and checked against the read version.
+New freezes must reference that restaurant's archived lows and dish shares.
+
+The trusted server caller must supply the complete normalized inventory,
+archive and nightly recipe snapshot. These RPCs are not browser endpoints and
+do not authenticate an arbitrary owner-supplied snapshot. Stage 3 will build the
+source reader and connect existing verified correction events; source_event_id
+is an audit reference, not a substitute for that event verification.
+
+Allowed reassessments: invoice quantity/date correction, physical count,
+confirmed disposal, storage/shelf-life change, dish removal, confirmed closure.
+Count/disposal/quantity changes retain fixed demand and recalculate reservations.
+Date/shelf-life changes retain existing ingredient/night freezes; only newly
+covered nights can freeze from a newer valid archive. If a forecast is missing,
+that already-authorized extension may finish covering its nights later.
+Closure replaces the scoped night's low with zero. Dish removal subtracts only
+its scoped contributions without reallocating shares. Both retain the original
+archive identity and append a new record; neither edits the original decision.
+Other reasons never reset a freeze. Actor must be the restaurant owner or a
+stored admin, as independently checked by the service-only commit RPC.
 
 Normalized input contract
 
 assessProjectedWasteRisk accepts restaurantId, assessmentDate, assessedAt,
 timeZone, cutoffMinutes, inventoryCutoff, inventoryComplete:true, ingredients,
-batches, forecast, recipes and frozen:{demands,cases}. Use canonical lowercase
-UUIDs, actual numeric values and explicit nulls for unknown optional fields.
-Dates are YYYY-MM-DD business dates; timestamps require explicit offsets.
+batches, forecast, recipes, resolvedSettings and frozen:{demands,cases}.
+Use canonical lowercase UUIDs, explicit-offset timestamps, YYYY-MM-DD business
+dates, numeric values and explicit nulls for unknown fields.
 
-Ingredients include restaurant_id, id, name, tracked unit and the existing
-approved conversion metadata. Batches include restaurant_id, stable source id,
-ingredient_id, received_date, use_by_date, remaining_qty, unit and unit_cost.
-A source id represents an invoice item or count lot, not a rebuild-generated
-current_inventory row id. Only stock present at inventoryCutoff is eligible.
+Ingredients include tracked unit and approved conversion metadata. Batches use
+stable invoice-item or count-lot IDs, never rebuild-generated inventory row IDs;
+include received_date, use_by_date, remaining_qty, unit and batch unit_cost.
+Forecasts supply eight archived nights and all active dish shares/statuses.
+Recipes enumerate active dishes, including incomplete/unlinked recipes.
+Return all statuses, positive visible items, review reasons, recipe coverage,
+daily demand/allocation traces, new proposals and the next frozen state.
 
-The forecast is an authorized archived run with id, restaurant_id, run_date,
-issued_at, source_through, model_major, calibration_key and eight ordered nights.
-Each night supplies business_date, availability, low and dishes. Each dish
-supplies dish_id, active, status and overall share. The later reader derives
-these fields from archive rows and their saved traces, without refitting.
+Unlinked lines need ingredient linking. Unknown age, FIFO ordering, conversions
+or forecast evidence remain unavailable. Quantity can be available with unknown
+dollars; otherwise dollars equal risk × batch cost in the canonical unit.
 
-Recipes enumerate all active dishes for each night, including dishes whose
-forecast is unavailable or absent. Each record supplies restaurant_id,
-business_date, dish_id, active, complete and portions. Portions supply
-ingredient_id, quantity and unit. Do not filter incomplete or unlinked recipes
-out of the snapshot. An unknown recipe can affect any ingredient; it therefore
-blocks consumption credit rather than silently becoming a zero portion.
+Acceptance checks
 
-The function returns all item statuses, strictly positive visible_items,
-needs_review, daily demand/allocation traces, new freeze proposals and the next
-frozen state. Inputs are unchanged; results are deeply frozen and deterministic.
-The caller must persist the accepted state; ignoring it would lose freezing.
+80 × (0.6 × 0.25 lb + 0.4 × 0.125 lb) = 16 lb conservative expected use.
+60 − 30 = 30 lb risk; after actual 10 versus allowance 8: 50 − 22 = 28 lb,
+worth $126 at $4.50/lb. A 2 lb shortfall changes combined risk by 2 lb once.
+With 20 future lb, correcting older A from 12 to 6 lets newer B 24 reserve 14:
+risk 10. Discarding A releases all 20 to B: risk 4. A Thursday freeze of 8 lb
+stays 8 for a batch joining Wednesday despite a fresh Thursday forecast of 10.
 
-Unavailable data and correction boundary
+Rollout boundary
 
-Unlinked invoice lines return link_ingredient. Missing age, ordering, recipe,
-forecast or conversion data is unavailable, not zero demand or full-stock risk.
-Uncertain competing inventory blocks allocations it could affect. Quantity risk
-may be available while dollar value remains null when batch cost is unknown.
-Dollar value uses batch cost converted into the same unit as stock quantity.
+Keep the legacy card exactly unchanged until projections are enabled and a
+completed assessment activates the new view. No Estimate unavailable merely
+because projections are off. Later scheduling follows each restaurant's
+business clock after publication, with a separate missed-run path, never the
+09:00 UTC waste cron. An assessment failure cannot undo a published forecast.
 
-This module has no reset operation. Changes to a frozen batch's ingredient,
-tracked unit, received date or use-by date require reassessment. The later
-persistence stage permits only: invoice quantity/date correction, physical
-count, confirmed disposal, storage/shelf-life change, dish removal, or newly
-confirmed closure. Record actor, time and reason. Stock-quantity reconciliation
-here does not infer a disposal, count correction, successful sale or attribution
-from a balance change alone. Modifier-aware actual usage versus standard-recipe
-allowances remains a known gap and must be disclosed.
-
-Rollout and scheduling requirements for later stages
-
-Keep the existing card exactly as it is until projections are enabled and a
-completed assessment activates the new view. Projections being off must not
-produce Estimate unavailable. Zero-risk quantities disappear in the new view.
-Assess daily per restaurant after projection publication, with a separate
-missed-run path using eligible older forecasts. Do not put this in the 09:00 UTC
-waste cron. A risk-assessment failure must not undo forecast publication.
-
-Echo Tap readiness: last invoice 2026-07-29, last POS sale 2026-07-17, and no
-POS connection. Real validation requires reconnecting POS and resuming invoices,
-then projection setup, backfill and an inventory rebuild. Maple is plumbing-only
-sparse test data and supports no accuracy conclusions.
-
-Acceptance examples
-
-80 lower-volume dishes × (0.6 × 0.25 lb + 0.4 × 0.125 lb) = 16 lb.
-60 lb stock less 30 lb allowance = 30 lb risk; after 10 lb used against 8 lb
-allowed, 50 lb less 22 lb remaining allowance = 28 lb, worth $126 at $4.50/lb.
-A two-pound daily shortfall increases combined batch risk once by two pounds.
-Correcting the older 12-pound batch to six releases six of the 20-pound future
-budget to the newer 24-pound batch: 24−14=10 lb risk. Removing the older batch
-entirely leaves 24−20=4 lb risk. Sales depletion releases future reservations
-only, not the allowance of the completed night.
-A Monday freeze of Thursday demand at 8 lb remains 8 lb for a batch freezing
-Wednesday even when the newer Thursday forecast says 10 lb.
+Echo Tap: last invoice 2026-07-29, last POS sale 2026-07-17, no POS connection.
+Real validation requires POS reconnection, resumed invoices, projection setup,
+backfill and an inventory rebuild. Maple supports plumbing checks only.
