@@ -71,13 +71,28 @@ allowance remains a known gap.
 Persistence and controlled corrections
 
 waste_projection_state fences concurrent writes with a restaurant version.
-waste_projection_assessments stores immutable normalized inputs/results.
+waste_projection_assessments keeps immutable assessment metadata, the
+SHA-256 digest of the normalized input, and a compact result. The compact
+result retains forecast and settings provenance, batch-level estimates and
+statuses, and recipe coverage disclosures. It omits allocation details,
+per-night demand traces, new-freeze proposals and duplicate item lists.
 waste_projection_demands and waste_projection_cases retain append-only version
 chains. waste_projection_corrections records the actor, database authorization
 time, allowlisted reason, source-event reference and explicit affected scope.
-All five tables have RLS and no frontend/direct service writes. Only restricted
-service-role RPCs can read or commit. Account purge is the delete-only exception
-and includes these tables in the existing hashed purge log and row counts.
+All six tables have RLS and no frontend or direct service writes. Restricted
+service-role RPCs read or commit the assessment state. Account purge removes
+all six tables' tenant rows and records the counts in the existing hashed
+purge log.
+
+waste_projection_assessment_payloads keeps the full normalized input and
+detailed result for 30 days (720 hours from the database save time). Loaded
+frozen state and the resulting frozen state are represented by the separate
+append-only case and demand records. The service-only expiration RPC deletes
+up to 100 expired payloads per call. Stage 3 will invoke it from scheduled
+maintenance with bounded batches, including for disabled restaurants. The
+assessment, input digest, compact result, corrections and frozen records
+survive expiration. Retries keep working through the retained digest and
+correction record.
 
 prepareWasteRiskAssessment reads stored settings and frozen state and calculates
 an envelope; commitWasteRiskAssessment atomically stores it. Keep the same

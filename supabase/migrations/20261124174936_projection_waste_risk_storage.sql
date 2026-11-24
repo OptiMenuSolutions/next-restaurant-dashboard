@@ -13,7 +13,9 @@ returns boolean language sql immutable set search_path='' as $$
     then (p->>'waste_recipe_uncovered_share_max')::numeric between 0 and 1 else false end;
 $$;
 revoke all on function projection_private.check_settings_before_waste_risk(jsonb,boolean),
-  projection_private.check_settings(jsonb,boolean) from public,anon,authenticated,service_role;
+  projection_private.check_settings(jsonb,boolean) from public,anon,authenticated;
+grant execute on function projection_private.check_settings_before_waste_risk(jsonb,boolean),
+  projection_private.check_settings(jsonb,boolean) to service_role;
 
 do $$begin
   perform pg_advisory_xact_lock(hashtextextended('optimenu:projection-settings:4',0));
@@ -49,13 +51,47 @@ create table public.waste_projection_assessments(
   inventory_cutoff date not null check(inventory_cutoff<assessment_date),
   state_version bigint not null,
   saved_at timestamptz not null default clock_timestamp(),
-  input jsonb not null,
   input_digest text not null check(input_digest~'^[0-9a-f]{64}$'),
   result jsonb not null,
   correction_id uuid,
   unique(restaurant_id,request_id),unique(restaurant_id,id),
   foreign key(restaurant_id,correction_id) references public.waste_projection_corrections(restaurant_id,id)
 );
+-- Detailed evidence has its own retention window. Assessment identity,
+-- compact results and frozen records remain append-only.
+create table public.waste_projection_assessment_payloads(
+  assessment_id uuid primary key,
+  restaurant_id uuid not null,
+  expires_at timestamptz not null,
+  input jsonb not null,
+  result jsonb not null,
+  foreign key(restaurant_id,assessment_id) references public.waste_projection_assessments(restaurant_id,id)
+);
+alter table public.waste_projection_assessment_payloads enable row level security;
+revoke all on public.waste_projection_assessment_payloads from public,anon,authenticated,service_role;
+create index waste_projection_payload_expiry
+  on public.waste_projection_assessment_payloads(expires_at,assessment_id);
+create index waste_projection_payload_restaurant
+  on public.waste_projection_assessment_payloads(restaurant_id);
+
+create function public.waste_projection_expire_payloads()
+returns integer language plpgsql security definer set search_path='' as $$
+declare deleted integer;
+begin
+  with expired as (
+    select p.assessment_id from public.waste_projection_assessment_payloads p
+    where p.expires_at<=statement_timestamp()
+    order by p.expires_at,p.assessment_id limit 100
+    for update skip locked
+  )
+  delete from public.waste_projection_assessment_payloads p using expired
+    where p.assessment_id=expired.assessment_id;
+  get diagnostics deleted=row_count;
+  return deleted;
+end$$;
+revoke all on function public.waste_projection_expire_payloads() from public,anon,authenticated;
+grant execute on function public.waste_projection_expire_payloads() to service_role;
+
 create table public.waste_projection_cases(
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null references public.restaurants(id),
@@ -130,6 +166,8 @@ declare
   prior_id uuid; assessment_id uuid:=gen_random_uuid(); correction_id uuid;
   ids uuid[]; actor uuid; kind text; table_name text;
   input_copy jsonb:=snapshot-'frozen'; result_copy jsonb:=outcome-'frozen';
+  input_hash text:=encode(sha256(convert_to(input_copy::text,'UTF8')),'hex');
+  saved_time timestamptz;
   cutoff date:=(snapshot->>'inventoryCutoff')::date;
   assessed_at timestamptz:=(snapshot->>'assessedAt')::timestamptz;
   weighted double precision;
@@ -138,7 +176,7 @@ begin
   select * into saved from public.waste_projection_assessments a
     where a.restaurant_id=target and a.request_id=waste_projection_commit.request_id;
   if found then
-    if saved.input is distinct from input_copy or
+    if saved.input_digest is distinct from input_hash or
       saved.correction_id is distinct from (correction->>'id')::uuid or
       (select c.record from public.waste_projection_corrections c where c.id=saved.correction_id) is distinct from correction then
       raise exception 'Waste assessment request changed' using errcode='PT409';
@@ -197,10 +235,14 @@ begin
   -- Every loaded record must survive, unchanged unless an explicitly scoped
   -- correction authorizes its replacement. Omission is not a reset operation.
   foreach table_name in array array['cases','demands'] loop
-    for old_record in select value from jsonb_array_elements(current_state#>array['frozen',table_name]) loop
-      select x into row_value from jsonb_array_elements(outcome#>array['frozen',table_name]) x
-      where case when table_name='cases' then x->>'batch_id'=old_record->>'batch_id'
-        else x->>'ingredient_id'=old_record->>'ingredient_id' and x->>'business_date'=old_record->>'business_date' end;
+    for old_record,row_value in
+      select old.value, proposed.value
+      from jsonb_array_elements(current_state#>array['frozen',table_name]) old
+      left join jsonb_array_elements(outcome#>array['frozen',table_name]) proposed
+        on (case when table_name='cases' then old.value->>'batch_id' else old.value->>'ingredient_id' end)
+          = (case when table_name='cases' then proposed.value->>'batch_id' else proposed.value->>'ingredient_id' end)
+        and (table_name='cases' or old.value->>'business_date'=proposed.value->>'business_date')
+    loop
       if row_value is null then raise exception 'Frozen state omitted' using errcode='23514'; end if;
       if row_value=old_record then continue; end if;
       if correction_id is null then
@@ -262,8 +304,14 @@ begin
     end loop;
   end loop;
   insert into public.waste_projection_assessments(id,restaurant_id,request_id,assessment_date,inventory_cutoff,
-    state_version,input,input_digest,result,correction_id) values(assessment_id,target,request_id,(snapshot->>'assessmentDate')::date,
-    cutoff,expected_version+1,input_copy,encode(sha256(convert_to(input_copy::text,'UTF8')),'hex'),result_copy,correction_id);
+    state_version,input_digest,result,correction_id) values(assessment_id,target,request_id,(snapshot->>'assessmentDate')::date,
+    cutoff,expected_version+1,input_hash,
+    (result_copy-array['items','demand_trace','new_demands','new_cases','visible_items','needs_review'])
+      ||jsonb_build_object('items',coalesce((select jsonb_agg(value-'allocations' order by ord)
+        from jsonb_array_elements(result_copy->'items') with ordinality t(value,ord)),'[]'::jsonb)),
+    correction_id) returning saved_at into saved_time;
+  insert into public.waste_projection_assessment_payloads(assessment_id,restaurant_id,expires_at,input,result)
+    values(assessment_id,target,saved_time+interval '720 hours',input_copy,result_copy);
   for row_value in select value from jsonb_array_elements(outcome#>'{frozen,cases}') loop
     if row_value->>'restaurant_id' is distinct from target::text then
       raise exception 'Foreign frozen case' using errcode='42501'; end if;
@@ -330,7 +378,8 @@ do $$declare d text; begin
   d:=pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure);
   if position('foreach t in array array[' in d)=0 then raise exception 'Purge hook not found'; end if;
   d:=replace(d,'foreach t in array array[',$hook$foreach t in array array[
-    'waste_projection_demands','waste_projection_cases','waste_projection_assessments',
+    'waste_projection_demands','waste_projection_cases','waste_projection_assessment_payloads',
+    'waste_projection_assessments',
     'waste_projection_corrections','waste_projection_state',$hook$);
   execute d;
 end$$;

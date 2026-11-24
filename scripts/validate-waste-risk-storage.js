@@ -3,7 +3,6 @@ import test from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
 import { projectionTestSQL as q, projectionTestConnection } from './validate-projection-benchmarks.js';
 import { prepareWasteRiskAssessment, commitWasteRiskAssessment } from '../lib/wasteRiskStorage.js';
 import { assessProjectedWasteRisk } from '../lib/wasteRiskProjection.js';
@@ -16,25 +15,25 @@ const lit = v => `'${JSON.stringify(v).replaceAll("'","''")}'::jsonb`;
 const bad = (sql,re) => assert.throws(()=>q(sql),e=>re.test(e.stderr||e.message));
 const read = i => JSON.parse(q(`set role service_role; select public.waste_projection_read(
   '${REST}','${i.inventoryCutoff}',array['${BATCH}']::uuid[],'${i.assessedAt}');`));
+const rpcSql = (name,p) => name==='waste_projection_read'
+  ? `public.waste_projection_read('${p.target}','${p.cutoff}',array[${p.batch_ids.map(x=>`'${x}'`).join(',')}]::uuid[],'${p.at_time}')`
+  : `public.waste_projection_commit('${p.target}','${p.request_id}',${p.expected_version},${lit(p.snapshot)},${lit(p.outcome)},${p.correction?lit(p.correction):'null'})`;
 const client={rpc:async(name,p)=>{
   try {
-    const sql=name==='waste_projection_read'
-      ? `public.waste_projection_read('${p.target}','${p.cutoff}',array[${p.batch_ids.map(x=>`'${x}'`).join(',')}]::uuid[],'${p.at_time}')`
-      : `public.waste_projection_commit('${p.target}','${p.request_id}',${p.expected_version},${lit(p.snapshot)},${lit(p.outcome)},${p.correction?lit(p.correction):'null'})`;
-    return {data:JSON.parse(q(`set role service_role; select ${sql};`)),error:null};
+    return {data:JSON.parse(q(`set role service_role; select ${rpcSql(name,p)};`)),error:null};
   } catch(e) { return {data:null,error:{message:e.stderr||e.message,code:'DATABASE_ERROR'}}; }
 }};
 let input, plan, saved;
 
-test('install storage after the full applied projection chain; append a version without changing calibration',()=>{
-  const before=JSON.parse(q(`select settings from public.projection_setting_versions where restaurant_id is null order by effective_at desc limit 1;`));
-  const files=readdirSync(new URL('../supabase/migrations/',import.meta.url)).filter(n=>n.endsWith('_projection_waste_risk_storage.sql'));
-  assert.equal(files.length,1);
-  q(readFileSync(new URL(`../supabase/migrations/${files[0]}`,import.meta.url),'utf8'));
+test('storage appends a settings version without changing calibration',()=>{
+  const before=JSON.parse(q(`select settings from public.projection_setting_versions
+    where restaurant_id is null order by effective_at desc offset 1 limit 1;`));
   const after=JSON.parse(q(`select settings from public.projection_setting_versions where restaurant_id is null order by effective_at desc limit 1;`));
   assert.equal(after.waste_recipe_uncovered_share_max,0.1);
   assert.equal(projectionCalibrationKey(4,before),projectionCalibrationKey(4,after));
   assert.equal(q(`select projection_private.check_settings((select settings from public.projection_setting_versions where restaurant_id is null order by effective_at limit 1));`),'t');
+  assert.equal(q(`set role service_role;
+    select projection_private.check_settings('{"waste_recipe_uncovered_share_max":0.1}',true);`),'t');
   for(const value of ['null','"0.1"','-0.1','1.1']) assert.equal(q(`select projection_private.check_settings('{"waste_recipe_uncovered_share_max":${value}}',true);`),'f');
   q(`insert into public.restaurants(id,user_id,name,operational_timezone) values('${REST}','${OWNER}','Waste fixture','UTC');
     insert into public.projection_restaurant_config(restaurant_id,enabled) values('${REST}',true);
@@ -66,7 +65,7 @@ test('install storage after the full applied projection chain; append a version 
 });
 
 test('RLS and direct writes are blocked; only the service role can execute storage RPCs',()=>{
-  assert.equal(q(`select count(*) from pg_class where relname like 'waste_projection_%' and relkind='r' and relrowsecurity;`),'5');
+  assert.equal(q(`select count(*) from pg_class where relname like 'waste_projection_%' and relkind='r' and relrowsecurity;`),'6');
   for(const role of ['anon','authenticated']) bad(`set role ${role}; select public.waste_projection_read('${REST}',current_date-1,'{}',clock_timestamp());`,/permission denied/);
   bad(`set role service_role; insert into public.waste_projection_state values('${REST}',99,null,null);`,/permission denied/);
 });
@@ -201,11 +200,126 @@ test('two independent database sessions race; one commits and the other must rel
   assert.equal(q(`select count(*) from public.waste_projection_demands where restaurant_id='${REST}' and business_date='${shift(input.assessmentDate,6)}';`),'1');
 });
 
+test('expiration preserves the compact result, audit, freezes and retry identity',async()=>{
+  const before=read(input);
+  const assessment=q(`select result from public.waste_projection_assessments where id='${saved.assessment_id}';`);
+  const compact=JSON.parse(assessment);
+  assert.ok(compact.items.length);
+  assert.equal(compact.items[0].allocations,undefined);
+  assert.equal(compact.demand_trace,undefined);
+  assert.equal(q(`select p.expires_at=a.saved_at+interval '720 hours'
+    from public.waste_projection_assessment_payloads p join public.waste_projection_assessments a on a.id=p.assessment_id
+    where a.id='${saved.assessment_id}';`),'t');
+  for(const role of ['anon','authenticated']) {
+    bad(`set role ${role}; select public.waste_projection_expire_payloads();`,/permission denied/);
+  }
+  bad(`set role service_role; delete from public.waste_projection_assessment_payloads;`,/permission denied/);
+  q(`update public.waste_projection_assessment_payloads set expires_at=clock_timestamp()-interval '1 second'
+    where assessment_id='${saved.assessment_id}';`);
+  assert.equal(q('set role service_role; select public.waste_projection_expire_payloads();'),'1');
+  assert.equal(q('set role service_role; select public.waste_projection_expire_payloads();'),'0');
+  assert.equal(q(`select result from public.waste_projection_assessments where id='${saved.assessment_id}';`),assessment);
+  assert.deepEqual(read(input),before);
+  assert.equal((await commitWasteRiskAssessment(client,plan)).duplicate,true);
+  await assert.rejects(commitWasteRiskAssessment(client,{...plan,snapshot:{...plan.snapshot,batches:[]}}),/request changed/);
+});
+
+test('production-size read and both commits remain under one second',async t=>{
+  const ingredients=Array.from({length:150},(_,n)=>({
+    restaurant_id:REST,id:id(1000+n),name:`Ingredient ${n}`,unit:'lb',
+  }));
+  const batches=Array.from({length:400},(_,n)=>({
+    ...input.batches[0],id:id(2000+n),ingredient_id:ingredients[n%150].id,
+    remaining_qty:30,use_by_date:shift(input.assessmentDate,7),
+  }));
+  const dishes=[DISH,...Array.from({length:99},(_,n)=>id(3000+n))];
+  q(`
+    insert into public.projection_dishes(id,restaurant_id,style_category,forecastable)
+      select d,'${REST}','Neutral',true from unnest(array[${dishes.slice(1).map(d=>`'${d}'`).join(',')}]::uuid[]) as d;
+    insert into public.projection_forecast_dishes(restaurant_id,run_id,target_date,dish_id,share,expected,low,high,confidence,trace)
+      select '${REST}','${RUN}',current_date+n,d.id,0.005,1,0,2,'low','{}'
+      from generate_series(0,7)n cross join public.projection_dishes d where d.restaurant_id='${REST}' and d.id<>'${DISH}';
+  `);
+  const days=Array.from({length:8},(_,n)=>shift(input.assessmentDate,n));
+  const fixture={...input,ingredients,batches,
+    forecast:{...input.forecast,nights:days.map(business_date=>({
+      business_date,availability:'available',low:12.34567890123456,
+      dishes:dishes.map((dish_id,n)=>({dish_id,active:true,status:'ok',share:n===0?0.3333333333333333:0.005})),
+    }))},
+    recipes:days.flatMap(business_date=>dishes.map((dish_id,n)=>({
+      restaurant_id:REST,business_date,dish_id,active:true,complete:true,
+      portions:Array.from({length:6},(_,offset)=>({
+        ingredient_id:ingredients[(n*6+offset)%150].id,quantity:0.125,unit:'lb',
+      })),
+    }))),
+    assessedAt:new Date().toISOString(),
+  };
+  // Use a new tenant so the timed first commit has no prior waste state.
+  const tenant=id(4000),run=id(4001);
+  q(`
+    insert into public.restaurants(id,user_id,name,operational_timezone) values('${tenant}','${OWNER}','Scaled waste fixture','UTC');
+    insert into public.projection_restaurant_config(restaurant_id,enabled) values('${tenant}',true);
+    insert into public.projection_dishes(id,restaurant_id,style_category,forecastable)
+      select replace(id::text,'91000000','92000000')::uuid,'${tenant}',style_category,forecastable
+      from public.projection_dishes where restaurant_id='${REST}';
+    alter table public.projection_forecast_runs disable trigger user;
+    alter table public.projection_forecast_nights disable trigger user;
+    insert into public.projection_forecast_runs(id,restaurant_id,run_date,model_major,global_version_id,
+      settings_snapshot,settings_digest,calibration_key,source_through,issued_at,trace)
+    select case when n=0 then '${run}'::uuid else gen_random_uuid() end,'${tenant}',run_date-n,model_major,global_version_id,
+      settings_snapshot,settings_digest,calibration_key,source_through-n,issued_at-n*interval '1 day',trace
+      from public.projection_forecast_runs cross join generate_series(0,364)n where id='${RUN}';
+    insert into public.projection_forecast_nights(restaurant_id,run_id,target_date,days_ahead,availability,expected,low,high,confidence,trace)
+    select '${tenant}',r.id,r.run_date+n.days_ahead-1,n.days_ahead,n.availability,n.expected,n.low,n.high,n.confidence,n.trace
+      from public.projection_forecast_runs r cross join public.projection_forecast_nights n
+      where r.restaurant_id='${tenant}' and n.run_id='${RUN}';
+    insert into public.projection_forecast_dishes(restaurant_id,run_id,target_date,dish_id,share,expected,low,high,confidence,trace)
+    select '${tenant}',r.id,r.run_date+(d.target_date-current_date),replace(d.dish_id::text,'91000000','92000000')::uuid,
+      d.share,d.expected,d.low,d.high,d.confidence,d.trace
+      from public.projection_forecast_runs r cross join public.projection_forecast_dishes d
+      where r.restaurant_id='${tenant}' and d.run_id='${RUN}';
+    alter table public.projection_forecast_runs enable trigger user;
+    alter table public.projection_forecast_nights enable trigger user;
+    analyze public.projection_forecast_dishes;
+    analyze public.projection_forecast_nights;
+  `);
+  fixture.restaurantId=tenant;
+  fixture.forecast.id=run;
+  fixture.forecast.restaurant_id=tenant;
+  for(const row of [...ingredients,...batches,...fixture.recipes]) row.restaurant_id=tenant;
+  for(const row of [...fixture.recipes,...fixture.forecast.nights.flatMap(n=>n.dishes)]) {
+    row.dish_id=row.dish_id.replace('91000000','92000000');
+  }
+  const timed=(label,sql)=>{
+    const milliseconds=Number(q(`set role service_role;
+select clock_timestamp() as started \\gset
+select ${sql} as result \\gset
+select extract(epoch from clock_timestamp()-:'started'::timestamptz)*1000;`));
+    t.diagnostic(`${label}: ${milliseconds.toFixed(1)} ms`);
+    assert.ok(milliseconds>0 && milliseconds<1000,`${label} took ${milliseconds} ms`);
+  };
+  const first=await prepareWasteRiskAssessment(client,fixture,id(4002));
+  assert.equal(first.outcome.new_demands.length,1200);
+  assert.equal(first.outcome.new_cases.length,400);
+  timed('First waste_projection_commit',rpcSql('waste_projection_commit',first));
+  timed('Frozen waste_projection_read',rpcSql('waste_projection_read',{
+    target:tenant,cutoff:fixture.inventoryCutoff,batch_ids:batches.map(b=>b.id),at_time:fixture.assessedAt,
+  }));
+  const later=await prepareWasteRiskAssessment(client,fixture,id(4003));
+  assert.equal(later.outcome.new_demands.length,0);
+  assert.equal(later.outcome.new_cases.length,0);
+  timed('Unchanged waste_projection_commit',rpcSql('waste_projection_commit',later));
+  t.diagnostic(q(`select format('Synthetic payload bytes (JSON text): input %s, full result %s, compact result %s',
+    octet_length(p.input::text),octet_length(p.result::text),octet_length(a.result::text))
+    from public.waste_projection_assessment_payloads p join public.waste_projection_assessments a on a.id=p.assessment_id
+    where a.restaurant_id='${tenant}' and a.request_id='${id(4002)}';`));
+});
+
 test('history cannot be edited or deleted; account purge removes every tenant storage row',()=>{
   bad(`update public.waste_projection_demands set record='{}' where restaurant_id='${REST}';`,/append-only/);
   bad(`delete from public.waste_projection_cases where restaurant_id='${REST}';`,/append-only/);
   q(`select public.purge_restaurant('${REST}');`);
-  for(const t of ['state','corrections','assessments','cases','demands']) assert.equal(q(`select count(*) from public.waste_projection_${t} where restaurant_id='${REST}';`),'0');
+  for(const t of ['state','corrections','assessments','assessment_payloads','cases','demands']) assert.equal(q(`select count(*) from public.waste_projection_${t} where restaurant_id='${REST}';`),'0');
   const counts=JSON.parse(q(`select deleted_rows from public.projection_account_purge_log order by purged_at desc limit 1;`));
   assert.ok(counts.waste_projection_demands>=4);
 });
