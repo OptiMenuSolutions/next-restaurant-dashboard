@@ -41,6 +41,7 @@ const q = sql => execFileSync(
     input: sql,
     encoding: 'utf8',
     timeout: 60000,
+    maxBuffer: 64 * 1024 * 1024,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, PGOPTIONS: '-c timezone=UTC' },
   }
@@ -70,7 +71,7 @@ const nationalDoc = {
 before(async () => {
   if (localBin) {
     assert.ok(localPsql);
-    localDir = mkdtempSync('/tmp/optimenu-benchmark-db-');
+    localDir = mkdtempSync(process.env.OPTIMENU_LOCAL_PG_TMP || '/tmp/optimenu-benchmark-db-');
     execFileSync(`${localBin}/initdb`, [
       '-D', `${localDir}/data`, '-U', 'postgres',
       '-A', 'trust', '--no-locale',
@@ -166,7 +167,7 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
-    'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache',
+    'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor',
   ]) {
     if (suffix === 'timezone_cache') {
       q(`do $copy$ declare d text; begin
