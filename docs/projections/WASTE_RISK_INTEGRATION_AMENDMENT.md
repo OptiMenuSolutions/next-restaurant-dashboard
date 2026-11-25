@@ -159,3 +159,24 @@ business clock after publication, with a separate missed-run path, never the
 Echo Tap: last invoice 2026-07-29, last POS sale 2026-07-17, no POS connection.
 Real validation requires POS reconnection, resumed invoices, projection setup,
 backfill and an inventory rebuild. Maple supports plumbing checks only.
+
+### Shift4 ticket completeness
+
+The read-only Maple sandbox probe for November 17–18, 2026 returned 29
+tickets in one response. The top-level fields were `meta` and `results`.
+The only observed `meta` key was `count`, with value `29`. No next link
+appeared.
+
+[Shift4’s pagination documentation](https://conecto-api.shift4payments.com/docs/overview/queries.html#pagination)
+defines `meta.count` as the total number of items matching the request.
+The single-page Maple observation is consistent with that contract.
+Live multi-page traversal for
+[Retrieve Tickets](https://conecto-api.shift4payments.com/docs/pos/ticket-methods.html#retrieve-tickets)
+remains unverified. The endpoint’s documented query parameters do not
+include `offset` or `limit`, and the probe that supplied both received
+HTTP 400.
+
+The sync follows provider-issued next links and checks the collected
+ticket count against the declared total before replacing sales. An empty
+final page is accepted when the collected count equals the declared
+total. An empty page before the total reconciles fails the pull.

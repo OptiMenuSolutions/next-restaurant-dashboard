@@ -332,3 +332,40 @@ test('Shift4 rejects a short response with meta.count and no next link', async (
   await assert.rejects(state.pull(), /do not reconcile to the total count/);
   assert.deepEqual(state.calls.map(call => call.method), ['GET']);
 });
+
+test('Shift4 accepts an empty final page after collecting the declared total', async () => {
+  const state = setup({
+    initial(raw, url) {
+      return url.searchParams.has('page')
+        ? { meta: { count: raw.length }, results: [] }
+        : {
+            meta: { count: raw.length },
+            results: structuredClone(raw),
+            links: { next: `/pos/v2/${SHIFT4_LOCATION}/tickets?page=2` },
+          };
+    },
+  });
+
+  const records = await state.pull();
+
+  assert.equal(records.tickets.length, 8);
+  assert.deepEqual(state.calls.map(call => call.method), ['GET', 'GET', 'POST']);
+  assert.doesNotThrow(() => verifyCoverage(records));
+});
+
+test('Shift4 rejects an empty page when the declared total is still short', async () => {
+  const state = setup({
+    initial(raw, url) {
+      return url.searchParams.has('page')
+        ? { meta: { count: raw.length }, results: [] }
+        : {
+            meta: { count: raw.length },
+            results: structuredClone(raw.slice(0, 4)),
+            links: { next: `/pos/v2/${SHIFT4_LOCATION}/tickets?page=2` },
+          };
+    },
+  });
+
+  await assert.rejects(state.pull(), /empty page before the ticket total was verified/);
+  assert.deepEqual(state.calls.map(call => call.method), ['GET', 'GET']);
+});
