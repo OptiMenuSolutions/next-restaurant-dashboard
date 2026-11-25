@@ -24,6 +24,7 @@ function inventoryDatabase({
   storedDeliveryDate = '2000-01-01',
   posSales = null,
   posTickets = [],
+  posUsageJobs = [],
   onQuery = () => {},
 } = {}) {
   const invoice = {
@@ -101,6 +102,7 @@ function inventoryDatabase({
     }],
 
     pos_tickets: posTickets,
+    pos_usage_jobs: posUsageJobs,
 
     menu_items: [{
       id: 'dish-owned',
@@ -649,4 +651,30 @@ test('a year of Shift4 tickets is bounded to one date and replays in under one s
   assert.ok(dateFilters.length > 0);
   assert.ok(dateFilters.every(([operator, date]) => operator === 'eq' && date === day));
   assert.ok(elapsed < 1000, `Boundary replay took ${elapsed.toFixed(1)} ms`);
+});
+
+test('as-of inventory rejects a POS rewrite that races the stock calculation', async () => {
+  const posUsageJobs = [{
+    restaurant_id: RID,
+    generation: 1,
+    applied_publication_id: 'publication-1',
+  }];
+  const db = inventoryDatabase({
+    posSales: [],
+    posUsageJobs,
+    onQuery(table) {
+      if (table === 'pos_tickets') {
+        posUsageJobs[0] = {
+          restaurant_id: RID,
+          generation: 2,
+          applied_publication_id: null,
+        };
+      }
+    },
+  });
+
+  await assert.rejects(
+    calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN),
+    { code: 'POS_USAGE_NOT_APPLIED' }
+  );
 });

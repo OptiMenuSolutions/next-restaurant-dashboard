@@ -165,8 +165,9 @@ test('missing, excessive, or wrong-date aggregated sales fail coverage', () => {
 function inputDb({ enabled = true, usable = true, revision = 'current', savedRevision = revision,
   error = null } = {}) {
   const scope = [];
-  const result = { usable, source_revision: savedRevision, sales: [
-    { id: 'prepared', sale_date: '2026-11-16' }, { id: 'future', sale_date: '2026-11-17' },
+  const result = { usable, source_revision: savedRevision, publication_id: 'publication-current', sales: [
+    { id: 'prepared', sale_date: '2026-11-16', closed_at: '2026-11-16T07:00:00Z' },
+    { id: 'future', sale_date: '2026-11-17' },
   ], recipes: [{ id: 'prepared' }, { id: 'future' }] };
   return { scope, from(table) {
     return { select() { return this; }, eq(column, value) { scope.push([table, column, value]); return this; },
@@ -205,4 +206,27 @@ test('unusable or stale publications preserve inventory by failing visibly', asy
 test('database read failures propagate instead of becoming zero usage', async () => {
   await assert.rejects(inventoryPosInputs(inputDb({ error: new Error('database unavailable') }),
     'tenant', '2026-11-16', [], []), /database unavailable/);
+});
+
+test('as-of inputs wait for usage to be applied to the latest sales revision', async () => {
+  const boundary = {
+    instant: Date.parse('2026-11-16T09:00:00Z'),
+    readSales: async rows => rows,
+    appliedUsagePublicationId: 'publication-current',
+  };
+  const read = (db, scope = boundary) =>
+    inventoryPosInputs(db, 'tenant', '2026-11-16', [], [], scope);
+
+  await assert.rejects(
+    read(inputDb({ revision: 'manual-sync', savedRevision: 'previous' })),
+    { code: 'POS_USAGE_NOT_APPLIED' }
+  );
+  await assert.rejects(
+    read(inputDb({ revision: 'manual-sync' }), { ...boundary, appliedUsagePublicationId: null }),
+    { code: 'POS_USAGE_NOT_APPLIED' }
+  );
+  assert.deepEqual(
+    (await read(inputDb({ revision: 'manual-sync' }))).posSales.map(row => row.id),
+    ['prepared']
+  );
 });

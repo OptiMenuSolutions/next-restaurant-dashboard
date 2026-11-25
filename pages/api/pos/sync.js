@@ -138,6 +138,11 @@ export default async function handler(req, res) {
         });
       } catch (err) {
         console.error(`[pos/sync] ticket save failed for ${restaurantId}:`, err.message);
+        await sendCronAlert(
+          'POS sync manual',
+          `Sales synced but raw tickets failed to save for restaurant ${restaurantId}.`,
+          [`${range.from} through ${range.to}: ${err.message}`]
+        );
       }
     }
 

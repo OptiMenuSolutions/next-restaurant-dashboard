@@ -18,7 +18,7 @@ class FixtureDate extends Date {
   }
 }
 
-function harness(provider = 'shift4') {
+function harness(provider = 'shift4', ticketSaveError = null) {
   const connection = {
     id: 'connection-1',
     restaurant_id: restaurantId,
@@ -102,7 +102,10 @@ function harness(provider = 'shift4') {
             },
           }
         : { authType: 'oauth2', fetchSales: pull },
-      saveTickets: async () => ({ tickets: 0, lines: 0 }),
+      async saveTickets() {
+        if (ticketSaveError) throw new Error(ticketSaveError);
+        return { tickets: 0, lines: 0 };
+      },
       runUsage: async () => ({ applied: true }),
       sendCronAlert: async (...args) => { alerts.push(args); },
     };
@@ -176,4 +179,16 @@ test('a failed manual OAuth sync still marks the connection as error', async () 
   assert.equal(state.alerts.length, 0);
   assert.equal((await state.scheduled()).body.synced, 0);
   assert.equal(state.pulls.length, 1);
+});
+
+test('a manual raw-ticket save failure alerts with the requested date range', async () => {
+  const state = harness('shift4', 'ticket write failed');
+  state.allowPull();
+
+  const response = await state.manual();
+  assert.equal(response.statusCode, 200);
+  assert.equal(state.connection.status, 'connected');
+  assert.equal(state.alerts.length, 1);
+  assert.match(state.alerts[0][1], /restaurant-1/);
+  assert.equal(state.alerts[0][2][0], '2026-11-17 through 2026-11-18: ticket write failed');
 });
