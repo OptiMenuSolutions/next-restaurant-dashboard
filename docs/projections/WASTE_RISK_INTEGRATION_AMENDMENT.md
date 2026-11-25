@@ -180,3 +180,8 @@ The sync follows provider-issued next links and checks the collected
 ticket count against the declared total before replacing sales. An empty
 final page is accepted when the collected count equals the declared
 total. An empty page before the total reconciles fails the pull.
+
+Count reconciliation is the completeness guard for Retrieve Tickets.
+Following provider-issued next links is defensive. If Shift4 confirms a
+per-response cap, the planned remedy is to split the requested time
+window and reconcile each smaller response before replacing sales.

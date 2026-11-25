@@ -102,7 +102,7 @@ async function syncConnection(conn, range) {
       });
     } catch (err) {
       console.error(`[cron:sync-all-pos] ticket save failed for ${conn.restaurant_id}:`, err.message);
-      await sendCronAlert('POS sync cron', `Sales synced but raw tickets failed to save for restaurant ${conn.restaurant_id}.`, [err.message]);
+      await sendCronAlert('POS sync cron', `Sales synced but raw tickets failed to save for restaurant ${conn.restaurant_id}.`, [`${range.from} through ${range.to}: ${err.message}`]);
     }
   }
 
@@ -139,7 +139,7 @@ async function syncConnection(conn, range) {
       await sendCronAlert(
         'POS ingredient usage',
         `Sales saved for ${conn.restaurant_id}, but ingredient usage needs a retry.`,
-        [error.message]
+        [`${range.from} through ${range.to}: ${error.message}`]
       );
     }
   }
@@ -228,7 +228,7 @@ async function handler(req, res) {
     await sendCronAlert(
       'POS sync cron',
       `${results.failed.length} of ${live.length} POS connections failed to sync. Shift4 links remain connected and will retry on the next run. Check the individual errors before requesting reconnection.`,
-      results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}: ${f.error}`)
+      results.failed.map(f => `${f.provider}, restaurant ${f.restaurantId}, ${range.from} through ${range.to}: ${f.error}`)
     );
   }
   return res.status(200).json({ synced: results.success.length, failed: results.failed.length, results });

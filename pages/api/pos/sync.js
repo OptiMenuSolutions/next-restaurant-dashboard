@@ -14,6 +14,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { getProvider } from '../../../lib/pos/registry';
 import { saveTickets } from '../../../lib/pos/saveTickets';
+import { sendCronAlert } from '../../../lib/cronAlert';
 
 export const config = { maxDuration: 300 };
 
@@ -154,10 +155,30 @@ export default async function handler(req, res) {
 
   } catch (err) {
     console.error(`[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`, err.message);
+    const failureUpdate = {
+      last_error: err.message,
+      updated_at: new Date().toISOString(),
+    };
+
+    // Shift4 sales use app-level HMAC credentials. A failed pull leaves the
+    // connection eligible for the next scheduled run.
+    if (conn.provider !== 'shift4') {
+      failureUpdate.status = 'error';
+    }
+
     await supabase
       .from('pos_connections')
-      .update({ status: 'error', last_error: err.message, updated_at: new Date().toISOString() })
+      .update(failureUpdate)
       .eq('id', conn.id);
+
+    if (conn.provider === 'shift4') {
+      await sendCronAlert(
+        'POS sync manual',
+        'A manual Shift4 sync failed. The connection remains eligible for the next scheduled run.',
+        [`shift4, restaurant ${restaurantId}, ${range.from} through ${range.to}: ${err.message}`]
+      );
+    }
+
     return res.status(502).json({ error: err.message });
   }
 }
