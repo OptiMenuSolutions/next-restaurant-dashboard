@@ -11,7 +11,7 @@ import { adminDb as db, requireAdmin, TOUR_RESTAURANT_ID, etDate, etHour, addDay
 import { syncTickets, sortTickets, forClient } from '../../../lib/admin/tickets';
 import { healthFor } from '../../../lib/admin/health';
 import { fetchAll } from '../../../lib/admin/fetchAll';
-import { JOBS, etTimeOf } from '../../../lib/admin/jobRun';
+import { JOBS, etTimeOf, jobDueAt } from '../../../lib/admin/jobRun';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const sameDish = (a, b) => a === b || (a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a)));
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
     const tracking = !!(anyRun.data || []).length;
     const jobs = JOBS.map((j) => {
       const run = (jobRuns.data || []).find((x) => x.job === j.key && etDate(new Date(x.started_at)) === today);
-      const due = Date.parse(`${today}T${String(j.utc[1]).padStart(2, '0')}:${String(j.utc[0]).padStart(2, '0')}:00Z`) + 30 * 60000;
+      const due = jobDueAt(j.utc, today);
       const status = run ? run.status : !tracking ? 'none' : due < Date.now() ? 'missed' : 'waiting';
       return { key: j.key, name: j.name, time: etTimeOf(j.utc, today), status, summary: run?.summary || null };
     });

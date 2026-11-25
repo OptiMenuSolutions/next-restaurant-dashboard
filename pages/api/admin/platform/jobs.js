@@ -10,7 +10,7 @@
 import { adminDb as db, requireAdmin, etDate, addDays } from '../../../../lib/admin/requireAdmin';
 import { writeAuditLog } from '../../../../lib/admin/withAdminAuth';
 import { fetchAll } from '../../../../lib/admin/fetchAll';
-import { JOBS, JOB_BY_KEY, etTimeOf } from '../../../../lib/admin/jobRun';
+import { JOBS, JOB_BY_KEY, etTimeOf, jobDueAt } from '../../../../lib/admin/jobRun';
 import stripe from '../../../../lib/stripeServer';
 import shift4 from '../../../../lib/pos/providers/shift4';
 import { projectionCalendarScheduleStatus, projectionCalendarConceptStatus } from '../../../../lib/projections/calendarHealth.js';
@@ -34,7 +34,7 @@ async function load() {
   const jobs = JOBS.map((j) => {
     const mine = runs.filter((r) => r.job === j.key);
     const onDate = (d) => mine.find((r) => etDate(new Date(r.started_at)) === d && r.trigger === 'schedule') || mine.find((r) => etDate(new Date(r.started_at)) === d) || null;
-    const due = (d) => Date.parse(`${d}T${String(j.utc[1]).padStart(2, '0')}:${String(j.utc[0]).padStart(2, '0')}:00Z`) + 30 * 60000;
+    const due = (d) => jobDueAt(j.utc, d);
     const stateOn = (d) => {
       const r = onDate(d);
       if (r) return r.status;

@@ -65,3 +65,23 @@ test('the expiration cron reports a failed batch and the number already deleted'
     body: { error: 'WASTE_PAYLOAD_EXPIRATION_FAILED', deleted: 100 },
   });
 });
+
+test('Jobs and health registers payload expiration at minute 10 of each hour', async () => {
+  const { projectionBoundary } = await import('../lib/projections/businessTime.js');
+  const registry = readFileSync(new URL('../lib/admin/jobRun.js', import.meta.url), 'utf8')
+    .replace(/^import .*;\r?$/gm, '')
+    .replace(/^export /gm, '');
+  const jobs = vm.runInNewContext(
+    registry + '\n({ JOB_BY_KEY, etTimeOf, jobDueAt });',
+    { projectionBoundary }
+  );
+  const job = jobs.JOB_BY_KEY.get('expire-waste-projection-payloads');
+
+  assert.equal(job.utc.join(' '), '10 *');
+  assert.equal(jobs.etTimeOf(job.utc, '2026-11-25'), 'Hourly at :10');
+  assert.equal(jobs.jobDueAt(job.utc, '2026-11-25'), Date.parse('2026-11-25T05:40:00Z'));
+  assert.equal(jobs.jobDueAt(job.utc, '2026-07-25'), Date.parse('2026-07-25T04:40:00Z'));
+  assert.equal(job.summary({ deleted: 400 }), '400 expired payloads removed');
+  assert.equal(job.problems({ batch_limit_reached: true }), 0);
+  assert.equal(job.details({ batch_limit_reached: true }).length, 1);
+});
