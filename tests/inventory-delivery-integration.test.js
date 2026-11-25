@@ -6,6 +6,8 @@ import {
   loadCurrentInventory,
 } from '../lib/currentInventory.js';
 
+import { calculateInventoryAsOf } from '../lib/inventoryAsOf.js';
+
 const RID = 'inventory-date-restaurant';
 
 const INGREDIENT = {
@@ -20,6 +22,8 @@ function inventoryDatabase({
   failTable = null,
   operationalTimezone = 'America/New_York',
   storedDeliveryDate = '2000-01-01',
+  posSales = null,
+  posTickets = [],
 } = {}) {
   const invoice = {
     id: 'invoice-owned',
@@ -86,7 +90,7 @@ function inventoryDatabase({
       },
     ],
 
-    pos_sales: [{
+    pos_sales: posSales ?? [{
       id: 'sale-owned',
       restaurant_id: RID,
       sale_date: '2026-11-03',
@@ -94,6 +98,8 @@ function inventoryDatabase({
       quantity_sold: 25,
       refunds: 0,
     }],
+
+    pos_tickets: posTickets,
 
     menu_items: [{
       id: 'dish-owned',
@@ -468,5 +474,102 @@ test('inventory calculations and reads require configured local time', async () 
       RID
     ),
     { code: 'RESTAURANT_TIMEZONE_REQUIRED' }
+  );
+});
+
+const BOUNDARY = '2026-11-05T09:00:00Z';
+const EASTERN = 'America/New_York';
+
+function boundaryTicket(id, time, quantity) {
+  const closedAt = time === null ? null : `2026-11-05T${time}Z`;
+  return {
+    id,
+    restaurant_id: RID,
+    pos_system: 'shift4',
+    ticket_type: 'sale',
+    business_date: '2026-11-05',
+    closed_at: closedAt,
+    raw: {
+      posRef: id,
+      closedAt,
+      ticketItems: [{ name: 'Chicken Sandwich', quantity, type: 'sale' }],
+    },
+  };
+}
+
+function boundarySale(id, hour, quantity) {
+  return {
+    id,
+    restaurant_id: RID,
+    pos_system: 'shift4',
+    upload_session_id: null,
+    sale_date: '2026-11-05',
+    hour_of_day: hour,
+    item_name: 'Chicken Sandwich',
+    quantity_sold: quantity,
+    refunds: 0,
+  };
+}
+
+test('as-of inventory includes only tickets closed strictly before the boundary', async () => {
+  const lateTicket = {
+    ...boundaryTicket('late', '08:58:00', 3),
+    synced_at: '2026-11-05T09:20:00Z',
+  };
+  const db = inventoryDatabase({
+    posTickets: [
+      boundaryTicket('early', '07:30:00', 5),
+      lateTicket,
+      boundaryTicket('boundary', '09:00:00', 7),
+      boundaryTicket('next', '11:30:00', 11),
+    ],
+    posSales: [
+      boundarySale('early', 2, 5),
+      boundarySale('late', 3, 3),
+      boundarySale('boundary', 4, 7),
+      boundarySale('next', 6, 11),
+    ],
+  });
+
+  const { rows } = await calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].invoice_item_id, 'line-owned');
+  assert.equal(rows[0].remaining_qty, 92);
+});
+
+test('as-of and regular inventory produce the same batches when all tickets precede the boundary', async () => {
+  const db = inventoryDatabase({
+    posTickets: [
+      boundaryTicket('early', '07:30:00', 5),
+      boundaryTicket('late', '08:58:00', 3),
+    ],
+    posSales: [boundarySale('early', 2, 5), boundarySale('late', 3, 3)],
+  });
+
+  const regular = await calculateInventory(db, RID, '2026-11-05');
+  const asOf = await calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN);
+  const batches = rows => rows.map(({ computed_at, ...row }) => row);
+
+  assert.equal(asOf.rows.length, 1);
+  assert.deepEqual(batches(asOf.rows), batches(regular.rows));
+});
+
+test('as-of inventory rejects missing close timestamps and unmatched aggregates', async () => {
+  const missingTime = inventoryDatabase({
+    posTickets: [boundaryTicket('missing', null, 5)],
+    posSales: [boundarySale('missing', 2, 5)],
+  });
+  await assert.rejects(
+    calculateInventoryAsOf(missingTime, RID, BOUNDARY, EASTERN),
+    { code: 'POS_CLOSE_TIMESTAMP_REQUIRED' }
+  );
+
+  const missingTicket = inventoryDatabase({
+    posTickets: [],
+    posSales: [boundarySale('missing', 2, 5)],
+  });
+  await assert.rejects(
+    calculateInventoryAsOf(missingTicket, RID, BOUNDARY, EASTERN),
+    { code: 'POS_TICKET_COVERAGE_INCOMPLETE' }
   );
 });

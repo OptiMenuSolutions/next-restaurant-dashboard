@@ -381,10 +381,26 @@ test('real two-phase backfill and the complete worker produce an atomic eight-ni
   assert.equal(q(`
     select count(*) from public.projection_forecast_dishes where run_id='${originalRun}';
   `), '24');
-  assert.equal(q(`
-    select expected from public.projection_forecast_nights
+  const firstNight = JSON.parse(q(`
+    select jsonb_build_object(
+      'availability', availability,
+      'expected', expected,
+      'baseVolume', trace#>'{volume,base_volume}',
+      'calendarFactor', trace#>'{volume,calendar,default_factor}'
+    )
+    from public.projection_forecast_nights
     where run_id='${originalRun}' order by target_date limit 1;
-  `), '30');
+  `));
+  assert.equal(firstNight.baseVolume, 30);
+  assert.ok(Number.isFinite(firstNight.calendarFactor));
+  const expected = firstNight.availability === 'closed'
+    ? 0
+    : 30 * firstNight.calendarFactor;
+  assert.ok(
+    Number.isFinite(firstNight.expected) &&
+    Math.abs(firstNight.expected - expected) < 1e-9,
+    `Expected ${expected} units, got ${firstNight.expected}.`
+  );
 
   const retry = await rpc('projection_publish', {
     jid: forecastJob,
