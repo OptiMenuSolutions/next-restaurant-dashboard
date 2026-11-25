@@ -61,7 +61,10 @@ export function fixtureReader(payload, {
       calls.push({ method, path: url.pathname, body: body ? JSON.parse(body) : null });
       if (url.pathname === `/pos/v2/${SHIFT4_LOCATION}/tickets`) {
         assert.equal(method, 'GET');
-        return Response.json(initial ? initial(payload.raw, url) : { results: structuredClone(payload.raw) });
+        return Response.json(initial ? initial(payload.raw, url) : {
+          totalCount: payload.raw.length,
+          results: structuredClone(payload.raw),
+        });
       }
       assert.equal(url.pathname, '/pos/v2/lookup/tickets');
       assert.equal(method, 'POST');

@@ -110,7 +110,7 @@ test('an invalid primary results type fails visibly', async () => {
 });
 
 test('a valid empty result is an empty pull', async () => {
-  const state = setup({ initial: () => ({ results: [] }) });
+  const state = setup({ initial: () => ({ totalCount: 0, results: [] }) });
   assert.deepEqual(await state.pull(), { sales: [], tickets: [] });
   assert.equal(state.calls.length, 1);
 });
@@ -251,7 +251,7 @@ test('a complete pull enriches ticket details from subsequent pages', async () =
     },
   });
 
-  const records = await state.read(connection, range, { completePages: true });
+  const records = await state.pull();
 
   assert.deepEqual(state.calls.map(call => call.method), ['GET', 'GET', 'POST']);
   assert.equal(records.tickets.length, 8);
@@ -266,8 +266,69 @@ test('a complete pull fails before enrichment when a next page is missing', asyn
   });
 
   await assert.rejects(
-    state.read(connection, range, { completePages: true }),
+    state.pull(),
     /do not reconcile to the total count/
   );
+  assert.deepEqual(state.calls.map(call => call.method), ['GET']);
+});
+
+test('a later unverified first page cannot reach the date replacement step', async () => {
+  let firstPageOnly = false;
+  const state = setup({
+    initial(raw, url) {
+      if (firstPageOnly) return { results: structuredClone(raw.slice(0, 4)) };
+      return url.searchParams.has('page')
+        ? { totalCount: raw.length, results: structuredClone(raw.slice(4)) }
+        : {
+            totalCount: raw.length,
+            results: structuredClone(raw.slice(0, 4)),
+            links: { next: `/pos/v2/${SHIFT4_LOCATION}/tickets?page=2` },
+          };
+    },
+  });
+
+  let storedDate;
+  let writes = 0;
+  async function syncDate() {
+    // Both sync routes await the provider before replacing the date.
+    const records = await state.pull();
+    writes++;
+    storedDate = records;
+  }
+
+  await syncDate();
+  const completeDate = structuredClone(storedDate);
+  assert.equal(completeDate.tickets.length, 8);
+
+  firstPageOnly = true;
+  await assert.rejects(syncDate(), /could not verify the provider ticket total/);
+  assert.equal(writes, 1);
+  assert.deepEqual(storedDate, completeDate);
+});
+
+test('Shift4 accepts a single response that reconciles to meta.count', async () => {
+  const state = setup({
+    initial: raw => ({
+      meta: { count: raw.length },
+      results: structuredClone(raw),
+    }),
+  });
+
+  const records = await state.pull();
+
+  assert.equal(records.tickets.length, 8);
+  assert.deepEqual(state.calls.map(call => call.method), ['GET', 'POST']);
+  assert.doesNotThrow(() => verifyCoverage(records));
+});
+
+test('Shift4 rejects a short response with meta.count and no next link', async () => {
+  const state = setup({
+    initial: raw => ({
+      meta: { count: raw.length },
+      results: structuredClone(raw.slice(0, 4)),
+    }),
+  });
+
+  await assert.rejects(state.pull(), /do not reconcile to the total count/);
   assert.deepEqual(state.calls.map(call => call.method), ['GET']);
 });
