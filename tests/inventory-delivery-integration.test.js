@@ -24,6 +24,7 @@ function inventoryDatabase({
   storedDeliveryDate = '2000-01-01',
   posSales = null,
   posTickets = [],
+  onQuery = () => {},
 } = {}) {
   const invoice = {
     id: 'invoice-owned',
@@ -210,6 +211,7 @@ function inventoryDatabase({
         },
 
         eq(column, value) {
+          onQuery(table, 'eq', column, value);
           filters.push(row =>
             valueAt(row, column) === value
           );
@@ -217,6 +219,7 @@ function inventoryDatabase({
         },
 
         lte(column, value) {
+          onQuery(table, 'lte', column, value);
           filters.push(row =>
             valueAt(row, column) != null &&
             valueAt(row, column) <= value
@@ -572,4 +575,78 @@ test('as-of inventory rejects missing close timestamps and unmatched aggregates'
     calculateInventoryAsOf(missingTicket, RID, BOUNDARY, EASTERN),
     { code: 'POS_TICKET_COVERAGE_INCOMPLETE' }
   );
+});
+
+test('a historical upload still consumes inventory without close timestamps', async () => {
+  const db = inventoryDatabase({
+    posTickets: [boundaryTicket('early', '07:30:00', 5)],
+    posSales: [
+      {
+        ...boundarySale('historical-upload', 10, 4),
+        sale_date: '2026-11-04',
+        upload_session_id: 'upload-1',
+      },
+      boundarySale('early', 2, 5),
+    ],
+  });
+
+  const { rows } = await calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].remaining_qty, 91);
+});
+
+test('an upload on the boundary calendar date requires close timestamps', async () => {
+  const db = inventoryDatabase({
+    posSales: [{ ...boundarySale('upload', 2, 5), upload_session_id: 'upload-1' }],
+  });
+
+  await assert.rejects(
+    calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN),
+    { code: 'POS_CLOSE_TIMESTAMP_REQUIRED' }
+  );
+});
+
+test('as-of inventory requires matching Shift4 and restaurant time zones', async () => {
+  await assert.rejects(
+    calculateInventoryAsOf(inventoryDatabase(), RID, BOUNDARY, 'America/Chicago'),
+    { code: 'POS_TIMEZONE_MISMATCH' }
+  );
+});
+
+test('a year of Shift4 tickets is bounded to one date and replays in under one second', async () => {
+  const day = '2026-11-05';
+  const last = Date.parse(day);
+  const posTickets = [];
+  const posSales = [];
+
+  for (let offset = 364; offset >= 0; offset--) {
+    const date = new Date(last - offset * 86400000).toISOString().slice(0, 10);
+    for (let index = 0; index < 200; index++) {
+      const ticket = boundaryTicket(`${date}-${index}`, '07:30:00', 1);
+      ticket.business_date = date;
+      ticket.closed_at = `${date}T07:30:00Z`;
+      ticket.raw.closedAt = ticket.closed_at;
+      posTickets.push(ticket);
+    }
+    posSales.push({ ...boundarySale(date, 2, 200), sale_date: date });
+  }
+
+  const dateFilters = [];
+  const db = inventoryDatabase({
+    posTickets,
+    posSales,
+    onQuery(table, operator, column, value) {
+      if (table === 'pos_tickets' && column === 'business_date') {
+        dateFilters.push([operator, value]);
+      }
+    },
+  });
+
+  const started = performance.now();
+  await calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN);
+  const elapsed = performance.now() - started;
+
+  assert.ok(dateFilters.length > 0);
+  assert.ok(dateFilters.every(([operator, date]) => operator === 'eq' && date === day));
+  assert.ok(elapsed < 1000, `Boundary replay took ${elapsed.toFixed(1)} ms`);
 });

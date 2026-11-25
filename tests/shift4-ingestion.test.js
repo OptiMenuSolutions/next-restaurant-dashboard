@@ -237,3 +237,37 @@ test('customer identifiers are excluded from saved raw ticket records', async ()
     assert.equal(Object.hasOwn(ticket.raw, 'customerRef'), false);
   }
 });
+
+test('a complete pull enriches ticket details from subsequent pages', async () => {
+  const state = setup({
+    initial(raw, url) {
+      return url.searchParams.has('page')
+        ? { totalCount: raw.length, results: structuredClone(raw.slice(4)) }
+        : {
+            totalCount: raw.length,
+            results: structuredClone(raw.slice(0, 4)),
+            links: { next: `/pos/v2/${SHIFT4_LOCATION}/tickets?page=2` },
+          };
+    },
+  });
+
+  const records = await state.read(connection, range, { completePages: true });
+
+  assert.deepEqual(state.calls.map(call => call.method), ['GET', 'GET', 'POST']);
+  assert.equal(records.tickets.length, 8);
+  assert.equal(records.sales[0].quantity_sold, 6);
+  assert.deepEqual(rawItem(records, 5).specialRequests, ['no sauce']);
+  assert.doesNotThrow(() => verifyCoverage(records));
+});
+
+test('a complete pull fails before enrichment when a next page is missing', async () => {
+  const state = setup({
+    initial: raw => ({ totalCount: raw.length, results: raw.slice(0, 4) }),
+  });
+
+  await assert.rejects(
+    state.read(connection, range, { completePages: true }),
+    /do not reconcile to the total count/
+  );
+  assert.deepEqual(state.calls.map(call => call.method), ['GET']);
+});
