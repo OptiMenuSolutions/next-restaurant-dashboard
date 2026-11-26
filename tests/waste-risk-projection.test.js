@@ -464,3 +464,30 @@ test('an authorized extension may finish freezing later when its missing forecas
   assert.equal(ready.new_demands.length,2);
   assert.doesNotThrow(()=>assess(next(ready,[batch(20,30,'2026-11-25')],{assessedAt:'2026-11-24T13:00:00Z'})));
 });
+
+test('fallback gives an uncovered tail zero allowance without freezing synthetic demand', () => {
+  const forecast = run(shift(MON, -1), Array(8).fill(1));
+  const useBy = shift(MON, 7);
+  const fallback = assess(input({
+    forecast, forecastFallback: true, recipes: recipeRows(forecast),
+    batches: [batch(20, 30, useBy)],
+  }));
+  assert.equal(fallback.forecast_fallback, true);
+  assert.equal(risk(fallback, 20).risk_qty, 23);
+  assert.equal(fallback.frozen.cases[0].coverage_through, shift(MON, 6));
+  assert.equal(fallback.frozen.demands.some(row => row.business_date === useBy), false);
+
+  const day = shift(MON, 1);
+  const newer = run(day, Array(8).fill(2), id(11));
+  const following = assess(next(fallback, [batch(20, 30, useBy)], {
+    forecast: newer, forecastFallback: false, recipes: recipeRows(newer),
+    frozen: {
+      cases: fallback.frozen.cases,
+      demands: fallback.frozen.demands.filter(row => row.business_date > MON),
+    },
+  }));
+  assert.equal(following.frozen.cases[0].coverage_through, useBy);
+  assert.equal(following.new_demands.length, 1);
+  assert.equal(following.new_demands[0].business_date, useBy);
+  assert.equal(risk(following, 20).risk_qty, 22);
+});

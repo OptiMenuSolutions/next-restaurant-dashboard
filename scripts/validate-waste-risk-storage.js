@@ -419,6 +419,65 @@ test('a job without timely inventory is skipped and stays skipped', () => {
   const sql = `set role service_role; select public.waste_projection_daily_claim('${REST}','${day}')->>'status';`;
   assert.equal(q(sql), 'skipped');
   assert.equal(q(sql), 'skipped');
+
+  const current = q(`set role service_role;
+    select public.waste_projection_daily_claim('${REST}',null)->>'status';`);
+  assert.equal(current, 'skipped');
+  const reserve = `set role service_role; select public.waste_projection_daily_take_alert('${REST}');`;
+  assert.deepEqual(JSON.parse(q(reserve)), {
+    assessment_date: day, status: 'skipped', stage: 'inventory', reason: 'INVENTORY_DEADLINE_MISSED',
+  });
+  assert.equal(q(reserve), '');
+});
+
+test('fallback case coverage can extend only when the archive supplies the missing date', async () => {
+  const prior = id(91), ingredient = id(92), batch = id(93);
+  const day = input.assessmentDate;
+  const missing = shift(day, 7);
+  q(`alter table public.projection_forecast_runs disable trigger user;
+    insert into public.projection_forecast_runs(id,restaurant_id,run_date,model_major,global_version_id,
+      settings_snapshot,settings_digest,calibration_key,source_through,issued_at,trace)
+    select '${prior}',restaurant_id,run_date-1,model_major,global_version_id,settings_snapshot,settings_digest,
+      calibration_key,source_through-1,issued_at-interval '1 day',trace
+    from public.projection_forecast_runs where id='${RUN}';
+    alter table public.projection_forecast_runs enable trigger user;
+    alter table public.projection_forecast_nights disable trigger user;
+    insert into public.projection_forecast_nights(restaurant_id,run_id,target_date,days_ahead,availability,expected,low,high,confidence,trace)
+      select restaurant_id,'${prior}',target_date-1,days_ahead,availability,expected,low,high,confidence,trace
+      from public.projection_forecast_nights where run_id='${RUN}';
+    alter table public.projection_forecast_nights enable trigger user;
+    insert into public.projection_forecast_dishes(restaurant_id,run_id,target_date,dish_id,share,expected,low,high,confidence,trace)
+      select restaurant_id,'${prior}',target_date-1,dish_id,share,expected,low,high,confidence,trace
+      from public.projection_forecast_dishes where run_id='${RUN}';`);
+  const archived = JSON.parse(q(`select to_jsonb(r) from public.projection_forecast_runs r where id='${prior}';`));
+  const currentForecast = input.forecast;
+  const priorForecast = { ...currentForecast, id: prior, run_date: shift(day, -1),
+    source_through: shift(day, -2), issued_at: archived.issued_at,
+    nights: currentForecast.nights.map(row => ({ ...row, business_date: shift(row.business_date, -1) })) };
+  const make = (forecast, fallback) => ({
+    ...input, assessedAt: new Date().toISOString(), forecast, forecastFallback: fallback,
+    ingredients: [...input.ingredients, { ...input.ingredients[0], id: ingredient }],
+    batches: [{ ...input.batches[0], id: batch, ingredient_id: ingredient, remaining_qty: 100, use_by_date: missing }],
+    recipes: forecast.nights.map(row => ({
+      restaurant_id: REST, business_date: row.business_date, dish_id: DISH, active: true, complete: true,
+      portions: [{ ingredient_id: ingredient, quantity: 1, unit: 'lb' }],
+    })),
+  });
+
+  const first = await prepareWasteRiskAssessment(client, make(priorForecast, true), id(94));
+  assert.equal(first.outcome.new_cases[0].coverage_through, shift(day, 6));
+  assert.equal(first.outcome.new_demands.some(row => row.business_date === missing), false);
+  await commitWasteRiskAssessment(client, first);
+
+  const next = await prepareWasteRiskAssessment(client, make(currentForecast, false), id(95));
+  const corrupt = structuredClone(next);
+  corrupt.outcome.frozen.demands = corrupt.outcome.frozen.demands.filter(row =>
+    row.ingredient_id !== ingredient || row.business_date !== missing
+  );
+  await assert.rejects(commitWasteRiskAssessment(client, corrupt), /immutable/);
+  await commitWasteRiskAssessment(client, next);
+  assert.equal(q(`select count(*) from public.waste_projection_demands
+    where restaurant_id='${REST}' and ingredient_id='${ingredient}' and business_date='${missing}';`), '1');
 });
 
 test('POS sync leases serialize sessions and stale releases cannot clear a successor', async () => {

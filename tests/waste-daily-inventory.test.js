@@ -33,9 +33,10 @@ function harness(overrides = {}) {
   const db = { from(table) { assert.equal(table, 'pos_connections'); return query; } };
   const options = {
     now: () => '2026-11-26T10:00:30Z',
-    sync: async (client, conn, range) => {
+    sync: async (client, conn, range, options) => {
       assert.equal(client, db);
       assert.equal(conn, connection);
+      assert.equal(options.alertOnFailure, false);
       calls.push(range);
       return {
         rawTicketsSaved: true,
