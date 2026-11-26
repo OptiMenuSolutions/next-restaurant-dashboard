@@ -339,4 +339,28 @@ grant execute on function
   public.waste_projection_daily_commit(uuid,uuid)
   to service_role;
 
+do $migration$
+declare
+  definition text;
+  hook constant text := 'perform public.purge_restaurant_before_projections(target);';
+begin
+  definition := pg_get_functiondef('projection_private.purge_account(uuid)'::regprocedure);
+  if position(hook in definition) = 0 then
+    raise exception 'Waste daily jobs purge hook not found';
+  end if;
+
+  execute replace(definition, hook, $purge$
+    delete from projection_private.waste_daily_jobs where restaurant_id = target;
+    get diagnostics n = row_count;
+    counts := counts || jsonb_build_object('waste_daily_jobs', n);
+
+    delete from projection_private.pos_sync_leases where restaurant_id = target;
+    get diagnostics n = row_count;
+    counts := counts || jsonb_build_object('pos_sync_leases', n);
+
+    perform public.purge_restaurant_before_projections(target);
+  $purge$);
+end;
+$migration$;
+
 commit;

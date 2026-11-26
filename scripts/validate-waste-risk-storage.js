@@ -468,4 +468,6 @@ test('history cannot be edited or deleted; account purge removes every tenant st
   for(const t of ['state','corrections','assessments','assessment_payloads','cases','demands']) assert.equal(q(`select count(*) from public.waste_projection_${t} where restaurant_id='${REST}';`),'0');
   const counts=JSON.parse(q(`select deleted_rows from public.projection_account_purge_log order by purged_at desc limit 1;`));
   assert.ok(counts.waste_projection_demands>=4);
+  assert.equal(counts.waste_daily_jobs, 1);
+  assert.equal(counts.pos_sync_leases, 1);
 });
