@@ -66,13 +66,26 @@ test('a saved envelope retries without rebuilding and a transient failure sends 
   assert.match(h.trace[2][1].failure, /^commit \| 57014/);
 });
 
+test('the next dispatcher run reports an existing skip as done earlier', async () => {
+  const h = harness({
+    claim: [{ status: 'skipped' }, { status: 'skipped', assessment_id: null }],
+    take_alert: [null, null],
+  });
+  const first = await dispatchWasteDailyAssessments(h.db, h.options);
+  const second = await dispatchWasteDailyAssessments(h.db, h.options);
+  assert.equal(first.skipped, 1);
+  assert.equal(first.done_earlier, 0);
+  assert.equal(second.skipped, 0);
+  assert.equal(second.done_earlier, 1);
+});
+
 test('skipped and failed jobs alert once with restaurant, business date, stage and reason', async () => {
   for (const [status, stage, reason] of [
     ['skipped', 'inventory', 'POS_SYNC_INCOMPLETE'],
     ['failed', 'commit', 'PT409'],
   ]) {
     const h = harness({
-      claim: [{ status }, { status }],
+      claim: [{ status, assessment_id: null }, { status, assessment_id: null }],
       take_alert: [{ status, assessment_date: day, stage, reason }, null],
     });
     await dispatchWasteDailyAssessments(h.db, h.options);

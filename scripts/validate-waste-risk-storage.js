@@ -416,13 +416,9 @@ test('a job without timely inventory is skipped and stays skipped', () => {
       'sync_buffer_minutes',60
     ));`);
 
-  const sql = `set role service_role; select public.waste_projection_daily_claim('${REST}','${day}')->>'status';`;
-  assert.equal(q(sql), 'skipped');
-  assert.equal(q(sql), 'skipped');
-
-  const current = q(`set role service_role;
-    select public.waste_projection_daily_claim('${REST}',null)->>'status';`);
-  assert.equal(current, 'skipped');
+  const sql = `set role service_role; select public.waste_projection_daily_claim('${REST}',null);`;
+  assert.deepEqual(JSON.parse(q(sql)), { status: 'skipped' });
+  assert.deepEqual(JSON.parse(q(sql)), { status: 'skipped', assessment_id: null });
   const reserve = `set role service_role; select public.waste_projection_daily_take_alert('${REST}');`;
   assert.deepEqual(JSON.parse(q(reserve)), {
     assessment_date: day, status: 'skipped', stage: 'inventory', reason: 'INVENTORY_DEADLINE_MISSED',
