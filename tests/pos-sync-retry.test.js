@@ -22,7 +22,12 @@ const sharedSyncSource = readFileSync(
   new URL('../lib/pos/syncConnection.js', import.meta.url), 'utf8'
 ).replace(/^import .*;\r?$/gm, '').replace(/^export /gm, '');
 
-function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = async () => {}) {
+function harness(
+  provider = 'shift4',
+  ticketSaveError = null,
+  beforeUsage = async () => {},
+  busyClaims = 0
+) {
   const connection = {
     id: 'connection-1',
     restaurant_id: restaurantId,
@@ -32,6 +37,7 @@ function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = asyn
   const alerts = [];
   const pulls = [];
   const saleDeletes = [];
+  const waits = [];
   let fail = true;
   let heldLease = null;
   let leaseCount = 0;
@@ -40,7 +46,10 @@ function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = asyn
     async rpc(name, args) {
       assert.equal(args.target, restaurantId);
       if (name === 'pos_sync_acquire') {
-        if (heldLease) return { data: null, error: null };
+        if (heldLease || busyClaims > 0) {
+          if (busyClaims > 0) busyClaims--;
+          return { data: null, error: null };
+        }
         heldLease = `lease-${++leaseCount}`;
         return { data: heldLease, error: null };
       }
@@ -110,6 +119,7 @@ function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = asyn
 
     const context = {
       Date: FixtureDate,
+      delay: async ms => { waits.push(ms); },
       process: { env: { CRON_SECRET: 'cron-secret' } },
       console: { log() {}, error() {} },
       createClient: () => db,
@@ -147,7 +157,7 @@ function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = asyn
   }
 
   return {
-    connection, alerts, pulls, saleDeletes,
+    connection, alerts, pulls, saleDeletes, waits,
     allowPull() { fail = false; },
     manual: (range = manualRange) => route('../pages/api/pos/sync.js')({
       method: 'POST',
@@ -252,4 +262,27 @@ test('manual and scheduled syncs cannot overlap for the same restaurant and date
   assert.equal((await state.manual(scheduledRange)).statusCode, 200);
   assert.equal(state.pulls.length, 2);
   assert.equal(state.saleDeletes.length, 2);
+});
+
+test('cron retries a busy restaurant once without reporting the initial conflict as a failure', async () => {
+  const state = harness('shift4', null, async () => {}, 1);
+  state.allowPull();
+
+  const response = await state.scheduled();
+  assert.deepEqual(state.waits, [60_000]);
+  assert.equal(response.body.synced, 1);
+  assert.equal(response.body.failed, 0);
+  assert.equal(state.pulls.length, 1);
+  assert.equal(state.alerts.length, 0);
+});
+
+test('cron records a still-busy restaurant after its single retry', async () => {
+  const state = harness('shift4', null, async () => {}, 2);
+  const response = await state.scheduled();
+
+  assert.deepEqual(state.waits, [60_000]);
+  assert.equal(response.body.failed, 1);
+  assert.equal(response.body.results.failed[0].code, 'POS_SYNC_BUSY');
+  assert.equal(state.pulls.length, 0);
+  assert.equal(state.connection.last_error, undefined);
 });

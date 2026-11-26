@@ -3,6 +3,7 @@
 // Unified daily POS sync for all providers (Square, Shift4, etc.)
 // Handles both OAuth2 (Square) and HMAC (Shift4) auth patterns.
 
+import { setTimeout as delay } from 'node:timers/promises';
 import { createClient } from '@supabase/supabase-js';
 import { sendCronAlert } from '../../../lib/cronAlert';
 import { syncPosConnection } from '../../../lib/pos/syncConnection.js';
@@ -64,12 +65,19 @@ async function handler(req, res) {
   const range = defaultRange();
   const results = { success: [], failed: [] };
 
-  for (const conn of live) {
+  const busy = [];
+
+  async function attempt(conn, allowRetry) {
     try {
       const { rows, tickets, lines, usage } = await syncPosConnection(supabase, conn, range);
       results.success.push({ restaurantId: conn.restaurant_id, provider: conn.provider, rows, tickets, lines, usage });
       console.log(`[cron:sync-all-pos] ✓ ${conn.provider} for ${conn.restaurant_id} — ${rows} sales rows, ${tickets} tickets, ${lines} lines`);
     } catch (err) {
+      if (allowRetry && err.code === 'POS_SYNC_BUSY') {
+        busy.push({ conn, retryAt: Date.now() + 60_000 });
+        return;
+      }
+
       const retryable = err.code === 'POS_SYNC_BUSY' || err.code === 'POS_SYNC_LOCK_UNAVAILABLE';
       results.failed.push({
         restaurantId: conn.restaurant_id,
@@ -79,6 +87,14 @@ async function handler(req, res) {
       });
       console.error(`[cron:sync-all-pos] ✗ ${conn.provider} for ${conn.restaurant_id}:`, err.message);
     }
+  }
+
+  for (const conn of live) await attempt(conn, true);
+
+  for (const { conn, retryAt } of busy) {
+    const remaining = retryAt - Date.now();
+    if (remaining > 0) await delay(remaining);
+    await attempt(conn, false);
   }
 
   console.log(`[cron:sync-all-pos] Done — ${results.success.length} synced, ${results.failed.length} failed`);
