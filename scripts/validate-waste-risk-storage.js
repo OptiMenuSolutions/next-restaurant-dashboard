@@ -315,6 +315,112 @@ select extract(epoch from clock_timestamp()-:'started'::timestamptz)*1000;`));
     where a.restaurant_id='${tenant}' and a.request_id='${id(4002)}';`));
 });
 
+test('daily jobs fence expired leases, persist one envelope, and commit once', async () => {
+  q(`create table public.pos_usage_jobs(
+      restaurant_id uuid primary key,generation bigint,applied_publication_id uuid
+    );
+    create table public.pos_usage_settings(restaurant_id uuid primary key,enabled boolean);
+    insert into public.pos_usage_jobs values ('${REST}',9,'${id(80)}');
+    insert into public.pos_usage_settings values ('${REST}',true);`);
+
+  const day = input.assessmentDate;
+  const asService = sql => q(`set role service_role; select ${sql};`);
+  const claimSql = `public.waste_projection_daily_claim('${REST}','${day}')`;
+  const claim = () => JSON.parse(asService(claimSql));
+
+  for (const role of ['anon', 'authenticated']) {
+    bad(`set role ${role}; select ${claimSql};`, /permission denied/);
+  }
+
+  q(`insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing)
+    values ('${REST}','${day}',jsonb_build_object(
+      'ready_at',clock_timestamp()-interval '5 minutes',
+      'deadline_at',clock_timestamp()+interval '10 minutes',
+      'sync_buffer_minutes',60
+    ));`);
+
+  let job = claim();
+  assert.equal(job.status, 'pending');
+  assert.equal(claim().status, 'busy');
+
+  q(`update projection_private.waste_daily_jobs set lease_until = clock_timestamp()-interval '1 second'
+    where id='${job.id}';`);
+  bad(`set role service_role; select public.waste_projection_daily_commit('${job.id}','${job.lease_token}');`,
+    /expired or superseded/);
+
+  const token = asService(`public.pos_sync_acquire('${REST}')`);
+  asService(`public.pos_sync_release('${REST}','${token}')`);
+
+  job = claim();
+  const checkpoint = `public.waste_projection_daily_checkpoint('${job.id}','${job.lease_token}'`;
+  const evidence = {
+    rawTicketsSaved: true,
+    syncRevision: token,
+    usageJob: { generation: 9, applied_publication_id: id(80) },
+    rows: [],
+    startedAt: new Date(Date.now() - 4000).toISOString(),
+    finishedAt: new Date(Date.now() - 3000).toISOString(),
+    inventoryStartedAt: new Date(Date.now() - 2000).toISOString(),
+  };
+
+  bad(`set role service_role; select ${checkpoint},${lit({ ...evidence, rawTicketsSaved: false })});`,
+    /stale or incomplete/);
+  assert.equal(JSON.parse(asService(`${checkpoint},${lit(evidence)})`)).status, 'ready');
+
+  job = claim();
+  assert.equal(job.forecast_run_id, RUN);
+  assert.equal(job.fallback, false);
+
+  const prepared = await prepareWasteRiskAssessment(
+    client, { ...input, assessedAt: new Date().toISOString() }, id(81)
+  );
+  prepared.outcome = { ...prepared.outcome, forecast_fallback: false };
+
+  const save = `public.waste_projection_daily_save('${job.id}','${job.lease_token}'`;
+  asService(`${save},${lit(prepared)})`);
+  asService(`${save},${lit(prepared)})`);
+  bad(`set role service_role; select ${save},${lit({ ...prepared, request_id: id(82) })});`,
+    /changed daily/);
+
+  const result = JSON.parse(asService(
+    `public.waste_projection_daily_commit('${job.id}','${job.lease_token}')`
+  ));
+  assert.equal(result.status, 'completed');
+  assert.equal(claim().assessment_id, result.assessment_id);
+  assert.equal(q(`select (envelope is null and receipt is null) from projection_private.waste_daily_jobs
+    where id='${job.id}';`), 't');
+
+  q(`update projection_private.waste_daily_jobs set status='ready', receipt=${lit(evidence)}, assessment_id=null
+    where id='${job.id}';`);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    job = claim();
+    const stale = { ...prepared, request_id: id(83 + attempt), expected_version: -1 };
+    asService(`public.waste_projection_daily_save('${job.id}','${job.lease_token}',${lit(stale)})`);
+    const rejected = JSON.parse(asService(
+      `public.waste_projection_daily_commit('${job.id}','${job.lease_token}')`
+    ));
+    assert.equal(rejected.error, 'PT409');
+    assert.equal(rejected.recalculations, Math.min(attempt + 1, 3));
+    assert.equal(rejected.status, attempt < 3 ? 'ready' : 'failed');
+  }
+  assert.equal(claim().status, 'failed');
+});
+
+test('a job without timely inventory is skipped and stays skipped', () => {
+  const day = input.assessmentDate;
+  q(`delete from projection_private.waste_daily_jobs where restaurant_id='${REST}';
+    insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing)
+    values ('${REST}','${day}',jsonb_build_object(
+      'ready_at',clock_timestamp()-interval '5 minutes',
+      'deadline_at',clock_timestamp()-interval '1 minute',
+      'sync_buffer_minutes',60
+    ));`);
+
+  const sql = `set role service_role; select public.waste_projection_daily_claim('${REST}','${day}')->>'status';`;
+  assert.equal(q(sql), 'skipped');
+  assert.equal(q(sql), 'skipped');
+});
+
 test('POS sync leases serialize sessions and stale releases cannot clear a successor', async () => {
   const call = sql => q(`set role service_role; select ${sql};`);
   const acquire = `public.pos_sync_acquire('${REST}')`;
@@ -358,6 +464,7 @@ test('history cannot be edited or deleted; account purge removes every tenant st
   bad(`delete from public.waste_projection_cases where restaurant_id='${REST}';`,/append-only/);
   q(`select public.purge_restaurant('${REST}');`);
   assert.equal(q(`select count(*) from projection_private.pos_sync_leases where restaurant_id='${REST}';`), '0');
+  assert.equal(q(`select count(*) from projection_private.waste_daily_jobs where restaurant_id='${REST}';`), '0');
   for(const t of ['state','corrections','assessments','assessment_payloads','cases','demands']) assert.equal(q(`select count(*) from public.waste_projection_${t} where restaurant_id='${REST}';`),'0');
   const counts=JSON.parse(q(`select deleted_rows from public.projection_account_purge_log order by purged_at desc limit 1;`));
   assert.ok(counts.waste_projection_demands>=4);
