@@ -185,3 +185,19 @@ Count reconciliation is the completeness guard for Retrieve Tickets.
 Following provider-issued next links is defensive. If Shift4 confirms a
 per-response cap, the planned remedy is to split the requested time
 window and reconcile each smaller response before replacing sales.
+
+### Stage 3 POS sync
+
+The scheduled sync, manual sync and assessment worker share one POS sync
+path. A restaurant-scoped database lease covers the provider pull, sales
+replacement, raw-ticket save and POS usage. A competing invocation reports
+a retryable conflict without replacing sales or changing connection status.
+The six-minute lease is longer than the 300-second invocation limit.
+
+### Stage 4 Tonight’s Dish
+
+Keep Tonight’s Dish at 11:00 UTC. It reads the latest completed waste
+assessment available when generation starts. An assessment for a prior
+assessment date is marked stale under the same rule as the dashboard card.
+Per-restaurant local scheduling for Tonight’s Dish is a follow-up because
+11:00 UTC can fall before the business cutoff west of Eastern time.

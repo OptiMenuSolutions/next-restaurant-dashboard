@@ -12,8 +12,7 @@
 // (which reads ALL pos_sales rows for the trailing window regardless of source).
 
 import { createClient } from '@supabase/supabase-js';
-import { getProvider } from '../../../lib/pos/registry';
-import { saveTickets } from '../../../lib/pos/saveTickets';
+import { syncPosConnection } from '../../../lib/pos/syncConnection.js';
 import { sendCronAlert } from '../../../lib/cronAlert';
 
 export const config = { maxDuration: 300 };
@@ -67,115 +66,22 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `POS connection is "${conn.status}", not connected` });
   }
 
-  const provider = getProvider(conn.provider);
   const range = reqFrom && reqTo ? { from: reqFrom, to: reqTo } : defaultRange();
 
   try {
-    // ── Refresh the access token if it is an OAuth provider and near expiry ─────
-    let connection = conn;
-    if (provider.authType === 'oauth2' && conn.expires_at) {
-      const soon = new Date(Date.now() + 5 * 60 * 1000);
-      if (new Date(conn.expires_at) < soon) {
-        const refreshed = await provider.refresh(conn);
-        if (refreshed) {
-          await supabase
-            .from('pos_connections')
-            .update({
-              access_token: refreshed.accessToken,
-              expires_at: refreshed.expiresAt,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', conn.id);
-          connection = { ...conn, access_token: refreshed.accessToken, expires_at: refreshed.expiresAt };
-        }
-      }
-    }
-
-    // ── Pull + normalize ─────────────────────────────────────────────────────--
-    let records;
-    let tickets = null;
-    if (typeof provider.fetchSalesAndTickets === 'function') {
-      const result = await provider.fetchSalesAndTickets(connection, range);
-      records = result.sales;
-      tickets = result.tickets;
-    } else {
-      records = await provider.fetchSales(connection, range);
-    }
-
-    // ── Idempotent replace of this provider's API rows in the range ────────────
-    const { error: deleteError } = await supabase
-      .from('pos_sales')
-      .delete()
-      .eq('restaurant_id', restaurantId)
-      .eq('pos_system', conn.provider)
-      .is('upload_session_id', null)
-      .gte('sale_date', range.from)
-      .lte('sale_date', range.to);
-    if (deleteError) throw new Error(`pos_sales delete failed: ${deleteError.message}`);
-
-    if (records.length) {
-      const rows = records.map(r => ({
-        ...r,
-        restaurant_id: restaurantId,
-        pos_system: conn.provider,
-        upload_session_id: null,
-      }));
-      for (let i = 0; i < rows.length; i += 500) {
-        const { error: insertError } = await supabase.from('pos_sales').insert(rows.slice(i, i + 500));
-        if (insertError) throw new Error(`pos_sales insert failed: ${insertError.message}`);
-      }
-    }
-
-    // Raw tickets: a failure is logged but does not fail the sync, since
-    // pos_sales is already saved.
-    let ticketCounts = { tickets: 0, lines: 0 };
-    if (tickets) {
-      try {
-        ticketCounts = await saveTickets(supabase, {
-          restaurantId,
-          posSystem: conn.provider,
-          tickets,
-        });
-      } catch (err) {
-        console.error(`[pos/sync] ticket save failed for ${restaurantId}:`, err.message);
-        await sendCronAlert(
-          'POS sync manual',
-          `Sales synced but raw tickets failed to save for restaurant ${restaurantId}.`,
-          [`${range.from} through ${range.to}: ${err.message}`]
-        );
-      }
-    }
-
-    await supabase
-      .from('pos_connections')
-      .update({
-        last_synced_at: new Date().toISOString(),
-        status: 'connected',
-        last_error: null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', conn.id);
-
-    return res.status(200).json({ synced: records.length, ...ticketCounts, from: range.from, to: range.to });
-
+    const counts = await syncPosConnection(supabase, conn, range, { alertName: 'POS sync manual' });
+    return res.status(200).json({
+      synced: counts.rows, tickets: counts.tickets, lines: counts.lines,
+      from: range.from, to: range.to,
+    });
   } catch (err) {
-    console.error(`[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`, err.message);
-    const failureUpdate = {
-      last_error: err.message,
-      updated_at: new Date().toISOString(),
-    };
-
-    // Shift4 sales use app-level HMAC credentials. A failed pull leaves the
-    // connection eligible for the next scheduled run.
-    if (conn.provider !== 'shift4') {
-      failureUpdate.status = 'error';
+    if (err.code === 'POS_SYNC_BUSY' || err.code === 'POS_SYNC_LOCK_UNAVAILABLE') {
+      return res.status(err.code === 'POS_SYNC_BUSY' ? 409 : 503).json({
+        error: err.message, code: err.code, retryable: true,
+      });
     }
 
-    await supabase
-      .from('pos_connections')
-      .update(failureUpdate)
-      .eq('id', conn.id);
-
+    console.error(`[pos/sync] ${conn.provider} sync failed for ${restaurantId}:`, err.message);
     if (conn.provider === 'shift4') {
       await sendCronAlert(
         'POS sync manual',

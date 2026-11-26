@@ -18,7 +18,11 @@ class FixtureDate extends Date {
   }
 }
 
-function harness(provider = 'shift4', ticketSaveError = null) {
+const sharedSyncSource = readFileSync(
+  new URL('../lib/pos/syncConnection.js', import.meta.url), 'utf8'
+).replace(/^import .*;\r?$/gm, '').replace(/^export /gm, '');
+
+function harness(provider = 'shift4', ticketSaveError = null, beforeUsage = async () => {}) {
   const connection = {
     id: 'connection-1',
     restaurant_id: restaurantId,
@@ -29,8 +33,23 @@ function harness(provider = 'shift4', ticketSaveError = null) {
   const pulls = [];
   const saleDeletes = [];
   let fail = true;
+  let heldLease = null;
+  let leaseCount = 0;
 
   const db = {
+    async rpc(name, args) {
+      assert.equal(args.target, restaurantId);
+      if (name === 'pos_sync_acquire') {
+        if (heldLease) return { data: null, error: null };
+        heldLease = `lease-${++leaseCount}`;
+        return { data: heldLease, error: null };
+      }
+
+      assert.equal(name, 'pos_sync_release');
+      assert.equal(args.lease_token, heldLease);
+      heldLease = null;
+      return { error: null };
+    },
     auth: {
       async getUser() {
         return { data: { user: { id: 'user-1' } }, error: null };
@@ -106,11 +125,16 @@ function harness(provider = 'shift4', ticketSaveError = null) {
         if (ticketSaveError) throw new Error(ticketSaveError);
         return { tickets: 0, lines: 0 };
       },
-      runUsage: async () => ({ applied: true }),
+      async runUsage() {
+        await beforeUsage();
+        return { applied: true };
+      },
       sendCronAlert: async (...args) => { alerts.push(args); },
     };
 
-    vm.runInNewContext(source, context, { filename: path });
+    vm.createContext(context);
+    vm.runInContext(sharedSyncSource, context, { filename: 'syncConnection.js' });
+    vm.runInContext(source, context, { filename: path });
 
     return async (req) => {
       const res = {
@@ -125,10 +149,10 @@ function harness(provider = 'shift4', ticketSaveError = null) {
   return {
     connection, alerts, pulls, saleDeletes,
     allowPull() { fail = false; },
-    manual: () => route('../pages/api/pos/sync.js')({
+    manual: (range = manualRange) => route('../pages/api/pos/sync.js')({
       method: 'POST',
       headers: { authorization: 'Bearer user-token' },
-      body: { restaurantId, ...manualRange },
+      body: { restaurantId, ...range },
     }),
     scheduled: () => route('../pages/api/cron/sync-all-pos.js')({
       method: 'GET',
@@ -191,4 +215,41 @@ test('a manual raw-ticket save failure alerts with the requested date range', as
   assert.equal(state.alerts.length, 1);
   assert.match(state.alerts[0][1], /restaurant-1/);
   assert.equal(state.alerts[0][2][0], '2026-11-17 through 2026-11-18: ticket write failed');
+});
+
+test('manual and scheduled syncs cannot overlap for the same restaurant and date range', async () => {
+  let enteredUsage;
+  const usageStarted = new Promise(resolve => { enteredUsage = resolve; });
+  let finishUsage;
+  const usagePaused = new Promise(resolve => { finishUsage = resolve; });
+
+  const state = harness('shift4', null, async () => {
+    enteredUsage();
+    await usagePaused;
+  });
+  state.allowPull();
+
+  const scheduled = state.scheduled();
+  await Promise.race([
+    usageStarted,
+    scheduled.then(() => assert.fail('Scheduled sync finished before applying usage')),
+  ]);
+
+  try {
+    const response = await state.manual(scheduledRange);
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.body.code, 'POS_SYNC_BUSY');
+    assert.equal(response.body.retryable, true);
+    assert.equal(state.pulls.length, 1);
+    assert.equal(state.saleDeletes.length, 1);
+    assert.equal(state.connection.status, 'connected');
+    assert.equal(state.connection.last_error, null);
+  } finally {
+    finishUsage();
+    assert.equal((await scheduled).body.synced, 1);
+  }
+
+  assert.equal((await state.manual(scheduledRange)).statusCode, 200);
+  assert.equal(state.pulls.length, 2);
+  assert.equal(state.saleDeletes.length, 2);
 });

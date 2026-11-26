@@ -168,6 +168,7 @@ before(async () => {
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
     'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
+    'pos_sync_lease',
   ]) {
     if (suffix === 'timezone_cache') {
       q(`do $copy$ declare d text; begin

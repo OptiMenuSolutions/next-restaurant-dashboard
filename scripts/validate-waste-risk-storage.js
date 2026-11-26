@@ -315,10 +315,49 @@ select extract(epoch from clock_timestamp()-:'started'::timestamptz)*1000;`));
     where a.restaurant_id='${tenant}' and a.request_id='${id(4002)}';`));
 });
 
+test('POS sync leases serialize sessions and stale releases cannot clear a successor', async () => {
+  const call = sql => q(`set role service_role; select ${sql};`);
+  const acquire = `public.pos_sync_acquire('${REST}')`;
+  const release = token => `public.pos_sync_release('${REST}','${token}')`;
+  for (const role of ['anon', 'authenticated']) {
+    bad(`set role ${role}; select ${acquire};`, /permission denied/);
+    bad(`set role ${role}; select ${release(id(99))};`, /permission denied/);
+  }
+
+  const { localBin, localPsql, localDir, container } = projectionTestConnection();
+  const args = localBin
+    ? ['-h', localDir, '-p', '55462', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1']
+    : ['exec', container, 'psql', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'];
+  const claim = () => promisify(execFile)(
+    localBin ? localPsql : 'docker',
+    [...args, '-c', `set role service_role; select ${acquire};`],
+    { encoding: 'utf8', timeout: 10000 }
+  );
+  const claims = (await Promise.all([claim(), claim()])).map(result => result.stdout.trim());
+  const tokens = claims.filter(Boolean);
+  assert.equal(tokens.length, 1);
+  const original = tokens[0];
+
+  assert.equal(q(`select expires_at > clock_timestamp() + interval '300 seconds'
+    from projection_private.pos_sync_leases where restaurant_id='${REST}';`), 't');
+  q(`update projection_private.pos_sync_leases set expires_at=clock_timestamp() - interval '1 second'
+    where restaurant_id='${REST}';`);
+  const successor = call(acquire);
+  assert.notEqual(successor, original);
+  assert.ok(successor);
+  call(release(original));
+  assert.equal(call(acquire), '');
+  call(release(successor));
+
+  // Leave a lease for the next test to verify the restaurant cascade.
+  assert.ok(call(acquire));
+});
+
 test('history cannot be edited or deleted; account purge removes every tenant storage row',()=>{
   bad(`update public.waste_projection_demands set record='{}' where restaurant_id='${REST}';`,/append-only/);
   bad(`delete from public.waste_projection_cases where restaurant_id='${REST}';`,/append-only/);
   q(`select public.purge_restaurant('${REST}');`);
+  assert.equal(q(`select count(*) from projection_private.pos_sync_leases where restaurant_id='${REST}';`), '0');
   for(const t of ['state','corrections','assessments','assessment_payloads','cases','demands']) assert.equal(q(`select count(*) from public.waste_projection_${t} where restaurant_id='${REST}';`),'0');
   const counts=JSON.parse(q(`select deleted_rows from public.projection_account_purge_log order by purged_at desc limit 1;`));
   assert.ok(counts.waste_projection_demands>=4);
