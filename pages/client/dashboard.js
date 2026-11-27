@@ -7,6 +7,7 @@ import { computeWasteRisk } from "../../lib/computeWasteRisk"; // tour sample da
 import { loadCurrentInventory } from "../../lib/currentInventory";
 import { computeWasteResolution } from "../../lib/computeWasteResolution";
 import { saveWasteConfirmationResponse } from "../../lib/saveWasteConfirmationResponse";
+import { addPendingWasteDisposal, buildWasteAssessmentCard, selectWasteCardConfirmations } from "../../lib/wasteAssessmentCard";
 import { useWeekInReview } from "../../lib/useWeekInReview";
 import PassDashboard from "../../components/dashboard/PassDashboard";
 import WasteConfirmationModal from "../../components/dashboard/WasteConfirmationModal";
@@ -215,6 +216,7 @@ export default function DashboardPage() {
   const tour = useTour("dashboard");
   const [searchOpen, setSearchOpen] = useState(false);
   const [confirmationsDismissed, setConfirmationsDismissed] = useState(false);
+  const [cardConfirmation, setCardConfirmation] = useState(null);
   const [confirmationSnooze, setConfirmationSnooze] = useState({
     key: null,
     until: 0,
@@ -521,13 +523,14 @@ export default function DashboardPage() {
     async () => {
       const { data: rows, error: confirmError } = await supabase
         .from("waste_confirmations")
-        .select("id,ingredient_name,presumed_qty,presumed_value,last_seen_date,invoice_items(unit,ingredients(unit))")
+        .select("id,invoice_item_id,ingredient_name,presumed_qty,presumed_value,last_seen_date,invoice_items(unit,ingredients(unit))")
         .eq("restaurant_id", restaurantId)
         .eq("status", "pending")
         .order("presumed_value", { ascending: false });
       if (confirmError) throw confirmError;
       return (rows || []).map((r) => ({
         id: r.id,
+        invoiceItemId: r.invoice_item_id,
         ingredientName: r.ingredient_name,
         presumedQty: r.presumed_qty,
         presumedValue: r.presumed_value,
@@ -537,6 +540,29 @@ export default function DashboardPage() {
       }));
     }
   );
+
+  const { data: wasteAssessment, error: wasteAssessmentError, mutate: reloadWasteAssessment } = useSWR(
+    restaurantId && !tourActive ? ["waste-assessment", restaurantId] : null,
+    async () => {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session?.access_token) throw new Error("Waste assessment session unavailable.");
+      const response = await fetch("/api/projections/waste-assessment", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("Could not load the waste assessment.");
+      const view = await response.json();
+      if (view.mode !== "legacy" && (view.mode !== "assessment" || view.restaurant_id !== restaurantId)) {
+        throw new Error("Waste assessment does not match the restaurant.");
+      }
+      return view;
+    },
+    { refreshInterval: view => view?.mode === "assessment" ? 30_000 : 0 }
+  );
+  const projectedWaste = useMemo(() => tourActive ? null
+    : buildWasteAssessmentCard(wasteAssessment, data.wasteRisk, confirmationRows || []),
+  [tourActive, wasteAssessment, data.wasteRisk, confirmationRows]);
+
   const confirmationSnoozeReady =
     !!confirmationSnoozeKey &&
     confirmationSnooze.key === confirmationSnoozeKey;
@@ -548,10 +574,26 @@ export default function DashboardPage() {
       ? []
       : confirmationRows || [];
 
+  const { selected: selectedCardConfirmation, shown: shownConfirmations } = selectWasteCardConfirmations(
+    projectedWaste, confirmationRows || [], pendingConfirmations,
+    cardConfirmation?.restaurantId === restaurantId ? cardConfirmation.id : null
+  );
+
   async function handleWasteConfirmationRespond(id, status) {
     // Save the answer first. The database trigger records the
     // confirmation timestamp and estimated adjustment.
     await saveWasteConfirmationResponse(supabase, restaurantId, id, status);
+    if (cardConfirmation?.restaurantId === restaurantId && cardConfirmation.id === id) {
+      setCardConfirmation(null);
+    }
+
+    if (projectedWaste && status === "confirmed_wasted") {
+      const confirmation = confirmationRows?.find(row => row.id === id);
+      if (confirmation) {
+        await reloadWasteAssessment(view => addPendingWasteDisposal(view, confirmation), { revalidate: false });
+      }
+      void reloadWasteAssessment().catch(() => {});
+    }
 
     // The response is committed even if the subsequent rebuild fails.
     // Refresh the confirmation list immediately so it is not shown again.
@@ -815,6 +857,10 @@ export default function DashboardPage() {
         ticketsStatus={recsStatus}
         onRetryTickets={() => reloadRecs()}
         waste={toWaste(data.wasteRisk)}
+        projectedWaste={projectedWaste}
+        wasteAssessmentRefreshFailed={!!wasteAssessmentError}
+        onRetryWasteAssessment={() => { void reloadWasteAssessment().catch(() => {}); }}
+        onOpenWasteConfirmation={id => setCardConfirmation({ restaurantId, id })}
         week={week}
         weekData={last7WeekData}
         monthWeekData={weekData}
@@ -832,17 +878,21 @@ export default function DashboardPage() {
         }}
       />
 
-      {pendingConfirmations.length > 0 && (
+      {shownConfirmations.length > 0 && (
         <WasteConfirmationModal
-          items={pendingConfirmations}
+          key={selectedCardConfirmation?.id || "automatic"}
+          items={shownConfirmations}
           onRespond={handleWasteConfirmationRespond}
-          onClose={() => setConfirmationsDismissed(true)}
-          onAskLater={snoozeWasteConfirmations}
+          onClose={() => selectedCardConfirmation ? setCardConfirmation(null) : setConfirmationsDismissed(true)}
+          onAskLater={async () => {
+            await snoozeWasteConfirmations();
+            if (selectedCardConfirmation) setCardConfirmation(null);
+          }}
         />
       )}
 
       <ProjectionHolidayPrompt restaurantId={restaurantId} today={today}
-        enabled={!tourActive && !tour.active && !showTourPrompt && pendingConfirmations.length === 0} />
+        enabled={!tourActive && !tour.active && !showTourPrompt && shownConfirmations.length === 0} />
 
       {tour.active && <TourOverlay tour={tour} />}
 

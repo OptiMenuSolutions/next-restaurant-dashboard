@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { MobileHeader, MobileNav, LoadingState, ErrorState, useTheme } from "../client/ClientChrome";
 import NotificationBell from "../client/NotificationBell";
+import ProjectedWasteCard from "./ProjectedWasteCard";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).
@@ -252,6 +253,10 @@ export default function PassDashboard({
   ticketsStatus = "ready",
   onRetryTickets,
   waste = DEMO_WASTE,
+  projectedWaste,
+  wasteAssessmentRefreshFailed,
+  onRetryWasteAssessment,
+  onOpenWasteConfirmation,
   week = DEMO_WEEK,
   weekData = [],
   monthWeekData = [],
@@ -796,6 +801,10 @@ export default function PassDashboard({
         onRetryTickets={onRetryTickets}
         serviceNumber={serviceNumber}
         waste={waste}
+        projectedWaste={projectedWaste}
+        wasteAssessmentRefreshFailed={wasteAssessmentRefreshFailed}
+        onRetryWasteAssessment={onRetryWasteAssessment}
+        onOpenWasteConfirmation={onOpenWasteConfirmation}
         activeNav={activeNav}
         Link={Link}
         tourActive={tourActive}
@@ -1033,6 +1042,14 @@ export default function PassDashboard({
             minHeight: "280px",
           }}
         >
+
+          {projectedWaste ? (
+            <div data-tour="db-waste" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
+              <ProjectedWasteCard model={projectedWaste} onConfirm={onOpenWasteConfirmation}
+                onRetry={onRetryWasteAssessment} refreshingFailed={wasteAssessmentRefreshFailed} />
+            </div>
+          ) : (
+
           <div data-tour="db-waste" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             <div
               style={{
@@ -1127,6 +1144,7 @@ export default function PassDashboard({
               </span>
             </div>
           </div>
+          )}
 
           <div data-tour="db-week" style={{ ...card, padding: "12px 14px", display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
             <div
@@ -1515,7 +1533,7 @@ function Ticket({ t, i, restaurantName, serviceNumber, timeLabel, flipped, onFli
 /* One scroll, ordered for a pre-service glance: OptiScore and its
    barometers, then tonight's tickets one at a time (Back / Next), then
    waste risk, then the month in review. */
-function MobileView({ restaurantName, user, dateLabel, timeLabel, greeting, optiScore, buckets, scoreTone, stats, tickets, ticketsStatus, onRetryTickets, serviceNumber, waste, activeNav, Link, weekView, tourActive }) {
+function MobileView({ restaurantName, user, dateLabel, timeLabel, greeting, optiScore, buckets, scoreTone, stats, tickets, ticketsStatus, onRetryTickets, serviceNumber, waste, projectedWaste, wasteAssessmentRefreshFailed, onRetryWasteAssessment, onOpenWasteConfirmation, activeNav, Link, weekView, tourActive }) {
   const [idx, setIdx] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [allWaste, setAllWaste] = useState(false);
@@ -1683,6 +1701,12 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, greeting, opti
         </div>
 
         {/* waste risk */}
+        {projectedWaste ? (
+          <div data-tour="db-waste" style={{ ...mcard, padding: "14px 14px 12px" }}>
+            <ProjectedWasteCard model={projectedWaste} onConfirm={onOpenWasteConfirmation}
+              onRetry={onRetryWasteAssessment} refreshingFailed={wasteAssessmentRefreshFailed} />
+          </div>
+        ) : (
         <div data-tour="db-waste" style={{ ...mcard, padding: "14px 14px 12px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "4px" }}>
             <div>
@@ -1722,6 +1746,7 @@ function MobileView({ restaurantName, user, dateLabel, timeLabel, greeting, opti
             </div>
           )}
         </div>
+        )}
 
         {/* month in review (built in the parent so it shares the desktop calendar state) */}
         <div data-tour="db-week">{weekView}</div>
