@@ -714,6 +714,8 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   const readSql = (restaurant, time = 'clock_timestamp()') =>
     `public.waste_projection_read_surface('${restaurant}',${time})`;
   const readSurface = (restaurant, time) => service(readSql(restaurant, time));
+  const previewSql = (actor = admin, time = 'clock_timestamp()') =>
+    `public.waste_projection_preview_surface('${maple}',${time},'${actor}')`;
   const setSwitch = (restaurant, enabled) =>
     service(`public.waste_projection_surface_switch('${restaurant}','${admin}',${enabled})`);
   const fallback = reason => ({ mode: 'legacy', reason });
@@ -747,11 +749,14 @@ test('the surface switch and compact assessment reads stay isolated from the wor
     projections_enabled: true, latest_completed: { assessment_date: previous, compact: false },
     has_compact_assessment: false, updated_by: null, updated_at: null, updated_by_email: null,
   });
+  assert.deepEqual(service(previewSql()), fallback('no_compact_assessment'));
   assert.equal(service(statusSql())[maple], undefined);
+  bad(`set role service_role; select ${previewSql(OWNER)};`, /administrator/);
   assert.equal(readStatus(other).has_compact_assessment, true);
   bad(`set role service_role; select ${statusSql(`'${maple}'`, OWNER)};`, /administrator/);
   for (const role of ['anon','authenticated']) {
     bad(`set role ${role}; select ${readSql(maple)};`, /permission denied/);
+    bad(`set role ${role}; select ${previewSql()};`, /permission denied/);
     bad(`set role ${role}; select ${statusSql(`'${maple}'`)};`, /permission denied/);
     bad(`set role ${role}; select public.waste_projection_surface_switch('${maple}','${admin}',true);`, /permission denied/);
   }
@@ -779,7 +784,8 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   q(`update projection_private.waste_daily_jobs set status='completed'
     where restaurant_id='${maple}' and assessment_date='${day}';`);
   assert.deepEqual(readSurface(maple, pinned), fallback('no_compact_assessment'));
-  const view = readSurface(maple);
+  const readAt = `'${q('select clock_timestamp();')}'::timestamptz`;
+  const view = readSurface(maple, readAt);
   assert.equal(view.assessment_id, compact);
   const status = readStatus(maple);
   assert.equal(status.enabled, true);
@@ -804,6 +810,9 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   assert.equal(setSwitch(maple, false).enabled, false);
   assert.equal(service(statusSql())[maple], false);
   assert.deepEqual(readSurface(maple), fallback('switch_off'));
+  const offStatus = readStatus(maple);
+  assert.deepEqual(service(previewSql(admin, readAt)), view);
+  assert.deepEqual(readStatus(maple), offStatus);
   assert.equal(q(`select enabled from public.projection_restaurant_config where restaurant_id='${maple}';`), 't');
   assert.equal(q(`select status from projection_private.waste_daily_jobs
     where restaurant_id='${maple}' and assessment_date='${day}';`), 'completed');
@@ -811,6 +820,7 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   assert.equal(setSwitch(maple, true).enabled, true);
   q(`update public.projection_restaurant_config set enabled=false where restaurant_id='${maple}';`);
   assert.deepEqual(readSurface(maple), fallback('projections_disabled'));
+  assert.deepEqual(service(previewSql()), fallback('projections_disabled'));
   assert.equal(readStatus(maple).projections_enabled, false);
   q(`select public.purge_restaurant('${maple}');`);
   assert.equal(q(`select count(*) from projection_private.waste_assessment_surface_switches where restaurant_id='${maple}';`), '0');

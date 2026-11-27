@@ -30,7 +30,7 @@ function compact(date) {
   };
 }
 
-function setup(status, view, readError = null) {
+function setup(status, view, readError = null, preview = { mode: 'legacy', reason: 'no_compact_assessment' }) {
   const calls = [];
   const handler = createWasteAssessmentSwitchHandler({
     verifyAdmin: async () => ({ user: { id: actor } }),
@@ -40,6 +40,8 @@ function setup(status, view, readError = null) {
         switch (name) {
           case 'waste_projection_admin_surface_status': return { data: status };
           case 'waste_projection_read_surface': return { data: view, error: readError };
+          case 'waste_projection_preview_surface':
+            return preview instanceof Error ? { error: preview } : { data: preview };
           case 'waste_projection_surface_switch': return { data: { restaurant_id: rid, enabled: args.desired } };
           default: assert.fail(name);
         }
@@ -59,16 +61,35 @@ function setup(status, view, readError = null) {
   return { calls, request };
 }
 
-test('GET keeps readiness and audit visible while the reader reports switch_off', async () => {
+test('GET reports the live Off state and previews the same stale assessment eligibility', async () => {
   const old = { mode: 'legacy', reason: 'switch_off' };
-  const api = setup(ready, old);
+  const forecast = { mode: 'assessment', assessment_date: '2026-11-26', stale: true };
+  const api = setup(ready, old, null, compact('2026-11-26'));
   const res = await api.request('GET');
   assert.equal(res.code, 200);
   assert.equal(res.headers['Cache-Control'], 'private, no-store');
-  assert.deepEqual(res.body, { ...ready, owner_card: old, tonight_dish: old });
+  assert.deepEqual(res.body, {
+    ...ready, owner_card: old, tonight_dish: old,
+    if_enabled: { owner_card: forecast, tonight_dish: { mode: 'legacy', reason: 'assessment_too_old' } },
+  });
   assert.deepEqual(api.calls[0], ['waste_projection_admin_surface_status', { target: rid, actor }]);
+  const liveArgs = api.calls[1][1];
   assert.equal(api.calls[1][0], 'waste_projection_read_surface');
-  assert.equal(api.calls.length, 2);
+  assert.deepEqual(api.calls[2], ['waste_projection_preview_surface', { ...liveArgs, actor }]);
+  assert.equal(api.calls.length, 3);
+});
+
+test('an Off preview shows readiness fallbacks and a preview failure preserves the live status', async () => {
+  const live = { mode: 'legacy', reason: 'switch_off' };
+  for (const reason of ['no_compact_assessment', 'projections_disabled']) {
+    const preview = { mode: 'legacy', reason };
+    const { body } = await setup(ready, live, null, preview).request('GET');
+    assert.deepEqual(body.if_enabled, { owner_card: preview, tonight_dish: preview });
+  }
+  const { body } = await setup(ready, live, null, Object.assign(new Error('timeout'), { code: '57014' })).request('GET');
+  assert.deepEqual(body.owner_card, live);
+  assert.deepEqual(body.tonight_dish, live);
+  assert.deepEqual(body.if_enabled, { owner_card: null, tonight_dish: null });
 });
 
 test('GET uses the shared Dish selector and returns only reader summaries', async () => {
@@ -79,6 +100,7 @@ test('GET uses the shared Dish selector and returns only reader summaries', asyn
     assert.deepEqual(body.tonight_dish, date === '2026-11-26'
       ? { mode: 'legacy', reason: 'assessment_too_old' } : body.owner_card);
     assert.ok(!JSON.stringify(body).includes('private-item'));
+    assert.equal(body.if_enabled, undefined);
   }
   for (const reason of ['projections_disabled', 'no_compact_assessment']) {
     const old = { mode: 'legacy', reason };
@@ -142,13 +164,22 @@ function details(status, { confirmation = true } = {}) {
 
 test('an Off page shows the current reader sources and asks for the named restaurant before enabling', () => {
   const old = { mode: 'legacy', reason: 'switch_off' };
-  const status = { ...ready, owner_card: old, tonight_dish: old };
+  const status = {
+    ...ready, owner_card: old, tonight_dish: old,
+    if_enabled: {
+      owner_card: { mode: 'assessment', assessment_date: '2026-11-26', stale: true },
+      tonight_dish: { mode: 'legacy', reason: 'assessment_too_old' },
+    },
+  };
   for (const confirmation of [false, true]) {
     const { html, button, prompts, changes } = details(status, { confirmation });
     assert.match(html, /Switch Off/);
     assert.match(html, /Old card \(switch_off\)/);
     assert.match(html, /Old path \(switch_off\)/);
     assert.match(html, /Compact \(schema version 2\)/);
+    assert.match(html, /If turned On/);
+    assert.match(html, /New card · 2026-11-26 · stale/);
+    assert.match(html, /Old path \(assessment_too_old\)/);
     assert.equal(button.props.disabled, false);
     button.props.onClick();
     assert.deepEqual(prompts, ["Switch Maple to the new waste card and Tonight's Dish source?"]);

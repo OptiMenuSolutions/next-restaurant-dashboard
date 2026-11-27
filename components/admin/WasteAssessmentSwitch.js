@@ -11,6 +11,13 @@ function sourceLabel(source, current, fallback) {
   return `${current} · ${source.assessment_date}${source.stale ? ' · stale' : ''}`;
 }
 
+function SourceRows({ sources }) {
+  return <>
+    <dt>Owner dashboard</dt><dd>{sourceLabel(sources.owner_card, 'New card', 'Old card')}</dd>
+    <dt>Tonight’s Dish</dt><dd>{sourceLabel(sources.tonight_dish, 'Assessment', 'Old path')}</dd>
+  </>;
+}
+
 export function WasteAssessmentSwitchDetails({ status, saving, onChange }) {
   const { enabled, projections_enabled, has_compact_assessment, latest_completed, updated_at } = status;
   const loaded = typeof projections_enabled === 'boolean';
@@ -39,9 +46,12 @@ export function WasteAssessmentSwitchDetails({ status, saving, onChange }) {
         <dt>Latest completed assessment</dt>
         <dd>{latest_completed ? `${latest_completed.assessment_date} · ${latest_completed.compact
           ? 'Compact (schema version 2)' : 'Non-compact'}` : 'None'}</dd>
-        <dt>Owner dashboard</dt><dd>{sourceLabel(status.owner_card, 'New card', 'Old card')}</dd>
-        <dt>Tonight’s Dish</dt><dd>{sourceLabel(status.tonight_dish, 'Assessment', 'Old path')}</dd>
+        <SourceRows sources={status} />
       </dl>
+      {!enabled && status.if_enabled && <>
+        <h3>If turned On</h3>
+        <dl><SourceRows sources={status.if_enabled} /></dl>
+      </>}
       {updated_at ? <p>
         Last changed <time dateTime={updated_at}>{auditDate.format(new Date(updated_at))} ET</time> by{' '}
         {status.updated_by_email ? `${status.updated_by_email} (${status.updated_by})` : status.updated_by}.

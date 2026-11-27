@@ -17,6 +17,16 @@ function summarize(view) {
     : { mode: view.mode, reason: view.reason };
 }
 
+async function readSources(db, target, observedAt, previewActor) {
+  try {
+    const view = await readWasteAssessment(db, target, observedAt, { previewActor });
+    return { owner_card: summarize(view), tonight_dish: summarize(selectWasteAssessmentForDish(view)) };
+  } catch (error) {
+    console.error('[waste-assessment-switch] Reader status unavailable', error.code || 'READ_FAILED');
+    return { owner_card: null, tonight_dish: null };
+  }
+}
+
 export function createWasteAssessmentSwitchHandler({ db, verifyAdmin } = {}) {
   return async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store');
@@ -40,15 +50,12 @@ export function createWasteAssessmentSwitchHandler({ db, verifyAdmin } = {}) {
 
       if (req.method === 'GET') {
         const status = await readStatus(client, target, actor);
-        try {
-          const view = await readWasteAssessment(client, target);
-          return res.status(200).json({
-            ...status, owner_card: summarize(view), tonight_dish: summarize(selectWasteAssessmentForDish(view)),
-          });
-        } catch (error) {
-          console.error('[waste-assessment-switch] Reader status unavailable', error.code || 'READ_FAILED');
-          return res.status(200).json({ ...status, owner_card: null, tonight_dish: null });
-        }
+        const observedAt = new Date().toISOString();
+        const [current, ifEnabled] = await Promise.all([
+          readSources(client, target, observedAt),
+          status.enabled ? null : readSources(client, target, observedAt, actor),
+        ]);
+        return res.status(200).json({ ...status, ...current, ...(ifEnabled && { if_enabled: ifEnabled }) });
       }
 
       const body = req.body;
