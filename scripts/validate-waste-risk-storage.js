@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import assert from 'node:assert/strict';
 import { projectionTestSQL as q, projectionTestConnection } from './validate-projection-benchmarks.js';
 import { prepareWasteRiskAssessment, commitWasteRiskAssessment } from '../lib/wasteRiskStorage.js';
+import { readWasteAssessment } from '../lib/wasteAssessmentReader.js';
 import { assessProjectedWasteRisk } from '../lib/wasteRiskProjection.js';
 import { projectionCalibrationKey } from '../lib/projections/settings.js';
 import { shiftProjectionDate as shift } from '../lib/projections/businessTime.js';
@@ -702,4 +703,123 @@ test('history cannot be edited or deleted; account purge removes every tenant st
   assert.ok(counts.waste_projection_demands>=4);
   assert.equal(counts.waste_daily_jobs, 1);
   assert.equal(counts.pos_sync_leases, 1);
+});
+
+test('the surface switch and compact assessment reads stay isolated from the worker', async () => {
+  const maple = id(8301), other = id(8302), admin = id(8303);
+  const original = id(8304), compact = id(8305), foreign = id(8306);
+  const batch = id(8307), pastDisposal = id(8308), pendingDisposal = id(8309);
+  const day = input.assessmentDate, previous = shift(day, -1), boundary = `${day}T00:00:00Z`;
+  const service = sql => JSON.parse(q(`set role service_role; select ${sql};`));
+  const readSql = (restaurant, time = 'clock_timestamp()') =>
+    `public.waste_projection_read_surface('${restaurant}',${time})`;
+  const readSurface = (restaurant, time) => service(readSql(restaurant, time));
+  const setSwitch = (restaurant, enabled) =>
+    service(`public.waste_projection_surface_switch('${restaurant}','${admin}',${enabled})`);
+  const fallback = reason => ({ mode: 'legacy', reason });
+
+  q(`insert into public.restaurants(id,user_id,name,operational_timezone)
+    values ('${maple}','${OWNER}','Maple reader fixture','UTC'), ('${other}','${OWNER}','Other reader fixture','UTC');
+    insert into public.profiles(id,role) values ('${admin}','admin');
+    insert into public.projection_restaurant_config(restaurant_id,enabled) values ('${maple}',true), ('${other}',true);
+    insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings) values
+      ('${maple}',4,clock_timestamp(),'{"business_day_cutoff_minutes":0}'),
+      ('${other}',4,clock_timestamp(),'{"business_day_cutoff_minutes":0}');
+    insert into public.waste_projection_assessments(id,restaurant_id,request_id,assessment_date,inventory_cutoff,
+      state_version,saved_at,input_digest,result) values
+      ('${original}','${maple}','${id(8320)}','${previous}','${shift(previous,-1)}',1,
+        statement_timestamp()-interval '1 second',repeat('a',64),'{"items":[]}'),
+      ('${foreign}','${other}','${id(8321)}','${day}','${previous}',1,
+        statement_timestamp()-interval '1 second',repeat('a',64),
+        jsonb_build_object('result_schema_version',2,'restaurant_id','${other}','assessment_date','${day}',
+          'inventory_cutoff','${previous}','items','[]'::jsonb,'needs_review','[]'::jsonb,'omitted_by_status','{}'::jsonb));
+    insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing,status,assessment_id)
+      values ('${maple}','${previous}',jsonb_build_object('starts_at','${previous}T00:00:00Z'),'completed','${original}'),
+        ('${other}','${day}',jsonb_build_object('starts_at','${boundary}'),'completed','${foreign}');`);
+
+  assert.equal(setSwitch(maple, 'null').enabled, false);
+  assert.deepEqual(readSurface(maple), fallback('switch_off'));
+  for (const role of ['anon','authenticated']) {
+    bad(`set role ${role}; select ${readSql(maple)};`, /permission denied/);
+    bad(`set role ${role}; select public.waste_projection_surface_switch('${maple}','${admin}',true);`, /permission denied/);
+  }
+  bad(`set role service_role; select public.waste_projection_surface_switch('${maple}','${OWNER}',true);`, /administrator/);
+  assert.equal(setSwitch(maple, true).enabled, true);
+  assert.deepEqual(readSurface(maple), fallback('no_compact_assessment'));
+  assert.deepEqual(readSurface(other), fallback('switch_off'));
+  const pinned = `'${q('select clock_timestamp();')}'::timestamptz`;
+
+  q(`insert into public.waste_projection_assessments(id,restaurant_id,request_id,assessment_date,inventory_cutoff,
+    state_version,saved_at,input_digest,result) values
+    ('${compact}','${maple}','${id(8322)}','${day}','${previous}',2,clock_timestamp(),repeat('b',64),
+      jsonb_build_object('result_schema_version',2,'restaurant_id','${maple}','assessment_date','${day}',
+        'inventory_cutoff','${previous}','needs_review','[]'::jsonb,'omitted_by_status','{}'::jsonb,
+        'items',jsonb_build_array(jsonb_build_object('batch_id','${batch}','visible',true,'risk_qty',2,'risk_value',6))));
+    insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing,status,assessment_id)
+    values ('${maple}','${day}',jsonb_build_object('starts_at','${boundary}'),'ready','${compact}');
+    insert into public.waste_confirmations(id,restaurant_id,status,invoice_item_id,confirmed_by,confirmed_at,ingredient_name) values
+      ('${pastDisposal}','${maple}','confirmed_wasted','${id(8323)}','${OWNER}','${boundary}'::timestamptz-interval '1 second','Previous stock'),
+      ('${pendingDisposal}','${maple}','confirmed_wasted','${batch}','${OWNER}','${boundary}','Pending stock'),
+      ('${id(8324)}','${other}','confirmed_wasted','${id(8325)}','${OWNER}','${boundary}','Foreign stock');`);
+  assert.deepEqual(readSurface(maple), fallback('no_compact_assessment'));
+
+  q(`update projection_private.waste_daily_jobs set status='completed'
+    where restaurant_id='${maple}' and assessment_date='${day}';`);
+  assert.deepEqual(readSurface(maple, pinned), fallback('no_compact_assessment'));
+  const view = readSurface(maple);
+  assert.equal(view.assessment_id, compact);
+  assert.equal(view.business_date, day);
+  assert.equal(view.inventory_cutoff, previous);
+  assert.equal(new Date(view.inventory_boundary).toISOString(), `${day}T00:00:00.000Z`);
+  assert.deepEqual(view.pending_disposals.map(row => row.confirmation_id), [pendingDisposal]);
+  assert.equal(q(`select count(*) from public.waste_projection_assessment_payloads where restaurant_id='${maple}';`), '0');
+  const readerView = await readWasteAssessment({ rpc: async (_name, args) => ({
+    data: readSurface(args.target, `'${args.observed_at}'::timestamptz`),
+  }) }, maple);
+  assert.equal(readerView.assessment_id, compact);
+  assert.equal(readerView.items[0].pending_disposal, true);
+  assert.equal(readerView.items[0].risk_value, null);
+
+  assert.equal(setSwitch(maple, false).enabled, false);
+  assert.deepEqual(readSurface(maple), fallback('switch_off'));
+  assert.equal(q(`select enabled from public.projection_restaurant_config where restaurant_id='${maple}';`), 't');
+  assert.equal(q(`select status from projection_private.waste_daily_jobs
+    where restaurant_id='${maple}' and assessment_date='${day}';`), 'completed');
+
+  assert.equal(setSwitch(maple, true).enabled, true);
+  q(`update public.projection_restaurant_config set enabled=false where restaurant_id='${maple}';`);
+  assert.deepEqual(readSurface(maple), fallback('projections_disabled'));
+  q(`select public.purge_restaurant('${maple}');`);
+  assert.equal(q(`select count(*) from projection_private.waste_assessment_surface_switches where restaurant_id='${maple}';`), '0');
+});
+
+test('the surface reader uses the second occurrence of a repeated local cutoff', () => {
+  const tenant = id(8340), admin = id(8341), assessment = id(8342);
+  const day = '2026-10-31', cutoff = '2026-10-30', boundary = '2026-10-31T05:30:00Z';
+  q(`insert into public.restaurants(id,user_id,name,operational_timezone)
+      values ('${tenant}','${OWNER}','Reader clock fixture','America/New_York');
+    insert into public.profiles(id,role) values ('${admin}','admin');
+    insert into public.projection_restaurant_config(restaurant_id,enabled) values ('${tenant}',true);
+    insert into public.projection_setting_versions(model_major,effective_at,settings)
+      select 4,'2026-10-01T00:00:00Z',settings from public.projection_setting_versions
+      where restaurant_id is null and model_major=4 order by effective_at desc limit 1;
+    insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings)
+      values ('${tenant}',4,'2026-10-01T00:00:00Z','{"business_day_cutoff_minutes":90}');
+    insert into public.waste_projection_assessments(id,restaurant_id,request_id,assessment_date,inventory_cutoff,
+      state_version,saved_at,input_digest,result) values
+      ('${assessment}','${tenant}','${id(8343)}','${day}','${cutoff}',1,'2026-10-31T08:00:00Z',repeat('a',64),
+        jsonb_build_object('result_schema_version',2,'restaurant_id','${tenant}','assessment_date','${day}',
+          'inventory_cutoff','${cutoff}','items','[]'::jsonb,'needs_review','[]'::jsonb,'omitted_by_status','{}'::jsonb));
+    insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing,status,assessment_id)
+      values ('${tenant}','${day}',jsonb_build_object('starts_at','${boundary}','timezone','America/New_York'),
+        'completed','${assessment}');`);
+  q(`set role service_role; select public.waste_projection_surface_switch('${tenant}','${admin}',true);`);
+  const readAt = at => JSON.parse(q(`set role service_role;
+    select public.waste_projection_read_surface('${tenant}','${at}');`));
+  const before = readAt('2026-11-01T05:45:00Z');
+  const after = readAt('2026-11-01T06:30:00Z');
+  assert.equal(before.business_date, '2026-10-31');
+  assert.equal(after.business_date, '2026-11-01');
+  assert.equal(after.assessment_id, assessment);
+  assert.equal(new Date(after.inventory_boundary).toISOString(), '2026-10-31T05:30:00.000Z');
 });

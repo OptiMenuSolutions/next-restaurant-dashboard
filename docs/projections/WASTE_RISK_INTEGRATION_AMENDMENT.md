@@ -199,9 +199,12 @@ The six-minute lease is longer than the 300-second invocation limit.
 
 ### Stage 4 Tonight’s Dish
 
-Keep Tonight’s Dish at 11:00 UTC. It reads the latest completed waste
-assessment available when generation starts. An assessment for a prior
-assessment date is marked stale under the same rule as the dashboard card.
+Keep Tonight’s Dish at 11:00 UTC. Both surfaces read the latest completed
+compact schema-version-2 assessment available at read time, when projections
+and the separate surface switch are enabled. An assessment for a prior
+business date is marked stale. The card can display an older assessment.
+Tonight’s Dish accepts the current or previous business date and records its
+fallback reason when it uses the existing path.
 Individually retained overdue rows feed the card’s confirm-or-discard
 prompts. The card can show a count and known at-risk value for older
 overdue rows. Tonight’s Dish excludes overdue rows and any batch whose
@@ -210,8 +213,10 @@ assessment is stale.
 
 A disposal confirmed at or after the latest assessment’s inventory boundary
 appears immediately as “Confirmed wasted · pending next assessment” on the
-card. The pending disposal is excluded from displayed at-risk amounts
-until a completed assessment incorporates it.
+card. Individually matched batches are excluded from displayed at-risk
+amounts. Summarized overdue disposals are shown as handled with the note
+“Includes N confirmed wasted, updates after the next assessment.” The
+permanent subtotal remains the saved assessment subtotal.
 
 Per-restaurant local scheduling for Tonight’s Dish is a follow-up because
 11:00 UTC can fall before the business cutoff west of Eastern time.
@@ -220,6 +225,12 @@ For the Stage 4 card, apply the same seven-business-date cutoff to
 needs_review rows with a known past use-by date. Summarize older review
 rows by reason. The card shows only aggregate counts and known risk value
 for outside_risk_window batches.
+
+Keep the surface switch off for all restaurants across the three Stage 4
+deployments. Administrators can read or set it using the authenticated
+waste-assessment-switch API. The switch controls the two consumer surfaces
+independently of forecast and assessment processing. Maple is the only
+restaurant eligible for launch activation after the Nov 28 commit review.
 
 ### Stage 3 correction sources
 
