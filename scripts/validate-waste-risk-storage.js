@@ -426,6 +426,54 @@ test('a job without timely inventory is skipped and stays skipped', () => {
   assert.equal(q(reserve), '');
 });
 
+test('the permanent result stays bounded with 1,000 old overdue batches', async t => {
+  const day = input.assessmentDate;
+  const base = { ...input.batches[0], received_date: shift(day, -30), remaining_qty: 2, unit_cost: 3 };
+  const recent = { ...base, id: id(6000), use_by_date: shift(day, -7) };
+  const current = { ...input.batches[0], id: id(6001) };
+  const review = {
+    ...current, id: id(6002), ingredient_id: null, remaining_qty: 4, unit: 'oz', unit_cost: null,
+  };
+  const outsideWindow = { ...current, id: id(6003), use_by_date: shift(day, 8) };
+  const depleted = { ...current, id: id(6004), remaining_qty: 0 };
+  const beforeCutoff = [recent, current, review, outsideWindow, depleted];
+  const old = Array.from({ length: 1000 }, (_, index) => ({
+    ...base, id: id(6100 + index), use_by_date: shift(day, -8),
+    unit_cost: index === 0 ? null : base.unit_cost,
+  }));
+  const assessedAt = new Date().toISOString();
+  const save = async (batches, requestId) => {
+    const prepared = await prepareWasteRiskAssessment(client, { ...input, assessedAt, batches }, requestId);
+    const { assessment_id: assessmentId } = await commitWasteRiskAssessment(client, prepared);
+    return JSON.parse(q(`select jsonb_build_object(
+      'compact',a.result, 'bytes',octet_length(a.result::text),
+      'full_item_count',jsonb_array_length(p.result->'items'),
+      'full_overdue_count',(select count(*) from jsonb_array_elements(p.result->'items') item
+        where item->>'status'='overdue')
+    ) from public.waste_projection_assessments a
+    join public.waste_projection_assessment_payloads p on p.assessment_id=a.id
+    where a.id='${assessmentId}';`));
+  };
+
+  const small = await save([...beforeCutoff, old[1]], id(6090));
+  const large = await save([...beforeCutoff, ...old], id(6091));
+  assert.equal(large.compact.result_schema_version, 2);
+  assert.deepEqual(large.compact.items.map(row => row.batch_id).sort(), [recent.id, current.id].sort());
+  assert.equal(large.compact.items.find(row => row.batch_id === recent.id).status, 'overdue');
+  assert.deepEqual(large.compact.needs_review.map(row => [
+    row.batch_id, row.reason, row.stock_remaining_qty, row.stock_unit,
+  ]), [[review.id, 'link_ingredient', 4, 'oz']]);
+  assert.deepEqual(large.compact.omitted_by_status, {
+    overdue: { count: 1000, risk_value: 5994, unvalued_count: 1 },
+    outside_risk_window: { count: 1, risk_value: null, unvalued_count: 1 },
+    depleted: { count: 1, risk_value: 0, unvalued_count: 0 },
+  });
+  assert.equal(large.full_item_count, 1005);
+  assert.equal(large.full_overdue_count, 1001);
+  assert.ok(large.bytes < 16_384 && large.bytes <= small.bytes + 128);
+  t.diagnostic(`Permanent JSON bytes with 1 and 1,000 omitted overdue batches: ${small.bytes}, ${large.bytes}`);
+});
+
 test('fallback case coverage can extend only when the archive supplies the missing date', async () => {
   const prior = id(91), ingredient = id(92), batch = id(93);
   const day = input.assessmentDate;

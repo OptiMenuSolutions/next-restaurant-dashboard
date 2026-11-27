@@ -72,10 +72,13 @@ Persistence and controlled corrections
 
 waste_projection_state fences concurrent writes with a restaurant version.
 waste_projection_assessments keeps immutable assessment metadata, the
-SHA-256 digest of the normalized input, and a compact result. The compact
-result retains forecast and settings provenance, batch-level estimates and
-statuses, and recipe coverage disclosures. It omits allocation details,
-per-night demand traces, new-freeze proposals and duplicate item lists.
+SHA-256 digest of the normalized input, and a compact result with forecast
+and settings provenance. Version 2 keeps current-window items and overdue
+items with a use-by date at most seven business dates before the assessment
+date, inclusive. It keeps unavailable estimates in needs_review with their
+source stock quantity and unit. Other batches contribute counts, known
+risk value and an unvalued count in omitted_by_status. The 30-day payload
+keeps the complete item list, allocation details and per-night demand traces.
 waste_projection_demands and waste_projection_cases retain append-only version
 chains. waste_projection_corrections records the actor, database authorization
 time, allowlisted reason, source-event reference and explicit affected scope.
@@ -199,5 +202,16 @@ The six-minute lease is longer than the 300-second invocation limit.
 Keep Tonight’s Dish at 11:00 UTC. It reads the latest completed waste
 assessment available when generation starts. An assessment for a prior
 assessment date is marked stale under the same rule as the dashboard card.
+Individually retained overdue rows feed the card’s confirm-or-discard
+prompts. The card can show a count and known at-risk value for older
+overdue rows. Tonight’s Dish excludes overdue rows and any batch whose
+use-by date precedes the target service business date, including when the
+assessment is stale.
+
+A disposal confirmed at or after the latest assessment’s inventory boundary
+appears immediately as “Confirmed wasted · pending next assessment” on the
+card. The pending disposal is excluded from displayed at-risk amounts
+until a completed assessment incorporates it.
+
 Per-restaurant local scheduling for Tonight’s Dish is a follow-up because
 11:00 UTC can fall before the business cutoff west of Eastern time.

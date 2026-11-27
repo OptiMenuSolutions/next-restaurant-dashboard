@@ -209,7 +209,7 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
     'benchmarks', 'benchmark_build_fixes', 'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
-    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner',
+    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);

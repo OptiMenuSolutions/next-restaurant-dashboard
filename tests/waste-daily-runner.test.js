@@ -46,7 +46,10 @@ test('the only claim path checkpoints inventory and saves an envelope before com
     commit: [{ status: 'completed' }],
     take_alert: [null],
   });
-  assert.equal((await dispatchWasteDailyAssessments(h.db, h.options)).completed, 1);
+  const ticks = [0, 5, 10, 18, 20, 26, 30, 50, 100, 250];
+  const result = await dispatchWasteDailyAssessments(h.db, { ...h.options, rpcClock: () => ticks.shift() });
+  assert.equal(result.completed, 1);
+  assert.deepEqual(result.rpc_ms, { claim: [5, 6], checkpoint: [8], save: [20], commit: [150] });
   assert.deepEqual(h.trace.map(([name]) => name), ['claim','checkpoint','claim','save','commit','take_alert']);
   assert.equal(h.trace[0][1].assessment_day, null);
   assert.equal(h.trace[1][1].tok, 'first');
@@ -61,7 +64,10 @@ test('a saved envelope retries without rebuilding and a transient failure sends 
     checkpoint: [{ status: 'ready' }],
     take_alert: [null],
   });
-  assert.equal((await dispatchWasteDailyAssessments(h.db, h.options)).retrying, 1);
+  const ticks = [0, 5, 10, 8010, 8020, 8026];
+  const result = await dispatchWasteDailyAssessments(h.db, { ...h.options, rpcClock: () => ticks.shift() });
+  assert.equal(result.retrying, 1);
+  assert.deepEqual(result.rpc_ms, { claim: [5], checkpoint: [6], save: [], commit: [8000] });
   assert.deepEqual(h.trace.map(([name]) => name), ['claim','commit','checkpoint','take_alert']);
   assert.match(h.trace[2][1].failure, /^commit \| 57014/);
 });
