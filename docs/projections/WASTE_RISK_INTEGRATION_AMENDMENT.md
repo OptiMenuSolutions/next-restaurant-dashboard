@@ -204,7 +204,13 @@ compact schema-version-2 assessment available at read time, when projections
 and the separate surface switch are enabled. An assessment for a prior
 business date is marked stale. The card can display an older assessment.
 Tonight’s Dish accepts the current or previous business date and records its
-fallback reason when it uses the existing path.
+fallback reason when it uses the existing path. The generation summary and
+saved briefing record the selected input. A new assessment may influence the
+next generation. The saved staff briefing honors the NFC lock.
+The dashboard checks the same assessment ID before showing projected waste
+on a saved dish and drops the badge when the supporting batch is handled or
+past its use-by date. An estimate with a use-by date equal to the target
+service date is eligible for that service.
 Individually retained overdue rows feed the card’s confirm-or-discard
 prompts. The card can show a count and known at-risk value for older
 overdue rows. Tonight’s Dish excludes overdue rows and any batch whose

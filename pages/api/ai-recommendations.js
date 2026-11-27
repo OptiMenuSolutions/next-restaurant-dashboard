@@ -30,6 +30,7 @@ import {
 } from '../../lib/ai/recommendationScoring';
 import { buildMenuOnlyPrompt } from '../../lib/ai/prompts/menuOnlyTonightsDish';
 import { sendCronAlert } from '../../lib/cronAlert';
+import { hasUsableWasteDate, readRecommendationWaste } from '../../lib/ai/recommendationWaste';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -100,7 +101,7 @@ async function getExpiringIngredients(restaurantId) {
 }
 
 // ─── Load restaurant context ──────────────────────────────────────────────────
-async function loadRestaurantContext(restaurantId) {
+async function loadRestaurantContext(restaurantId, projectedBatches) {
   const fourteenDaysAgo = new Date();
   fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
   const fourteenDaysAgoStr = fourteenDaysAgo.toISOString().split('T')[0];
@@ -109,7 +110,7 @@ async function loadRestaurantContext(restaurantId) {
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
 
-  const [menuResult, salesResult, expiringIngredients] = await Promise.all([
+  const [menuResult, salesResult, legacyExpiringIngredients] = await Promise.all([
     supabase
       .from('menu_items')
       .select(`
@@ -146,11 +147,30 @@ async function loadRestaurantContext(restaurantId) {
       .order('sale_date', { ascending: false })
       .limit(5000),
 
-    getExpiringIngredients(restaurantId),
+    projectedBatches === null ? getExpiringIngredients(restaurantId) : null,
   ]);
 
   const menuItems = menuResult.data || [];
   const sales = salesResult.data || [];
+  let expiringIngredients = legacyExpiringIngredients;
+  if (projectedBatches !== null) {
+    const ingredients = new Map();
+    for (const item of menuItems) {
+      for (const component of item.menu_item_components || []) {
+        for (const line of component.component_ingredients || []) {
+          const ingredient = line.ingredients;
+          if (ingredient?.id) ingredients.set(ingredient.id, ingredient.name);
+        }
+      }
+    }
+    const earliestByIngredient = new Map();
+    for (const batch of projectedBatches) {
+      const name = ingredients.get(batch.ingredientId);
+      if (!name || earliestByIngredient.has(batch.ingredientId)) continue;
+      earliestByIngredient.set(batch.ingredientId, { ...batch, name, isProtein: isProtein(name) });
+    }
+    expiringIngredients = [...earliestByIngredient.values()];
+  }
 
   // Build 7-day sales totals per item — normalize names for matching
   const salesLast7 = {};
@@ -230,6 +250,7 @@ async function loadRestaurantContext(restaurantId) {
         name: ingredient.name,
         daysLeft: ingredient.daysLeft,
         isProtein: ingredient.isProtein,
+        ...(ingredient.useByDate ? { useByDate: ingredient.useByDate } : {}),
       }));
 
     // Tighter POS name matching — require meaningful word overlap, not just first word
@@ -356,13 +377,16 @@ export async function generateForRestaurant(
     }
   }
 
+  const { input: wasteInput, batches: projectedBatches } = await readRecommendationWaste(
+    supabase, restaurantId, currentDate, new Date().toISOString()
+  );
   let enriched = [];
   let expiringIngredients = [];
   let history = [];
 
   try {
     [{ enriched, expiringIngredients }, history] = await Promise.all([
-      loadRestaurantContext(restaurantId),
+      loadRestaurantContext(restaurantId, projectedBatches),
       getRecentHistory(restaurantId, currentDate),
     ]);
   } catch (ctxErr) {
@@ -371,20 +395,12 @@ export async function generateForRestaurant(
 
   // Only ingredients with remaining usable shelf life can drive
   // waste-prevention recommendations.
-  const usableExpiringIngredients = expiringIngredients.filter(
-    ingredient =>
-      Number.isFinite(ingredient.daysLeft) &&
-      ingredient.daysLeft > 0
-  );
+  const usableExpiringIngredients = expiringIngredients.filter(hasUsableWasteDate);
 
   // Keep dish-level inventory context consistent with the filtered list.
   const safeEnriched = enriched.map(item => ({
     ...item,
-    expiringIngredients: (item.expiringIngredients || []).filter(
-      ingredient =>
-        Number.isFinite(ingredient.daysLeft) &&
-        ingredient.daysLeft > 0
-    ),
+    expiringIngredients: (item.expiringIngredients || []).filter(hasUsableWasteDate),
   }));
 
   // Production and Recommendation Lab share the same scoring engine.
@@ -448,6 +464,7 @@ export async function generateForRestaurant(
         Number.isFinite(item.qty7d) && item.qty7d > 0
       ).length,
       recentRecommendations: history.length,
+      wasteInput,
     };
   }
 
@@ -592,7 +609,7 @@ export async function generateForRestaurant(
   // An expired inventory estimate does not automatically disqualify
   // a dish, but it must never justify recommending that dish.
   const expiredNames = expiringIngredients
-    .filter(ingredient => ingredient.daysLeft <= 0)
+    .filter(ingredient => ingredient.daysLeft <= 0 && !hasUsableWasteDate(ingredient))
     .map(ingredient => ingredient.name.toLowerCase().trim())
     .filter(Boolean);
 
@@ -650,7 +667,7 @@ export async function generateForRestaurant(
   const ingredientNamesFor = (item) =>
     new Set(
       (item?.expiringIngredients || [])
-        .filter(ingredient => ingredient.daysLeft > 0)
+        .filter(hasUsableWasteDate)
         .map(ingredient => ingredient.name.toLowerCase().trim())
     );
 
@@ -676,8 +693,7 @@ export async function generateForRestaurant(
 
     const ingredients = (menuItem.expiringIngredients || [])
       .filter(ingredient =>
-        Number.isFinite(ingredient.daysLeft) &&
-        ingredient.daysLeft > 0 &&
+        hasUsableWasteDate(ingredient) &&
         ingredient.daysLeft <= 5
       )
       .sort((a, b) => a.daysLeft - b.daysLeft);
@@ -705,9 +721,9 @@ export async function generateForRestaurant(
 
     if (rec.type === 'inventory' && displayedIngredients.length > 0) {
       const details = displayedIngredients.slice(0, 2).map(ingredient =>
-        `${ingredient.name}: ${ingredient.daysLeft} day${
-          ingredient.daysLeft === 1 ? '' : 's'
-        } remaining`
+        ingredient.daysLeft === 0
+          ? `${ingredient.name}: use by today`
+          : `${ingredient.name}: ${ingredient.daysLeft} day${ingredient.daysLeft === 1 ? '' : 's'} remaining`
       );
 
       sentences.push(
@@ -947,7 +963,7 @@ export async function generateForRestaurant(
     if (rec.type === 'inventory') {
       const hasUsableExpiringIngredient =
         (menuItem.expiringIngredients || []).some(
-          ingredient => ingredient.daysLeft > 0 && ingredient.daysLeft <= 5
+          ingredient => hasUsableWasteDate(ingredient) && ingredient.daysLeft <= 5
         );
 
       if (!hasUsableExpiringIngredient) {
@@ -1173,7 +1189,7 @@ export async function generateForRestaurant(
 
     const urgentIngredients = (menuItem.expiringIngredients || [])
       .filter(ingredient =>
-        ingredient.daysLeft > 0 &&
+        hasUsableWasteDate(ingredient) &&
         ingredient.daysLeft <= 3
       );
 
@@ -1223,7 +1239,7 @@ export async function generateForRestaurant(
 
             return (existingItem?.expiringIngredients || [])
               .filter(ingredient =>
-                ingredient.daysLeft > 0 &&
+                hasUsableWasteDate(ingredient) &&
                 ingredient.daysLeft <= 5 &&
                 ingredient.ingredientId != null
               )
@@ -1233,7 +1249,7 @@ export async function generateForRestaurant(
 
       const candidateIngredientIds = (menuItem.expiringIngredients || [])
         .filter(ingredient =>
-          ingredient.daysLeft > 0 &&
+          hasUsableWasteDate(ingredient) &&
           ingredient.daysLeft <= 5 &&
           ingredient.ingredientId != null
         )
@@ -1272,7 +1288,7 @@ export async function generateForRestaurant(
 
           return (existingItem?.expiringIngredients || [])
             .filter(ingredient =>
-              ingredient.daysLeft > 0 &&
+              hasUsableWasteDate(ingredient) &&
               ingredient.daysLeft <= 5 &&
               ingredient.ingredientId != null
             )
@@ -1283,7 +1299,7 @@ export async function generateForRestaurant(
       const distinctUrgentOpportunity =
         rec.type === 'inventory' &&
         (menuItem.expiringIngredients || []).some(ingredient =>
-          ingredient.daysLeft > 0 &&
+          hasUsableWasteDate(ingredient) &&
           ingredient.daysLeft <= 3 &&
           ingredient.ingredientId != null &&
           !selectedIngredientIds.has(String(ingredient.ingredientId))
@@ -1315,7 +1331,7 @@ export async function generateForRestaurant(
 
       const hasDistinctUrgentIngredient =
         (menuItem.expiringIngredients || []).some(ingredient =>
-          ingredient.daysLeft > 0 &&
+          hasUsableWasteDate(ingredient) &&
           ingredient.daysLeft <= 3 &&
           !existingIngredients.has(ingredient.name.toLowerCase().trim())
         );
@@ -1418,7 +1434,7 @@ export async function generateForRestaurant(
 
         const urgentInventory = (item.expiringIngredients || [])
           .some(ingredient =>
-            ingredient.daysLeft > 0 &&
+            hasUsableWasteDate(ingredient) &&
             ingredient.daysLeft <= 3
           );
 
@@ -1479,7 +1495,7 @@ export async function generateForRestaurant(
           selectedItems.flatMap(existing =>
             (existing.expiringIngredients || [])
               .filter(ingredient =>
-                ingredient.daysLeft > 0 &&
+                hasUsableWasteDate(ingredient) &&
                 ingredient.daysLeft <= 5 &&
                 ingredient.ingredientId != null
               )
@@ -1489,7 +1505,7 @@ export async function generateForRestaurant(
 
         const distinctUrgent = (item.expiringIngredients || [])
           .some(ingredient =>
-            ingredient.daysLeft > 0 &&
+            hasUsableWasteDate(ingredient) &&
             ingredient.daysLeft <= 3 &&
             ingredient.ingredientId != null &&
             !coveredIds.has(String(ingredient.ingredientId))
@@ -1516,7 +1532,7 @@ export async function generateForRestaurant(
 
             return (existing?.expiringIngredients || [])
               .filter(ingredient =>
-                ingredient.daysLeft > 0 &&
+                hasUsableWasteDate(ingredient) &&
                 ingredient.daysLeft <= 5 &&
                 ingredient.ingredientId != null
               )
@@ -1526,7 +1542,7 @@ export async function generateForRestaurant(
 
       const distinctInventoryIds = (item.expiringIngredients || [])
         .filter(ingredient =>
-          ingredient.daysLeft > 0 &&
+          hasUsableWasteDate(ingredient) &&
           ingredient.daysLeft <= 5 &&
           ingredient.ingredientId != null &&
           !coveredInventoryIds.has(String(ingredient.ingredientId))
@@ -1881,6 +1897,8 @@ Return ONLY valid JSON in this format:
     );
   }
 
+  const recommendationsWithWasteInput = validRecommendations.map(rec => ({ ...rec, waste_input: wasteInput }));
+
   // Save only during normal generation, never during a dry run.
   // Once an NFC tag has been tapped, today's recommendations are locked.
   if (!dryRun) {
@@ -1889,7 +1907,7 @@ Return ONLY valid JSON in this format:
       {
         p_restaurant_id: restaurantId,
         p_generated_date: currentDate,
-        p_recommendations: validRecommendations,
+        p_recommendations: recommendationsWithWasteInput,
       }
     );
 
@@ -1942,6 +1960,7 @@ Return ONLY valid JSON in this format:
     inputTokens: totalInputTokens,
     outputTokens: totalOutputTokens,
     recommendationCount: validRecommendations.length,
+    wasteInput,
   };
 
   if (diagnostics) {
@@ -2005,7 +2024,7 @@ Return ONLY valid JSON in this format:
     }
   }
 
-  return validRecommendations;
+  return recommendationsWithWasteInput;
 
 }
 

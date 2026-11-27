@@ -8,6 +8,7 @@ import { loadCurrentInventory } from "../../lib/currentInventory";
 import { computeWasteResolution } from "../../lib/computeWasteResolution";
 import { saveWasteConfirmationResponse } from "../../lib/saveWasteConfirmationResponse";
 import { addPendingWasteDisposal, buildWasteAssessmentCard, selectWasteCardConfirmations } from "../../lib/wasteAssessmentCard";
+import { projectedWasteForSavedTicket } from "../../lib/ai/recommendationWaste";
 import { useWeekInReview } from "../../lib/useWeekInReview";
 import PassDashboard from "../../components/dashboard/PassDashboard";
 import WasteConfirmationModal from "../../components/dashboard/WasteConfirmationModal";
@@ -52,9 +53,7 @@ const money = (n) => "$" + Math.round(n || 0).toLocaleString();
    no recipe/ingredient data. Ported from dashboard3.js's PassTicket: match
    each rec's title against the real menu item (exact, then substring
    fallback) to build the recipe view and cover-margin figure. */
-function toTickets(recs, wasteRisk, menuItems, trust = false) {
-  // Waste-risk rows by ingredient name, so each ticket can say which of its
-  // ingredients is at risk, how many days it has left and what's on hand.
+function toTickets(recs, wasteRisk, menuItems, trust = false, wasteAssessment) {
   const riskRows = (wasteRisk || [])
     .filter(
       (w) =>
@@ -64,14 +63,22 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
     )
     .sort((a, b) => b.daysLeft - a.daysLeft);
 
-  // When several deliveries share an ingredient, keep the most urgent.
   const riskByName = new Map(
     riskRows.map((w) => [
       String(w.name || "").toLowerCase().trim(),
       w,
     ])
   );
+
   return (recs || []).slice(0, 3).map((r, i) => {
+    const projectedBatches = projectedWasteForSavedTicket(wasteAssessment, r.wasteInput);
+    const projectedByIngredient = new Map();
+    for (const batch of projectedBatches || []) {
+      if (!projectedByIngredient.has(batch.ingredientId)) {
+        projectedByIngredient.set(batch.ingredientId, batch);
+      }
+    }
+
     // Ignore anything the AI appended in parentheses, e.g. "(South of the Border)".
     const key = (r.title || "").replace(/\s*\([^)]*\)\s*$/, "").toLowerCase().trim();
     const item = key
@@ -84,34 +91,46 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
       ings: (c.component_ingredients || [])
         .map((ci) => {
           const name = (ci.ingredients?.name || "").trim();
+          const w = projectedBatches === null
+            ? riskByName.get(name.toLowerCase())
+            : projectedByIngredient.get(ci.ingredients?.id);
           return {
             name,
             qty: [ci.quantity, ci.unit].filter(Boolean).join(" "),
-            risk: riskByName.has(name.toLowerCase()),
+            risk: !!w,
+            w,
           };
         })
         .filter((g) => g.name),
     }));
 
-    const riskCount = recipe.reduce((n, c) => n + c.ings.filter((g) => g.risk).length, 0);
-
-    // "Why tonight": the most urgent at-risk ingredient on this plate, with
-    // its days left, what's on hand and how much one plate uses. Falls back
-    // to the AI's own reason when nothing on the plate is at risk.
     const risky = recipe
       .flatMap((c) => c.ings)
       .filter((g) => g.risk)
-      .map((g) => ({ ...g, w: riskByName.get(g.name.toLowerCase()) }))
       .sort((a, b) => (a.w?.daysLeft ?? 7) - (b.w?.daysLeft ?? 7));
+    const riskCount = projectedBatches === null
+      ? risky.length
+      : new Set(risky.map(g => g.w.ingredientId)).size;
     let why = r.description || "";
+    let riskNote = "";
     if (risky.length) {
       const top = risky[0];
-      const dl = top.w?.daysLeft;
-      const left = dl == null ? "is at risk" : dl <= 0 ? "has to be used today" : dl === 1 ? "has 1 day left" : `has ${dl} days left`;
-      const onHand = top.w ? qtyLabelOf(top.w) : "";
-      why = `${top.name} ${left}` + (onHand ? `, with ${onHand} on hand` : "") + "." + (top.qty ? ` This dish uses ${top.qty}.` : "");
-      const others = [...new Set(risky.slice(1).map((g) => g.name))].filter((n) => n !== top.name);
-      if (others.length) why += ` Also clears ${others.join(" and ")}.`;
+      const dl = top.w.daysLeft;
+      const ingredientCount = riskCount + (riskCount === 1 ? " ingredient" : " ingredients");
+      if (projectedBatches === null) {
+        const left = dl <= 0 ? "has to be used today" : dl === 1 ? "has 1 day left" : `has ${dl} days left`;
+        const onHand = qtyLabelOf(top.w);
+        why = `${top.name} ${left}` + (onHand ? `, with ${onHand} on hand` : "") + "." + (top.qty ? ` This dish uses ${top.qty}.` : "");
+        const others = [...new Set(risky.slice(1).map((g) => g.name))].filter((n) => n !== top.name);
+        if (others.length) why += ` Also clears ${others.join(" and ")}.`;
+        riskNote = "▲ " + ingredientCount + " at risk tonight — selling this clears " + (riskCount === 1 ? "it" : "them");
+      } else {
+        const left = dl === 0 ? "use by today" : dl === 1 ? "1 day left" : `${dl} days left`;
+        const excess = qtyLabelOf({ remainingQty: top.w.quantity, unit: top.w.unit });
+        why = `${top.name} has ${excess} of estimated excess (${left}).` + (top.qty ? ` This dish uses ${top.qty}.` : "");
+        riskNote = "▲ " + ingredientCount + " with estimated excess" +
+          (wasteAssessment.stale ? " · Previous business date" : "");
+      }
     }
 
     const financials = item ? dashboardDishFinancials(item, { sample: trust }) : null;
@@ -130,10 +149,7 @@ function toTickets(recs, wasteRisk, menuItems, trust = false) {
       margin: marginVal != null ? (estimated ? "EST. MARGIN " : "MARGIN ") + Math.round(marginVal) + "%" : "",
       cover: coverMargin != null ? (estimated ? "EST. " : "") + "$" + coverMargin.toFixed(2) + "/COVER" : "",
       recipe,
-      riskNote: riskCount
-        ? "▲ " + riskCount + (riskCount === 1 ? " ingredient" : " ingredients") +
-          " at risk tonight — selling this clears " + (riskCount === 1 ? "it" : "them")
-        : "",
+      riskNote,
     };
   });
 }
@@ -480,6 +496,7 @@ export default function DashboardPage() {
     margin: r.margin || null,
     confidence: r.confidence || null,
     urgency: r.urgency || null,
+    wasteInput: r.waste_input || null,
   });
   const { data: recData, error: recError, mutate: reloadRecs } = useSWR(
     restaurantId ? ["recs", restaurantId, tourActive] : null,
@@ -853,7 +870,7 @@ export default function DashboardPage() {
         greeting={clock?.greeting || "Welcome"}
         optiScore={{ value: optiScoreDetail.value, max: 100, label: optiScoreDetail.label, buckets: optiScoreDetail.buckets || [] }}
         stats={stats}
-        tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive)}
+        tickets={toTickets(recommendations, data.wasteRisk, data.menuItems, tourActive, wasteAssessment)}
         ticketsStatus={recsStatus}
         onRetryTickets={() => reloadRecs()}
         waste={toWaste(data.wasteRisk)}
