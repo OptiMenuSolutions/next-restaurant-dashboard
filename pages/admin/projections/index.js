@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import AdminShell from '../../../components/admin/AdminShell';
+import WasteAssessmentSwitch from '../../../components/admin/WasteAssessmentSwitch';
 import { Card, th, td } from '../../../components/admin/ui';
 import { useAdminFetch } from '../../../lib/admin/useAdminFetch';
 
@@ -100,9 +101,13 @@ export default function ProjectionMonitor() {
       {error && <p role="alert">{error} <button className="om-btn" onClick={() => setRefresh(x => x + 1)}>Try again</button></p>}
       {!data && !error && <p role="status">Loading projection records…</p>}
       {data?.restaurant && <p>{data.restaurant.name} · {zone || 'Timezone not configured'} · Stored business dates</p>}
-      {data?.restaurants && <Table headings={['Restaurant', 'Status', 'Latest job date / stage', 'Forecast / source through', 'Last complete', 'Backfill', 'Repairs']} rows={data.restaurants.map(r => [
+      {router.isReady && typeof restaurant === 'string' && restaurant && (
+        <WasteAssessmentSwitch key={restaurant} restaurantId={restaurant} adminFetch={adminFetch} refresh={refresh} />
+      )}
+      {data?.restaurants && <Table headings={['Restaurant', 'Status', 'Waste card', 'Latest job date / stage', 'Forecast / source through', 'Last complete', 'Backfill', 'Repairs']} rows={data.restaurants.map(r => [
         <Link href={href({ restaurant: r.id, view: 'service', date: r.last_complete_date || r.latest_run?.run_date || r.job?.business_date || '' })}>{r.name} · {r.timezone || 'Timezone not configured'}</Link>,
         `${r.state.label}${r.state.stale ? '; previous forecast stale' : ''}`,
+        r.waste_card_enabled == null ? 'Unavailable' : r.waste_card_enabled ? 'On' : 'Off',
         `${cell(r.job?.business_date)} · ${cell(r.job?.stage)}`,
         `${cell(r.latest_run?.run_date)} / ${cell(r.latest_run?.source_through)}`,
         cell(r.last_complete_date), r.backfill?.backfill_complete ? 'Complete' : `${cell(r.backfill?.cursor_date)} · ${cell(r.backfill?.phase)}`,

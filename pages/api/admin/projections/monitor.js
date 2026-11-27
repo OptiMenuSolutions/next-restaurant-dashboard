@@ -20,7 +20,17 @@ export default async function handler(req, res) {
     if (!['overview', 'service', 'accuracy', 'run'].includes(view)) throw Error('Invalid view');
     let result;
     if (view === 'overview') {
-      result = prepareMonitor(await projectionRPC(adminDb, 'projection_monitor_overview'), view);
+      const [overview, switches] = await Promise.all([
+        projectionRPC(adminDb, 'projection_monitor_overview'),
+        projectionRPC(adminDb, 'waste_projection_admin_surface_status', { actor: admin.user.id }).catch(error => {
+          console.error('[projection-monitor] Waste card states unavailable', error.code || 'READ_FAILED');
+          return null;
+        }),
+      ]);
+      result = prepareMonitor(overview, view);
+      result.restaurants = result.restaurants.map(row => ({
+        ...row, waste_card_enabled: switches === null ? null : switches[row.id] === true,
+      }));
     } else {
       const rid = req.query.restaurant;
       if (typeof rid !== 'string' || !PROJECTION_UUID.test(rid)) throw Error('Invalid restaurant');

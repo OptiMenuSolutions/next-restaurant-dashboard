@@ -124,7 +124,7 @@ before(async () => {
       deactivated_at timestamptz,onboarding_completed_at timestamptz,
       name text,shipping_state text
     );
-    create table public.profiles(id uuid primary key,role text);
+    create table public.profiles(id uuid primary key,role text,email text);
     create table public.waste_confirmations(
       id uuid primary key, restaurant_id uuid not null, status text not null,
       invoice_item_id uuid, confirmed_by uuid, confirmed_at timestamptz, ingredient_name text
@@ -172,7 +172,7 @@ before(async () => {
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
     'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
-    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources', 'waste_assessment_reader',
+    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources', 'waste_assessment_reader', 'waste_assessment_admin',
   ]) {
     if (suffix === 'timezone_cache') {
       q(`do $copy$ declare d text; begin
@@ -202,7 +202,7 @@ before(async () => {
   }
 
   q(`
-    insert into public.profiles values('${id(99)}','admin');
+    insert into public.profiles(id,role) values('${id(99)}','admin');
     insert into public.restaurants(
       id,name,shipping_state,operational_timezone,onboarding_completed_at
     )
