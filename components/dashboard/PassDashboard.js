@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { MobileHeader, MobileNav, LoadingState, ErrorState, useTheme } from "../client/ClientChrome";
 import NotificationBell from "../client/NotificationBell";
-import ProjectedWasteCard from "./ProjectedWasteCard";
+import ProjectedWasteCard from "./ProjectedWasteCard.js";
 
 /**
  * PassDashboard — OptiMenu "Tonight's Pass" client dashboard (v5, cream shell).

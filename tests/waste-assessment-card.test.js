@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { runInNewContext } from 'node:vm';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import ProjectedWasteCard from '../components/dashboard/ProjectedWasteCard.jsx';
+import ts from 'typescript';
 import {
   addPendingWasteDisposal,
   buildWasteAssessmentCard,
@@ -100,16 +103,33 @@ test('a saved disposal appears immediately, stays handled on a later read, and c
   assert.equal(next.overdue.some(row => row.id === 'seven'), false);
 });
 
-test('the card action reuses an existing confirmation and avoids a duplicate automatic prompt', () => {
+test('the card action reuses a confirmation and preserves the automatic prompt list', () => {
   const card = buildWasteAssessmentCard(fixture(), inventory, confirmations);
-  assert.deepEqual(selectWasteCardConfirmations(card, confirmations, confirmations, null).shown, [confirmations[2]]);
+  assert.equal(selectWasteCardConfirmations(card, confirmations, confirmations, null).shown, confirmations);
   const opened = selectWasteCardConfirmations(card, confirmations, [], 'confirm-7');
   assert.equal(opened.selected, confirmations[0]);
   assert.deepEqual(opened.shown, [confirmations[0]]);
   assert.deepEqual(selectWasteCardConfirmations(card, confirmations, [], 'missing').shown, []);
+  const remaining = confirmations.slice(1);
+  const resolved = selectWasteCardConfirmations(card, remaining, remaining, 'confirm-7');
+  assert.deepEqual(resolved, { selected: undefined, shown: remaining });
 });
 
 test('the shared card renders the stale cutoff, unknowns, and handled subtotal note', () => {
+  // Next accepts JSX in .js; the offline tsx runner does not.
+  const file = new URL('../components/dashboard/ProjectedWasteCard.js', import.meta.url);
+  const { outputText } = ts.transpileModule(readFileSync(file, 'utf8'), {
+    fileName: 'ProjectedWasteCard.jsx',
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.React,
+      module: ts.ModuleKind.CommonJS,
+      esModuleInterop: true,
+    },
+  });
+  const exports = {};
+  runInNewContext(outputText, { exports, require: createRequire(file) });
+  const ProjectedWasteCard = exports.default;
   const model = buildWasteAssessmentCard(fixture(), inventory, confirmations);
   const html = renderToStaticMarkup(React.createElement(ProjectedWasteCard, { model, refreshingFailed: true }));
   for (const text of ['Stale assessment', 'Inventory through Nov 26, 2026', 'Could not refresh the assessment',

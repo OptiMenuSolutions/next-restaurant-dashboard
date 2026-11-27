@@ -557,7 +557,7 @@ export default function DashboardPage() {
       }
       return view;
     },
-    { refreshInterval: view => view?.mode === "assessment" ? 30_000 : 0 }
+    { refreshInterval: view => view?.mode === "assessment" ? 15 * 60_000 : 0, revalidateOnFocus: true }
   );
   const projectedWaste = useMemo(() => tourActive ? null
     : buildWasteAssessmentCard(wasteAssessment, data.wasteRisk, confirmationRows || []),
