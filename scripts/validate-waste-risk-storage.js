@@ -374,6 +374,8 @@ test('daily jobs fence expired leases, persist one envelope, and commit once', a
   const prepared = await prepareWasteRiskAssessment(
     client, { ...input, assessedAt: new Date().toISOString() }, id(81)
   );
+  assert.equal(prepared.correction, null);
+  assert.equal(Object.hasOwn(prepared.snapshot, 'correctionSources'), false);
   prepared.outcome = { ...prepared.outcome, forecast_fallback: false };
 
   const save = `public.waste_projection_daily_save('${job.id}','${job.lease_token}'`;
@@ -404,6 +406,133 @@ test('daily jobs fence expired leases, persist one envelope, and commit once', a
     assert.equal(rejected.status, attempt < 3 ? 'ready' : 'failed');
   }
   assert.equal(claim().status, 'failed');
+});
+
+test('correction sources recover once and multi-source daily commits retain forecast provenance', async () => {
+  const tenant = id(8101), run = id(8102), dish = id(8103), extraIngredient = id(8104), admin = id(8105);
+  const disposal = id(8110), atBoundary = id(8111), afterBoundary = id(8112), unauthorized = id(8113);
+  const day = input.assessmentDate, boundary = `${day}T00:00:00Z`;
+  const firstNight = shift(day, 1), secondNight = shift(day, 2), revisedNight = shift(day, 3);
+  const service = sql => q(`set role service_role; select ${sql};`);
+  q(`insert into public.restaurants(id,user_id,name,operational_timezone)
+      values('${tenant}','${OWNER}','Correction fixture','UTC');
+    insert into public.profiles(id,role) values('${admin}','admin');
+    insert into public.projection_restaurant_config(restaurant_id,enabled) values('${tenant}',true);
+    insert into public.projection_setting_versions(restaurant_id,model_major,effective_at,settings)
+      values('${tenant}',4,clock_timestamp(),'{"business_day_cutoff_minutes":0}');
+    insert into public.projection_dishes(id,restaurant_id,style_category,forecastable)
+      values('${dish}','${tenant}','Neutral',true);
+    alter table public.projection_forecast_runs disable trigger user;
+    alter table public.projection_forecast_nights disable trigger user;
+    insert into public.projection_forecast_runs(id,restaurant_id,run_date,model_major,global_version_id,
+      settings_snapshot,settings_digest,calibration_key,source_through,issued_at,trace)
+    select '${run}','${tenant}',run_date,model_major,global_version_id,settings_snapshot,settings_digest,
+      calibration_key,source_through,issued_at,trace from public.projection_forecast_runs where id='${RUN}';
+    insert into public.projection_forecast_nights(restaurant_id,run_id,target_date,days_ahead,availability,expected,low,high,confidence,trace)
+    select '${tenant}','${run}',target_date,days_ahead,availability,expected,low,high,confidence,trace
+      from public.projection_forecast_nights where run_id='${RUN}';
+    insert into public.projection_forecast_dishes(restaurant_id,run_id,target_date,dish_id,share,expected,low,high,confidence,trace)
+    select '${tenant}','${run}',target_date,'${dish}',share,expected,low,high,confidence,trace
+      from public.projection_forecast_dishes where run_id='${RUN}' and dish_id='${DISH}';
+    alter table public.projection_forecast_runs enable trigger user;
+    alter table public.projection_forecast_nights enable trigger user;
+    insert into public.waste_confirmations(id,restaurant_id,status,invoice_item_id,confirmed_by,confirmed_at) values
+      ('${disposal}','${tenant}','confirmed_wasted','${id(8114)}','${OWNER}','${boundary}'::timestamptz-interval '1 second'),
+      ('${atBoundary}','${tenant}','confirmed_wasted','${BATCH}','${admin}','${boundary}'),
+      ('${afterBoundary}','${tenant}','confirmed_wasted','${BATCH}','${OWNER}','${boundary}'::timestamptz+interval '1 second'),
+      ('${unauthorized}','${tenant}','confirmed_wasted','${BATCH}','${id(8115)}','${boundary}'::timestamptz-interval '1 second');
+    insert into public.projection_holiday_answer_versions(restaurant_id,business_date,revision,answer,actor_id) values
+      ('${tenant}','${firstNight}',1,'closed','${OWNER}'),
+      ('${tenant}','${secondNight}',1,'closed','${admin}'),
+      ('${tenant}','${revisedNight}',1,'closed','${OWNER}'),
+      ('${tenant}','${shift(day,-1)}',1,'closed','${OWNER}');`);
+
+  const recover = `public.waste_projection_sweep_correction_sources('${tenant}')`;
+  const record = `public.waste_projection_record_correction_source('${tenant}','${disposal}')`;
+  const { localBin, localPsql, localDir, container } = projectionTestConnection();
+  const args = localBin
+    ? ['-h', localDir, '-p', '55462', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1']
+    : ['exec', container, 'psql', '-XqAt', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'];
+  await Promise.all([recover, record].map(sql => promisify(execFile)(
+    localBin ? localPsql : 'docker', [...args,'-c',`set role service_role; select ${sql};`],
+    { timeout: 10000 }
+  )));
+  service(recover);
+  const sources = () => JSON.parse(q(`select jsonb_object_agg(source_key,disposition)
+    from projection_private.waste_correction_sources where restaurant_id='${tenant}';`));
+  assert.equal(Object.keys(sources()).length, 8);
+  assert.equal(sources()[`disposal:${unauthorized}`], 'unauthorized');
+  assert.equal(sources()[`closure:${shift(day,-1)}:1`], 'elapsed');
+
+  const base = {
+    ...input, restaurantId: tenant, assessedAt: new Date().toISOString(),
+    ingredients: input.ingredients.map(row => ({ ...row, restaurant_id: tenant })),
+    batches: input.batches.map(row => ({ ...row, restaurant_id: tenant })),
+    forecast: {
+      ...input.forecast, id: run, restaurant_id: tenant,
+      nights: input.forecast.nights.map(row => ({
+        ...row, dishes: row.dishes.map(entry => ({ ...entry, dish_id: dish })),
+      })),
+    },
+    recipes: input.recipes.map(row => ({ ...row, restaurant_id: tenant, dish_id: dish })),
+    forecastFallback: false,
+  };
+  await commitWasteRiskAssessment(client, await prepareWasteRiskAssessment(client, base, id(8120)));
+  const incoming = {
+    ...base,
+    ingredients: [...base.ingredients, { ...base.ingredients[0], id: extraIngredient }],
+    batches: [...base.batches, { ...base.batches[0], id: id(8121), ingredient_id: extraIngredient }],
+  };
+  const token = service(`public.pos_sync_acquire('${tenant}')`);
+  service(`public.pos_sync_release('${tenant}','${token}')`);
+  const evidence = { syncRevision: token, rawTicketsSaved: true, rows: [], usageJob: null };
+  q(`insert into projection_private.waste_daily_jobs(restaurant_id,assessment_date,timing,status,receipt,forecast_pinned,forecast_run_id)
+    values ('${tenant}','${day}',jsonb_build_object('starts_at','${boundary}'),'ready',${lit(evidence)},true,'${run}');`);
+  const build = async requestId => {
+    const job = JSON.parse(service(`public.waste_projection_daily_claim('${tenant}',null)`));
+    const key = `'${job.id}','${job.lease_token}'`;
+    const correctionSources = JSON.parse(service(`public.waste_projection_daily_correction_sources(${key})`));
+    const envelope = await prepareWasteRiskAssessment(client, {
+      ...incoming, assessedAt: new Date().toISOString(), correctionSources,
+    }, requestId);
+    service(`public.waste_projection_daily_save(${key},${lit(envelope)})`);
+    return { key, envelope };
+  };
+  const stale = await build(id(8122));
+  q(`insert into public.projection_holiday_answer_versions(restaurant_id,business_date,revision,answer,actor_id)
+    values('${tenant}','${revisedNight}',2,'open','${OWNER}');`);
+  assert.equal(JSON.parse(service(`public.waste_projection_daily_commit(${stale.key})`)).error, 'PT409');
+  assert.equal(q(`select count(*) from public.waste_projection_corrections where restaurant_id='${tenant}';`), '0');
+
+  const { key, envelope } = await build(id(8123));
+  const done = JSON.parse(service(`public.waste_projection_daily_commit(${key})`));
+  assert.equal(done.status, 'completed');
+  assert.equal(envelope.correction.length, 3);
+  assert.deepEqual(envelope.outcome.closed_nights.map(row => [row.business_date,row.label]), [
+    [firstNight,'closed_night'], [secondNight,'closed_night'],
+  ]);
+  const frozen = envelope.outcome.frozen.demands.filter(row => row.business_date === firstNight);
+  assert.equal(frozen.length, 2);
+  for (const row of frozen) {
+    assert.equal(row.quantity, 0);
+    assert.equal(row.basis.archived_night_low, input.forecast.nights[1].low);
+    assert.equal(row.basis.run_id, run);
+  }
+  assert.equal((await commitWasteRiskAssessment(client,envelope)).duplicate, true);
+  assert.equal(q(`select count(*) from public.waste_projection_corrections where restaurant_id='${tenant}';`), '3');
+  assert.equal(sources()[`disposal:${disposal}`], 'applied');
+  assert.equal(sources()[`disposal:${atBoundary}`], 'pending');
+  assert.equal(sources()[`disposal:${afterBoundary}`], 'pending');
+  assert.equal(sources()[`closure:${revisedNight}:1`], 'superseded');
+
+  q(`insert into public.projection_holiday_answer_versions(restaurant_id,business_date,revision,answer,actor_id)
+    values('${tenant}','${firstNight}',2,'open','${OWNER}');`);
+  service(recover);
+  assert.equal(sources()[`closure:${firstNight}:1`], 'superseded');
+  assert.equal(q(`select assessment_id from projection_private.waste_correction_sources
+    where restaurant_id='${tenant}' and source_key='closure:${firstNight}:1';`), done.assessment_id);
+  q(`select public.purge_restaurant('${tenant}');`);
+  assert.equal(q(`select count(*) from projection_private.waste_correction_sources where restaurant_id='${tenant}';`), '0');
 });
 
 test('a job without timely inventory is skipped and stays skipped', () => {

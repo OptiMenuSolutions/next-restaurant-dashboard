@@ -33,6 +33,8 @@ function harness(replies, targets = ['a']) {
     prepareInventory: async () => ({ rows: [] }),
     readInput: async () => ({ inventoryCutoff: '2026-11-25' }),
     prepareAssessment: async (_db, _input, request_id) => ({ request_id }),
+    sweepCorrections: async () => {},
+    readCorrections: async () => [],
     alert: async (...args) => { trace.push(['email', args]); },
   };
   return { db, trace, options };
@@ -70,6 +72,16 @@ test('a saved envelope retries without rebuilding and a transient failure sends 
   assert.deepEqual(result.rpc_ms, { claim: [5], checkpoint: [6], save: [], commit: [8000] });
   assert.deepEqual(h.trace.map(([name]) => name), ['claim','commit','checkpoint','take_alert']);
   assert.match(h.trace[2][1].failure, /^commit \| 57014/);
+});
+
+test('a finalized daily job still sweeps saved correction sources', async () => {
+  const h = harness({ claim: [{ status: 'completed', assessment_id: 'already-saved' }], take_alert: [null] });
+  const swept = [];
+  const result = await dispatchWasteDailyAssessments(h.db, {
+    ...h.options, sweepCorrections: async (_, target) => swept.push(target),
+  });
+  assert.deepEqual(swept, ['a']);
+  assert.equal(result.done_earlier, 1);
 });
 
 test('the next dispatcher run reports an existing skip as done earlier', async () => {

@@ -1,8 +1,10 @@
 import { projectionCalendarResponse } from '../../../lib/projections/calendarStore.js';
 import { PROJECTION_OWNER_HOLIDAYS } from '../../../lib/projections/calendar.js';
 import { shiftProjectionDate } from '../../../lib/projections/businessTime.js';
+import { waitUntil } from '@vercel/functions';
+import { scheduleWasteCorrectionSources } from '../../../lib/wasteCorrectionSources.js';
 
-export function createProjectionHolidayHandler({ db, verifyOwner } = {}) {
+export function createProjectionHolidayHandler({ db, verifyOwner, scheduleWork = waitUntil } = {}) {
   return async function handler(req, res) {
     res.setHeader('Cache-Control', 'private, no-store');
     if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Method not allowed.' }); }
@@ -29,7 +31,8 @@ export function createProjectionHolidayHandler({ db, verifyOwner } = {}) {
           }
         }
       } catch { return res.status(422).json({ error: 'Invalid optional holiday response.' }); }
-      const result = projectionCalendarResponse(await (db || services.admin).rpc('projection_holiday_prompt', {
+      const database = db || services.admin;
+      const result = projectionCalendarResponse(await database.rpc('projection_holiday_prompt', {
         p_restaurant_id: auth.restaurant.id, p_actor_id: auth.user.id, p_action: body.action,
         p_responses: body.responses || [],
       }));
@@ -48,6 +51,14 @@ export function createProjectionHolidayHandler({ db, verifyOwner } = {}) {
         result.responses.length !== body.responses.length || new Set(result.responses.map(row => row?.business_date)).size !== result.responses.length ||
         result.responses.some(row => !body.responses.some(sent => sent.business_date === row?.business_date) ||
           !Number.isSafeInteger(row.revision) || row.revision < 1))) throw new Error('Invalid answer receipt.');
+      if (body.action === 'answer') {
+        const closed = new Set(body.responses.filter(row => row.answer === 'closed').map(row => row.business_date));
+        scheduleWasteCorrectionSources(database, result.responses
+          .filter(row => closed.has(row.business_date))
+          .map(row => ({
+            target: auth.restaurant.id, holiday_day: row.business_date, holiday_revision: row.revision,
+          })), scheduleWork);
+      }
       return res.status(200).json(result);
     } catch (error) {
       return res.status(error.code === 'PT409' ? 409 : error.code === '42501' ? 403 : error.code === '22023' ? 422 : 503)

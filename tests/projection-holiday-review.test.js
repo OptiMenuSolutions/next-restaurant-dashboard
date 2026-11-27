@@ -113,6 +113,33 @@ test('the holiday API passes one owned batch and returns all claimed dates', asy
   assert.equal(saved.res.headers['Cache-Control'], 'private, no-store');
 });
 
+test('a failed closure hook preserves the saved holiday answer response', async () => {
+  const closed = { ...answer(), answer: 'closed' };
+  const receipt = { restaurant_id: REST, request_id: null, changed: true,
+    responses: [{ business_date: closed.business_date, revision: 1 }] };
+  const calls = [];
+  let finish;
+  let scheduled;
+  const handler = createProjectionHolidayHandler({
+    verifyOwner: async () => ({ user: { id: OWNER }, restaurant: { id: REST } }),
+    scheduleWork: work => { scheduled = work; },
+    db: { rpc(name, args) {
+      calls.push([name, args]);
+      if (name === 'projection_holiday_prompt') return { data: receipt };
+      return new Promise(resolve => { finish = resolve; });
+    } },
+  });
+  const res = { setHeader() {}, status(n) { this.code = n; return this; }, json(body) { this.body = body; } };
+  await handler({ method: 'POST', body: { action: 'answer', responses: [closed] } }, res);
+  assert.equal(res.code, 200);
+  assert.deepEqual(res.body, receipt);
+  assert.deepEqual(calls[1], ['waste_projection_record_correction_source', {
+    target: REST, holiday_day: closed.business_date, holiday_revision: 1,
+  }]);
+  finish({ error: { message: 'Temporary recorder failure' } });
+  await scheduled;
+});
+
 test('invalid batches and spoofed identities never reach the database', async () => {
   for (const body of [{ action: 'answer', responses: [] }, { action: 'answer', responses: [answer(), answer()] },
     { action: 'answer', responses: [null] }, { action: 'answer', responses: [answer('2026-02-30')] },

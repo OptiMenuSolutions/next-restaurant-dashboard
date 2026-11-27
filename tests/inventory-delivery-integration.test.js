@@ -25,6 +25,7 @@ function inventoryDatabase({
   posSales = null,
   posTickets = [],
   posUsageJobs = [],
+  confirmations = [],
   onQuery = () => {},
 } = {}) {
   const invoice = {
@@ -117,7 +118,7 @@ function inventoryDatabase({
       }],
     }],
 
-    waste_confirmations: [],
+    waste_confirmations: confirmations,
     pos_usage_settings: [],
 
     current_inventory: [
@@ -255,10 +256,9 @@ function inventoryDatabase({
           return query;
         },
 
-        // Confirmation fixtures are empty here.
-        // Existing replay tests cover their statuses.
         or() {
           assert.equal(table, 'waste_confirmations');
+          filters.push(row => row.status === 'kept' || (row.status === 'pending' && row.kept_days > 0));
           return query;
         },
 
@@ -540,6 +540,19 @@ test('as-of inventory includes only tickets closed strictly before the boundary'
   assert.equal(rows.length, 1);
   assert.equal(rows[0].invoice_item_id, 'line-owned');
   assert.equal(rows[0].remaining_qty, 92);
+});
+
+test('as-of inventory applies only disposal confirmations recorded before the boundary', async () => {
+  const db = inventoryDatabase({
+    posSales: [],
+    confirmations: ['08:59:59', '09:00:00', '09:00:01'].map((time, index) => ({
+      id: `disposal-${index}`, restaurant_id: RID, invoice_item_id: 'line-owned',
+      status: 'confirmed_wasted', confirmed_at: `2026-11-05T${time}.000Z`,
+      presumed_qty: 10, adjustment_qty: 10,
+    })),
+  });
+  const asOf = await calculateInventoryAsOf(db, RID, BOUNDARY, EASTERN);
+  assert.equal(asOf.rows[0].remaining_qty, 90);
 });
 
 test('as-of and regular inventory produce the same batches when all tickets precede the boundary', async () => {

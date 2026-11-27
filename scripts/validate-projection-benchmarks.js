@@ -125,6 +125,10 @@ before(async () => {
       name text,shipping_state text
     );
     create table public.profiles(id uuid primary key,role text);
+    create table public.waste_confirmations(
+      id uuid primary key, restaurant_id uuid not null, status text not null,
+      invoice_item_id uuid, confirmed_by uuid, confirmed_at timestamptz
+    );
     create table public.menu_items(
       id uuid primary key,
       restaurant_id uuid references public.restaurants on delete cascade,
@@ -168,7 +172,7 @@ before(async () => {
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
     'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
-    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result',
+    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources',
   ]) {
     if (suffix === 'timezone_cache') {
       q(`do $copy$ declare d text; begin

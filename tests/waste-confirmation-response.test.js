@@ -33,6 +33,7 @@ async function invoke(options = {}, body = { confirmation_id: id }, method = 'PO
   const handler = createRebuildAfterConfirmationHandler({
     db: database(response(row('confirmed_wasted'))),
     verifyOwner: async () => ({ restaurant: { id: rid } }),
+    scheduleWork: () => {},
     rebuild: async (_, restaurantId) => {
       assert.equal(restaurantId, rid);
       rebuilds++;
@@ -70,6 +71,25 @@ for (const status of ['confirmed_wasted', 'confirmed_used', 'kept', 'not_sure'])
     assert.equal(result.headers['Cache-Control'], 'private, no-store');
   });
 }
+
+test('a failed correction hook preserves the saved disposal and rebuild response', async () => {
+  const db = database(response(row('confirmed_wasted')), response(row('confirmed_wasted')));
+  let finish;
+  let scheduled;
+  db.rpc = (name, args) => {
+    assert.equal(name, 'waste_projection_record_correction_source');
+    assert.deepEqual(args, { target: rid, confirmation: id });
+    return new Promise(resolve => { finish = resolve; });
+  };
+  await saveWasteConfirmationResponse(db, rid, id, 'confirmed_wasted');
+  const result = await invoke({ db, scheduleWork: work => { scheduled = work; } });
+  assert.deepEqual(result.body, { ok: true, rebuilt: true });
+  assert.equal(result.status, 200);
+  assert.equal(db.calls[0].update.status, 'confirmed_wasted');
+  assert.equal(db.calls[1].update, null);
+  finish({ error: { message: 'Temporary recorder failure' } });
+  await scheduled;
+});
 
 test('invalid IDs and nonfinal statuses never reach the database', async () => {
   for (const args of [[null, id, 'kept'], [rid, 'bad', 'kept'], [rid, id, 'pending'],

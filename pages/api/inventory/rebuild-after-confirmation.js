@@ -1,8 +1,11 @@
+import { waitUntil } from '@vercel/functions';
+import { scheduleWasteCorrectionSources } from '../../../lib/wasteCorrectionSources.js';
+
 export const config = { maxDuration: 300 };
 
 const UUID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
-export function createRebuildAfterConfirmationHandler({ db, verifyOwner,
+export function createRebuildAfterConfirmationHandler({ db, verifyOwner, scheduleWork = waitUntil,
   rebuild = async (database, restaurantId) => {
     const { rebuildCurrentInventory } = await import('../../../lib/currentInventory');
     return rebuildCurrentInventory(database, restaurantId);
@@ -34,6 +37,11 @@ export function createRebuildAfterConfirmationHandler({ db, verifyOwner,
       if (!confirmation) return res.status(404).json({ error: 'Confirmation not found.' });
       if (!['confirmed_wasted', 'confirmed_used', 'kept', 'not_sure'].includes(confirmation.status)) {
         return res.status(409).json({ error: 'The confirmation has not been answered yet.' });
+      }
+      if (confirmation.status === 'confirmed_wasted') {
+        scheduleWasteCorrectionSources(database, [{
+          target: auth.restaurant.id, confirmation: confirmation.id,
+        }], scheduleWork);
       }
       await rebuild(database, auth.restaurant.id);
       return res.status(200).json({ ok: true, rebuilt: true });

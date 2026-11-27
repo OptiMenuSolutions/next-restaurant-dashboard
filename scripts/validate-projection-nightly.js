@@ -174,6 +174,10 @@ before(async () => {
       deactivated_at timestamptz,onboarding_completed_at timestamptz,name text
     );
     create table public.profiles(id uuid primary key,role text);
+    create table public.waste_confirmations(
+      id uuid primary key, restaurant_id uuid not null, status text not null,
+      invoice_item_id uuid, confirmed_by uuid, confirmed_at timestamptz
+    );
     create table public.menu_items(
       id uuid primary key,restaurant_id uuid references public.restaurants on delete cascade,
       name text,created_at timestamptz not null default clock_timestamp(),archived_at timestamptz
@@ -209,7 +213,7 @@ before(async () => {
     'foundation', 'ingestion', 'calendar', 'dish_lifecycle',
     'holiday_learning', 'outlier_runs', 'nightly_runs', 'nightly_review',
     'benchmarks', 'benchmark_build_fixes', 'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
-    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result',
+    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources',
   ]) {
     const files = names.filter(n => n.endsWith(`_projection_${suffix}.sql`));
     assert.equal(files.length, 1);

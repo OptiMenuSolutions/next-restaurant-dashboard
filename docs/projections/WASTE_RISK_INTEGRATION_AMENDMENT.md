@@ -215,3 +215,20 @@ until a completed assessment incorporates it.
 
 Per-restaurant local scheduling for Tonight’s Dish is a follow-up because
 11:00 UTC can fall before the business cutoff west of Eastern time.
+
+For the Stage 4 card, apply the same seven-business-date cutoff to
+needs_review rows with a known past use-by date. Summarize older review
+rows by reason. The card shows only aggregate counts and known risk value
+for outside_risk_window batches.
+
+### Stage 3 correction sources
+
+The verified sources are confirmed disposal and dated holiday closure.
+The source save schedules a best-effort recording hook. The daily worker
+recovers missing records and consumes eligible corrections in its leased
+assessment. A restaurant owner or admin profile is required. Unauthorized
+events receive a terminal disposition. Disposal uses inventory replay
+with the strict confirmation timestamp cutoff. A verified closure records
+closed_night for its unelapsed business date and retains archived forecast
+provenance. If a later answer supersedes an applied closure, its original
+assessment link stays in the source audit for review.
