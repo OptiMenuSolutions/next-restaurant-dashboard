@@ -83,6 +83,7 @@ export default function ProjectionMonitor() {
         <button className="om-btn" onClick={() => setRefresh(x => x + 1)}>Refresh</button>
         {restaurant && <>
           <Link className="om-btn" href={href({ restaurant, date, view: 'service' })}>Service review</Link>
+          <Link className="om-btn" href={{ pathname: '/admin/projections/waste-rollout', query: { restaurant, date } }}>Waste rollout</Link>
           <Link className="om-btn" href={href({ restaurant, date, view: 'accuracy', weeks, regular })}>Accuracy</Link>
         </>}
       </div>

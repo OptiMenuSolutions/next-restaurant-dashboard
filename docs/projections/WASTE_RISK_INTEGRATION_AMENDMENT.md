@@ -249,3 +249,45 @@ with the strict confirmation timestamp cutoff. A verified closure records
 closed_night for its unelapsed business date and retains archived forecast
 provenance. If a later answer supersedes an applied closure, its original
 assessment link stays in the source audit for review.
+
+### Stage 5 controlled rollout
+
+Maple is the internal pilot. Review its Nov 28 compact, multi-correction
+assessment and the 11:00 UTC Tonight's Dish run before enabling it from
+Projections admin. Check desktop and mobile card dates, quantities and
+confirmations, and the source recorded by the next new recommendation
+generation. Watch the first three daily cycles, including a stale or
+fallback path when one occurs.
+
+Echo is the first customer candidate. Verify live SkyTab syncing before
+enabling projections in the background. Keep the owner-facing switch Off
+during observation. Require at least two weeks of real sales coverage and
+completed assessments. Extend the window for missing evidence. Review the
+dated comparison and record approval before enabling the switch. All
+customer switches stay Off through the Dec 2 launch.
+
+The comparison joins dated invoice-batch snapshots to the assessment's
+inventory cutoff. The snapshot schedule is 09:00 UTC. The saved observation
+time and the restaurant's inventory boundary are shown separately. Legacy
+snapshots lack historical units and count-only rows. Permanent assessment
+summaries preserve counts and known values for omitted batches. Historical
+batch identities are available where the compact result retains them.
+
+Each successful generation saves shadow evidence with the daily briefing
+for an enabled projection restaurant. It records the ingredient list used,
+the projected alternative and its source or fallback reason, and legacy
+evidence when available. The existing daily briefing cache retains the
+latest saved generation for a date. Shadow evidence is collected after
+selection and is excluded from the owner recommendation API response.
+
+Review skips, failures, cutoff-to-save delay, commit RPC timings against
+8 seconds, compact and payload bytes, fallback runs, review reasons and
+pending disposals. Commit timings in the existing job records are
+aggregated across the dispatcher run.
+
+For rollback, capture the assessment ID, business date and symptom if
+readily available. Turn the switch Off in Projections admin and check the
+audit, refreshed legacy card, next generation's switch_off source and
+continued background assessments. Check issued staff briefings under
+the existing cache and NFC lock. Rollback needs no deploy. Local
+scheduling for Tonight's Dish remains a separate follow-up.

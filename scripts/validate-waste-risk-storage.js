@@ -564,9 +564,14 @@ test('the permanent result stays bounded with 1,000 old overdue batches', async 
   const review = {
     ...current, id: id(6002), ingredient_id: null, remaining_qty: 4, unit: 'oz', unit_cost: null,
   };
+  const recentReview = { ...review, id: id(6005), received_date: base.received_date, use_by_date: shift(day, -7) };
+  const unknownReview = { ...review, id: id(6006), use_by_date: null };
+  const oldReview = Array.from({ length: 1000 }, (_, index) => ({
+    ...recentReview, id: id(7200 + index), use_by_date: shift(day, -8),
+  }));
   const outsideWindow = { ...current, id: id(6003), use_by_date: shift(day, 8) };
   const depleted = { ...current, id: id(6004), remaining_qty: 0 };
-  const beforeCutoff = [recent, current, review, outsideWindow, depleted];
+  const beforeCutoff = [recent, current, review, recentReview, unknownReview, outsideWindow, depleted];
   const old = Array.from({ length: 1000 }, (_, index) => ({
     ...base, id: id(6100 + index), use_by_date: shift(day, -8),
     unit_cost: index === 0 ? null : base.unit_cost,
@@ -578,6 +583,7 @@ test('the permanent result stays bounded with 1,000 old overdue batches', async 
     return JSON.parse(q(`select jsonb_build_object(
       'compact',a.result, 'bytes',octet_length(a.result::text),
       'full_item_count',jsonb_array_length(p.result->'items'),
+      'full_review_count',jsonb_array_length(p.result->'needs_review'),
       'full_overdue_count',(select count(*) from jsonb_array_elements(p.result->'items') item
         where item->>'status'='overdue')
     ) from public.waste_projection_assessments a
@@ -585,20 +591,22 @@ test('the permanent result stays bounded with 1,000 old overdue batches', async 
     where a.id='${assessmentId}';`));
   };
 
-  const small = await save([...beforeCutoff, old[1]], id(6090));
-  const large = await save([...beforeCutoff, ...old], id(6091));
+  const small = await save([...beforeCutoff, old[1], oldReview[0]], id(6090));
+  const large = await save([...beforeCutoff, ...old, ...oldReview], id(6091));
   assert.equal(large.compact.result_schema_version, 2);
   assert.deepEqual(large.compact.items.map(row => row.batch_id).sort(), [recent.id, current.id].sort());
   assert.equal(large.compact.items.find(row => row.batch_id === recent.id).status, 'overdue');
   assert.deepEqual(large.compact.needs_review.map(row => [
     row.batch_id, row.reason, row.stock_remaining_qty, row.stock_unit,
-  ]), [[review.id, 'link_ingredient', 4, 'oz']]);
+  ]).sort(), [review, recentReview, unknownReview].map(row => [row.id, 'link_ingredient', 4, 'oz']).sort());
   assert.deepEqual(large.compact.omitted_by_status, {
     overdue: { count: 1000, risk_value: 5994, unvalued_count: 1 },
+    needs_review: { count: 1000, by_reason: { link_ingredient: 1000 } },
     outside_risk_window: { count: 1, risk_value: null, unvalued_count: 1 },
     depleted: { count: 1, risk_value: 0, unvalued_count: 0 },
   });
-  assert.equal(large.full_item_count, 1005);
+  assert.equal(large.full_item_count, 2007);
+  assert.equal(large.full_review_count, 1003);
   assert.equal(large.full_overdue_count, 1001);
   assert.ok(large.bytes < 16_384 && large.bytes <= small.bytes + 128);
   t.diagnostic(`Permanent JSON bytes with 1 and 1,000 omitted overdue batches: ${small.bytes}, ${large.bytes}`);
@@ -716,6 +724,8 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   const readSurface = (restaurant, time) => service(readSql(restaurant, time));
   const previewSql = (actor = admin, time = 'clock_timestamp()') =>
     `public.waste_projection_preview_surface('${maple}',${time},'${actor}')`;
+  const shadowSql = `public.waste_projection_shadow_surface('${maple}',clock_timestamp())`;
+  const rolloutSql = `public.waste_rollout_read('${maple}','${day}','${admin}')`;
   const setSwitch = (restaurant, enabled) =>
     service(`public.waste_projection_surface_switch('${restaurant}','${admin}',${enabled})`);
   const fallback = reason => ({ mode: 'legacy', reason });
@@ -757,6 +767,8 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   for (const role of ['anon','authenticated']) {
     bad(`set role ${role}; select ${readSql(maple)};`, /permission denied/);
     bad(`set role ${role}; select ${previewSql()};`, /permission denied/);
+    bad(`set role ${role}; select ${shadowSql};`, /permission denied/);
+    bad(`set role ${role}; select ${rolloutSql};`, /permission denied/);
     bad(`set role ${role}; select ${statusSql(`'${maple}'`)};`, /permission denied/);
     bad(`set role ${role}; select public.waste_projection_surface_switch('${maple}','${admin}',true);`, /permission denied/);
   }
@@ -812,6 +824,13 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   assert.deepEqual(readSurface(maple), fallback('switch_off'));
   const offStatus = readStatus(maple);
   assert.deepEqual(service(previewSql(admin, readAt)), view);
+  assert.deepEqual(service(shadowSql.replace('clock_timestamp()', readAt)), view);
+  const rollout = service(rolloutSql);
+  assert.equal(rollout.assessment.id, compact);
+  assert.ok(rollout.assessment.compact_bytes > 0);
+  assert.equal(rollout.assessment.payload_bytes, null);
+  assert.equal(rollout.jobs[0].status, 'completed');
+  assert.equal(rollout.disposals.count, 1);
   assert.deepEqual(readStatus(maple), offStatus);
   assert.equal(q(`select enabled from public.projection_restaurant_config where restaurant_id='${maple}';`), 't');
   assert.equal(q(`select status from projection_private.waste_daily_jobs
@@ -821,6 +840,7 @@ test('the surface switch and compact assessment reads stay isolated from the wor
   q(`update public.projection_restaurant_config set enabled=false where restaurant_id='${maple}';`);
   assert.deepEqual(readSurface(maple), fallback('projections_disabled'));
   assert.deepEqual(service(previewSql()), fallback('projections_disabled'));
+  assert.deepEqual(service(shadowSql), fallback('projections_disabled'));
   assert.equal(readStatus(maple).projections_enabled, false);
   q(`select public.purge_restaurant('${maple}');`);
   assert.equal(q(`select count(*) from projection_private.waste_assessment_surface_switches where restaurant_id='${maple}';`), '0');

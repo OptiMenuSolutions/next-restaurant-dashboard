@@ -172,7 +172,7 @@ before(async () => {
     'holiday_learning', 'outlier_runs', 'nightly_runs',
     'nightly_review', 'benchmarks', 'benchmark_build_fixes',
     'snapshot_performance', 'cpi_gap', 'national_census', 'timezone_cache', 'monitor', 'waste_risk_storage',
-    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources', 'waste_assessment_reader', 'waste_assessment_admin', 'waste_assessment_preview',
+    'pos_sync_lease', 'waste_daily_jobs', 'waste_daily_runner', 'waste_compact_result', 'waste_correction_sources', 'waste_assessment_reader', 'waste_assessment_admin', 'waste_assessment_preview', 'waste_review_cap', 'waste_dish_shadow', 'waste_rollout',
   ]) {
     if (suffix === 'timezone_cache') {
       q(`do $copy$ declare d text; begin

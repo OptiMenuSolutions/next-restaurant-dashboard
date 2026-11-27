@@ -19,7 +19,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient } from '@supabase/supabase-js';
 import { logAiUsage } from '../../lib/logAiUsage';
-import { getShelfLife, isProtein } from '../../lib/shelfLife';
 import { loadCurrentInventory } from '../../lib/currentInventory';
 import { calculateVerifiedIngredientCost } from '../../lib/verifiedIngredientCost';
 import { requireActiveSubscription } from '../../lib/requireActiveSubscription';
@@ -30,7 +29,9 @@ import {
 } from '../../lib/ai/recommendationScoring';
 import { buildMenuOnlyPrompt } from '../../lib/ai/prompts/menuOnlyTonightsDish';
 import { sendCronAlert } from '../../lib/cronAlert';
-import { hasUsableWasteDate, readRecommendationWaste } from '../../lib/ai/recommendationWaste';
+import {
+  collectRecommendationWasteEvidence, hasUsableWasteDate, nameProjectedWasteBatches, readRecommendationWaste,
+} from '../../lib/ai/recommendationWaste';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -152,25 +153,8 @@ async function loadRestaurantContext(restaurantId, projectedBatches) {
 
   const menuItems = menuResult.data || [];
   const sales = salesResult.data || [];
-  let expiringIngredients = legacyExpiringIngredients;
-  if (projectedBatches !== null) {
-    const ingredients = new Map();
-    for (const item of menuItems) {
-      for (const component of item.menu_item_components || []) {
-        for (const line of component.component_ingredients || []) {
-          const ingredient = line.ingredients;
-          if (ingredient?.id) ingredients.set(ingredient.id, ingredient.name);
-        }
-      }
-    }
-    const earliestByIngredient = new Map();
-    for (const batch of projectedBatches) {
-      const name = ingredients.get(batch.ingredientId);
-      if (!name || earliestByIngredient.has(batch.ingredientId)) continue;
-      earliestByIngredient.set(batch.ingredientId, { ...batch, name, isProtein: isProtein(name) });
-    }
-    expiringIngredients = [...earliestByIngredient.values()];
-  }
+  const expiringIngredients = projectedBatches === null
+    ? legacyExpiringIngredients : nameProjectedWasteBatches(projectedBatches, menuItems);
 
   // Build 7-day sales totals per item — normalize names for matching
   const salesLast7 = {};
@@ -274,7 +258,7 @@ async function loadRestaurantContext(restaurantId, projectedBatches) {
     };
   }).filter(Boolean);
 
-  return { enriched, expiringIngredients };
+  return { enriched, expiringIngredients, menuItems };
 }
 
 // ─── Fetch recent recommendation history ──────────────────────────────────────
@@ -377,15 +361,16 @@ export async function generateForRestaurant(
     }
   }
 
-  const { input: wasteInput, batches: projectedBatches } = await readRecommendationWaste(
-    supabase, restaurantId, currentDate, new Date().toISOString()
-  );
+  const observedAt = new Date().toISOString();
+  const actualWaste = await readRecommendationWaste(supabase, restaurantId, currentDate, observedAt);
+  const { input: wasteInput, batches: projectedBatches } = actualWaste;
   let enriched = [];
   let expiringIngredients = [];
+  let menuItems = null;
   let history = [];
 
   try {
-    [{ enriched, expiringIngredients }, history] = await Promise.all([
+    [{ enriched, expiringIngredients, menuItems }, history] = await Promise.all([
       loadRestaurantContext(restaurantId, projectedBatches),
       getRecentHistory(restaurantId, currentDate),
     ]);
@@ -1902,12 +1887,25 @@ Return ONLY valid JSON in this format:
   // Save only during normal generation, never during a dry run.
   // Once an NFC tag has been tapped, today's recommendations are locked.
   if (!dryRun) {
+    let shadow = null;
+    try {
+      shadow = await collectRecommendationWasteEvidence({
+        db: supabase, restaurantId, serviceDate: currentDate, observedAt,
+        actual: actualWaste, ingredients: usableExpiringIngredients, menuItems,
+        loadLegacy: getExpiringIngredients,
+      });
+    } catch (error) {
+      console.warn('[recommendation-waste] Shadow evidence unavailable:', restaurantId, error.code || 'READ_FAILED');
+    }
+    const stored = shadow
+      ? [{ ...recommendationsWithWasteInput[0], waste_shadow: shadow }, ...recommendationsWithWasteInput.slice(1)]
+      : recommendationsWithWasteInput;
     const { data, error } = await supabase.rpc(
       'save_daily_recommendations',
       {
         p_restaurant_id: restaurantId,
         p_generated_date: currentDate,
-        p_recommendations: recommendationsWithWasteInput,
+        p_recommendations: stored,
       }
     );
 
@@ -2035,6 +2033,8 @@ const forStaff = (r) => ({
   talking_point: r?.talking_point ?? null,
 });
 
+const forOwner = ({ waste_shadow, ...ticket }) => ticket;
+
 // ─── On-demand handler ────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ message: 'Method not allowed' });
@@ -2104,7 +2104,7 @@ export default async function handler(req, res) {
       .single();
 
     if (!cacheError && cached?.recommendations) {
-      return res.status(200).json({ recommendations: staffView ? cached.recommendations.map(forStaff) : cached.recommendations, cached: true, date: currentDate });
+      return res.status(200).json({ recommendations: staffView ? cached.recommendations.map(forStaff) : cached.recommendations.map(forOwner), cached: true, date: currentDate });
     }
 
     // Generating costs a Claude call, so only for restaurants that are paid

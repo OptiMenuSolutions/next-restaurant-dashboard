@@ -138,3 +138,12 @@ test('the shared card renders the stale cutoff, unknowns, and handled subtotal n
     'Estimate unavailable', '6 oz on hand', '2 batches outside the risk window']) assert.ok(html.includes(text), text);
   assert.ok(!html.includes('Basil'));
 });
+
+test('saved older review totals merge with newly aged rows and keep pending batches visible as handled', () => {
+  const view = fixture();
+  view.omitted_by_status.needs_review = { count: 1000, by_reason: { link_ingredient: 1000 } };
+  const card = buildWasteAssessmentCard(view, inventory, confirmations);
+  assert.deepEqual(card.olderReview, [{ reason: 'link_ingredient', count: 1001 }]);
+  assert.equal(card.olderOverdue.confirmedWasted, 0);
+  assert.equal(card.handled[0].id, 'old-pending');
+});
